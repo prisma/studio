@@ -5,7 +5,7 @@
 
 ## Usage
 
-Prisma Studio can either be used as a web app by opening the Studio link when running `prisma2 dev` or can be downloaded as a desktop app ([Download OSX version](http://prisma-admin.s3.amazonaws.com/Studio.zip)).
+Prisma Studio can be used as a web app by opening the Studio link when running `prisma2 dev`.
 
 ## Feedback
 
