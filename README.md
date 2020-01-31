@@ -5,7 +5,7 @@
 
 ## Usage
 
-Prisma Studio can be used as a web app by opening the Studio link when running `prisma2 dev`.
+Prisma Studio can be used as a web app by opening the Studio link when running `prisma2 studio --experimental`.
 
 ## Demo
 
