@@ -9,7 +9,7 @@ Prisma Studio can be used as a web app by opening the Studio link when running `
 
 ## Demo
 
-You can try out Prisma Studio in a limited demo here: [**Try out demo**](https://prisma-studio.now.sh)
+You can try out Prisma Studio in a limited demo here: [**Try out demo**](https://prisma.studio)
 
 ## Feedback
 
