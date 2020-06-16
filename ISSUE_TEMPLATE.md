@@ -5,7 +5,7 @@
 
 ```
 
-3. Does the issue persist even after updating to the latest `prisma` alpha? (`npm i -D @prisma/cli@alpha`)
+3. Does the issue persist even after updating to the latest `prisma` alpha? (`npm i -D @prisma/cli@dev`)
 
 4. Prisma2 schema (if relevant):
 ```
