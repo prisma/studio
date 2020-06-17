@@ -16,3 +16,7 @@ You can try out Prisma Studio in a limited demo here: [**Try out demo**](https:/
 This repository is the central place to collect feedback and issues related to Prisma Studio.
 
 Please [**open an issue**](https://github.com/prisma/studio-feedback/issues/new) if you want to leave feedback.
+
+## Security
+
+If you have a security issue to report, please contact us at [security@prisma.io](mailto:security@prisma.io?subject=[GitHub]%20Prisma%202%20Security%20Report%20Studio)
