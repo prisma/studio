@@ -1,4 +1,4 @@
-<p align="center"><img src="https://github.com/prisma/studio/blob/readme_update/Studio.png" alt="Prisma Studio"></p>
+<p align="center"><img src="https://github.com/prisma/studio/blob/main/Studio.png" alt="Prisma Studio" /></p>
 
 <p><h1 align="center">Prisma Studio</h1></p>
 <p><h3 align="center">Modern database IDE</h3></p>
