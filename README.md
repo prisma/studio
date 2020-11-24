@@ -5,7 +5,12 @@
 
 ## Usage
 
-Prisma Studio is bundled with [Prisma](https://github.com/prisma/prisma) and can be used as a web app by opening the Studio link when running `prisma studio`.
+There are two ways you can run Studio with:
+
+1. Run `$ npx prisma studio` after you have installed [Prisma](https://github.com/prisma/prisma) (it comes prebundled with it).
+2. Install the macOS app from the installers in the [latest release](https://github.com/prisma/studio/releases). 
+
+Currently, only macOS is supported - if you want to install the native app on Windows or Linux, please let us know by opening an [issue](https://github.com/prisma/studio/issues).
 
 ## Demo
 
