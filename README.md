@@ -8,9 +8,9 @@
 There are two ways you can run Studio with:
 
 1. Run `$ npx prisma studio` after you have installed [Prisma](https://github.com/prisma/prisma) (it comes prebundled with it).
-2. Install the Mac application in your machine by using the binaries provided in the [latest release](https://github.com/prisma/studio/releases). 
+2. Install the macOS app from the installers in the [latest release](https://github.com/prisma/studio/releases). 
 
-Currently, only Mac OS X is supported - if you want to install it in Windows or Linux, let us know by opening an [issue](https://github.com/prisma/studio/issues).
+Currently, only macOS is supported - if you want to install the native app on Windows or Linux, please let us know by opening an [issue](https://github.com/prisma/studio/issues).
 
 ## Demo
 
