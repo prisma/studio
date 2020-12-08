@@ -14,7 +14,7 @@ Currently, only macOS is supported - if you want to install the native app on Wi
 
 ## Demo
 
-You can try out Prisma Studio in a limited, read-only demo: [**Try out demo**](https://prisma.studio)
+You can try out Prisma Studio in a limited, read-only demo: [**Try out demo**](https://prisma-studio.now.sh)
 
 ## Feedback
 
