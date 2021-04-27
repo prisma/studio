@@ -1,6 +1,6 @@
 ---
 name: Hosted Data Browser Bug report
-about: Create a report to help us improve
+about: Something not working as expected in cloud.prisma.io
 title: ''
 labels: 'topic: hosted data browser'
 assignees: ''
