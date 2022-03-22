@@ -1,8 +1,8 @@
 ---
 name: Prisma CLI `prisma studio` report
-about: Something not working as expectedwhen using `prisma studio` in Prisma CLI
+about: Something not working as expected when using `prisma studio` in Prisma CLI
 title: ''
-labels: 'topic: prisma cli'
+labels: 'topic: Prisma CLI'
 assignees: ''
 
 ---
