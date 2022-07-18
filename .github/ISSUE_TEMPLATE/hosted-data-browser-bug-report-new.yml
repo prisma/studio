@@ -51,4 +51,4 @@ body:
   - type: markdown
     attributes:
       value: |
-        Screenshot of page where the problem happened (if applicable)
+        ### Screenshot of page where the problem happened (if applicable)
