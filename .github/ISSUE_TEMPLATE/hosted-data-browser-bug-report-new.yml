@@ -37,7 +37,7 @@ body:
         <!-- Do not include your database credentials when sharing your Prisma schema! -->
     validations:
       required: true
-  - type: 
+  - type:
     attributes:
       label: Environment & setup
       description: In which environment does the problem occur
@@ -51,4 +51,4 @@ body:
   - type: markdown
     attributes:
       value: |
-      Screenshot of page where the problem happened (if applicable)
+        Screenshot of page where the problem happened (if applicable)
