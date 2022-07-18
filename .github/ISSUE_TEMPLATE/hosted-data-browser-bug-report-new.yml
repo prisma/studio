@@ -37,7 +37,7 @@ body:
         <!-- Do not include your database credentials when sharing your Prisma schema! -->
     validations:
       required: true
-  - type:
+  - type: textarea
     attributes:
       label: Environment & setup
       description: In which environment does the problem occur
