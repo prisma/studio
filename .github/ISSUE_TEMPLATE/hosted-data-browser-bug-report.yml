@@ -1,4 +1,4 @@
-name: Hosted Data Browser Bug report(new)
+name: Hosted Data Browser Bug report
 description: Data Browser is not working as expected in cloud.prisma.io
 labels: "kind/bug"
 body:
