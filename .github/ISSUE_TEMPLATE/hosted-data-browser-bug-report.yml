@@ -1,5 +1,5 @@
 name: Hosted Data Browser Bug report
-description: Data Browser is not working as expected in cloud.prisma.io
+description: Data Browser is not working as expected on https://cloud.prisma.io
 labels: "kind/bug"
 body:
   - type: markdown
