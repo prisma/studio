@@ -40,7 +40,7 @@ body:
   - type: textarea
     attributes:
       label: Environment & setup
-      description: In which environment does the problem occur
+      description: The environment in which the problem occurs
       value: |
         - Link to Data Browser instance: <!--https://cloud.prisma.io/john-johsone/awesome-project/production/databrowser-->
         - OS: <!--[e.g. Mac OS, IOS, Android, ...]-->
