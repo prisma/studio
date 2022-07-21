@@ -52,3 +52,7 @@ body:
     attributes:
       value: |
         ### Screenshot of page where the problem happened (if applicable)
+  - type: textarea
+    attributes:
+      label: Prisma logs
+      description: Logs from Developer Tools Console, if any
