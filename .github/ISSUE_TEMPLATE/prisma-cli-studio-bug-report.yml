@@ -1,5 +1,5 @@
 name: Prisma CLI `prisma studio` report
-description: Something not working as expected when using `prisma studio` in Prisma CLI
+description: Prisma Studio is not working as expected from the Prisma CLI
 labels: "kind/bug"
 body:
   - type: markdown
