@@ -1,0 +1,53 @@
+name: Prisma CLI `prisma studio` report
+description: Prisma Studio is not working as expected from the Prisma CLI
+labels: "kind/bug"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping us improve Prisma! 🙏 Please follow the sections in the template and provide as much information as possible about your problem.
+  - type: textarea
+    attributes:
+      label: Bug description
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: How to reproduce
+      description: Steps to reproduce the behavior
+      value: |
+        <!--
+        1. Go to '...'
+        2. Change '....'
+        3. Run '....'
+        4. See error
+        -->
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Expected behavior
+      description: A clear and concise description of what you expected to happen.
+  - type: textarea
+    attributes:
+      label: Prisma information
+      description: Your Prisma version (prisma -v or npx prisma -v), Prisma schema
+      value: |
+        <!-- Do not include your database credentials when sharing your Prisma schema! -->
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Environment & setup
+      description: The environment in which the problem occurs
+      value: |
+        - OS: <!--[e.g. Mac OS, IOS, Android, ...]-->
+        - Browser: <!--[e.g. Chrome, Firefox, Safari ...]-->
+        - Database: <!--[PostgreSQL, MySQL, MariaDB or SQLite]-->
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Prisma logs
+      description: Logs from Developer Tools Console or Command line, if any
