@@ -48,10 +48,9 @@ body:
         - Database: <!--[PostgreSQL, MySQL, MariaDB or SQLite]-->
     validations:
       required: true
-  - type: markdown
+  - type: textarea
     attributes:
-      value: |
-        ### Screenshot of page where the problem happened (if applicable)
+      label: Screenshot of page where the problem happened (if applicable)
   - type: textarea
     attributes:
       label: Prisma logs
