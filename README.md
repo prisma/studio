@@ -14,7 +14,7 @@ There are two ways to run Studio:
 
 This repository is the central place to collect feedback and issues related to Prisma Studio.
 
-Please [**open an issue**](https://github.com/prisma/studio-feedback/issues/new) if you want to leave feedback. Feel free to also join the `#prisma-studio` channel in the [**Prisma Slack**](https://slack.prisma.io) 
+Please [**open an issue**](https://github.com/prisma/studio-feedback/issues/new) if you want to leave feedback. Feel free to also join our [**Discord server**](https://pris.ly/discord) 
 
 ## Security
 
