@@ -5,10 +5,7 @@
 
 ## Usage
 
-There are two ways to run Studio:
-
-1. Run `$ npx prisma studio` after you have installed [Prisma](https://github.com/prisma/prisma) (it comes prebundled with it).
-2. Install the app from the installers in the [latest release](https://github.com/prisma/studio/releases). 
+Run `$ npx prisma studio` after you have installed [Prisma](https://github.com/prisma/prisma) (it comes prebundled with it).
 
 ## Feedback
 
