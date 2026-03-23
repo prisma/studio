@@ -1,0 +1,69 @@
+services:
+  mysql:
+    image: mysql:8.0.40
+    # https://dev.mysql.com/doc/refman/8.0/en/mysql-acid.html
+    # https://dev.mysql.com/doc/refman/8.0/en/innodb-parameters.html#sysvar_innodb_flush_method
+    # nosync only for unix, edit for local start on other systems
+    command: --default-authentication-plugin=mysql_native_password --sync_binlog=0 --innodb_doublewrite=OFF  --innodb-flush-log-at-trx-commit=0 --innodb-flush-method=nosync
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_DATABASE=studio
+      - MYSQL_USER=user
+      - MYSQL_PASSWORD=password
+    healthcheck:
+      test: ["CMD", "/usr/bin/mysql", "-hlocalhost", "-uuser", "-ppassword", "-e", "SELECT 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: always
+    volumes:
+      - mysql_data:/var/lib/mysql
+  waitmysql:
+    image: mysql:8.0.40
+    links:
+      - mysql
+    depends_on:
+      - mysql
+    entrypoint:
+      - bash
+      - -c
+      - 'until /usr/bin/mysql -hmysql -uuser -ppassword -e "SELECT 1"; do sleep 5; done'
+  vitess:
+    image: vitess/vttestserver:mysql80
+    platform: linux/amd64
+    ports:
+      - "15303:15303" # Base port
+      - "15304:15304" # vtctld port (PORT+1)
+      - "15306:15306" # MySQL protocol port (PORT+3, vtgate)
+    environment:
+      - PORT=15303
+      - KEYSPACES=studio
+      - NUM_SHARDS=1
+      - MYSQL_BIND_HOST=0.0.0.0
+      - VTCOMBO_BIND_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -h127.0.0.1 -P15306 -uroot -e 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: always
+  waitvitess:
+    image: mysql:8.0.40
+    links:
+      - vitess
+    depends_on:
+      vitess:
+        condition: service_healthy
+    entrypoint:
+      - bash
+      - -c
+      - 'until /usr/bin/mysql -hvitess -P15306 -uroot -e "SELECT 1"; do sleep 5; done'
+
+volumes:
+  mysql_data:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs

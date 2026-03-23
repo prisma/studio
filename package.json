@@ -1,0 +1,248 @@
+{
+  "name": "@prisma/studio-core",
+  "version": "0.27.3",
+  "description": "Modular Prisma Studio components",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./data": {
+      "import": {
+        "types": "./dist/data/index.d.ts",
+        "default": "./dist/data/index.js"
+      },
+      "require": {
+        "types": "./dist/data/index.d.cts",
+        "default": "./dist/data/index.cjs"
+      }
+    },
+    "./data/mysql-core": {
+      "import": {
+        "types": "./dist/data/mysql-core/index.d.ts",
+        "default": "./dist/data/mysql-core/index.js"
+      },
+      "require": {
+        "types": "./dist/data/mysql-core/index.d.cts",
+        "default": "./dist/data/mysql-core/index.cjs"
+      }
+    },
+    "./data/mysql2": {
+      "import": {
+        "types": "./dist/data/mysql2/index.d.ts",
+        "default": "./dist/data/mysql2/index.js"
+      },
+      "require": {
+        "types": "./dist/data/mysql2/index.d.cts",
+        "default": "./dist/data/mysql2/index.cjs"
+      }
+    },
+    "./data/bff": {
+      "import": {
+        "types": "./dist/data/bff/index.d.ts",
+        "default": "./dist/data/bff/index.js"
+      },
+      "require": {
+        "types": "./dist/data/bff/index.d.cts",
+        "default": "./dist/data/bff/index.cjs"
+      }
+    },
+    "./data/node-sqlite": {
+      "import": {
+        "types": "./dist/data/node-sqlite/index.d.ts",
+        "default": "./dist/data/node-sqlite/index.js"
+      },
+      "require": {
+        "types": "./dist/data/node-sqlite/index.d.cts",
+        "default": "./dist/data/node-sqlite/index.cjs"
+      }
+    },
+    "./data/pglite": {
+      "import": {
+        "types": "./dist/data/pglite/index.d.ts",
+        "default": "./dist/data/pglite/index.js"
+      },
+      "require": {
+        "types": "./dist/data/pglite/index.d.cts",
+        "default": "./dist/data/pglite/index.cjs"
+      }
+    },
+    "./data/postgres-core": {
+      "import": {
+        "types": "./dist/data/postgres-core/index.d.ts",
+        "default": "./dist/data/postgres-core/index.js"
+      },
+      "require": {
+        "types": "./dist/data/postgres-core/index.d.cts",
+        "default": "./dist/data/postgres-core/index.cjs"
+      }
+    },
+    "./data/postgresjs": {
+      "import": {
+        "types": "./dist/data/postgresjs/index.d.ts",
+        "default": "./dist/data/postgresjs/index.js"
+      },
+      "require": {
+        "types": "./dist/data/postgresjs/index.d.cts",
+        "default": "./dist/data/postgresjs/index.cjs"
+      }
+    },
+    "./data/sqlite-core": {
+      "import": {
+        "types": "./dist/data/sqlite-core/index.d.ts",
+        "default": "./dist/data/sqlite-core/index.js"
+      },
+      "require": {
+        "types": "./dist/data/sqlite-core/index.d.cts",
+        "default": "./dist/data/sqlite-core/index.cjs"
+      }
+    },
+    "./data/sqljs": {
+      "import": {
+        "types": "./dist/data/sqljs/index.d.ts",
+        "default": "./dist/data/sqljs/index.js"
+      },
+      "require": {
+        "types": "./dist/data/sqljs/index.d.cts",
+        "default": "./dist/data/sqljs/index.cjs"
+      }
+    },
+    "./ui": {
+      "import": {
+        "types": "./dist/ui/index.d.ts",
+        "default": "./dist/ui/index.js"
+      },
+      "require": {
+        "types": "./dist/ui/index.d.cts",
+        "default": "./dist/ui/index.cjs"
+      }
+    },
+    "./ui/index.css": "./dist/ui/index.css"
+  },
+  "scripts": {
+    "build": "NODE_OPTIONS=--max-old-space-size=8192 tsup",
+    "build:deploy": "rm -rf deploy && bun demo/ppg-dev/build-compute.ts deploy",
+    "check:exports": "attw --pack . --profile node16 --exclude-entrypoints ui/index.css",
+    "dev": "NODE_OPTIONS=--max-old-space-size=8192 tsup --watch",
+    "demo:ppg": "bun demo/ppg-dev/server.ts",
+    "demo:ppg:build": "rm -rf demo/ppg-dev/bundle && bun build demo/ppg-dev/server.ts --target bun --outdir demo/ppg-dev/bundle",
+    "demo:ppg:bundle": "pnpm demo:ppg:build && bun demo/ppg-dev/bundle/server.js",
+    "lint": "eslint --fix --cache --cache-location ./node_modules/.cache/eslint .",
+    "test": "vitest --passWithNoTests",
+    "test:checkpoint": "vitest --project checkpoint",
+    "test:data": "vitest --project data",
+    "test:demo": "vitest --project demo",
+    "test:e2e": "vitest --passWithNoTests --project e2e",
+    "test:ui": "vitest --passWithNoTests --project ui",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm build && pnpm check:exports"
+  },
+  "keywords": [],
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.2",
+    "@codemirror/autocomplete": "6.20.1",
+    "@codemirror/lang-sql": "6.10.0",
+    "@codemirror/lint": "6.9.5",
+    "@codemirror/state": "6.5.4",
+    "@codemirror/view": "6.39.16",
+    "@dnd-kit/core": "6.3.1",
+    "@dnd-kit/sortable": "10.0.0",
+    "@dnd-kit/utilities": "3.2.2",
+    "@electric-sql/pglite": "0.3.15",
+    "@eslint/eslintrc": "2.1.4",
+    "@eslint/js": "8.57.0",
+    "@prisma/dev": "0.23.1",
+    "@radix-ui/react-alert-dialog": "1.1.15",
+    "@radix-ui/react-checkbox": "1.3.3",
+    "@radix-ui/react-context-menu": "2.2.16",
+    "@radix-ui/react-dialog": "1.1.15",
+    "@radix-ui/react-dropdown-menu": "2.1.16",
+    "@radix-ui/react-label": "2.1.8",
+    "@radix-ui/react-popover": "1.1.15",
+    "@radix-ui/react-select": "2.2.6",
+    "@radix-ui/react-slot": "1.2.4",
+    "@radix-ui/react-switch": "1.2.6",
+    "@radix-ui/react-toggle-group": "1.1.11",
+    "@radix-ui/react-tooltip": "1.2.8",
+    "@tailwindcss/postcss": "4.1.18",
+    "@tanstack/db": "0.5.30",
+    "@tanstack/query-db-collection": "1.0.27",
+    "@tanstack/react-db": "0.1.74",
+    "@tanstack/react-query": "5.90.19",
+    "@tanstack/react-query-devtools": "5.91.2",
+    "@tanstack/react-table": "8.21.3",
+    "@tanstack/react-table-devtools": "8.21.3",
+    "@types/bun": "1.3.11",
+    "@types/eslint-config-prettier": "6.11.3",
+    "@types/eslint__js": "8.42.3",
+    "@types/node": "25.0.9",
+    "@types/react-dom": "^19.2.3",
+    "@types/sql.js": "^1.4.9",
+    "@uiw/react-codemirror": "4.25.7",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "cmdk": "1.1.1",
+    "dayjs": "1.11.19",
+    "eslint": "8.57.0",
+    "eslint-config-prettier": "9.1.0",
+    "eslint-plugin-import": "2.29.1",
+    "eslint-plugin-jsx-a11y": "6.9.0",
+    "eslint-plugin-prettier": "5.2.1",
+    "eslint-plugin-react": "7.35.0",
+    "eslint-plugin-react-hooks": "4.6.2",
+    "eslint-plugin-simple-import-sort": "12.1.1",
+    "eslint-plugin-unicorn": "55.0.0",
+    "eslint-plugin-vitest": "0.5.4",
+    "globals": "15.9.0",
+    "happy-dom": "20.7.0",
+    "kysely": "0.28.10",
+    "lucide-react": "0.562.0",
+    "motion": "12.27.1",
+    "motion-plus": "0.1.6",
+    "mysql2": "^3.16.1",
+    "nuqs": "2.8.6",
+    "pathe": "2.0.3",
+    "postcss": "8.5.6",
+    "postcss-nested": "7.0.2",
+    "postcss-prefix-selector": "2.1.1",
+    "postcss-value-parser": "4.2.0",
+    "postgres": "3.4.8",
+    "react-day-picker": "9.13.0",
+    "reactflow": "11.11.4",
+    "remeda": "2.33.4",
+    "short-uuid": "6.0.3",
+    "sonner": "2.0.7",
+    "std-env": "3.10.0",
+    "tailwind-merge": "3.4.0",
+    "tailwindcss": "4.1.18",
+    "tsup": "8.5.1",
+    "tw-animate-css": "1.4.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.1.0",
+    "uuidv7": "1.1.0",
+    "vitest": "4.0.17",
+    "vitest-canvas-mock": "1.1.3"
+  },
+  "files": [
+    "dist",
+    "NOTICE"
+  ],
+  "peerDependencies": {
+    "@types/react": "^18.0.0 || ^19.0.0",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "engines": {
+    "node": "^20.19 || ^22.12 || >=24.0",
+    "pnpm": "8"
+  },
+  "packageManager": "pnpm@8.15.9+sha512.499434c9d8fdd1a2794ebf4552b3b25c0a633abcee5bb15e7b5de90f32f47b513aca98cd5cfd001c31f0db454bc3804edccd578501e4ca293a6816166bbd9f81",
+  "pnpm": {
+    "overrides": {
+      "@tanstack/query-core": "5.90.19"
+    }
+  },
+  "dependencies": {
+    "@radix-ui/react-toggle": "1.1.10",
+    "chart.js": "4.5.1"
+  }
+}
