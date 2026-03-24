@@ -5,13 +5,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Adapter } from "../../data/adapter";
 import { Studio } from "./Studio";
 
-const refetchMock = vi.fn(() => Promise.resolve());
+const { refetchMock, useIntrospectionMock, useNavigationMock } = vi.hoisted(
+  () => ({
+    refetchMock: vi.fn(() => Promise.resolve()),
+    useIntrospectionMock: vi.fn<() => IntrospectionMockValue>(),
+    useNavigationMock: vi.fn<() => NavigationMockValue>(),
+  }),
+);
 
 type NavigationMockValue = {
   metadata: {
     activeTable: undefined;
   };
-  viewParam: "table";
+  viewParam: "table" | "stream";
 };
 
 type IntrospectionMockValue = {
@@ -29,9 +35,6 @@ type IntrospectionMockValue = {
   isRefetching: boolean;
   refetch: () => Promise<unknown>;
 };
-
-const useNavigationMock = vi.fn<() => NavigationMockValue>();
-const useIntrospectionMock = vi.fn<() => IntrospectionMockValue>();
 
 vi.mock("motion/react", () => ({
   AnimatePresence: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -82,6 +85,10 @@ vi.mock("./views/schema/SchemaView", () => ({
 
 vi.mock("./views/sql/SqlView", () => ({
   SqlView: () => <div>SQL view</div>,
+}));
+
+vi.mock("./views/stream/StreamView", () => ({
+  StreamView: () => <div>Stream view</div>,
 }));
 
 vi.mock("./views/table/ActiveTableView", () => ({
@@ -174,6 +181,46 @@ describe("Studio", () => {
     });
 
     expect(refetchMock).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("renders the stream view when navigation is on a selected stream", () => {
+    useNavigationMock.mockReturnValue({
+      metadata: {
+        activeTable: undefined,
+      },
+      viewParam: "stream",
+    });
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <Studio
+          adapter={
+            {
+              delete: vi.fn(),
+              introspect: vi.fn(),
+              insert: vi.fn(),
+              query: vi.fn(),
+              raw: vi.fn(),
+              update: vi.fn(),
+            } as unknown as Adapter
+          }
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain("Stream view");
+    expect(container.textContent).not.toContain(
+      "Could not load schema metadata",
+    );
 
     act(() => {
       root.unmount();

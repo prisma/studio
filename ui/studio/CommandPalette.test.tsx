@@ -93,6 +93,15 @@ vi.mock("../hooks/use-navigation-table-list", () => ({
   },
 }));
 
+vi.mock("../hooks/use-streams", () => ({
+  useStreams: () => ({
+    hasStreamsServer: false,
+    isError: false,
+    isLoading: false,
+    streams: [],
+  }),
+}));
+
 vi.mock("../hooks/use-ui-state", async () => {
   const React = await vi.importActual<typeof import("react")>("react");
 

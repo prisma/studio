@@ -51,9 +51,7 @@ const REDUCED_MOTION_MEDIA_QUERY = "(prefers-reduced-motion: reduce)";
 export type StudioThemeMode = "dark" | "light" | "system";
 
 type DocumentWithViewTransition = Document & {
-  startViewTransition?: (
-    update: () => void | Promise<void>,
-  ) => {
+  startViewTransition?: (update: () => void | Promise<void>) => {
     finished: Promise<void>;
     ready: Promise<void>;
     skipTransition: () => void;
@@ -73,7 +71,10 @@ function getDocumentDarkMode(): boolean {
 }
 
 function getSystemThemeMediaQueryList(): MediaQueryList | null {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+  if (
+    typeof window === "undefined" ||
+    typeof window.matchMedia !== "function"
+  ) {
     return null;
   }
 
@@ -85,7 +86,10 @@ function getSystemDarkMode(): boolean {
 }
 
 function prefersReducedMotion(): boolean {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+  if (
+    typeof window === "undefined" ||
+    typeof window.matchMedia !== "function"
+  ) {
     return false;
   }
 
@@ -229,6 +233,7 @@ function normalizeStudioUiState(
 interface StudioContextValue {
   adapter: Adapter;
   llm?: StudioLlm;
+  streamsUrl?: string;
   hasAiFilter: boolean;
   hasAiSql: boolean;
   requestLlm: (request: StudioLlmRequest) => Promise<string>;
@@ -266,6 +271,7 @@ export type StudioContextProviderProps = PropsWithChildren<{
   adapter: Adapter;
   llm?: StudioLlm;
   onEvent?: (event: StudioEvent) => void;
+  streamsUrl?: string;
   theme?: CustomTheme | string;
 }>;
 
@@ -275,6 +281,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
     onEvent: emitEvent,
     adapter,
     llm,
+    streamsUrl,
     theme,
   } = props;
 
@@ -549,7 +556,10 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
       };
 
       if (typeof systemThemeMediaQuery.addEventListener === "function") {
-        systemThemeMediaQuery.addEventListener("change", handleSystemThemeChange);
+        systemThemeMediaQuery.addEventListener(
+          "change",
+          handleSystemThemeChange,
+        );
 
         return () => {
           systemThemeMediaQuery.removeEventListener(
@@ -692,7 +702,9 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
           updateStudioUiState((draft) => {
             draft.themeMode = themeMode;
             draft.isDarkMode =
-              themeMode === "system" ? getSystemDarkMode() : themeMode === "dark";
+              themeMode === "system"
+                ? getSystemDarkMode()
+                : themeMode === "dark";
           });
         });
       };
@@ -771,6 +783,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
         value={{
           adapter,
           llm,
+          streamsUrl,
           hasAiFilter,
           hasAiSql,
           requestLlm,

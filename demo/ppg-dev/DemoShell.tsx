@@ -73,8 +73,9 @@ export function DemoApp(props: {
   aiEnabled: boolean;
   bootId: string;
   seededAt: string;
+  streamsUrl?: string;
 }) {
-  const { adapter, aiEnabled, bootId, seededAt } = props;
+  const { adapter, aiEnabled, bootId, seededAt, streamsUrl } = props;
   const llm: StudioLlm | undefined = aiEnabled
     ? async (request) => {
         const response = await fetch("/api/ai", {
@@ -150,10 +151,7 @@ export function DemoApp(props: {
       </header>
 
       <main style={{ minHeight: 0, padding: "12px" }}>
-        <Studio
-          adapter={adapter}
-          llm={llm}
-        />
+        <Studio adapter={adapter} llm={llm} streamsUrl={streamsUrl} />
       </main>
     </div>
   );

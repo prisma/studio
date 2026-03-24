@@ -158,6 +158,7 @@ function useNavigationInternal() {
     defaultValue: defaults.searchScope,
   });
   const [sortParam, setSortParam] = useQueryState("sort");
+  const [streamParam, setStreamParam] = useQueryState("stream");
   const [tableParam, setTableParam] = useQueryState("table", {
     defaultValue: defaults.table,
   });
@@ -202,6 +203,7 @@ function useNavigationInternal() {
     searchParam,
     searchScopeParam,
     sortParam,
+    streamParam,
     tableParam,
     viewParam,
     setFilterParam: setFilterParam as NuqsSetNullableValue<string>,
@@ -212,6 +214,7 @@ function useNavigationInternal() {
     setSearchParam: setSearchParam as NuqsSetNullableValue<string>,
     setSearchScopeParam: setSearchScopeParam as NuqsSetNullableValue<string>,
     setSortParam: setSortParam as NuqsSetNullableValue<string>,
+    setStreamParam: setStreamParam as NuqsSetNullableValue<string>,
     setTableParam: setTableParam as NuqsSetNullableValue<string>,
     setViewParam: setViewParam as NuqsSetNullableValue<string>,
   };

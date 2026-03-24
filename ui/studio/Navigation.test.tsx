@@ -16,7 +16,8 @@ interface NavigationMockValue {
   schemaParam: string;
   setSchemaParam: () => Promise<URLSearchParams>;
   setTableParam: () => Promise<URLSearchParams>;
-  viewParam: "table" | "schema" | "console";
+  streamParam: string | null;
+  viewParam: "table" | "schema" | "console" | "sql" | "stream";
 }
 
 interface IntrospectionMockValue {
@@ -36,8 +37,24 @@ interface IntrospectionMockValue {
   refetch?: () => Promise<unknown>;
 }
 
+interface StreamsMockValue {
+  hasStreamsServer: boolean;
+  isError: boolean;
+  isLoading: boolean;
+  streams: Array<{
+    createdAt: string;
+    epoch: number;
+    expiresAt: string | null;
+    name: string;
+    nextOffset: string;
+    sealedThrough: string;
+    uploadedThrough: string;
+  }>;
+}
+
 const useNavigationMock = vi.fn<() => NavigationMockValue>();
 const useIntrospectionMock = vi.fn<() => IntrospectionMockValue>();
+const useStreamsMock = vi.fn<() => StreamsMockValue>();
 const uiStateValues = new Map<string, unknown>();
 
 vi.mock("../hooks/use-navigation", () => ({
@@ -46,6 +63,10 @@ vi.mock("../hooks/use-navigation", () => ({
 
 vi.mock("../hooks/use-introspection", () => ({
   useIntrospection: () => useIntrospectionMock(),
+}));
+
+vi.mock("../hooks/use-streams", () => ({
+  useStreams: () => useStreamsMock(),
 }));
 
 vi.mock("../hooks/use-navigation-table-list", () => ({
@@ -213,6 +234,7 @@ describe("Navigation", () => {
       schemaParam: "public",
       setSchemaParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
       setTableParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+      streamParam: null,
       viewParam: "table",
     });
 
@@ -252,6 +274,31 @@ describe("Navigation", () => {
       isFetching: false,
       isRefetching: false,
       refetch: vi.fn(() => Promise.resolve()),
+    });
+    useStreamsMock.mockReturnValue({
+      hasStreamsServer: true,
+      isError: false,
+      isLoading: false,
+      streams: [
+        {
+          createdAt: "2026-03-09T10:00:00.000Z",
+          epoch: 0,
+          expiresAt: null,
+          name: "audit-log",
+          nextOffset: "0",
+          sealedThrough: "0",
+          uploadedThrough: "0",
+        },
+        {
+          createdAt: "2026-03-09T10:00:00.000Z",
+          epoch: 0,
+          expiresAt: null,
+          name: "prisma-wal",
+          nextOffset: "0",
+          sealedThrough: "0",
+          uploadedThrough: "0",
+        },
+      ],
     });
   });
 
@@ -387,6 +434,7 @@ describe("Navigation", () => {
       schemaParam: "missing",
       setSchemaParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
       setTableParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+      streamParam: null,
       viewParam: "table",
     });
     useIntrospectionMock.mockReturnValue({
@@ -486,6 +534,108 @@ describe("Navigation", () => {
     });
 
     expect(tablesBlock.getAttribute("data-search-open")).toBe("true");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("renders a Streams section beneath the Tables list", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const headings = [...container.querySelectorAll("h2")].map((heading) =>
+      heading.textContent?.trim(),
+    );
+
+    expect(headings.indexOf("Tables")).toBeGreaterThan(-1);
+    expect(headings.indexOf("Streams")).toBeGreaterThan(
+      headings.indexOf("Tables"),
+    );
+
+    const streamsNav = container.querySelector('nav[aria-label="Streams"]');
+
+    expect(streamsNav).not.toBeNull();
+    expect(streamsNav?.textContent).toContain("audit-log");
+    expect(streamsNav?.textContent).toContain("prisma-wal");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("hides the Streams section when Studio has no streams server configured", () => {
+    useStreamsMock.mockReturnValue({
+      hasStreamsServer: false,
+      isError: false,
+      isLoading: false,
+      streams: [],
+    });
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const headings = [...container.querySelectorAll("h2")].map((heading) =>
+      heading.textContent?.trim(),
+    );
+
+    expect(headings).toContain("Tables");
+    expect(headings).not.toContain("Streams");
+    expect(container.querySelector('nav[aria-label="Streams"]')).toBeNull();
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("renders stream links that route into the stream view and mark the active stream", () => {
+    useNavigationMock.mockReturnValue({
+      createUrl(values: Record<string, string>) {
+        return `#${Object.entries(values)
+          .map(([key, value]) => `${key}=${value}`)
+          .join("&")}`;
+      },
+      metadata: {
+        activeTable: { name: "organizations", schema: "public" },
+        isFetching: false,
+      },
+      schemaParam: "public",
+      setSchemaParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+      setTableParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+      streamParam: "prisma-wal",
+      viewParam: "stream",
+    });
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const streamLink = Array.from(container.querySelectorAll("a")).find(
+      (link) => link.textContent?.trim() === "prisma-wal",
+    );
+
+    expect(streamLink).toBeInstanceOf(HTMLAnchorElement);
+    expect(streamLink?.getAttribute("href")).toBe(
+      "#streamParam=prisma-wal&viewParam=stream",
+    );
+    expect(streamLink?.getAttribute("data-active")).toBe("true");
 
     act(() => {
       root.unmount();

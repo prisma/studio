@@ -50,7 +50,7 @@ function createAdapter(): Adapter {
   } as unknown as Adapter;
 }
 
-function renderHarness() {
+function renderHarness(props?: { streamsUrl?: string }) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -64,7 +64,10 @@ function renderHarness() {
 
   act(() => {
     root.render(
-      <StudioContextProvider adapter={createAdapter()}>
+      <StudioContextProvider
+        adapter={createAdapter()}
+        streamsUrl={props?.streamsUrl}
+      >
         <Harness />
       </StudioContextProvider>,
     );
@@ -193,6 +196,18 @@ describe("StudioContextProvider pagination preferences", () => {
   });
 });
 
+describe("StudioContextProvider streams configuration", () => {
+  it("exposes the optional streams URL through Studio context", () => {
+    const harness = renderHarness({
+      streamsUrl: "/api/streams",
+    });
+
+    expect(harness.getLatestStudio()?.streamsUrl).toBe("/api/streams");
+
+    harness.cleanup();
+  });
+});
+
 describe("StudioContextProvider dark mode preferences", () => {
   it("persists explicit theme mode changes across remounts", () => {
     document.documentElement.classList.remove("dark");
@@ -293,12 +308,12 @@ describe("StudioContextProvider dark mode preferences", () => {
   });
 
   it("wraps explicit theme changes in a document-bound view transition when available", () => {
-    let transitionThis: unknown;
+    let usedDocumentThis = false;
     const startViewTransition = vi.fn(function (
       this: unknown,
       update: () => void,
     ) {
-      transitionThis = this;
+      usedDocumentThis = this === document;
       update();
 
       return {
@@ -321,7 +336,7 @@ describe("StudioContextProvider dark mode preferences", () => {
     });
 
     expect(startViewTransition).toHaveBeenCalledTimes(1);
-    expect(transitionThis).toBe(document);
+    expect(usedDocumentThis).toBe(true);
     expect(harness.getLatestStudio()?.themeMode).toBe("dark");
     expect(harness.getLatestStudio()?.isDarkMode).toBe(true);
 

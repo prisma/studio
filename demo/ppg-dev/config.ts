@@ -4,6 +4,9 @@ export interface DemoConfig {
   };
   bootId: string;
   seededAt: string;
+  streams?: {
+    url: string;
+  };
 }
 
 const TRUE_ENV_VALUES = new Set(["1", "true", "yes", "on"]);
@@ -44,8 +47,9 @@ export function buildDemoConfig(args: {
   aiEnabled: boolean;
   bootId: string;
   seededAt: string;
+  streamsUrl?: string;
 }): DemoConfig {
-  const { aiEnabled, bootId, seededAt } = args;
+  const { aiEnabled, bootId, seededAt, streamsUrl } = args;
 
   return {
     ai: {
@@ -53,5 +57,12 @@ export function buildDemoConfig(args: {
     },
     bootId,
     seededAt,
+    ...(streamsUrl
+      ? {
+          streams: {
+            url: streamsUrl,
+          },
+        }
+      : {}),
   };
 }

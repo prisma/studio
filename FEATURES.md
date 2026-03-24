@@ -36,6 +36,17 @@ Table filtering is available inline in the Tables header, so search is there whe
 The field opens and closes with keyboard-friendly behavior, filters table names in real time from local state, and supports `ArrowUp` / `ArrowDown` plus `Enter` to choose a table without leaving the keyboard.
 Choosing a filtered table, whether by `Enter` or mouse click, closes the search field and hands focus to the table grid so users can continue scrolling the new result set immediately.
 
+## Sidebar Streams Navigation
+
+Studio can optionally connect to a Prisma Streams server alongside the database connection and show a `Streams` section directly under `Tables` in the sidebar.
+The list reuses the same compact navigation shell as table browsing, loads live stream names from the configured Streams base URL, and disappears entirely when Studio is embedded without Streams configured.
+
+## Stream Event Browsing
+
+Selecting a stream opens a dedicated event log view in the main pane instead of the table grid.
+The view uses TanStack DB-backed infinite scroll to load the newest events first, shows summary columns for time, key, indexed fields, preview text, and payload size, and lets users expand one event at a time to inspect the full formatted content.
+While a stream is open, Studio refreshes the metadata count in place, surfaces a centered `new events` button just below the header row when the stream advances, reveals those newer rows in 50-event batches on demand, and keeps older-history loading on the same infinite-scroll surface.
+
 ## Schema Visualizer
 
 Studio includes a schema graph view with table nodes, column metadata, and detected foreign-key relationships labeled as 1:1 or 1:n.

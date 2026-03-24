@@ -20,6 +20,7 @@ export type StateKey =
   | "pageIndex"
   | "pageSize"
   | "pin"
+  | "stream"
   | "table"
   | "sort"
   | "schema"

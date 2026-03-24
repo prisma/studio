@@ -66,6 +66,7 @@ describe("DemoApp", () => {
           aiEnabled: false,
           bootId: "boot-1234",
           seededAt: "2026-03-09T10:00:00.000Z",
+          streamsUrl: "/api/streams",
         }),
       );
     });
@@ -78,6 +79,11 @@ describe("DemoApp", () => {
     expect(
       container.querySelector('[data-testid="studio-stub"]'),
     ).not.toBeNull();
+    expect(studioMock.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        streamsUrl: "/api/streams",
+      }),
+    );
 
     await act(async () => {
       fullscreenButton?.dispatchEvent(
@@ -125,6 +131,7 @@ describe("DemoApp", () => {
           aiEnabled: true,
           bootId: "boot-1234",
           seededAt: "2026-03-09T10:00:00.000Z",
+          streamsUrl: "/api/streams",
         }),
       );
     });
