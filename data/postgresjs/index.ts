@@ -11,6 +11,12 @@ import type { Query, QueryResult } from "../query";
 const SQL_LINT_STATEMENT_TIMEOUT = "1000ms";
 const SQL_LINT_LOCK_TIMEOUT = "100ms";
 const SQL_LINT_IDLE_IN_TRANSACTION_TIMEOUT = "1000ms";
+const POSTGRES_DATE_OID = 1082;
+const POSTGRES_DATE_ARRAY_OID = 1182;
+const POSTGRES_TIMESTAMP_OID = 1114;
+const POSTGRES_TIMESTAMP_ARRAY_OID = 1115;
+
+type TemporalColumnKind = "date" | "timestamp";
 
 export function createPostgresJSExecutor(postgresjs: Sql): Executor {
   return {
@@ -24,7 +30,7 @@ export function createPostgresJSExecutor(postgresjs: Sql): Executor {
             query.parameters as never,
           );
 
-          return [null, result as never];
+          return [null, normalizeTemporalResult(result as never)];
         } catch (error: unknown) {
           return [error as Error];
         }
@@ -103,7 +109,7 @@ export function createPostgresJSExecutor(postgresjs: Sql): Executor {
 
         connection.release();
 
-        return [null, queryResult as never];
+        return [null, normalizeTemporalResult(queryResult as never)];
       } catch (error: unknown) {
         connection?.release();
 
@@ -253,6 +259,99 @@ export function createPostgresJSExecutor(postgresjs: Sql): Executor {
       }
     },
   };
+}
+
+function normalizeTemporalResult<T>(
+  result: QueryResult<Query<T>>,
+): QueryResult<Query<T>> {
+  const columns = (
+    result as QueryResult<Query<T>> & {
+      columns?: Array<{ name?: string; type?: number }>;
+    }
+  ).columns;
+
+  if (!Array.isArray(columns) || columns.length === 0) {
+    return result;
+  }
+
+  const temporalColumns = columns.flatMap((column) => {
+    const name = column?.name;
+    const kind = getTemporalColumnKind(column?.type);
+
+    if (!name || !kind) {
+      return [];
+    }
+
+    return [{ kind, name }];
+  });
+
+  if (temporalColumns.length === 0) {
+    return result;
+  }
+
+  for (const row of result as Array<Record<string, unknown>>) {
+    for (const { kind, name } of temporalColumns) {
+      row[name] = normalizeTemporalValue(row[name], kind);
+    }
+  }
+
+  return result;
+}
+
+function getTemporalColumnKind(
+  type: number | undefined,
+): TemporalColumnKind | null {
+  if (type === POSTGRES_DATE_OID || type === POSTGRES_DATE_ARRAY_OID) {
+    return "date";
+  }
+
+  if (
+    type === POSTGRES_TIMESTAMP_OID ||
+    type === POSTGRES_TIMESTAMP_ARRAY_OID
+  ) {
+    return "timestamp";
+  }
+
+  return null;
+}
+
+function normalizeTemporalValue(
+  value: unknown,
+  kind: TemporalColumnKind,
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeTemporalValue(entry, kind));
+  }
+
+  if (!(value instanceof Date)) {
+    return value;
+  }
+
+  return kind === "date"
+    ? formatStoredDateValue(value)
+    : formatStoredTimestampValue(value);
+}
+
+function formatStoredDateValue(value: Date): string {
+  return [
+    value.getFullYear(),
+    String(value.getMonth() + 1).padStart(2, "0"),
+    String(value.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function formatStoredTimestampValue(value: Date): string {
+  return new Date(
+    Date.UTC(
+      value.getFullYear(),
+      value.getMonth(),
+      value.getDate(),
+      value.getHours(),
+      value.getMinutes(),
+      value.getSeconds(),
+      value.getMilliseconds(),
+    ),
+  ).toISOString();
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
