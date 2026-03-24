@@ -128,6 +128,9 @@ The following are valid examples of UI state and where they belong:
 - Navigation table-name search term/open state: `uiLocalStateCollection` via `useUiState`
 - Navigation table-selection grid-focus request: `uiLocalStateCollection` via `useUiState`
 - Navigation table-name source rows: `navigationTableNamesCollection`
+- Schema visualizer node positions and layout state: `uiLocalStateCollection` via `useUiState`
+  - Scoped by active schema plus the current visualized table set so returning to the same schema graph restores dragged positions without leaking across schemas.
+  - Includes the stored ELK baseline positions and reset-layout request token used by the header action.
 - Command-palette `x more...` handoff into table browsing: the same navigation table-name search `useUiState` entry, not a second command-palette-specific table-filter store
 
 If new UI state is shared across components, it MUST be assigned to one of these stores (or a new TanStack DB collection added in Studio context).
