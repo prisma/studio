@@ -307,6 +307,29 @@ describe("Navigation", () => {
     darkContainer.remove();
   });
 
+  it("renders table navigation hitboxes on the actual links", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const tableLink = [
+      ...container.querySelectorAll<HTMLAnchorElement>("a"),
+    ].find((link) => link.textContent?.trim() === "all_data_types");
+
+    expect(tableLink).not.toBeUndefined();
+    expect(tableLink?.getAttribute("data-sidebar")).toBe("menu-button");
+    expect(tableLink?.parentElement?.tagName).toBe("NAV");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it("closes table search on blur when the search input is empty", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

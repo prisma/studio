@@ -2,8 +2,8 @@ import { Slot } from "@radix-ui/react-slot";
 import { Search, Table2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import PrismaLightSymbol from "../../assets/prisma-light-symbol.svg";
 import PrismaLogo from "../../assets/prisma.svg";
+import PrismaLightSymbol from "../../assets/prisma-light-symbol.svg";
 import { Input } from "../components/ui/input";
 import {
   Select,
@@ -18,8 +18,8 @@ import { useNavigation } from "../hooks/use-navigation";
 import { useNavigationTableList } from "../hooks/use-navigation-table-list";
 import { useUiState } from "../hooks/use-ui-state";
 import { cn } from "../lib/utils";
-import { IntrospectionStatusNotice } from "./IntrospectionStatusNotice";
 import { useStudio } from "./context";
+import { IntrospectionStatusNotice } from "./IntrospectionStatusNotice";
 import {
   TABLE_GRID_FOCUS_REQUEST_UI_STATE_KEY,
   TABLE_SEARCH_UI_STATE_KEY,
@@ -486,10 +486,10 @@ const Item = ({
       )}
       {...props}
     >
-      {wrapChildrenInSpan ? (
+      {wrapChildrenInSpan && !asChild ? (
         <span className="truncate">{children}</span>
       ) : (
-        <>{children}</>
+        children
       )}
     </Comp>
   );
