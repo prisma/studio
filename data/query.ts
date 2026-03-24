@@ -29,6 +29,7 @@ import { normalizeSqlWhereClause } from "../lib/sql-filter";
 import type {
   Column,
   ColumnFilter,
+  DataType,
   FilterGroup,
   SqlFilter,
   Table,
@@ -385,10 +386,33 @@ function transformValue(
   }
 
   if (!datatype.isNative) {
-    return eb.cast(eb.val(value), sql.id(datatype.schema, datatype.name));
+    return eb.cast(eb.val(value), getUserDefinedTypeCastTarget(datatype));
   }
 
   return eb.val(value);
+}
+
+function getUserDefinedTypeCastTarget(datatype: DataType): Expression<any> {
+  const { isArray, name, schema } = datatype;
+
+  if (!isArray) {
+    return sql.id(schema, name);
+  }
+
+  const arraySuffixMatch = name.match(/(\[\])+$/);
+
+  if (!arraySuffixMatch) {
+    return sql.id(schema, name);
+  }
+
+  const arraySuffix = arraySuffixMatch[0];
+  const baseName = name.slice(0, -arraySuffix.length);
+
+  if (baseName.length === 0) {
+    return sql.id(schema, name);
+  }
+
+  return sql`${sql.id(schema, baseName)}${sql.raw(arraySuffix)}`;
 }
 
 export function getSelectFilterExpression(
