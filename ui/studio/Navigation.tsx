@@ -33,7 +33,8 @@ type NavigationProps = {
 } & React.HTMLAttributes<HTMLDivElement>;
 
 export function Navigation({ className }: NavigationProps) {
-  const { metadata, createUrl, viewParam, schemaParam } = useNavigation();
+  const { metadata, createUrl, streamParam, viewParam, schemaParam } =
+    useNavigation();
   const { isDarkMode } = useStudio();
   const { isFetching, activeTable } = metadata;
   const { errorState, hasResolvedIntrospection, isRefetching, refetch } =
@@ -377,9 +378,18 @@ export function Navigation({ className }: NavigationProps) {
                 key={stream.name}
                 asChild
                 className={navigationItemClasses}
+                isActive={viewParam === "stream" && streamParam === stream.name}
                 wrapChildrenInSpan={false}
               >
-                <div className="w-full truncate">{stream.name}</div>
+                <a
+                  href={createUrl({
+                    streamParam: stream.name,
+                    viewParam: "stream",
+                  })}
+                  className="w-full truncate"
+                >
+                  {stream.name}
+                </a>
               </Navigation.Item>
             ))
           ) : (

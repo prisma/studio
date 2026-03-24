@@ -66,6 +66,19 @@ It deliberately excludes:
   - The grid requires an inline hover/focus pin-sort pill plus a full-height resize affordance on the same header boundary.
   - The architecture explicitly requires inline controls instead of dropdown-driven header actions.
 
+### Stream Event List Rows
+
+- Canonical component:
+  - [`ui/studio/views/stream/StreamView.tsx`](ui/studio/views/stream/StreamView.tsx)
+- Closest standard ShadCN alternatives:
+  - `Card`
+  - `Badge`
+  - `Tooltip`
+  - `Skeleton`
+- Why it stays non-standard:
+  - The stream view needs a dense multi-column summary row with inline expansion, single-open-row behavior, clipped preview text, and infinite-scroll loading inside one scroll container.
+  - No stock ShadCN component provides that event-log interaction model, so Studio keeps a custom composite while still building it from standard ShadCN primitives.
+
 ## Standardization Candidates
 
 These are the current high-signal places where Studio is bypassing a plausible standard ShadCN component or composition pattern.

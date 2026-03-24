@@ -19,7 +19,10 @@ vi.mock("../studio/context", () => ({
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-function renderHarness(args?: { streamsUrl?: string }) {
+function renderHarness(args?: {
+  refreshIntervalMs?: number;
+  streamsUrl?: string;
+}) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -32,7 +35,7 @@ function renderHarness(args?: { streamsUrl?: string }) {
   let latestState: ReturnType<typeof useStreams> | undefined;
 
   function Harness() {
-    latestState = useStreams();
+    latestState = useStreams(args);
     return null;
   }
 
@@ -87,6 +90,7 @@ describe("useStreams", () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
     document.body.innerHTML = "";
   });
 
@@ -153,5 +157,91 @@ describe("useStreams", () => {
     expect(harness.getLatestState()?.hasStreamsServer).toBe(true);
 
     harness.cleanup();
+  });
+
+  it("refreshes stream metadata every 5 seconds when asked", async () => {
+    vi.useFakeTimers();
+
+    async function waitForWithFakeTimers(
+      assertion: () => boolean,
+    ): Promise<void> {
+      const timeoutMs = 2000;
+      let elapsedMs = 0;
+
+      while (elapsedMs < timeoutMs) {
+        if (assertion()) {
+          return;
+        }
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(50);
+        });
+        elapsedMs += 50;
+      }
+
+      throw new Error("Timed out waiting for streams refresh");
+    }
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              created_at: "2026-03-09T10:00:00.000Z",
+              epoch: 0,
+              expires_at: null,
+              name: "prisma-wal",
+              next_offset: "2",
+              sealed_through: "0",
+              uploaded_through: "0",
+            },
+          ]),
+          {
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              created_at: "2026-03-09T10:00:00.000Z",
+              epoch: 0,
+              expires_at: null,
+              name: "prisma-wal",
+              next_offset: "9",
+              sealed_through: "0",
+              uploaded_through: "0",
+            },
+          ]),
+          {
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        ),
+      );
+    const harness = renderHarness({
+      refreshIntervalMs: 5000,
+      streamsUrl: "/api/streams",
+    });
+
+    await waitForWithFakeTimers(
+      () => harness.getLatestState()?.streams[0]?.nextOffset === "2",
+    );
+    expect(harness.getLatestState()?.streams[0]?.nextOffset).toBe("2");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(harness.getLatestState()?.streams[0]?.nextOffset).toBe("9");
+
+    harness.cleanup();
+    vi.useRealTimers();
   });
 });

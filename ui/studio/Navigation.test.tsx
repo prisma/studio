@@ -16,7 +16,8 @@ interface NavigationMockValue {
   schemaParam: string;
   setSchemaParam: () => Promise<URLSearchParams>;
   setTableParam: () => Promise<URLSearchParams>;
-  viewParam: "table" | "schema" | "console";
+  streamParam: string | null;
+  viewParam: "table" | "schema" | "console" | "sql" | "stream";
 }
 
 interface IntrospectionMockValue {
@@ -233,6 +234,7 @@ describe("Navigation", () => {
       schemaParam: "public",
       setSchemaParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
       setTableParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+      streamParam: null,
       viewParam: "table",
     });
 
@@ -432,6 +434,7 @@ describe("Navigation", () => {
       schemaParam: "missing",
       setSchemaParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
       setTableParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+      streamParam: null,
       viewParam: "table",
     });
     useIntrospectionMock.mockReturnValue({
@@ -561,6 +564,78 @@ describe("Navigation", () => {
     expect(streamsNav).not.toBeNull();
     expect(streamsNav?.textContent).toContain("audit-log");
     expect(streamsNav?.textContent).toContain("prisma-wal");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("hides the Streams section when Studio has no streams server configured", () => {
+    useStreamsMock.mockReturnValue({
+      hasStreamsServer: false,
+      isError: false,
+      isLoading: false,
+      streams: [],
+    });
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const headings = [...container.querySelectorAll("h2")].map((heading) =>
+      heading.textContent?.trim(),
+    );
+
+    expect(headings).toContain("Tables");
+    expect(headings).not.toContain("Streams");
+    expect(container.querySelector('nav[aria-label="Streams"]')).toBeNull();
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("renders stream links that route into the stream view and mark the active stream", () => {
+    useNavigationMock.mockReturnValue({
+      createUrl(values: Record<string, string>) {
+        return `#${Object.entries(values)
+          .map(([key, value]) => `${key}=${value}`)
+          .join("&")}`;
+      },
+      metadata: {
+        activeTable: { name: "organizations", schema: "public" },
+        isFetching: false,
+      },
+      schemaParam: "public",
+      setSchemaParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+      setTableParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+      streamParam: "prisma-wal",
+      viewParam: "stream",
+    });
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const streamLink = Array.from(container.querySelectorAll("a")).find(
+      (link) => link.textContent?.trim() === "prisma-wal",
+    );
+
+    expect(streamLink).toBeInstanceOf(HTMLAnchorElement);
+    expect(streamLink?.getAttribute("href")).toBe(
+      "#streamParam=prisma-wal&viewParam=stream",
+    );
+    expect(streamLink?.getAttribute("data-active")).toBe("true");
 
     act(() => {
       root.unmount();

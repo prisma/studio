@@ -11,6 +11,20 @@ type QueryKey =
   | ["introspection"]
   | ["streams", string]
   | [
+      "streams",
+      string,
+      "stream",
+      string,
+      "epoch",
+      number,
+      "visibleEventCount",
+      string,
+      "pageSize",
+      number,
+      "pageCount",
+      number,
+    ]
+  | [
       ...SchemaAndTable,
       "query",
       "sortOrder",

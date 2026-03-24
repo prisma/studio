@@ -8,8 +8,8 @@ Navigation state MUST be URL-driven and managed through `useNavigation` + Nuqs. 
 
 This architecture governs:
 
-- active Studio view (`table`, `schema`, `console`, `sql`)
-- active schema/table
+- active Studio view (`table`, `schema`, `console`, `sql`, `stream`)
+- active schema/table/stream
 - pagination URL state
 - sorting URL state
 - column pinning URL state
@@ -37,6 +37,7 @@ Only keys declared in [`ui/hooks/nuqs.ts`](../ui/hooks/nuqs.ts) are allowed:
 - `view`
 - `schema`
 - `table`
+- `stream`
 - `filter`
 - `sort`
 - `pin`
@@ -68,6 +69,7 @@ Adding a new URL key requires updating `StateKey` in `nuqs.ts` first.
 - `search`: `""`
 - `searchScope`: `"table"` (legacy default)
 - `view`: `"table"`
+- `stream`: no default; only meaningful when `view=stream`
 
 When URL params are stale from a previous DB, invalid `schema`/`table` values MUST be resolved to valid current defaults.
 Shared table page size and infinite-scroll mode are not derived from URL defaults; they are restored through Studio UI state and then mirrored into query behavior by `usePagination`.
@@ -88,7 +90,7 @@ Do not replace hash synchronization logic with custom listeners in feature code.
 Use two patterns only:
 
 - Link rendering: `href={createUrl({ ...ParamValues })}`
-- Imperative updates: `setViewParam`, `setSchemaParam`, `setTableParam`, etc.
+- Imperative updates: `setViewParam`, `setSchemaParam`, `setTableParam`, `setStreamParam`, etc.
 
 On schema switch, code MUST also resolve and set a valid table for that schema (current behavior in `Navigation.SchemaSelector`).
 

@@ -116,6 +116,7 @@ The following are valid examples of UI state and where they belong:
 - Staged existing-row updates: `tableUiStateCollection.stagedUpdates`
 - Filter draft tree for active table: `tableUiStateCollection.editingFilter`
 - Filtered row count metadata: `tableQueryMetaCollection.filteredRowCount`
+- Stream-scoped expanded event row id (for example `stream:prisma-wal:expanded-event`): `uiLocalStateCollection` via `useUiState`
 - Command palette open/closed state: `uiLocalStateCollection` via `useUiState`
 - DataGrid selection mode (`none`/`cell`/`row`): `uiLocalStateCollection` via `useUiState`
 - DataGrid focused cell (`{ rowIndex, columnId } | null`): `uiLocalStateCollection` via `useUiState`

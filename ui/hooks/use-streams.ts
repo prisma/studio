@@ -25,6 +25,10 @@ export interface StudioStream {
   uploadedThrough: string;
 }
 
+export interface UseStreamsArgs {
+  refreshIntervalMs?: number;
+}
+
 function isStreamsApiItem(value: unknown): value is StreamsApiItem {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -78,8 +82,9 @@ function sortStreams(streams: StudioStream[]): StudioStream[] {
   );
 }
 
-export function useStreams() {
+export function useStreams(args?: UseStreamsArgs) {
   const { streamsUrl } = useStudio();
+  const refreshIntervalMs = args?.refreshIntervalMs;
   const streamsListUrl = useMemo(
     () => createStreamsListUrl(streamsUrl),
     [streamsUrl],
@@ -118,6 +123,10 @@ export function useStreams() {
       );
     },
     queryKey: ["streams", streamsListUrl],
+    refetchInterval:
+      typeof refreshIntervalMs === "number" && refreshIntervalMs > 0
+        ? refreshIntervalMs
+        : false,
     refetchOnReconnect: false,
     refetchOnWindowFocus: false,
     retry: false,

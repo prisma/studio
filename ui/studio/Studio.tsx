@@ -16,6 +16,7 @@ import { StudioHeader } from "./StudioHeader";
 import { ConsoleView } from "./views/console/ConsoleView";
 import { SchemaView } from "./views/schema/SchemaView";
 import { SqlView } from "./views/sql/SqlView";
+import { StreamView } from "./views/stream/StreamView";
 import { ActiveTableView } from "./views/table/ActiveTableView";
 import { BasicView, ViewProps } from "./views/View";
 
@@ -101,6 +102,7 @@ export function Studio(props: StudioProps) {
 const views: Record<string, (props: ViewProps) => JSX.Element | null> = {
   schema: SchemaView,
   table: ActiveTableView,
+  stream: StreamView,
   console: ConsoleView,
   sql: SqlView,
   default: BasicView,
