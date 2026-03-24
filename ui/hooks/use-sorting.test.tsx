@@ -230,6 +230,65 @@ describe("useSorting", () => {
     harness.cleanup();
   });
 
+  it("keeps the latest sort request when an earlier URL write resolves later", async () => {
+    let hashParams = new URLSearchParams();
+    let releaseFirstSortWrite: (() => void) | undefined;
+    let sortWriteCallCount = 0;
+
+    const setSortParam = vi.fn((value: string | null) => {
+      sortWriteCallCount += 1;
+      const apply = () => {
+        if (value === null) {
+          hashParams.delete("sort");
+        } else {
+          hashParams.set("sort", value);
+        }
+
+        return new URLSearchParams(hashParams.toString());
+      };
+
+      if (sortWriteCallCount === 1) {
+        return new Promise<URLSearchParams>((resolve) => {
+          releaseFirstSortWrite = () => resolve(apply());
+        });
+      }
+
+      return Promise.resolve().then(apply);
+    });
+    const setPageIndexParam = vi.fn().mockResolvedValue(new URLSearchParams());
+
+    useNavigationMock.mockReturnValue({
+      metadata: { activeTable: undefined },
+      pageIndexParam: "0",
+      setPageIndexParam,
+      setSortParam,
+      sortParam: null,
+    });
+
+    const harness = renderHarness();
+
+    await act(async () => {
+      harness
+        .getLatestState()
+        ?.setSortingState([{ column: "created_at", direction: "asc" }]);
+      await flushMicrotasks();
+      harness
+        .getLatestState()
+        ?.setSortingState([{ column: "created_at", direction: "desc" }]);
+      await flushMicrotasks();
+    });
+
+    releaseFirstSortWrite?.();
+
+    await act(async () => {
+      await flushMicrotasks(5);
+    });
+
+    expect(hashParams.get("sort")).toBe("created_at:desc");
+
+    harness.cleanup();
+  });
+
   it("defaults to ascending sort by single primary key when URL sort is unset", () => {
     useNavigationMock.mockReturnValue({
       metadata: {

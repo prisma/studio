@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from "react";
 
 import type { SortOrderItem, Table } from "../../data/adapter";
+import { useLatestAsyncParam } from "./use-latest-async-param";
 import { useNavigation } from "./use-navigation";
 
 export function useSorting() {
@@ -11,6 +12,13 @@ export function useSorting() {
     sortParam,
     setSortParam,
   } = useNavigation();
+  const {
+    value: effectiveSortParam,
+    writeLatestValue: writeLatestSortParam,
+  } = useLatestAsyncParam({
+    value: sortParam,
+    write: setSortParam,
+  });
 
   // Parse sorting from URL parameter
   const parseSorting = (sortParam: string | null): SortOrderItem[] => {
@@ -35,14 +43,14 @@ export function useSorting() {
   };
 
   const sortingState = useMemo(() => {
-    const parsedSorting = parseSorting(sortParam);
+    const parsedSorting = parseSorting(effectiveSortParam);
 
     if (parsedSorting.length > 0) {
       return parsedSorting;
     }
 
     return getPrimaryKeyDefaultSorting(activeTable);
-  }, [activeTable, sortParam]);
+  }, [activeTable, effectiveSortParam]);
 
   // Update URL when sorting changes from the UI
   const handleSortingChange = useCallback(
@@ -61,14 +69,14 @@ export function useSorting() {
           : null;
 
       void (async () => {
-        await setSortParam(sortString);
+        await writeLatestSortParam(sortString);
 
         if (pageIndexParam !== "0") {
           await setPageIndexParam("0");
         }
       })();
     },
-    [pageIndexParam, setPageIndexParam, setSortParam, sortingState],
+    [pageIndexParam, setPageIndexParam, sortingState, writeLatestSortParam],
   );
 
   return {

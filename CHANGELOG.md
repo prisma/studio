@@ -4,6 +4,7 @@
 
 ### Patch Changes
 
+- Keep the latest sort or filter change authoritative by aborting superseded table reads and ignoring older async URL writes, so slow earlier queries can no longer overwrite the visible rows.
 - Keep wide text and JSON columns capped to the grid's existing max width, so oversized cell values clip with an ellipsis instead of blowing the table open.
 - Fix staged PostgreSQL enum-array edits, so saving a changed `enum[]` cell writes successfully instead of failing on an invalid quoted cast type.
 - Keep PostgreSQL `date` and `timestamp` cells aligned with the stored values by normalizing `postgres.js` results before Studio renders them, so host-local timezones no longer shift table timestamps.

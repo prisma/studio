@@ -146,6 +146,12 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
+async function flushMicrotasks(count = 3) {
+  for (let i = 0; i < count; i += 1) {
+    await Promise.resolve();
+  }
+}
+
 describe("useFiltering", () => {
   it("writes editing filter changes into table UI state", () => {
     const appliedFilter = makeFilter("applied");
@@ -422,6 +428,70 @@ describe("useFiltering", () => {
         kind: "FilterGroup",
       } satisfies FilterGroup),
     );
+
+    cleanup();
+  });
+
+  it("keeps the latest applied filter when an earlier URL write resolves later", async () => {
+    const firstFilter = makeFilter("first");
+    const secondFilter = makeFilter("second");
+    let currentFilterParam = JSON.stringify(defaultFilter);
+    let tableUiState = {
+      editingFilter: firstFilter,
+      id: "public.users",
+      rowSelectionState: {},
+      stagedRows: [],
+    };
+    let releaseFirstFilterWrite: (() => void) | undefined;
+    let filterWriteCallCount = 0;
+    const setFilterParam = vi.fn((value: string) => {
+      filterWriteCallCount += 1;
+      const apply = () => {
+        currentFilterParam = value;
+        return new URLSearchParams();
+      };
+
+      if (filterWriteCallCount === 1) {
+        return new Promise<URLSearchParams>((resolve) => {
+          releaseFirstFilterWrite = () => resolve(apply());
+        });
+      }
+
+      return Promise.resolve().then(apply);
+    });
+
+    useNavigationMock.mockImplementation(() => ({
+      filterParam: currentFilterParam,
+      setFilterParam,
+    }));
+    useTableUiStateMock.mockImplementation(() => ({
+      scopeKey: "public.users",
+      tableUiState,
+      updateTableUiState: vi.fn(
+        (updater: (draft: typeof tableUiState) => void) => {
+          const draft = structuredClone(tableUiState);
+          updater(draft);
+          tableUiState = draft;
+        },
+      ),
+    }));
+
+    const { cleanup, getLatestState } = renderHarness(testColumns);
+
+    await act(async () => {
+      getLatestState()?.setAppliedFilter(firstFilter);
+      await flushMicrotasks();
+      getLatestState()?.setAppliedFilter(secondFilter);
+      await flushMicrotasks();
+    });
+
+    releaseFirstFilterWrite?.();
+
+    await act(async () => {
+      await flushMicrotasks(5);
+    });
+
+    expect(currentFilterParam).toBe(JSON.stringify(secondFilter));
 
     cleanup();
   });

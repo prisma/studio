@@ -9,6 +9,7 @@ import {
   type EditingFilterGroup,
   mergeEditingFilterUiMetadata,
 } from "./filter-utils";
+import { useLatestAsyncParam } from "./use-latest-async-param";
 import { useNavigation } from "./use-navigation";
 import { useTableUiState } from "./use-table-ui-state";
 
@@ -23,9 +24,16 @@ function parseAppliedFilter(filterParam: string): FilterGroup {
 
 export function useFiltering(columns?: Table["columns"]) {
   const { filterParam, setFilterParam } = useNavigation();
+  const {
+    value: effectiveFilterParam,
+    writeLatestValue: writeLatestFilterParam,
+  } = useLatestAsyncParam({
+    value: filterParam,
+    write: setFilterParam,
+  });
   const appliedFilter = useMemo(
-    () => parseAppliedFilter(filterParam),
-    [filterParam],
+    () => parseAppliedFilter(effectiveFilterParam),
+    [effectiveFilterParam],
   );
   const appliedFilterSerialized = useMemo(
     () => JSON.stringify(appliedFilter),
@@ -36,8 +44,9 @@ export function useFiltering(columns?: Table["columns"]) {
     [appliedFilter],
   );
   const setAppliedFilter = useCallback(
-    (filter: FilterGroup) => void setFilterParam(JSON.stringify(filter)),
-    [setFilterParam],
+    (filter: FilterGroup) =>
+      void writeLatestFilterParam(JSON.stringify(filter)),
+    [writeLatestFilterParam],
   );
   const { scopeKey, tableUiState, updateTableUiState } = useTableUiState({
     editingFilter: editingFilterDefaults,

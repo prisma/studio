@@ -150,6 +150,11 @@ export interface TableQueryMetaState {
   filteredRowCount: number | bigint | NumericString | BigIntString;
 }
 
+export interface TableQueryExecutionState {
+  activeController: AbortController | null;
+  latestRequestId: number;
+}
+
 export interface StudioLocalUiState {
   id: string;
   value: unknown;
@@ -249,6 +254,7 @@ interface StudioContextValue {
     string | number
   >;
   getOrCreateRowsCollection<T>(key: string, factory: () => T): T;
+  getOrCreateTableQueryExecutionState: (key: string) => TableQueryExecutionState;
 }
 
 /**
@@ -275,6 +281,9 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
   const queryClientRef = useRef(new QueryClient());
   const signatureRef = useRef(shortUUID.generate());
   const rowsCollectionCacheRef = useRef(new Map<string, unknown>());
+  const tableQueryExecutionStateCacheRef = useRef(
+    new Map<string, TableQueryExecutionState>(),
+  );
   const lastObservedSystemDarkModeRef = useRef(getSystemDarkMode());
   const studioUiCollectionRef = useRef(
     instrumentTanStackCollectionMutations(
@@ -452,6 +461,23 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
     rowsCollectionCacheRef.current.clear();
   }, []);
 
+  const getOrCreateTableQueryExecutionState = useCallback((key: string) => {
+    const existingState = tableQueryExecutionStateCacheRef.current.get(key);
+
+    if (existingState != null) {
+      return existingState;
+    }
+
+    const nextState: TableQueryExecutionState = {
+      activeController: null,
+      latestRequestId: 0,
+    };
+
+    tableQueryExecutionStateCacheRef.current.set(key, nextState);
+
+    return nextState;
+  }, []);
+
   // Ensure the persisted UI state row exists.
   useEffect(() => {
     if (studioUiCollection.has(STUDIO_UI_STATE_ID)) {
@@ -463,6 +489,11 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
 
   useEffect(() => {
     // if the adapter has been changed, then we need to reload
+    for (const state of tableQueryExecutionStateCacheRef.current.values()) {
+      state.activeController?.abort();
+    }
+
+    tableQueryExecutionStateCacheRef.current.clear();
     clearRowsCollections();
     void queryClient.resetQueries({ exact: false, queryKey: [] });
   }, [adapter, clearRowsCollections, queryClient]);
@@ -762,6 +793,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
           sqlEditorStateCollection,
           navigationTableNamesCollection,
           getOrCreateRowsCollection,
+          getOrCreateTableQueryExecutionState,
         }}
       >
         <NuqsHashAdapter>
