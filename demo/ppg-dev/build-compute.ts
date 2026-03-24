@@ -20,14 +20,16 @@
  */
 
 import { existsSync } from "node:fs";
-import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
-import { basename, extname, join, resolve } from "node:path";
+import { cp, mkdir, readdir, rename, rm, stat } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import postcss, { type AcceptedPlugin } from "postcss";
 
 const studioRoot = resolve(import.meta.dirname, "../..");
 const outDir = resolve(process.argv[2] ?? "dist-compute");
+const require = createRequire(import.meta.url);
 
 if (
   !existsSync(join(studioRoot, "package.json")) ||
@@ -148,6 +150,8 @@ if (!serverBuild.success) {
   process.exit(1);
 }
 
+await copyStreamsTouchRuntimeAssets(outDir);
+
 // Rename the output to a deterministic name.
 const produced = serverBuild.outputs[0];
 const producedPath = produced?.path;
@@ -211,4 +215,30 @@ function generateAssetsModule(
     `export const appStyles = ${JSON.stringify(styles)};`,
     `export const builtAssets = new Map([\n${mapEntries}\n]);`,
   ].join("\n");
+}
+
+async function copyStreamsTouchRuntimeAssets(outputDir: string): Promise<void> {
+  const prismaDevPackagePath = require.resolve("@prisma/dev/package.json");
+  const prismaDevRequire = createRequire(prismaDevPackagePath);
+  const streamsLocalPackagePath = prismaDevRequire.resolve(
+    "@prisma/streams-local/package.json",
+  );
+  const streamsLocalRoot = dirname(streamsLocalPackagePath);
+  const sourceDir = join(streamsLocalRoot, "dist", "touch");
+  const destinationDir = join(outputDir, "touch");
+  const betterResultPackagePath = prismaDevRequire.resolve(
+    "better-result/package.json",
+  );
+  const betterResultRoot = dirname(betterResultPackagePath);
+  const betterResultDestination = join(
+    outputDir,
+    "node_modules",
+    "better-result",
+  );
+
+  await cp(sourceDir, destinationDir, { recursive: true });
+  await cp(betterResultRoot, betterResultDestination, { recursive: true });
+  console.log(
+    "[build] Copied Prisma Streams touch runtime assets and worker dependencies.",
+  );
 }

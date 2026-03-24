@@ -9,17 +9,14 @@ import postgres from "postgres";
 
 import { serializeError, type StudioBFFRequest } from "../../data/bff";
 import {
+  STUDIO_LLM_TASKS,
   type StudioLlmErrorCode,
   type StudioLlmRequest,
   type StudioLlmResponse,
-  STUDIO_LLM_TASKS,
 } from "../../data/llm";
 import { createPostgresJSExecutor } from "../../data/postgresjs";
 import pkg from "../../package.json" with { type: "json" };
-import {
-  AnthropicOutputLimitError,
-  runAnthropicLlmRequest,
-} from "./anthropic";
+import { AnthropicOutputLimitError, runAnthropicLlmRequest } from "./anthropic";
 import { buildDemoConfig, resolveDemoAiEnabled } from "./config";
 import { seedDatabase } from "./seed-database";
 import { lintPostgresSql } from "./sql-lint";
@@ -93,6 +90,7 @@ const AI_ENABLED = resolveDemoAiEnabled({
     process.env.STUDIO_DEMO_AI_FILTERING_ENABLED,
 });
 const BOOT_ID = crypto.randomUUID();
+const STREAMS_PROXY_BASE_PATH = "/api/streams";
 const CACHE_CONTROL_STATIC = isProduction
   ? "public, max-age=31536000, immutable"
   : "no-cache, no-store, must-revalidate";
@@ -174,10 +172,7 @@ function createAiErrorResponse(args: {
     ok: false,
   };
 
-  return new Response(
-    JSON.stringify(payload),
-    createAiResponseInit(status),
-  );
+  return new Response(JSON.stringify(payload), createAiResponseInit(status));
 }
 
 function createAiSuccessResponse(text: string): Response {
@@ -290,6 +285,12 @@ async function main(): Promise<void> {
   console.info(
     `[demo] direct tcp DB URL: ${prismaDevServer.database.connectionString}`,
   );
+  console.info(
+    `[demo] streams server URL: ${prismaDevServer.experimental.streams.serverUrl}`,
+  );
+  console.info(
+    `[demo] streams proxy URL: http://localhost:${APP_PORT}${STREAMS_PROXY_BASE_PATH}`,
+  );
 }
 
 async function handleRequest(request: Request): Promise<Response> {
@@ -307,6 +308,7 @@ async function handleRequest(request: Request): Promise<Response> {
         aiEnabled: AI_ENABLED,
         bootId: BOOT_ID,
         seededAt,
+        streamsUrl: STREAMS_PROXY_BASE_PATH,
       }),
     );
   }
@@ -317,6 +319,13 @@ async function handleRequest(request: Request): Promise<Response> {
 
   if (url.pathname === "/api/ai") {
     return await handleAiRequest(request);
+  }
+
+  if (
+    url.pathname === STREAMS_PROXY_BASE_PATH ||
+    url.pathname.startsWith(`${STREAMS_PROXY_BASE_PATH}/`)
+  ) {
+    return await handleStreamsProxyRequest(request, url);
   }
 
   if (!isProduction && url.pathname === "/__reload") {
@@ -454,8 +463,9 @@ async function handleBffQueryRequest(request: Request): Promise<Response> {
           status: 501,
         });
       }
-
-      const executeTransaction = executor.executeTransaction;
+      const executeTransaction: NonNullable<
+        typeof executor.executeTransaction
+      > = (queries, options) => executor.executeTransaction!(queries, options);
 
       const [error, result] = await runSerializedQuery(() =>
         executeTransaction(payload.queries),
@@ -565,6 +575,60 @@ async function handleAiRequest(request: Request): Promise<Response> {
       status: 502,
     });
   }
+}
+
+async function handleStreamsProxyRequest(
+  request: Request,
+  url: URL,
+): Promise<Response> {
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      headers: {
+        Allow: "GET,HEAD,OPTIONS",
+      },
+      status: 204,
+    });
+  }
+
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return new Response("Method Not Allowed", {
+      headers: {
+        Allow: "GET,HEAD,OPTIONS",
+      },
+      status: 405,
+    });
+  }
+
+  if (!prismaDevServer) {
+    return new Response("Streams server is not ready", { status: 503 });
+  }
+
+  const upstreamBaseUrl = prismaDevServer.experimental.streams.serverUrl;
+  const proxyPathname = url.pathname.slice(STREAMS_PROXY_BASE_PATH.length);
+  const normalizedPathname = proxyPathname.length > 0 ? proxyPathname : "/";
+  const upstreamUrl = new URL(
+    `${normalizedPathname}${url.search}`,
+    `${upstreamBaseUrl.replace(/\/+$/, "")}/`,
+  );
+  const headers = new Headers(request.headers);
+
+  headers.delete("host");
+
+  const response = await fetch(upstreamUrl, {
+    headers,
+    method: request.method,
+    redirect: "manual",
+    signal: request.signal,
+  });
+  const responseHeaders = new Headers(response.headers);
+
+  responseHeaders.set("Cache-Control", "no-cache, no-store, must-revalidate");
+
+  return new Response(response.body, {
+    headers: responseHeaders,
+    status: response.status,
+    statusText: response.statusText,
+  });
 }
 
 async function runSerializedQuery<T>(runner: () => Promise<T>): Promise<T> {

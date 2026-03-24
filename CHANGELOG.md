@@ -10,6 +10,7 @@
 - Keep PostgreSQL `date` and `timestamp` cells aligned with the stored values by normalizing `postgres.js` results before Studio renders them, so host-local timezones no longer shift table timestamps.
 - Simplify the Compute demo bundling path around `@prisma/dev@0.22.3`, so the deploy build no longer manually copies PGlite runtime assets and plain Bun server bundles no longer need `--packages external`.
 - Auto-arrange the schema visualizer with ELK, space disconnected tables cleanly, and add a `Reset layout` action while keeping dragged node positions when you leave and return.
+- Add optional Prisma Streams setup support, wire the `ppg-dev` demo to Prisma Dev's Streams server, and show live stream names in a new sidebar `Streams` section.
 
 ## 0.27.3
 

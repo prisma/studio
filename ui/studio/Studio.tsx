@@ -66,6 +66,7 @@ export interface StudioProps {
   adapter: Adapter;
   llm?: StudioLlm;
   onEvent?: (error: StudioEvent) => void;
+  streamsUrl?: string;
   /**
    * Custom theme configuration or CSS string from shadcn
    * Supports both parsed theme object and raw CSS string
@@ -77,7 +78,7 @@ export interface StudioProps {
  * Main Studio component that provides database visualization and management
  */
 export function Studio(props: StudioProps) {
-  const { adapter, llm, onEvent, theme } = props;
+  const { adapter, llm, onEvent, streamsUrl, theme } = props;
 
   if (!adapter) {
     console.error("No adapter provided to Studio component");
@@ -89,6 +90,7 @@ export function Studio(props: StudioProps) {
       adapter={adapter}
       llm={llm}
       onEvent={onEvent}
+      streamsUrl={streamsUrl}
       theme={theme}
     >
       <StudioContent />

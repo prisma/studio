@@ -8,6 +8,7 @@ describe("buildDemoConfig", () => {
       aiEnabled: true,
       bootId: "boot-123",
       seededAt: "2026-03-09T10:00:00.000Z",
+      streamsUrl: "/api/streams",
     });
 
     expect(config).toEqual({
@@ -16,6 +17,9 @@ describe("buildDemoConfig", () => {
       },
       bootId: "boot-123",
       seededAt: "2026-03-09T10:00:00.000Z",
+      streams: {
+        url: "/api/streams",
+      },
     });
     expect("agentation" in config).toBe(false);
   });

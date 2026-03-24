@@ -9,6 +9,7 @@ type MutationKey =
 type QueryKey =
   | [] // all
   | ["introspection"]
+  | ["streams", string]
   | [
       ...SchemaAndTable,
       "query",

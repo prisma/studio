@@ -1,5 +1,5 @@
 import { Slot } from "@radix-ui/react-slot";
-import { Search, Table2 } from "lucide-react";
+import { Search, Table2, Waves } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import PrismaLogo from "../../assets/prisma.svg";
@@ -16,6 +16,7 @@ import { Skeleton } from "../components/ui/skeleton";
 import { useIntrospection } from "../hooks/use-introspection";
 import { useNavigation } from "../hooks/use-navigation";
 import { useNavigationTableList } from "../hooks/use-navigation-table-list";
+import { useStreams } from "../hooks/use-streams";
 import { useUiState } from "../hooks/use-ui-state";
 import { cn } from "../lib/utils";
 import { useStudio } from "./context";
@@ -68,6 +69,12 @@ export function Navigation({ className }: NavigationProps) {
   const hasRecoverableIntrospectionWarning =
     errorState != null && hasResolvedIntrospection;
   const prismaLogoSrc = isDarkMode ? PrismaLightSymbol : PrismaLogo;
+  const {
+    hasStreamsServer,
+    isError: hasStreamsError,
+    isLoading: isStreamsLoading,
+    streams,
+  } = useStreams();
 
   useEffect(() => {
     if (!tableSearchUiState.isOpen) {
@@ -200,6 +207,8 @@ export function Navigation({ className }: NavigationProps) {
     "flex flex-col w-48 overflow-y-auto min-h-full h-0 text-card-foreground shadow-xs rounded-lg",
     className,
   );
+  const navigationItemClasses =
+    "py-1 font-mono text-xs text-foreground/60 hover:text-foreground transition-all cursor-pointer data-[active=true]:bg-accent data-[active=true]:foreground data-[active=true]:text-foreground";
 
   return (
     <div className={sideBarClasses}>
@@ -214,7 +223,7 @@ export function Navigation({ className }: NavigationProps) {
         <Navigation.Item
           asChild
           isActive={viewParam === "schema"}
-          className={`py-1 font-mono text-xs text-foreground/60 hover:text-foreground transition-all cursor-pointer data-[active=true]:bg-accent data-[active=true]:foreground data-[active=true]:text-foreground`}
+          className={navigationItemClasses}
         >
           <a href={createUrl({ viewParam: "schema" })} className="w-full">
             Visualizer
@@ -223,7 +232,7 @@ export function Navigation({ className }: NavigationProps) {
         <Navigation.Item
           asChild
           isActive={viewParam === "console"}
-          className={`py-1 font-mono text-xs text-foreground/60 hover:text-foreground transition-all cursor-pointer data-[active=true]:bg-accent data-[active=true]:foreground data-[active=true]:text-foreground`}
+          className={navigationItemClasses}
         >
           <a href={createUrl({ viewParam: "console" })} className="w-full">
             Console
@@ -232,7 +241,7 @@ export function Navigation({ className }: NavigationProps) {
         <Navigation.Item
           asChild
           isActive={viewParam === "sql"}
-          className={`py-1 font-mono text-xs text-foreground/60 hover:text-foreground transition-all cursor-pointer data-[active=true]:bg-accent data-[active=true]:foreground data-[active=true]:text-foreground`}
+          className={navigationItemClasses}
         >
           <a href={createUrl({ viewParam: "sql" })} className="w-full">
             SQL
@@ -302,7 +311,7 @@ export function Navigation({ className }: NavigationProps) {
                     isActive={
                       tableSearchUiState.isOpen ? isHighlighted : isCurrentTable
                     }
-                    className={`py-1 font-mono text-xs text-foreground/60 hover:text-foreground transition-all cursor-pointer data-[active=true]:bg-accent data-[active=true]:foreground data-[active=true]:text-foreground`}
+                    className={navigationItemClasses}
                     onMouseEnter={() => {
                       if (!tableSearchUiState.isOpen) {
                         return;
@@ -349,6 +358,35 @@ export function Navigation({ className }: NavigationProps) {
           </>
         )}
       </Navigation.TablesBlock>
+
+      {hasStreamsServer && (
+        <Navigation.Block icon={Waves} label="Streams">
+          {isStreamsLoading ? (
+            Array(2)
+              .fill(null)
+              .map((_, index) => (
+                <Navigation.Item key={index} wrapChildrenInSpan={false}>
+                  <Skeleton className="h-3 w-full" />
+                </Navigation.Item>
+              ))
+          ) : hasStreamsError ? (
+            <Navigation.Item>Streams unavailable</Navigation.Item>
+          ) : streams.length > 0 ? (
+            streams.map((stream) => (
+              <Navigation.Item
+                key={stream.name}
+                asChild
+                className={navigationItemClasses}
+                wrapChildrenInSpan={false}
+              >
+                <div className="w-full truncate">{stream.name}</div>
+              </Navigation.Item>
+            ))
+          ) : (
+            <Navigation.Item>No streams found</Navigation.Item>
+          )}
+        </Navigation.Block>
+      )}
     </div>
   );
 }
@@ -357,12 +395,19 @@ const Block = ({
   className,
   label,
   children,
+  icon: Icon = Table2,
   ...props
-}: React.HTMLAttributes<HTMLDivElement> & { label: string }) => {
+}: React.HTMLAttributes<HTMLDivElement> & {
+  icon?: React.ComponentType<{
+    className?: string;
+    size?: number;
+  }>;
+  label: string;
+}) => {
   return (
     <div className={className} {...props}>
       <div className="flex items-center gap-1 pt-4 pb-2 px-4 sticky top-0  backdrop-blur-sm">
-        <Table2 size={16} className="text-muted-foreground/60" />
+        <Icon size={16} className="text-muted-foreground/60" />
         <h2 className="text-sm font-medium">{label}</h2>
       </div>
       <nav aria-label={label} className="flex flex-col gap-px pb-3 p-2">

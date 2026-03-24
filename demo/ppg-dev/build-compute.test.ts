@@ -114,91 +114,88 @@ afterAll(async () => {
 });
 
 describe("build-compute", () => {
-  it(
-    "keeps Bun-emitted Prisma dev runtime assets next to the bundled server entrypoint",
-    async () => {
-      if (!(await hasBun())) {
-        return;
-      }
+  it("keeps Bun-emitted Prisma dev runtime assets next to the bundled server entrypoint", async () => {
+    if (!(await hasBun())) {
+      return;
+    }
 
-      const outputDir = await mkdtemp(
-        join(tmpdir(), "studio-build-compute-output-"),
-      );
-      tempDirs.add(outputDir);
+    const outputDir = await mkdtemp(
+      join(tmpdir(), "studio-build-compute-output-"),
+    );
+    tempDirs.add(outputDir);
 
-      const build = await runProcess(
-        "bun",
-        ["demo/ppg-dev/build-compute.ts", outputDir],
-        {
-          cwd: process.cwd(),
-          env: {
-            STUDIO_DEMO_AI_ENABLED: "false",
-          },
+    const build = await runProcess(
+      "bun",
+      ["demo/ppg-dev/build-compute.ts", outputDir],
+      {
+        cwd: process.cwd(),
+        env: {
+          STUDIO_DEMO_AI_ENABLED: "false",
         },
-      );
+      },
+    );
 
-      expect(build.code).toBe(0);
-      expect(build.stderr).toBe("");
+    expect(build.code).toBe(0);
+    expect(build.stderr).toBe("");
 
-      const rootEntries = await readdir(outputDir);
-      const bundleEntries = await readdir(join(outputDir, "bundle"));
+    const rootEntries = await readdir(outputDir);
+    const bundleEntries = await readdir(join(outputDir, "bundle"));
 
-      expect(rootEntries).toContain("bundle");
-      expect(rootEntries.some((entry) => entry.endsWith(".tar.gz"))).toBe(false);
-      expect(rootEntries.some((entry) => entry.endsWith(".wasm"))).toBe(false);
-      expect(rootEntries.some((entry) => entry.endsWith(".data"))).toBe(false);
+    expect(rootEntries).toContain("bundle");
+    expect(rootEntries.some((entry) => entry.endsWith(".tar.gz"))).toBe(false);
+    expect(rootEntries.some((entry) => entry.endsWith(".wasm"))).toBe(false);
+    expect(rootEntries.some((entry) => entry.endsWith(".data"))).toBe(false);
 
-      expect(bundleEntries).toContain("server.bundle.js");
-      expect(
-        bundleEntries.some(
-          (entry) => entry.includes(".tar-") && entry.endsWith(".gz"),
-        ),
-      ).toBe(true);
-      expect(bundleEntries.some((entry) => entry.endsWith(".wasm"))).toBe(true);
-      expect(bundleEntries.some((entry) => entry.endsWith(".data"))).toBe(true);
+    expect(bundleEntries).toContain("server.bundle.js");
+    expect(
+      bundleEntries.some(
+        (entry) => entry.includes(".tar-") && entry.endsWith(".gz"),
+      ),
+    ).toBe(true);
+    expect(bundleEntries.some((entry) => entry.endsWith(".wasm"))).toBe(true);
+    expect(bundleEntries.some((entry) => entry.endsWith(".data"))).toBe(true);
 
-      const port = await getAvailablePort();
-      const serverProcess = spawn(
-        "bun",
-        ["./bundle/server.bundle.js"],
-        {
-          cwd: outputDir,
-          env: {
-            ...process.env,
-            STUDIO_DEMO_AI_ENABLED: "false",
-            STUDIO_DEMO_PORT: String(port),
-          },
-          stdio: ["ignore", "pipe", "pipe"],
-        },
-      );
+    const port = await getAvailablePort();
+    const serverProcess = spawn("bun", ["./bundle/server.bundle.js"], {
+      cwd: outputDir,
+      env: {
+        ...process.env,
+        STUDIO_DEMO_AI_ENABLED: "false",
+        STUDIO_DEMO_PORT: String(port),
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
 
-      let stdout = "";
-      let stderr = "";
+    let stdout = "";
+    let stderr = "";
 
-      serverProcess.stdout.on("data", (chunk) => {
-        stdout += String(chunk);
+    serverProcess.stdout.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    serverProcess.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+
+    try {
+      const response = await waitForHttp(`http://127.0.0.1:${port}/api/config`);
+      const payload = (await response.json()) as {
+        bootId?: unknown;
+        streams?: {
+          url?: unknown;
+        };
+      };
+
+      expect(typeof payload.bootId).toBe("string");
+      expect(typeof payload.streams?.url).toBe("string");
+      expect(payload.streams?.url).toBe("/api/streams");
+    } finally {
+      serverProcess.kill("SIGTERM");
+      await new Promise<void>((resolve) => {
+        serverProcess.once("close", () => resolve());
       });
-      serverProcess.stderr.on("data", (chunk) => {
-        stderr += String(chunk);
-      });
+    }
 
-      try {
-        const response = await waitForHttp(
-          `http://127.0.0.1:${port}/api/config`,
-        );
-        const payload = (await response.json()) as { bootId?: unknown };
-
-        expect(typeof payload.bootId).toBe("string");
-      } finally {
-        serverProcess.kill("SIGTERM");
-        await new Promise<void>((resolve) => {
-          serverProcess.once("close", () => resolve());
-        });
-      }
-
-      expect(stderr).toBe("");
-      expect(stdout).toContain(`http://localhost:${port}`);
-    },
-    120_000,
-  );
+    expect(stderr).toBe("");
+    expect(stdout).toContain(`http://localhost:${port}`);
+  }, 120_000);
 });

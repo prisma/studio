@@ -47,6 +47,7 @@ async function bootstrap(): Promise<void> {
       bootId={config.bootId}
       seededAt={config.seededAt}
       aiEnabled={config.ai?.enabled === true}
+      streamsUrl={config.streams?.url}
     />,
   );
 }
