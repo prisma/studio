@@ -54,8 +54,8 @@ export function WriteableCell(props: WriteableCellProps) {
   }
 
   const content = (
-    <div className="flex flex-row w-full gap-2 justify-between items-center">
-      <div>{cellComponent}</div>
+    <div className="flex w-full min-w-0 items-center justify-between gap-2">
+      <div className="min-w-0 flex-1 truncate">{cellComponent}</div>
       {linkComponent}
     </div>
   );

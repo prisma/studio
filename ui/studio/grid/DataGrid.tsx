@@ -1187,6 +1187,7 @@ export function DataGrid(props: DataGridProps) {
   });
 
   const centerVisibleLeafColumns = table.getCenterVisibleLeafColumns();
+  const gridTableWidth = `${table.getTotalSize()}px`;
   const leftPinnedWidth = table
     .getLeftVisibleLeafColumns()
     .reduce((total, column) => total + column.getSize(), 0);
@@ -2515,7 +2516,11 @@ export function DataGrid(props: DataGridProps) {
                     tabIndex: 0,
                   }}
                   ref={tableRef}
-                  className="table-fixed border-separate border-spacing-0 box-border w-auto bg-background/50"
+                  className="table-fixed border-separate border-spacing-0 box-border bg-background/50"
+                  style={{
+                    minWidth: "100%",
+                    width: gridTableWidth,
+                  }}
                 >
                   <TableHeader>
                     {getBeforeHeaderRows?.(table)}
