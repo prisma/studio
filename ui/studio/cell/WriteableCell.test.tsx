@@ -152,4 +152,46 @@ describe("WriteableCell", () => {
       root.unmount();
     });
   });
+
+  it("keeps the writable display content shrinkable so clipped cells can show an ellipsis", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <table>
+          <tbody>
+            <tr>
+              <WriteableCell
+                cellComponent={<span>Very long organization settings value</span>}
+                inputComponent={<div data-testid="editor-input">editor</div>}
+                isEditorOpen={false}
+                linkComponent={<button type="button">Open relation</button>}
+              />
+            </tr>
+          </tbody>
+        </table>,
+      );
+    });
+
+    const contentRow = container.querySelector("[data-studio-cell-content] > div");
+    if (!(contentRow instanceof HTMLDivElement)) {
+      throw new Error("Could not find writable content row");
+    }
+
+    const textWrapper = contentRow.firstElementChild;
+    if (!(textWrapper instanceof HTMLDivElement)) {
+      throw new Error("Could not find writable text wrapper");
+    }
+
+    expect(contentRow.className).toContain("min-w-0");
+    expect(textWrapper.className).toContain("min-w-0");
+    expect(textWrapper.className).toContain("flex-1");
+    expect(textWrapper.className).toContain("truncate");
+
+    act(() => {
+      root.unmount();
+    });
+  });
 });

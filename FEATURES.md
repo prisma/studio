@@ -66,7 +66,7 @@ Table navigation stays intentionally short by showing only the first 3 tables by
 Columns support drag-and-drop reordering, resizing, sorting, and pinning to keep important fields anchored during wide-table review.
 Header cells surface model metadata such as primary key, foreign key, required, computed, autoincrement, and datatype.
 Resize handles stay centered on the real column boundary with a forgiving full-height hit target, so resizing does not require pixel-perfect pointer placement.
-Column widths stay bounded to practical defaults, and when users narrow a column the header and cell content clip instead of forcing the column wider than the chosen width.
+Column widths stay bounded to practical defaults, and long text or JSON values respect that same max width by clipping with a standard ellipsis instead of forcing the grid wider than the chosen size.
 Pinning and drag reordering now animate the affected header and visible cells with a short CSS transition, so column layout changes read as motion instead of abrupt jumps. Sticky header layering also keeps the top-left selector corner above the scrolling row-selector column, so the empty spacer cell stays visible while the grid moves underneath it.
 
 ## Inline Table Filters
