@@ -60,6 +60,17 @@ export default defineConfig({
       {
         resolve: resolveAlias,
         test: {
+          env: {
+            TZ: "UTC",
+          },
+          environment: "node",
+          include: ["scripts/**/*.test.ts"],
+          name: "release",
+        },
+      },
+      {
+        resolve: resolveAlias,
+        test: {
           environment: "happy-dom", // or "jsdom"
           include: ["ui/**/*.test.{ts,tsx}"],
           name: "ui",

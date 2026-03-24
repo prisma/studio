@@ -120,7 +120,8 @@
   "scripts": {
     "build": "NODE_OPTIONS=--max-old-space-size=8192 tsup",
     "build:deploy": "rm -rf deploy && bun demo/ppg-dev/build-compute.ts deploy",
-    "check:exports": "attw --pack . --profile node16 --exclude-entrypoints ui/index.css",
+    "check:exports": "node scripts/release/check-exports.mjs",
+    "changeset": "changeset",
     "dev": "NODE_OPTIONS=--max-old-space-size=8192 tsup --watch",
     "demo:ppg": "bun demo/ppg-dev/server.ts",
     "demo:ppg:build": "rm -rf demo/ppg-dev/bundle && bun build demo/ppg-dev/server.ts --target bun --outdir demo/ppg-dev/bundle",
@@ -131,14 +132,17 @@
     "test:data": "vitest --project data",
     "test:demo": "vitest --project demo",
     "test:e2e": "vitest --passWithNoTests --project e2e",
+    "release:prepare": "node scripts/release/prepare-release.mjs",
     "test:ui": "vitest --passWithNoTests --project ui",
     "typecheck": "tsc --noEmit",
+    "version-packages": "changeset version && pnpm install --lockfile-only",
     "prepublishOnly": "pnpm build && pnpm check:exports"
   },
   "keywords": [],
   "license": "Apache-2.0",
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.2",
+    "@changesets/cli": "2.30.0",
     "@codemirror/autocomplete": "6.20.1",
     "@codemirror/lang-sql": "6.10.0",
     "@codemirror/lint": "6.9.5",

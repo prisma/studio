@@ -1,0 +1,99 @@
+name: publish
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - CHANGELOG.md
+      - package.json
+      - .github/workflows/publish.yml
+      - scripts/release/**
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact package version that already exists on main
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce main for manual publishes
+        if: github.event_name == 'workflow_dispatch' && github.ref_name != 'main'
+        run: |
+          echo "Manual publishing is only supported from the main branch."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Prepare release metadata
+        id: release
+        env:
+          ALLOW_MISSING_CHANGELOG: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
+          EXPECTED_VERSION: ${{ github.event.inputs.version }}
+          RELEASE_NOTES_PATH: release-notes.md
+        run: node scripts/release/prepare-release.mjs
+
+      - name: Skip npm publish
+        if: steps.release.outputs.should_publish_package != 'true'
+        run: |
+          echo "Skipping npm publish."
+          echo "package.json version: ${{ steps.release.outputs.package_version }}"
+          echo "latest npm version: ${{ steps.release.outputs.latest_npm_version }}"
+          echo "reason: ${{ steps.release.outputs.release_reason }}"
+
+      - name: Install dependencies
+        if: steps.release.outputs.should_publish_package == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Publish package
+        if: steps.release.outputs.should_publish_package == 'true'
+        run: npm publish --provenance --access public
+
+      - name: Create or update GitHub release
+        if: steps.release.outputs.should_publish_package == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NOTES_PATH: ${{ steps.release.outputs.release_notes_path }}
+          RELEASE_TAG: v${{ steps.release.outputs.package_version }}
+          RELEASE_TITLE: v${{ steps.release.outputs.package_version }}
+        run: |
+          if [ -s "$RELEASE_NOTES_PATH" ]; then
+            NOTES_FLAG="file"
+          else
+            NOTES_FLAG="empty"
+          fi
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            if [ "$NOTES_FLAG" = "file" ]; then
+              gh release edit "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file "$RELEASE_NOTES_PATH"
+            else
+              gh release edit "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes ""
+            fi
+          else
+            if [ "$NOTES_FLAG" = "file" ]; then
+              gh release create "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file "$RELEASE_NOTES_PATH" --target "$GITHUB_SHA"
+            else
+              gh release create "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes "" --target "$GITHUB_SHA"
+            fi
+          fi
