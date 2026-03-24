@@ -4,6 +4,7 @@
 
 ### Patch Changes
 
+- Keep PostgreSQL `date` and `timestamp` cells aligned with the stored values by normalizing `postgres.js` results before Studio renders them, so host-local timezones no longer shift table timestamps.
 - Simplify the Compute demo bundling path around `@prisma/dev@0.22.3`, so the deploy build no longer manually copies PGlite runtime assets and plain Bun server bundles no longer need `--packages external`.
 
 ## 0.27.3

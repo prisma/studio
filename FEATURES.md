@@ -47,6 +47,11 @@ Table data is shown in a grid with server-backed pagination, filtered-row counts
 The footer keeps page navigation, a page jump field, a fixed rows-per-page dropdown, and infinite-scroll mode in one compact control group, so users can either jump directly to a page, switch page density from a known preset, or turn on lazy-loading without leaving the grid.
 Rows-per-page and infinite-scroll preferences persist across tables through local storage, while the known filtered-row count keeps the footer stable during page transitions for the same filtered result set. Infinite scroll preloads before the hard bottom edge, always appends in fixed 25-row chunks regardless of the paginated page-size setting, keeps filling tall viewports until the grid is actually scrollable, and appends new rows in place without snapping the grid back to the top.
 
+## PostgreSQL Stored Temporal Values
+
+When Studio reads PostgreSQL data through the `postgres.js` executor, `date` and `timestamp without time zone` values are normalized back to their stored wall-clock values before they reach the grid.
+This keeps table cells, copies, and other row-backed UI surfaces from drifting with the host machine timezone, so a stored PostgreSQL timestamp is shown as the value that was actually written.
+
 ## Command Palette
 
 `Cmd/Ctrl+K` opens a compact Studio command palette that immediately focuses search and filters available actions as you type.

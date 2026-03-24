@@ -39,7 +39,107 @@ function createPostgresJsMock(args?: {
   };
 }
 
-describe("postgresjs executor sql lint", () => {
+describe("postgresjs executor", () => {
+  it("preserves stored timestamp and date values when postgres.js returns local-time Date objects", async () => {
+    class SimulatedLocalDateValue extends Date {
+      override getDate() {
+        return 1;
+      }
+
+      override getFullYear() {
+        return 2025;
+      }
+
+      override getHours() {
+        return 0;
+      }
+
+      override getMilliseconds() {
+        return 0;
+      }
+
+      override getMinutes() {
+        return 0;
+      }
+
+      override getMonth() {
+        return 0;
+      }
+
+      override getSeconds() {
+        return 0;
+      }
+    }
+
+    class SimulatedLocalTimestampValue extends Date {
+      override getDate() {
+        return 1;
+      }
+
+      override getFullYear() {
+        return 2025;
+      }
+
+      override getHours() {
+        return 0;
+      }
+
+      override getMilliseconds() {
+        return 0;
+      }
+
+      override getMinutes() {
+        return 0;
+      }
+
+      override getMonth() {
+        return 0;
+      }
+
+      override getSeconds() {
+        return 0;
+      }
+    }
+
+    const { postgresjs, unsafe } = createPostgresJsMock();
+    const result = Object.assign(
+      [
+        {
+          date_col: new SimulatedLocalDateValue("2024-12-31T18:00:00.000Z"),
+          id: 1,
+          timestamp_col: new SimulatedLocalTimestampValue(
+            "2024-12-31T18:00:00.000Z",
+          ),
+          timestamptz_col: new Date("2025-01-01T01:00:00.000Z"),
+        },
+      ],
+      {
+        columns: [
+          { name: "id", type: 23 },
+          { name: "date_col", type: 1082 },
+          { name: "timestamp_col", type: 1114 },
+          { name: "timestamptz_col", type: 1184 },
+        ],
+      },
+    );
+
+    unsafe.mockResolvedValue(result);
+
+    const executor = createPostgresJSExecutor(postgresjs);
+    const [error, rows] = await executor.execute({
+      parameters: [],
+      sql: "select 1",
+    });
+
+    expect(error).toBeNull();
+    expect(rows?.[0]).toEqual({
+      date_col: "2025-01-01",
+      id: 1,
+      timestamp_col: "2025-01-01T00:00:00.000Z",
+      timestamptz_col: new Date("2025-01-01T01:00:00.000Z"),
+    });
+  });
+
   it("returns validation diagnostics without touching the database for invalid SQL", async () => {
     const { begin, postgresjs } = createPostgresJsMock();
     const executor = createPostgresJSExecutor(postgresjs);
