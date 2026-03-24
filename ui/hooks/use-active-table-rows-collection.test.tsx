@@ -204,6 +204,31 @@ function createRowsCollectionCache() {
   };
 }
 
+function createTableQueryExecutionStateCache() {
+  const cache = new Map<
+    string,
+    { activeController: AbortController | null; latestRequestId: number }
+  >();
+
+  return {
+    getOrCreateTableQueryExecutionState(key: string) {
+      const existing = cache.get(key);
+
+      if (existing != null) {
+        return existing;
+      }
+
+      const created = {
+        activeController: null,
+        latestRequestId: 0,
+      };
+      cache.set(key, created);
+
+      return created;
+    },
+  };
+}
+
 function createTableQueryMetaCollection() {
   return createCollection(
     localOnlyCollectionOptions<TableQueryMetaState>({
@@ -261,10 +286,13 @@ function renderHookHarness(args?: {
   const tableQueryMetaCollection = createTableQueryMetaCollection();
   const queryClient = new QueryClient();
   const { getOrCreateRowsCollection } = createRowsCollectionCache();
+  const { getOrCreateTableQueryExecutionState } =
+    createTableQueryExecutionStateCache();
   const onEvent = vi.fn();
 
   useStudioMock.mockReturnValue({
     adapter,
+    getOrCreateTableQueryExecutionState,
     getOrCreateRowsCollection,
     onEvent,
     queryClient,
@@ -645,6 +673,52 @@ describe("useActiveTableRowsCollection", () => {
 
     await waitFor(() => getLatestState()?.isFetching === false);
     expect(getLatestState()?.filteredRowCount).toBe(52);
+
+    cleanup();
+  });
+
+  it("aborts the superseded in-flight query when the sort order changes", async () => {
+    let queryCalls = 0;
+    let releaseFirstQuery: (() => void) | undefined;
+
+    const { adapter, cleanup, rerender } = renderHookHarness({
+      queryImplementation: async () => {
+        queryCalls += 1;
+
+        if (queryCalls === 1) {
+          await new Promise<void>((resolve) => {
+            releaseFirstQuery = resolve;
+          });
+        }
+
+        return [
+          null,
+          {
+            filteredRowCount: 1,
+            query: {
+              parameters: [],
+              sql: `query-${queryCalls}`,
+            },
+            rows: [{ id: `u${queryCalls}`, name: `User ${queryCalls}` }],
+          },
+        ];
+      },
+    });
+
+    await waitFor(() => (adapter.query as ReturnType<typeof vi.fn>).mock.calls.length === 1);
+
+    const firstQueryOptions = (adapter.query as ReturnType<typeof vi.fn>).mock.calls[0]?.[1];
+
+    rerender({
+      sortOrder: [{ column: "name", direction: "desc" }],
+    });
+
+    await waitFor(() => (adapter.query as ReturnType<typeof vi.fn>).mock.calls.length === 2);
+
+    expect(firstQueryOptions?.abortSignal).toBeInstanceOf(AbortSignal);
+    expect(firstQueryOptions?.abortSignal.aborted).toBe(true);
+
+    releaseFirstQuery?.();
 
     cleanup();
   });

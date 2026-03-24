@@ -64,6 +64,9 @@ Rows collections MUST be instrumented with TanStack DB mutation guardrails (see 
 Collection `queryFn` MUST call:
 
 - `adapter.query({ table, pageIndex, pageSize, sortOrder, filter }, { abortSignal })`
+- active-table row loading MUST keep only the latest in-flight request authoritative for a given `${schema}.${table}` scope:
+  - starting a new table-row query for the same table MUST abort the previous in-flight request
+  - late completions from superseded requests MUST be ignored, even if the adapter resolves after abort
 
 On success:
 

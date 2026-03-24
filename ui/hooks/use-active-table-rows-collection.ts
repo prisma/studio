@@ -17,6 +17,7 @@ import type {
   SortOrderItem,
   Table,
 } from "../../data/adapter";
+import { AbortError } from "../../data/executor";
 import { useStudio } from "../studio/context";
 import { useNavigation } from "./use-navigation";
 import { addRowIdToResult } from "./utils/add-row-id-to-result";
@@ -58,6 +59,46 @@ function compareRowsByQueryOrder(left: RowRecord, right: RowRecord): number {
   const rightRowId = String(right.__ps_rowid ?? "");
 
   return leftRowId.localeCompare(rightRowId);
+}
+
+function mergeAbortSignals(signals: Array<AbortSignal | undefined>): {
+  cleanup: () => void;
+  signal: AbortSignal;
+} {
+  const controller = new AbortController();
+  const listeners: Array<{ listener: () => void; signal: AbortSignal }> = [];
+
+  const abort = (signal: AbortSignal) => {
+    if (controller.signal.aborted) {
+      return;
+    }
+
+    controller.abort(signal.reason);
+  };
+
+  for (const signal of signals) {
+    if (!signal) {
+      continue;
+    }
+
+    if (signal.aborted) {
+      abort(signal);
+      continue;
+    }
+
+    const listener = () => abort(signal);
+    signal.addEventListener("abort", listener);
+    listeners.push({ listener, signal });
+  }
+
+  return {
+    cleanup() {
+      for (const { listener, signal } of listeners) {
+        signal.removeEventListener("abort", listener);
+      }
+    },
+    signal: controller.signal,
+  };
 }
 
 export interface ActiveTableRowsCollectionState {
@@ -146,10 +187,19 @@ export function useActiveTableRowsCollection(
 ): ActiveTableRowsCollectionState {
   const { filter, fullTableSearchTerm, pageIndex, pageSize, sortOrder } = query;
   const studio = useStudio();
-  const { adapter, onEvent, queryClient, tableQueryMetaCollection } = studio;
+  const {
+    adapter,
+    getOrCreateTableQueryExecutionState,
+    onEvent,
+    queryClient,
+    tableQueryMetaCollection,
+  } = studio;
   const {
     metadata: { activeTable },
   } = useNavigation();
+  const tableQueryExecutionStateKey = activeTable
+    ? `${activeTable.schema}.${activeTable.name}`
+    : "";
   const sortKey = useMemo(() => getSortKey(sortOrder), [sortOrder]);
   const filterKey = useMemo(
     () => `${getFilterKey(filter)}::${fullTableSearchTerm ?? ""}`,
@@ -347,48 +397,79 @@ export function useActiveTableRowsCollection(
             },
             queryClient,
             queryFn: async ({ signal }) => {
-              const [error, result] = await adapter.query(
-                {
-                  pageIndex,
-                  pageSize,
-                  sortOrder,
-                  table: activeTable,
-                  filter,
-                  fullTableSearchTerm,
-                },
-                { abortSignal: signal },
+              const executionState = getOrCreateTableQueryExecutionState(
+                tableQueryExecutionStateKey,
               );
+              const requestController = new AbortController();
+              const requestId = executionState.latestRequestId + 1;
 
-              if (error) {
+              executionState.latestRequestId = requestId;
+              executionState.activeController?.abort();
+              executionState.activeController = requestController;
+
+              const mergedSignal = mergeAbortSignals([
+                signal,
+                requestController.signal,
+              ]);
+
+              try {
+                const [error, result] = await adapter.query(
+                  {
+                    pageIndex,
+                    pageSize,
+                    sortOrder,
+                    table: activeTable,
+                    filter,
+                    fullTableSearchTerm,
+                  },
+                  { abortSignal: mergedSignal.signal },
+                );
+
+                if (
+                  mergedSignal.signal.aborted ||
+                  requestController.signal.aborted ||
+                  executionState.latestRequestId !== requestId
+                ) {
+                  throw new AbortError();
+                }
+
+                if (error) {
+                  onEvent({
+                    name: "studio_operation_error",
+                    payload: {
+                      operation: "query",
+                      query: error.query,
+                      error,
+                    },
+                  });
+
+                  throw error;
+                }
+
                 onEvent({
-                  name: "studio_operation_error",
+                  name: "studio_operation_success",
                   payload: {
                     operation: "query",
-                    query: error.query,
-                    error,
+                    query: result.query,
+                    error: undefined,
                   },
                 });
 
-                throw error;
+                upsertFilteredRowCount(
+                  filteredRowCountKey,
+                  result.filteredRowCount,
+                  tableQueryMetaCollection,
+                );
+
+                return addRowIdToResult<AdapterQueryResult>(result, activeTable)
+                  .rows;
+              } finally {
+                mergedSignal.cleanup();
+
+                if (executionState.latestRequestId === requestId) {
+                  executionState.activeController = null;
+                }
               }
-
-              onEvent({
-                name: "studio_operation_success",
-                payload: {
-                  operation: "query",
-                  query: result.query,
-                  error: undefined,
-                },
-              });
-
-              upsertFilteredRowCount(
-                filteredRowCountKey,
-                result.filteredRowCount,
-                tableQueryMetaCollection,
-              );
-
-              return addRowIdToResult<AdapterQueryResult>(result, activeTable)
-                .rows;
             },
             queryKey: () => [
               "schema",
@@ -422,10 +503,12 @@ export function useActiveTableRowsCollection(
     pageSize,
     queryClient,
     filteredRowCountKey,
+    getOrCreateTableQueryExecutionState,
     queryScopeKey,
     sortKey,
     sortOrder,
     studio,
+    tableQueryExecutionStateKey,
     tableQueryMetaCollection,
   ]);
 

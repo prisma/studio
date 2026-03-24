@@ -48,6 +48,9 @@ This architecture governs:
 
 Do not mix these responsibilities.
 
+- Applied query-control URL writes MUST use latest-write-wins semantics.
+- Query-control hooks MAY keep transient in-memory pending values while an async URL write is in flight, but those pending values MUST always reflect the most recently requested URL-backed value and MUST clear once the URL state catches up.
+
 ## Filtering Contract
 
 Filtering has two states:
@@ -131,6 +134,7 @@ Rules:
 - Parsing MUST validate `direction` as `asc | desc`.
 - Invalid sort tokens MUST be ignored.
 - Empty sort MUST serialize to `null` URL value.
+- Rapid successive sort changes MUST keep only the latest requested sort authoritative, even if an earlier async URL write resolves later.
 - When staged rows or staged updates exist, sort controls MUST refuse changes until the staged edits are resolved.
 
 Do not store sorting in local component state for table views.
