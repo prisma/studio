@@ -1,23 +1,26 @@
 import { AlertCircle, Key, SquareArrowRight } from "lucide-react";
-import { type FC, JSX, memo, useCallback, useEffect, useMemo } from "react";
+import {
+  type FC,
+  JSX,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import ReactFlow, {
-  addEdge,
-  applyEdgeChanges,
-  applyNodeChanges,
   Background,
-  type Connection,
   ConnectionLineType,
   Controls,
   type Edge,
-  type EdgeChange,
   // EdgeMarker, // TODO: Add EdgeMarkers for relationship type
   Handle,
   MiniMap,
-  type Node,
   type NodeChange,
   type NodeProps,
   type NodeTypes,
   Position,
+  type ReactFlowInstance,
 } from "reactflow";
 
 import { Button } from "@/ui/components/ui/button";
@@ -30,32 +33,29 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "../../../components/ui/tooltip";
+import type {
+  Relationship,
+  Table,
+} from "../../../hooks/use-schema-visualization";
 import { cn } from "../../../lib/utils";
-
-type Field = {
-  name: string;
-  type: string;
-  isPrimary?: boolean;
-  isRequired?: boolean;
-  isNullable?: boolean;
-  isForeignKey?: boolean;
-  foreignKeyTo?: { table: string; column: string };
-};
-
-type Table = {
-  name: string;
-  fields: Field[];
-};
+import {
+  applySchemaNodePositions,
+  createFallbackLayoutedSchemaNodes,
+  createSchemaEdges,
+  createSchemaLayoutSignature,
+  createSchemaNodePositions,
+  createSchemaVisualizerStateScope,
+  createSchemaVisualizerUiStateKey,
+  getAutoLayoutedSchemaNodes,
+  hasSchemaNodePositionsForAllNodes,
+  type SchemaNodeData,
+  type SchemaNodePositions,
+} from "./schema-layout";
 
 type SchemaVisualizationProps = {
   tables: Table[];
-  relationships: { from: string; to: string; type: string }[];
+  relationships: Relationship[];
 };
-
-interface TableNodeData {
-  label: string;
-  fields: Field[];
-}
 
 // Helper component for rendering an icon with a tooltip
 const IconWithTooltip: FC<{
@@ -71,7 +71,7 @@ const IconWithTooltip: FC<{
   </Tooltip>
 );
 
-const TableNode: FC<NodeProps<TableNodeData>> = memo(({ data }) => {
+const TableNode: FC<NodeProps<SchemaNodeData>> = memo(({ data }) => {
   const {
     metadata: { activeSchema },
     createUrl,
@@ -79,7 +79,9 @@ const TableNode: FC<NodeProps<TableNodeData>> = memo(({ data }) => {
   const isNoTablesNode = data.label === "No Tables Found";
 
   // This function now returns an array of icon components to render for a field
-  const getFieldIcons = (field: Field): JSX.Element[] => {
+  const getFieldIcons = (
+    field: SchemaNodeData["fields"][number],
+  ): JSX.Element[] => {
     const icons: JSX.Element[] = [];
 
     // Special case for the "No Tables Found" node message
@@ -141,7 +143,7 @@ const TableNode: FC<NodeProps<TableNodeData>> = memo(({ data }) => {
     <TooltipProvider delayDuration={300}>
       <div
         className={cn(
-          "min-w-[250px] shadow-xl rounded-md border border-border bg-card",
+          "min-w-[280px] shadow-xl rounded-md border border-border bg-card",
           isNoTablesNode && "border-orange-400",
         )}
       >
@@ -228,55 +230,17 @@ const nodeTypes = {
   tableNode: TableNode,
 } as NodeTypes;
 
-/**
- * Create a layout for the nodes with tables placed in a grid formation
- * with related tables placed closer to each other.
- */
-function getLayoutedNodes(
-  tables: Table[],
-  _relationships: { from: string; to: string; type: string }[],
-): Node[] {
-  // If there are only a few tables, use a simple horizontal layout
-  if (tables.length <= 3) {
-    return tables.map((table, index) => ({
-      id: table.name,
-      type: "tableNode",
-      data: {
-        label: table.name,
-        fields: table.fields,
-      },
-      position: { x: 350 * index, y: 50 },
-    }));
-  }
-
-  // For more tables, use a grid layout
-  const GRID_GAP_X = 350;
-  const GRID_GAP_Y = 300;
-  const COLUMNS = Math.ceil(Math.sqrt(tables.length));
-
-  return tables.map((table, index) => {
-    const column = index % COLUMNS;
-    const row = Math.floor(index / COLUMNS);
-
-    return {
-      id: table.name,
-      type: "tableNode",
-      data: {
-        label: table.name,
-        fields: table.fields,
-      },
-      position: {
-        x: column * GRID_GAP_X,
-        y: row * GRID_GAP_Y,
-      },
-    };
-  });
-}
-
 export function SchemaVisualization({
   tables,
   relationships,
 }: SchemaVisualizationProps) {
+  const {
+    metadata: { activeSchema },
+  } = useNavigation();
+  const nodePositionsRef = useRef<SchemaNodePositions>({});
+  const reactFlowInstanceRef = useRef<ReactFlowInstance<SchemaNodeData> | null>(
+    null,
+  );
   // Create a map of node IDs for quick lookup
   const nodeIdSet = useMemo(
     () => new Set(tables.map((table) => table.name)),
@@ -292,95 +256,170 @@ export function SchemaVisualization({
     [relationships, nodeIdSet],
   );
 
-  // Create an organized layout for nodes
-  const initialNodes = useMemo(
-    () => getLayoutedNodes(tables, validRelationships),
-    [tables, validRelationships],
+  const baseNodes = useMemo(
+    () => createFallbackLayoutedSchemaNodes(tables),
+    [tables],
   );
-
-  // Create edges with appropriate styling
   const initialEdges: Edge[] = useMemo(
-    () =>
-      validRelationships.map((rel, index) => ({
-        id: `e${index}`,
-        source: rel.from,
-        target: rel.to,
-        animated: true,
-        label: rel.type,
-        type: "smoothstep",
-        style: {
-          stroke: "var(--primary)",
-          strokeWidth: 1,
-          strokeDasharray: "5 5",
-        },
-        labelStyle: {
-          fill: "var(--primary)",
-          fontSize: 12,
-        },
-      })),
+    () => createSchemaEdges(validRelationships),
     [validRelationships],
   );
 
   const stateScope = useMemo(
-    () =>
-      tables
-        .map((table) => table.name)
-        .sort()
-        .join("|") || "__empty__",
-    [tables],
+    () => createSchemaVisualizerStateScope(activeSchema?.name, tables),
+    [activeSchema?.name, tables],
   );
-
-  const [nodes, setNodes] = useUiState<Node[]>(
-    `schema-visualizer:${stateScope}:nodes`,
-    initialNodes,
-    { cleanupOnUnmount: true },
+  const layoutSignature = useMemo(
+    () => createSchemaLayoutSignature(baseNodes, initialEdges),
+    [baseNodes, initialEdges],
   );
-  const [edges, setEdges] = useUiState<Edge[]>(
-    `schema-visualizer:${stateScope}:edges`,
-    initialEdges,
-    { cleanupOnUnmount: true },
+  const [nodePositions, setNodePositions] = useUiState<SchemaNodePositions>(
+    createSchemaVisualizerUiStateKey(stateScope, "node-positions"),
+    {},
   );
-
-  // Update nodes when tables change
-  useEffect(() => {
-    setNodes(getLayoutedNodes(tables, validRelationships));
-  }, [tables, validRelationships, setNodes]);
-
-  // Update edges when relationships change
-  useEffect(() => {
-    setEdges(
-      validRelationships.map((rel, index) => ({
-        id: `e${index}`,
-        source: rel.from,
-        target: rel.to,
-        animated: true,
-        label: rel.type,
-        type: "smoothstep",
-        style: {
-          stroke: "var(--primary)",
-          strokeWidth: 1,
-          strokeDasharray: "5 5",
-        },
-        labelStyle: {
-          fontSize: 12,
-        },
-      })),
+  const [_autoLayoutPositions, setAutoLayoutPositions] =
+    useUiState<SchemaNodePositions>(
+      createSchemaVisualizerUiStateKey(
+        stateScope,
+        "auto-layout-node-positions",
+      ),
+      {},
     );
-  }, [validRelationships, setEdges]);
+  const [hasAutoLayout, setHasAutoLayout] = useUiState<boolean>(
+    createSchemaVisualizerUiStateKey(stateScope, "has-auto-layout"),
+    false,
+  );
+  const [appliedLayoutSignature, setAppliedLayoutSignature] =
+    useUiState<string>(
+      createSchemaVisualizerUiStateKey(stateScope, "layout-signature"),
+      "",
+    );
+  const [resetLayoutVersion] = useUiState<number>(
+    createSchemaVisualizerUiStateKey(stateScope, "reset-layout-version"),
+    0,
+  );
+  const nodes = useMemo(
+    () => applySchemaNodePositions(baseNodes, nodePositions),
+    [baseNodes, nodePositions],
+  );
+  const previousResetLayoutVersionRef = useRef(resetLayoutVersion);
 
-  const onConnect = useCallback(
-    (params: Edge | Connection) => setEdges((eds) => addEdge(params, eds)),
-    [setEdges],
-  );
+  useEffect(() => {
+    nodePositionsRef.current = nodePositions;
+  }, [nodePositions]);
+
+  const scheduleFitView = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        void reactFlowInstanceRef.current?.fitView({ padding: 0.2 });
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function syncNodes() {
+      if (
+        hasAutoLayout &&
+        appliedLayoutSignature === layoutSignature &&
+        hasSchemaNodePositionsForAllNodes(baseNodes, nodePositions)
+      ) {
+        return;
+      }
+
+      try {
+        const layoutedNodes = await getAutoLayoutedSchemaNodes(
+          baseNodes,
+          initialEdges,
+        );
+
+        if (cancelled) {
+          return;
+        }
+
+        const nextAutoLayoutPositions =
+          createSchemaNodePositions(layoutedNodes);
+
+        setAutoLayoutPositions(nextAutoLayoutPositions);
+        setNodePositions(nextAutoLayoutPositions);
+      } catch {
+        if (cancelled) {
+          return;
+        }
+
+        const fallbackPositions = createSchemaNodePositions(baseNodes);
+
+        setAutoLayoutPositions(fallbackPositions);
+        setNodePositions(fallbackPositions);
+      }
+
+      setHasAutoLayout(true);
+      setAppliedLayoutSignature(layoutSignature);
+      scheduleFitView();
+    }
+
+    void syncNodes();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    appliedLayoutSignature,
+    baseNodes,
+    hasAutoLayout,
+    initialEdges,
+    layoutSignature,
+    nodePositions,
+    scheduleFitView,
+    setAutoLayoutPositions,
+    setAppliedLayoutSignature,
+    setHasAutoLayout,
+    setNodePositions,
+  ]);
+
+  useEffect(() => {
+    if (previousResetLayoutVersionRef.current === resetLayoutVersion) {
+      return;
+    }
+
+    previousResetLayoutVersionRef.current = resetLayoutVersion;
+    scheduleFitView();
+  }, [resetLayoutVersion, scheduleFitView]);
   const onNodesChange = useCallback(
-    (changes: NodeChange[]) =>
-      setNodes((currentNodes) => applyNodeChanges(changes, currentNodes)),
-    [setNodes],
-  );
-  const onEdgesChange = useCallback(
-    (changes: EdgeChange[]) =>
-      setEdges((currentEdges) => applyEdgeChanges(changes, currentEdges)),
-    [setEdges],
+    (changes: NodeChange[]) => {
+      const nextPositions = Object.fromEntries(
+        changes.flatMap((change) => {
+          if (change.type !== "position" || !change.position) {
+            return [];
+          }
+
+          return [
+            [
+              change.id,
+              {
+                x: change.position.x,
+                y: change.position.y,
+              },
+            ] as const,
+          ];
+        }),
+      );
+
+      if (Object.keys(nextPositions).length === 0) {
+        return;
+      }
+
+      setNodePositions({
+        ...nodePositionsRef.current,
+        ...nextPositions,
+      });
+    },
+    [setNodePositions],
   );
 
   const controlStyles = cn(
@@ -400,11 +439,12 @@ export function SchemaVisualization({
       <div className="w-full h-full bg-card">
         <ReactFlow
           nodes={nodes}
-          edges={edges}
+          edges={initialEdges}
+          onInit={(instance) => {
+            reactFlowInstanceRef.current = instance;
+          }}
           onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          connectionLineType={ConnectionLineType.SmoothStep}
+          connectionLineType={ConnectionLineType.Step}
           nodeTypes={nodeTypes}
           fitView
           fitViewOptions={{ padding: 0.2 }}

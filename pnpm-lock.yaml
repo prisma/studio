@@ -17,6 +17,9 @@ dependencies:
   chart.js:
     specifier: 4.5.1
     version: 4.5.1
+  elkjs:
+    specifier: 0.11.1
+    version: 0.11.1
   react:
     specifier: ^18.0.0 || ^19.0.0
     version: 19.2.4
@@ -3713,6 +3716,10 @@ packages:
   /electron-to-chromium@1.5.286:
     resolution: {integrity: sha512-9tfDXhJ4RKFNerfjdCcZfufu49vg620741MNs26a9+bhLThdB+plgMeou98CAaHu/WATj2iHOOHTp1hWtABj2A==}
     dev: true
+
+  /elkjs@0.11.1:
+    resolution: {integrity: sha512-zxxR9k+rx5ktMwT/FwyLdPCrq7xN6e4VGGHH8hA01vVYKjTFik7nHOxBnAYtrgYUB1RpAiLvA1/U2YraWxyKKg==}
+    dev: false
 
   /emoji-regex@8.0.0:
     resolution: {integrity: sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A==}
