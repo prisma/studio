@@ -1,5 +1,13 @@
 import { PGlite } from "@electric-sql/pglite";
-import { beforeAll, describe, expect, expectTypeOf, it, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  expectTypeOf,
+  it,
+  vi,
+} from "vitest";
 
 import type { Table } from "../adapter";
 import type { Executor } from "../executor";
@@ -18,13 +26,14 @@ import {
 describe("postgres-core/dml", () => {
   let executor: Executor;
   let introspection: ReturnType<typeof mockIntrospect>;
+  let pglite: PGlite;
   let table: Table;
 
   beforeAll(async () => {
     vi.useFakeTimers({
       now: new Date("2025-01-27T00:56:12.345+02:00"),
     });
-    const pglite = new PGlite();
+    pglite = new PGlite();
     executor = createPGLiteExecutor(pglite);
     introspection = mockIntrospect();
     table = introspection.schemas.public.tables.users;
@@ -87,7 +96,18 @@ describe("postgres-core/dml", () => {
           '{"status":"triaged"}',
           array['triage','ops']
         );
+        create type "public"."studio_role" as enum ('ADMIN', 'MANAGE', 'VISIT');
+        create table "public"."enum_array_users" (
+          "id" serial primary key,
+          "roles" "public"."studio_role"[] not null default array['VISIT']::"public"."studio_role"[]
+        );
+        insert into "public"."enum_array_users" ("roles")
+        values (array['ADMIN', 'VISIT']::"public"."studio_role"[]);
     `);
+  });
+
+  afterAll(async () => {
+    await pglite.close();
   });
 
   function createSearchTypesTable(): Table {
@@ -317,6 +337,59 @@ describe("postgres-core/dml", () => {
         },
       },
       name: "search_types",
+      schema: "public",
+    };
+  }
+
+  function createEnumArrayUsersTable(): Table {
+    return {
+      columns: {
+        id: {
+          datatype: {
+            group: "numeric",
+            isArray: false,
+            isNative: true,
+            name: "int4",
+            options: [],
+            schema: "pg_catalog",
+          },
+          defaultValue: "nextval('enum_array_users_id_seq'::regclass)",
+          fkColumn: null,
+          fkSchema: null,
+          fkTable: null,
+          isAutoincrement: true,
+          isComputed: false,
+          isRequired: true,
+          name: "id",
+          nullable: false,
+          pkPosition: 1,
+          schema: "public",
+          table: "enum_array_users",
+        },
+        roles: {
+          datatype: {
+            group: "enum",
+            isArray: true,
+            isNative: false,
+            name: "studio_role[]",
+            options: ["ADMIN", "MANAGE", "VISIT"],
+            schema: "public",
+          },
+          defaultValue: `ARRAY['VISIT'::"public"."studio_role"]`,
+          fkColumn: null,
+          fkSchema: null,
+          fkTable: null,
+          isAutoincrement: false,
+          isComputed: false,
+          isRequired: true,
+          name: "roles",
+          nullable: false,
+          pkPosition: null,
+          schema: "public",
+          table: "enum_array_users",
+        },
+      },
+      name: "enum_array_users",
       schema: "public",
     };
   }
@@ -1157,6 +1230,39 @@ describe("postgres-core/dml", () => {
           __ps_updated_at__: "1737932172345",
         },
       ]);
+    });
+
+    it("casts PostgreSQL enum arrays with the array suffix outside the quoted user-defined type name", async () => {
+      const table = createEnumArrayUsersTable();
+      const query = getUpdateQuery({
+        changes: { roles: "{ADMIN,MANAGE}" },
+        row: { id: 1 },
+        table,
+      });
+
+      expect(query).toMatchInlineSnapshot(`
+        {
+          "parameters": [
+            "{ADMIN,MANAGE}",
+            1,
+            1000,
+          ],
+          "sql": "update "public"."enum_array_users" set "roles" = cast($1 as "public"."studio_role"[]) where "id" = $2 returning "id", "roles", cast(floor(extract(epoch from now()) * $3) as text) as "__ps_updated_at__"",
+          "transformations": undefined,
+        }
+      `);
+
+      const [error] = await executor.execute(query);
+
+      expect(error).toBeNull();
+
+      const persisted = await pglite.query<{ roles: string }>(`
+        select "roles"::text as "roles"
+        from "public"."enum_array_users"
+        where "id" = 1
+      `);
+
+      expect(persisted.rows).toEqual([{ roles: "{ADMIN,MANAGE}" }]);
     });
   });
 
