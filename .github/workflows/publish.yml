@@ -44,7 +44,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "24"
+          cache: pnpm
           registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Prepare release metadata
         id: release
@@ -61,10 +65,6 @@ jobs:
           echo "package.json version: ${{ steps.release.outputs.package_version }}"
           echo "latest npm version: ${{ steps.release.outputs.latest_npm_version }}"
           echo "reason: ${{ steps.release.outputs.release_reason }}"
-
-      - name: Install dependencies
-        if: steps.release.outputs.should_publish_package == 'true'
-        run: pnpm install --frozen-lockfile
 
       - name: Publish package
         if: steps.release.outputs.should_publish_package == 'true'
