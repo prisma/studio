@@ -1,5 +1,5 @@
 name: publish
-# No-op change to validate Actions after enabling them for this repository.
+# No-op change to validate Actions via a PR merge after enabling them for this repository.
 
 on:
   push:
