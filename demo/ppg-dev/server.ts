@@ -20,6 +20,10 @@ import { AnthropicOutputLimitError, runAnthropicLlmRequest } from "./anthropic";
 import { buildDemoConfig, resolveDemoAiEnabled } from "./config";
 import { seedDatabase } from "./seed-database";
 import { lintPostgresSql } from "./sql-lint";
+import {
+  addDemoStartupFailureHint,
+  ensurePortAvailable,
+} from "./startup-diagnostics";
 
 declare const Bun: {
   build(options: {
@@ -243,6 +247,12 @@ function looksLikeProjectRoot(candidate: string): boolean {
 }
 
 async function main(): Promise<void> {
+  await ensurePortAvailable({
+    envVar: "STUDIO_DEMO_PORT",
+    port: APP_PORT,
+    serviceName: "Studio demo HTTP server",
+  });
+
   prismaDevServer = await startPrismaDevServer({
     name: `studio-ppg-demo-${process.pid}`,
   });
@@ -936,6 +946,11 @@ function toErrorMessage(error: unknown): string {
 }
 
 void main().catch((error: unknown) => {
-  console.error(`[demo] startup failed: ${toErrorMessage(error)}`);
+  console.error(
+    `[demo] startup failed: ${addDemoStartupFailureHint({
+      appPort: APP_PORT,
+      errorMessage: toErrorMessage(error),
+    })}`,
+  );
   process.exit(1);
 });
