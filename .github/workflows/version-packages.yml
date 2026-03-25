@@ -1,0 +1,46 @@
+name: version packages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .changeset/**
+      - package.json
+      - pnpm-lock.yaml
+      - .github/workflows/version-packages.yml
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create or update release PR
+        uses: changesets/action@v1
+        with:
+          commit: "chore(release): version packages"
+          title: "chore(release): version packages"
+          version: pnpm version-packages
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

@@ -62,7 +62,8 @@ Always document new functionality in FEATURES.md. Focus on why it is useful and 
 ## Git manners and releases
 
 - New features and bugfixes should be developed on a new branch from `origin/main`. Verify that you have the latest main from origin.
-- When a feature or bugfix is complete, if it is relevant for end users, add it to a section at the top of `CHANGELOG.md` called `Upcoming`. Make the description short and snappy, focused on user value. make sure it aligns with the feature description in FEATURES.md. Only document bugfixes relative to a previous release - we don't want this to be an exhaustive log of the development workflow. If the section does not exist, add it.
-- To release a new version, pick a new version number and rename the `Upcoming` section to that version number.
-- Update the `version` field in `package.json` as part of the release.
-- Do the release ceremony in a single separate commit.
+- For normal releases, add a Changeset in the feature PR with `pnpm changeset`, merge to `main`, and let the `version packages` workflow open or update the release PR.
+- Merge the release PR on `main` to publish through the `publish` workflow.
+- For manual releases, ensure the target version is already present in `package.json` on `main`, then run the `publish` workflow from GitHub Actions with that explicit version.
+- `CHANGELOG.md` remains the source of truth for GitHub release notes. If a manual release omits the matching changelog section, the package still publishes and the GitHub release notes stay empty.
+- Release process details live in `RELEASE.md`.

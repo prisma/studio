@@ -25,6 +25,8 @@ You do not need this repository to use `npx prisma studio` in a Prisma project.
 
 Architecture notes live in [`Architecture/`](Architecture). The package published from this repo is consumed by other Prisma surfaces rather than used as a standalone app directly from this checkout.
 
+Release process notes live in [`RELEASE.md`](RELEASE.md).
+
 ## Feedback and Contributions
 
 Open an issue for bugs, feature requests, or integration questions at [github.com/prisma/studio/issues](https://github.com/prisma/studio/issues). Clear reproduction steps, expected behavior, and screenshots make feedback much easier to act on.
