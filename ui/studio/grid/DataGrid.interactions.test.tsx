@@ -1154,6 +1154,24 @@ describe("DataGrid interactions", () => {
     cleanup();
   });
 
+  it("copies the focused cell on keyboard copy when no cells are selected", () => {
+    createSelection({ isCollapsed: true });
+
+    const { cleanup } = renderGrid({
+      focusedCell: {
+        columnId: "name",
+        rowIndex: 1,
+      },
+    });
+
+    const { copyEvent, setData } = dispatchCopyEvent();
+
+    expect(copyEvent.defaultPrevented).toBe(true);
+    expect(setData).toHaveBeenCalledWith("text/plain", "Northwind Retail");
+
+    cleanup();
+  });
+
   it("keeps the last row bottom border styling enabled", () => {
     createSelection({ isCollapsed: true });
 

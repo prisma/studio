@@ -1320,6 +1320,35 @@ export function DataGrid(props: DataGridProps) {
     table,
   ]);
 
+  const focusedCellCopyTarget = useMemo(() => {
+    if (!focusedCell) {
+      return null;
+    }
+
+    const rowIndex = focusedCell.rowIndex - focusRowIndexOffset;
+    const columnIndex = columnIndexById.get(focusedCell.columnId);
+
+    if (rowIndex < 0 || rowIndex >= rows.length || columnIndex == null) {
+      return null;
+    }
+
+    return {
+      columnIndex,
+      rowIndex,
+    };
+  }, [columnIndexById, focusRowIndexOffset, focusedCell, rows.length]);
+
+  const getFocusedCellClipboardText = useCallback(() => {
+    if (!focusedCellCopyTarget) {
+      return "";
+    }
+
+    return getSingleCellClipboardText(
+      focusedCellCopyTarget.rowIndex,
+      focusedCellCopyTarget.columnIndex,
+    );
+  }, [focusedCellCopyTarget, getSingleCellClipboardText]);
+
   const setCellSelection = useCallback(
     (start: GridCellCoordinate, end: GridCellCoordinate) => {
       setSelectionState((previous) =>
@@ -1419,8 +1448,13 @@ export function DataGrid(props: DataGridProps) {
   useEffect(() => {
     const hasCellSelection = selectionRange !== null && rows.length > 0;
     const hasRowSelectionForCopy = hasRowSelection;
+    const hasFocusedCellForCopy = focusedCellCopyTarget !== null;
 
-    if (!hasCellSelection && !hasRowSelectionForCopy) {
+    if (
+      !hasCellSelection &&
+      !hasRowSelectionForCopy &&
+      !hasFocusedCellForCopy
+    ) {
       return;
     }
 
@@ -1435,7 +1469,9 @@ export function DataGrid(props: DataGridProps) {
 
       const text = hasRowSelection
         ? getSelectedRowClipboardText()
-        : getSelectedClipboardText();
+        : hasCellSelection
+          ? getSelectedClipboardText()
+          : getFocusedCellClipboardText();
 
       if (!text) {
         return;
@@ -1508,6 +1544,8 @@ export function DataGrid(props: DataGridProps) {
     };
   }, [
     canWriteToCell,
+    focusedCellCopyTarget,
+    getFocusedCellClipboardText,
     getSelectedClipboardText,
     getSelectedRowClipboardText,
     hasRowSelection,

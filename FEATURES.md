@@ -168,6 +168,7 @@ Existing rows can stage edits across multiple cells and rows before anything is 
 Staged cells stay visible with a warm staged tint and preserved amber border, `Tab` and `Cmd/Ctrl` + arrow keys move editing directly into neighboring cells, and the toolbar promotes a shared `Save x rows` action once edits are pending.
 Clicking away from an edited cell still stages that change, so you can move around the grid with the mouse without having to press `Enter` first.
 A muted blue focused-cell border keeps keyboard navigation anchored even outside edit mode: arrow keys move that focus like a spreadsheet, `Enter` reopens the focused cell, `Shift` + arrow starts cell-range selection from it, and insert-row drafts focus their first cell immediately.
+That same focused-cell model also powers keyboard copy fallback, so `Cmd/Ctrl+C` still copies the current cell value even when focus has moved with arrow keys but no explicit cell range is selected.
 Committing those staged edits is guarded by a compact confirmation dialog, so batch writes stay explicit before Studio sends the transaction to the database.
 While staged edits exist, row-changing controls like filter, search, sort, and pagination lock in place so the visible result set cannot drift away from the staged cells. Those blocked interactions kick the yellow `Discard edits` button into a short CSS wiggle instead of silently doing nothing.
 The same staged-edit actions also appear in `Cmd/Ctrl+K`, so you can save or discard without leaving the keyboard and without learning a second set of labels.
