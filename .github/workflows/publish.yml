@@ -1,4 +1,5 @@
 name: publish
+# No-op change to validate Actions after enabling them for this repository.
 
 on:
   push:
