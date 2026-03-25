@@ -47,6 +47,9 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
 
+      - name: Ensure pnpm store exists
+        run: node scripts/release/ensure-pnpm-store.mjs
+
       - name: Prepare release metadata
         id: release
         env:
