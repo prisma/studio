@@ -335,7 +335,7 @@ Set `CHECKPOINT_DISABLE=1` to opt out of usage-data collection, following Prisma
 
 Requirements:
 
-- Node.js `^20.19 || ^22.12 || >=24.0`
+- Node.js matching `.node-version`
 - `pnpm` `8`
 - `bun`
 
