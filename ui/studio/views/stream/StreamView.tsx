@@ -20,6 +20,7 @@ import {
 import { cn } from "@/ui/lib/utils";
 
 import { useNavigation } from "../../../hooks/use-navigation";
+import { useStreamDetails } from "../../../hooks/use-stream-details";
 import {
   type StudioStreamEvent,
   type StudioStreamEventIndexedField,
@@ -32,6 +33,7 @@ import { ViewProps } from "../View";
 
 const LOAD_MORE_THRESHOLD_PX = 160;
 const NEW_EVENTS_BATCH_SIZE = 50n;
+const NEW_EVENTS_HIGHLIGHT_DURATION_MS = 1_800;
 const STREAM_COUNT_REFRESH_INTERVAL_MS = 5000;
 
 interface ScrollAnchorSnapshot {
@@ -145,13 +147,16 @@ function formatExactTimestamp(isoTimestamp: string | null): string {
   });
 }
 
-function formatBytes(sizeBytes: number): string {
-  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+function formatBytes(sizeBytes: bigint | number): string {
+  const numericValue =
+    typeof sizeBytes === "bigint" ? Number(sizeBytes) : sizeBytes;
+
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
     return "0 B";
   }
 
-  const units = ["B", "KB", "MB", "GB"] as const;
-  let value = sizeBytes;
+  const units = ["B", "KB", "MB", "GB", "TB"] as const;
+  let value = numericValue;
   let unitIndex = 0;
 
   while (value >= 1024 && unitIndex < units.length - 1) {
@@ -192,9 +197,10 @@ function formatIndexedField(field: StudioStreamEventIndexedField): string {
 function StreamEventRow(props: {
   event: StudioStreamEvent;
   expandedEventId: string | null;
+  isNewlyRevealed: boolean;
   onToggle: (eventId: string) => void;
 }) {
-  const { event, expandedEventId, onToggle } = props;
+  const { event, expandedEventId, isNewlyRevealed, onToggle } = props;
   const isExpanded = expandedEventId === event.id;
 
   return (
@@ -208,8 +214,11 @@ function StreamEventRow(props: {
         className={cn(
           "grid w-full grid-cols-[minmax(8.5rem,10rem)_minmax(0,10rem)_minmax(0,14rem)_minmax(0,1fr)_5.5rem] items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/60",
           isExpanded && "bg-accent/40",
+          isNewlyRevealed &&
+            "motion-safe:animate-[ps-stream-new-event-flash_1.8s_ease-out]",
         )}
         data-stream-event-id={event.id}
+        data-stream-event-newly-revealed={isNewlyRevealed ? "true" : undefined}
         data-testid={`stream-event-row-${event.sequence}`}
         onClick={() => {
           onToggle(event.id);
@@ -346,8 +355,16 @@ export function StreamView(_props: ViewProps) {
   const [visibleEventCount, setVisibleEventCount] = useState<bigint | null>(
     null,
   );
+  const [recentlyRevealedEventIds, setRecentlyRevealedEventIds] = useState<
+    string[]
+  >([]);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const lastResetStreamIdentityRef = useRef<string | null>(null);
+  const pendingRevealRef = useRef<{
+    batchSize: number;
+    previousFirstEventId: string | null;
+    streamIdentity: string | null;
+  } | null>(null);
   const scrollAnchorSnapshotRef = useRef<ScrollAnchorSnapshot | null>(null);
   const expandedEventStateKey = selectedStream
     ? `stream:${selectedStream.name}:expanded-event`
@@ -372,6 +389,15 @@ export function StreamView(_props: ViewProps) {
         ? parseNonNegativeBigInt(selectedStream.nextOffset)
         : undefined),
   });
+  const { details: selectedStreamDetails } = useStreamDetails({
+    refreshIntervalMs: STREAM_COUNT_REFRESH_INTERVAL_MS,
+    streamName: selectedStream?.name,
+  });
+  const firstEventId = events[0]?.id ?? null;
+  const recentlyRevealedEventIdSet = useMemo(
+    () => new Set(recentlyRevealedEventIds),
+    [recentlyRevealedEventIds],
+  );
 
   useEffect(() => {
     if (lastResetStreamIdentityRef.current === selectedStreamIdentity) {
@@ -379,6 +405,8 @@ export function StreamView(_props: ViewProps) {
     }
 
     lastResetStreamIdentityRef.current = selectedStreamIdentity;
+    pendingRevealRef.current = null;
+    setRecentlyRevealedEventIds([]);
     setVisibleEventCount(
       selectedStream ? parseNonNegativeBigInt(selectedStream.nextOffset) : null,
     );
@@ -401,20 +429,60 @@ export function StreamView(_props: ViewProps) {
           : 0n;
 
       if (hiddenEventCount === 0n) {
+        pendingRevealRef.current = null;
         return resolvedCurrentValue;
       }
 
-      return (
-        resolvedCurrentValue +
-        (hiddenEventCount > NEW_EVENTS_BATCH_SIZE
+      const revealBatchSize = Number(
+        hiddenEventCount > NEW_EVENTS_BATCH_SIZE
           ? NEW_EVENTS_BATCH_SIZE
-          : hiddenEventCount)
+          : hiddenEventCount,
       );
+
+      pendingRevealRef.current = {
+        batchSize: revealBatchSize,
+        previousFirstEventId: firstEventId,
+        streamIdentity: selectedStreamIdentity,
+      };
+
+      return resolvedCurrentValue + BigInt(revealBatchSize);
     });
     setPageCount((currentPageCount) => currentPageCount + 1);
-  }, [selectedStream]);
+  }, [firstEventId, selectedStream, selectedStreamIdentity]);
 
-  const firstEventId = events[0]?.id ?? null;
+  useEffect(() => {
+    const pendingReveal = pendingRevealRef.current;
+
+    if (
+      !pendingReveal ||
+      pendingReveal.streamIdentity !== selectedStreamIdentity
+    ) {
+      return;
+    }
+
+    if (pendingReveal.previousFirstEventId === firstEventId) {
+      return;
+    }
+
+    pendingRevealRef.current = null;
+    setRecentlyRevealedEventIds(
+      events.slice(0, pendingReveal.batchSize).map((event) => event.id),
+    );
+  }, [events, firstEventId, selectedStreamIdentity]);
+
+  useEffect(() => {
+    if (recentlyRevealedEventIds.length === 0) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setRecentlyRevealedEventIds([]);
+    }, NEW_EVENTS_HIGHLIGHT_DURATION_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [recentlyRevealedEventIds]);
 
   const recordScrollAnchorSnapshot = useCallback(() => {
     const scrollContainer = scrollContainerRef.current;
@@ -544,8 +612,11 @@ export function StreamView(_props: ViewProps) {
       <StudioHeader
         endContent={
           selectedStream ? (
-            <Badge variant="secondary">
+            <Badge data-testid="stream-summary-badge" variant="secondary">
               {totalEventCount.toString()} events
+              {selectedStreamDetails
+                ? `, ${formatBytes(selectedStreamDetails.totalSizeBytes)} total`
+                : ""}
             </Badge>
           ) : null
         }
@@ -628,6 +699,7 @@ export function StreamView(_props: ViewProps) {
                     key={event.id}
                     event={event}
                     expandedEventId={expandedEventId}
+                    isNewlyRevealed={recentlyRevealedEventIdSet.has(event.id)}
                     onToggle={(eventId) => {
                       setExpandedEventId((currentValue) =>
                         currentValue === eventId ? null : eventId,

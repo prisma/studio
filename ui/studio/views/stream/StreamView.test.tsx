@@ -4,61 +4,72 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { StreamView } from "./StreamView";
 
-const { useNavigationMock, useStreamEventsMock, useStreamsMock } = vi.hoisted(
-  () => ({
-    useNavigationMock: vi.fn<
-      () => {
-        streamParam: string | null;
-      }
-    >(),
-    useStreamEventsMock: vi.fn<
-      (args: {
-        pageCount: number;
-        stream: { name: string } | null;
-        visibleEventCount?: bigint;
-      }) => {
-        collection: null;
-        events: Array<{
-          body: unknown;
-          exactTimestamp: string | null;
-          id: string;
-          indexedFields: Array<{ id: string; label: string; value?: string }>;
-          key: string | null;
-          offset: string;
-          preview: string;
-          sequence: string;
-          sizeBytes: number;
-          sortOffset: string;
-          streamName: string;
-        }>;
-        hasHiddenNewerEvents: boolean;
-        hasMoreEvents: boolean;
-        hiddenNewerEventCount: bigint;
-        isFetching: boolean;
-        pageSize: number;
-        queryScopeKey: string;
-        refetch: () => Promise<void>;
-        totalEventCount: bigint;
-        visibleEventCount: bigint;
-      }
-    >(),
-    useStreamsMock: vi.fn<
-      () => {
-        isError: boolean;
-        isLoading: boolean;
-        streams: Array<{
-          createdAt: string;
-          epoch: number;
-          expiresAt: string | null;
-          name: string;
-          nextOffset: string;
-          sealedThrough: string;
-          uploadedThrough: string;
-        }>;
-      }
-    >(),
-  }),
-);
+const {
+  useNavigationMock,
+  useStreamDetailsMock,
+  useStreamEventsMock,
+  useStreamsMock,
+} = vi.hoisted(() => ({
+  useNavigationMock: vi.fn<
+    () => {
+      streamParam: string | null;
+    }
+  >(),
+  useStreamDetailsMock: vi.fn<
+    () => {
+      details: {
+        name: string;
+        totalSizeBytes: bigint;
+      } | null;
+    }
+  >(),
+  useStreamEventsMock: vi.fn<
+    (args: {
+      pageCount: number;
+      stream: { name: string } | null;
+      visibleEventCount?: bigint;
+    }) => {
+      collection: null;
+      events: Array<{
+        body: unknown;
+        exactTimestamp: string | null;
+        id: string;
+        indexedFields: Array<{ id: string; label: string; value?: string }>;
+        key: string | null;
+        offset: string;
+        preview: string;
+        sequence: string;
+        sizeBytes: number;
+        sortOffset: string;
+        streamName: string;
+      }>;
+      hasHiddenNewerEvents: boolean;
+      hasMoreEvents: boolean;
+      hiddenNewerEventCount: bigint;
+      isFetching: boolean;
+      pageSize: number;
+      queryScopeKey: string;
+      refetch: () => Promise<void>;
+      totalEventCount: bigint;
+      visibleEventCount: bigint;
+    }
+  >(),
+  useStreamsMock: vi.fn<
+    () => {
+      isError: boolean;
+      isLoading: boolean;
+      streams: Array<{
+        createdAt: string;
+        epoch: number;
+        expiresAt: string | null;
+        name: string;
+        nextOffset: string;
+        sealedThrough: string;
+        uploadedThrough: string;
+      }>;
+    }
+  >(),
+}));
 
 const uiStateValues = new Map<string, unknown>();
 
@@ -68,6 +79,10 @@ vi.mock("../../../hooks/use-navigation", () => ({
 
 vi.mock("../../../hooks/use-stream-events", () => ({
   useStreamEvents: useStreamEventsMock,
+}));
+
+vi.mock("../../../hooks/use-stream-details", () => ({
+  useStreamDetails: useStreamDetailsMock,
 }));
 
 vi.mock("../../../hooks/use-streams", () => ({
@@ -221,6 +236,12 @@ describe("StreamView", () => {
         },
       ],
     }));
+    useStreamDetailsMock.mockReturnValue({
+      details: {
+        name: "prisma-wal",
+        totalSizeBytes: 1_536n,
+      },
+    });
     useStreamEventsMock.mockImplementation(
       ({
         pageCount,
@@ -345,6 +366,7 @@ describe("StreamView", () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
     document.body.innerHTML = "";
     delete (
       globalThis as {
@@ -516,6 +538,28 @@ describe("StreamView", () => {
     container.remove();
   });
 
+  it("shows total stream bytes in the header badge", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamView />);
+    });
+
+    const summaryBadge = container.querySelector(
+      '[data-testid="stream-summary-badge"]',
+    );
+
+    expect(summaryBadge?.textContent).toContain("2 events");
+    expect(summaryBadge?.textContent).toContain("1.5 KB total");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it("keeps the current viewport anchored when the new-events button appears", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -611,6 +655,60 @@ describe("StreamView", () => {
     expect(scrollContainer.scrollTop).toBe(
       240 + (scrollContainer.scrollHeight - previousScrollHeight),
     );
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("animates only the newly revealed rows after clicking the new-events button", () => {
+    vi.useFakeTimers();
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamView />);
+    });
+
+    act(() => {
+      setStreamViewTestNextOffset(60n);
+      root.render(<StreamView />);
+    });
+
+    const newEventsButton = container.querySelector<HTMLButtonElement>(
+      '[data-testid="stream-new-events-button"]',
+    );
+
+    expect(newEventsButton).not.toBeNull();
+
+    act(() => {
+      newEventsButton?.click();
+    });
+
+    const newlyRevealedRow = container.querySelector<HTMLButtonElement>(
+      '[data-testid="stream-event-row-52"]',
+    );
+    const previouslyVisibleRow = container.querySelector<HTMLButtonElement>(
+      '[data-testid="stream-event-row-2"]',
+    );
+
+    expect(newlyRevealedRow?.className).toContain("ps-stream-new-event-flash");
+    expect(previouslyVisibleRow?.className).not.toContain(
+      "ps-stream-new-event-flash",
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(2_000);
+    });
+
+    expect(
+      container.querySelector<HTMLButtonElement>(
+        '[data-testid="stream-event-row-52"]',
+      )?.className,
+    ).not.toContain("ps-stream-new-event-flash");
 
     act(() => {
       root.unmount();

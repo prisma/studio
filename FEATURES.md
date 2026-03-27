@@ -15,6 +15,11 @@ This gives users an accurate live model of the database and keeps table navigati
 The local `ppg-dev` demo can be packaged into a Compute-ready artifact instead of requiring the repo checkout at runtime.
 The deploy builder precompiles the browser JS/CSS, injects those assets into the bundled server, and relies on `@prisma/dev`'s Bun runtime-asset manifest so PGlite's WASM, data, and extension archives are emitted automatically beside the server bundle.
 
+## Local Streams Development Override
+
+Studio's local development workflow can temporarily replace the published npm `@prisma/dev` package with the sibling source package from `../team-expansion/dev/server`, while also swapping its `@prisma/streams-local` dependency over to a built local Streams checkout.
+That override stays opt-in, rebuilds from the sibling repos by default, and can be reverted without rewriting the tracked lockfile, so experimental Prisma Dev and Durable Streams work can stay local to one Studio checkout.
+
 ## Introspection Recovery and Retry
 
 Startup introspection failures show retryable diagnostics in both the sidebar and the main table panel instead of pretending the database has no tables.
@@ -45,7 +50,8 @@ The list reuses the same compact navigation shell as table browsing, loads live 
 
 Selecting a stream opens a dedicated event log view in the main pane instead of the table grid.
 The view uses TanStack DB-backed infinite scroll to load the newest events first, shows summary columns for time, key, indexed fields, preview text, and payload size, and lets users expand one event at a time to inspect the full formatted content.
-While a stream is open, Studio refreshes the metadata count in place, surfaces a centered `new events` button just below the header row when the stream advances, reveals those newer rows in 50-event batches on demand, and keeps older-history loading on the same infinite-scroll surface.
+The header keeps the latest event count visible and now also surfaces total logical stream payload bytes in human-readable units, so users can gauge stream footprint without scanning event bodies.
+While a stream is open, Studio refreshes the metadata count in place, surfaces a centered `new events` button just below the header row when the stream advances, reveals those newer rows in 50-event batches on demand, briefly highlights the prepended rows so the new batch is easy to spot, and keeps older-history loading on the same infinite-scroll surface.
 
 ## Schema Visualizer
 

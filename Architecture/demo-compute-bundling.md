@@ -55,3 +55,29 @@ This is an explicit exception to the "no manual runtime asset copying" rule abov
 - If the import fails, the server falls back to local development mode.
 
 That keeps one server implementation for both workflows without adding a separate production-only server entrypoint.
+
+## Local Streams Development Override
+
+Studio keeps `@prisma/dev` as the only runtime dependency in source, but local
+development MAY temporarily override both the root `@prisma/dev` dependency and
+that package's transitive `@prisma/streams-local` dependency through the
+repo-level `.pnpmfile.cjs` hook.
+
+- The override MUST remain opt-in through `STUDIO_USE_LOCAL_STREAMS=1`.
+- `pnpm streams:use-local` MUST point Studio's root `@prisma/dev` dependency at
+  the sibling `../team-expansion/dev/server` package (or a caller-provided
+  `STUDIO_LOCAL_PRISMA_DEV_PACKAGE_DIR`) so local `@prisma/dev` source changes
+  are exercised directly from this checkout.
+- Default installs MUST continue to resolve the published npm package.
+- `pnpm streams:use-local` MUST build `../streams/dist/npm/streams-local` (or a
+  caller-provided override path) and reinstall dependencies with `--no-lockfile`
+  so the repo can switch implementations without persisting a machine-local
+  path to `pnpm-lock.yaml`.
+- `pnpm streams:use-local` MUST also build or otherwise validate the linked
+  local `@prisma/dev` package before reinstalling Studio, because the linked
+  package's published entrypoints resolve from its `dist/` directory.
+- `pnpm streams:use-npm` MUST restore the published npm dependencies with the
+  same `--no-lockfile` behavior.
+- Because `build-compute.ts` resolves `@prisma/streams-local` from the installed
+  `@prisma/dev` dependency tree, bundled demo artifacts MUST follow whichever
+  local or published streams package is currently installed.

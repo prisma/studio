@@ -132,6 +132,8 @@
     "test:data": "vitest --project data",
     "test:demo": "vitest --project demo",
     "test:e2e": "vitest --passWithNoTests --project e2e",
+    "streams:use-local": "node scripts/dev/install-local-streams.mjs",
+    "streams:use-npm": "node scripts/dev/install-npm-streams.mjs",
     "release:prepare": "node scripts/release/prepare-release.mjs",
     "test:ui": "vitest --passWithNoTests --project ui",
     "typecheck": "tsc --noEmit",

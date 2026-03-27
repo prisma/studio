@@ -10,16 +10,19 @@ This architecture governs:
 
 - active stream selection in the main view
 - refreshing the active stream's latest event count
+- loading active-stream total byte metadata for the header badge
 - loading a tail window of decoded stream events
 - TanStack DB caching for stream-event rows
 - infinite-scroll page growth for older events
 - batched reveal of newly arrived events
+- transient highlighting of newly revealed event rows
 - one-row-at-a-time expansion behavior
 - event-row summary derivation for time, key, indexed fields, preview, and size
 
 ## Canonical Components
 
 - [`ui/hooks/use-stream-events.ts`](../ui/hooks/use-stream-events.ts)
+- [`ui/hooks/use-stream-details.ts`](../ui/hooks/use-stream-details.ts)
 - [`ui/hooks/use-ui-state.ts`](../ui/hooks/use-ui-state.ts)
 - [`ui/hooks/use-navigation.tsx`](../ui/hooks/use-navigation.tsx)
 - [`ui/studio/views/stream/StreamView.tsx`](../ui/studio/views/stream/StreamView.tsx)
@@ -77,14 +80,17 @@ This is required to prevent the scroll container from unmounting and resetting t
 ### 5. Latest count refresh and newer-event reveal
 
 While a stream is open, Studio MAY refresh the stream metadata count on a short interval through `useStreams`.
+Studio MAY also refresh logical payload-byte totals for the active stream through `useStreamDetails`.
 
 The stream view MUST treat that latest metadata count separately from `visibleEventCount`:
 
 - the header count reflects the latest polled metadata count
+- the header MAY append logical payload-byte totals from `useStreamDetails`, labeled clearly so it is distinct from the event count
 - the list remains bounded by `visibleEventCount` until the user reveals newer events
 - the centered `new events` button sits directly below the sticky summary header row
 - the `new events` button row MUST NOT add a divider between itself and the event rows below it
 - the `new events` button reveals at most 50 newer rows per click
+- rows revealed by that button MUST receive a short-lived, motion-safe highlight animation so the prepended batch is visually obvious without shifting the viewport
 - hidden newer rows MUST NOT auto-reveal from top-of-list scrolling while that button is present
 - when the button appears or newer rows are prepended above the current viewport, the view MUST preserve the user's visible event position instead of snapping the existing list content
 
@@ -145,5 +151,7 @@ Changes to this architecture MUST include tests for:
 - clipping hidden newer events until `visibleEventCount` advances
 - newest-first normalization of decoded events
 - stream-view expansion exclusivity
+- stream-view header rendering of total stream bytes
 - infinite-scroll page growth behavior for both older history and newly revealed events
+- stream-view transient highlighting for newly revealed rows, including automatic clearance
 - stream navigation into `view=stream`

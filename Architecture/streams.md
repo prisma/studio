@@ -22,6 +22,7 @@ This architecture governs:
 - [`ui/studio/Studio.tsx`](../ui/studio/Studio.tsx)
 - [`ui/studio/context.tsx`](../ui/studio/context.tsx)
 - [`ui/hooks/use-streams.ts`](../ui/hooks/use-streams.ts)
+- [`ui/hooks/use-stream-details.ts`](../ui/hooks/use-stream-details.ts)
 - [`ui/hooks/use-stream-events.ts`](../ui/hooks/use-stream-events.ts)
 - [`ui/studio/Navigation.tsx`](../ui/studio/Navigation.tsx)
 - [`ui/studio/views/stream/StreamView.tsx`](../ui/studio/views/stream/StreamView.tsx)
@@ -34,6 +35,7 @@ This architecture governs:
 - Streams support MUST be passed as a plain `streamsUrl` string on `Studio`; do not hide it behind the database adapter contract.
 - When `streamsUrl` is absent, Studio MUST behave exactly as before and MUST NOT render a `Streams` section.
 - Stream discovery MUST go through [`useStreams`](../ui/hooks/use-streams.ts); feature code MUST NOT fetch `/v1/streams` ad hoc.
+- Active-stream total-size loading MUST go through [`useStreamDetails`](../ui/hooks/use-stream-details.ts); feature code MUST NOT fetch stream `_details` ad hoc from view components.
 - Active-stream count refresh MUST reuse [`useStreams`](../ui/hooks/use-streams.ts); feature code MUST NOT introduce a second count or metadata polling path.
 - Stream event loading MUST go through [`useStreamEvents`](../ui/hooks/use-stream-events.ts); feature code MUST NOT fetch `/v1/stream/:name` ad hoc from view components.
 - `useStreams` MUST treat `streamsUrl` as a base URL and append the Prisma Streams list endpoint path (`/v1/streams`) itself.
@@ -55,6 +57,10 @@ Studio also expects the configured base URL to expose the Prisma Streams read en
 - `GET {streamsUrl}/v1/stream/{streamName}?format=json&offset={encodedOffset}`
 - `GET {streamsUrl}/v1/stream/{streamName}?format=json&offset=-1`
 
+For active-stream total byte metadata, Studio also expects the stream details endpoint:
+
+- `GET {streamsUrl}/v1/stream/{streamName}/_details`
+
 The response is treated as a list of stream records containing at least:
 
 - `name`
@@ -67,6 +73,7 @@ The response is treated as a list of stream records containing at least:
 
 `useStreams` normalizes that payload into the `StudioStream` shape used by the sidebar.
 The stream's current event count comes from `next_offset` on this metadata response. When a stream view is open, Studio MAY refetch this metadata endpoint on a short interval to keep the count fresh without re-reading event bodies.
+The active stream's logical payload-byte size comes from `total_size_bytes` on the details response, exposed through `useStreamDetails`.
 
 `useStreamEvents` computes the encoded `offset` for the currently requested tail window, fetches decoded JSON events from the stream read endpoint, and normalizes them into `StudioStreamEvent` rows for the main event list.
 
@@ -94,9 +101,11 @@ Streams changes MUST include tests for:
 
 - `Studio`/context propagation of `streamsUrl`
 - `useStreams` fetch behavior and response normalization
+- `useStreamDetails` fetch behavior and total-byte normalization
 - `useStreamEvents` tail-window fetch behavior and normalization
 - sidebar rendering of the `Streams` section and stream links
 - stream-view routing plus one-row-at-a-time expansion behavior
+- stream-view header rendering of total stream bytes
 - `ppg-dev` config wiring for the browser-facing Streams URL
 
 When the compute bundle path changes, tests MUST also verify that the packaged demo can boot and serve `/api/config` with Streams enabled.
