@@ -4,13 +4,36 @@ import { useMemo } from "react";
 import { useStudio } from "../studio/context";
 
 interface StreamDetailsApiPayload {
+  schema?: {
+    search?: {
+      rollups?: Record<string, unknown>;
+    };
+  };
   stream: {
     name: string;
     total_size_bytes: string;
   };
 }
 
+export type StudioStreamAggregationMeasureKind =
+  | "count"
+  | "summary"
+  | "summary_parts";
+
+export interface StudioStreamAggregationRollupMeasure {
+  kind: StudioStreamAggregationMeasureKind;
+  name: string;
+}
+
+export interface StudioStreamAggregationRollup {
+  intervals: string[];
+  measures: StudioStreamAggregationRollupMeasure[];
+  name: string;
+}
+
 export interface StudioStreamDetails {
+  aggregationCount: number;
+  aggregationRollups: StudioStreamAggregationRollup[];
   name: string;
   totalSizeBytes: bigint;
 }
@@ -29,10 +52,14 @@ function parseNonNegativeBigInt(value: string): bigint {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 function isStreamDetailsApiPayload(
   value: unknown,
 ): value is StreamDetailsApiPayload {
-  if (typeof value !== "object" || value === null) {
+  if (!isRecord(value)) {
     return false;
   }
 
@@ -45,6 +72,79 @@ function isStreamDetailsApiPayload(
     typeof stream.name === "string" &&
     typeof stream.total_size_bytes === "string"
   );
+}
+
+function normalizeAggregationRollups(
+  value: unknown,
+): StudioStreamAggregationRollup[] {
+  if (!isRecord(value)) {
+    return [];
+  }
+
+  const rollups = Object.entries(value)
+    .map(([rollupName, rollupValue]) => {
+      if (!isRecord(rollupValue)) {
+        return null;
+      }
+
+      const intervals = Array.isArray(rollupValue.intervals)
+        ? rollupValue.intervals.filter(
+            (interval): interval is string => typeof interval === "string",
+          )
+        : [];
+      const measuresRecord = isRecord(rollupValue.measures)
+        ? rollupValue.measures
+        : null;
+
+      if (!measuresRecord) {
+        return null;
+      }
+
+      const measures = Object.entries(measuresRecord)
+        .map(([measureName, measureValue]) => {
+          if (!isRecord(measureValue)) {
+            return null;
+          }
+
+          const kind = measureValue.kind;
+
+          if (
+            kind !== "count" &&
+            kind !== "summary" &&
+            kind !== "summary_parts"
+          ) {
+            return null;
+          }
+
+          return {
+            kind,
+            name: measureName,
+          } satisfies StudioStreamAggregationRollupMeasure;
+        })
+        .filter(
+          (measure): measure is StudioStreamAggregationRollupMeasure =>
+            measure !== null,
+        )
+        .sort((left, right) => left.name.localeCompare(right.name));
+
+      if (intervals.length === 0 || measures.length === 0) {
+        return null;
+      }
+
+      return {
+        intervals: [...intervals].sort((left, right) =>
+          left.localeCompare(right),
+        ),
+        measures,
+        name: rollupName,
+      } satisfies StudioStreamAggregationRollup;
+    })
+    .filter(
+      (rollup): rollup is StudioStreamAggregationRollup => rollup !== null,
+    )
+    .sort((left, right) => left.name.localeCompare(right.name));
+
+  return rollups;
 }
 
 function createStreamDetailsUrl(
@@ -113,7 +213,16 @@ export function useStreamDetails(args?: UseStreamDetailsArgs) {
         );
       }
 
+      const aggregationRollups = normalizeAggregationRollups(
+        payload.schema?.search?.rollups,
+      );
+
       return {
+        aggregationCount: aggregationRollups.reduce(
+          (count, rollup) => count + rollup.measures.length,
+          0,
+        ),
+        aggregationRollups,
         name: payload.stream.name,
         totalSizeBytes: parseNonNegativeBigInt(payload.stream.total_size_bytes),
       };

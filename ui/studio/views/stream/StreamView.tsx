@@ -20,6 +20,7 @@ import {
 import { cn } from "@/ui/lib/utils";
 
 import { useNavigation } from "../../../hooks/use-navigation";
+import { type StreamAggregationRangeSelection } from "../../../hooks/use-stream-aggregations";
 import { useStreamDetails } from "../../../hooks/use-stream-details";
 import {
   type StudioStreamEvent,
@@ -30,11 +31,16 @@ import { useStreams } from "../../../hooks/use-streams";
 import { useUiState } from "../../../hooks/use-ui-state";
 import { StudioHeader } from "../../StudioHeader";
 import { ViewProps } from "../View";
+import { StreamAggregationsPanel } from "./StreamAggregationsPanel";
 
 const LOAD_MORE_THRESHOLD_PX = 160;
 const NEW_EVENTS_BATCH_SIZE = 50n;
 const NEW_EVENTS_HIGHLIGHT_DURATION_MS = 1_800;
 const STREAM_COUNT_REFRESH_INTERVAL_MS = 5000;
+const DEFAULT_STREAM_AGGREGATION_RANGE_SELECTION = {
+  duration: "1h",
+  kind: "relative",
+} as const satisfies StreamAggregationRangeSelection;
 
 interface ScrollAnchorSnapshot {
   anchorEventId: string | null;
@@ -369,10 +375,23 @@ export function StreamView(_props: ViewProps) {
   const expandedEventStateKey = selectedStream
     ? `stream:${selectedStream.name}:expanded-event`
     : undefined;
+  const aggregationPanelStateKey = selectedStream
+    ? `stream:${selectedStream.name}:aggregations-open`
+    : undefined;
+  const aggregationRangeStateKey = selectedStream
+    ? `stream:${selectedStream.name}:aggregation-range`
+    : undefined;
   const [expandedEventId, setExpandedEventId] = useUiState<string | null>(
     expandedEventStateKey,
     null,
   );
+  const [isAggregationPanelOpen, setIsAggregationPanelOpen] =
+    useUiState<boolean>(aggregationPanelStateKey, false);
+  const [aggregationRangeSelection, setAggregationRangeSelection] =
+    useUiState<StreamAggregationRangeSelection>(
+      aggregationRangeStateKey,
+      DEFAULT_STREAM_AGGREGATION_RANGE_SELECTION,
+    );
   const {
     events,
     hasHiddenNewerEvents,
@@ -393,6 +412,8 @@ export function StreamView(_props: ViewProps) {
     refreshIntervalMs: STREAM_COUNT_REFRESH_INTERVAL_MS,
     streamName: selectedStream?.name,
   });
+  const aggregationCount = selectedStreamDetails?.aggregationCount ?? 0;
+  const aggregationRollups = selectedStreamDetails?.aggregationRollups ?? [];
   const firstEventId = events[0]?.id ?? null;
   const recentlyRevealedEventIdSet = useMemo(
     () => new Set(recentlyRevealedEventIds),
@@ -612,12 +633,27 @@ export function StreamView(_props: ViewProps) {
       <StudioHeader
         endContent={
           selectedStream ? (
-            <Badge data-testid="stream-summary-badge" variant="secondary">
-              {totalEventCount.toString()} events
-              {selectedStreamDetails
-                ? `, ${formatBytes(selectedStreamDetails.totalSizeBytes)} total`
-                : ""}
-            </Badge>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Badge data-testid="stream-summary-badge" variant="secondary">
+                {totalEventCount.toString()} events
+                {selectedStreamDetails
+                  ? `, ${formatBytes(selectedStreamDetails.totalSizeBytes)} total`
+                  : ""}
+              </Badge>
+              {aggregationCount > 0 ? (
+                <Button
+                  data-testid="stream-aggregations-button"
+                  onClick={() => {
+                    setIsAggregationPanelOpen((currentValue) => !currentValue);
+                  }}
+                  size="sm"
+                  type="button"
+                  variant={isAggregationPanelOpen ? "secondary" : "outline"}
+                >
+                  {aggregationCount} aggregations
+                </Button>
+              ) : null}
+            </div>
           ) : null
         }
       >
@@ -655,12 +691,6 @@ export function StreamView(_props: ViewProps) {
               This stream could not be found. Refresh the Streams list and try
               again.
             </div>
-          ) : isFetching && events.length === 0 ? (
-            <LoadingState />
-          ) : events.length === 0 ? (
-            <div className="flex flex-1 items-center justify-center px-6 py-10 text-sm text-muted-foreground">
-              This stream does not contain any events yet.
-            </div>
           ) : (
             <div
               ref={scrollContainerRef}
@@ -671,59 +701,80 @@ export function StreamView(_props: ViewProps) {
                 maybeLoadOlderEvents();
               }}
             >
-              <HeaderRow />
-
-              {hasHiddenNewerEvents ? (
-                <div
-                  className="flex justify-center px-4 py-3"
-                  data-testid="stream-new-events-row"
-                >
-                  <Button
-                    className="rounded-2xl bg-background/95 px-4 shadow-sm"
-                    data-testid="stream-new-events-button"
-                    onClick={() => {
-                      revealNewerEvents();
-                    }}
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    {formatNewEventsLabel(hiddenNewerEventCount)}
-                  </Button>
-                </div>
+              {isAggregationPanelOpen && aggregationRollups.length > 0 ? (
+                <StreamAggregationsPanel
+                  aggregationRollups={aggregationRollups}
+                  onRangeSelectionChange={setAggregationRangeSelection}
+                  rangeSelection={aggregationRangeSelection}
+                  streamName={selectedStream.name}
+                />
               ) : null}
 
-              <div className="flex flex-col gap-2 p-4">
-                {events.map((event) => (
-                  <StreamEventRow
-                    key={event.id}
-                    event={event}
-                    expandedEventId={expandedEventId}
-                    isNewlyRevealed={recentlyRevealedEventIdSet.has(event.id)}
-                    onToggle={(eventId) => {
-                      setExpandedEventId((currentValue) =>
-                        currentValue === eventId ? null : eventId,
-                      );
-                    }}
-                  />
-                ))}
+              {isFetching && events.length === 0 ? (
+                <LoadingState />
+              ) : events.length === 0 ? (
+                <div className="flex min-h-full items-center justify-center px-6 py-10 text-sm text-muted-foreground">
+                  This stream does not contain any events yet.
+                </div>
+              ) : (
+                <>
+                  <HeaderRow />
 
-                {isFetching && (hasMoreEvents || hasHiddenNewerEvents) ? (
-                  <div className="grid grid-cols-[minmax(8.5rem,10rem)_minmax(0,10rem)_minmax(0,14rem)_minmax(0,1fr)_5.5rem] gap-3 rounded-lg border border-border bg-card px-4 py-3">
-                    <Skeleton className="h-4 w-24" />
-                    <Skeleton className="h-4 w-20" />
-                    <Skeleton className="h-4 w-28" />
-                    <Skeleton className="h-4 w-full" />
-                    <Skeleton className="ml-auto h-4 w-12" />
-                  </div>
-                ) : null}
+                  {hasHiddenNewerEvents ? (
+                    <div
+                      className="flex justify-center px-4 py-3"
+                      data-testid="stream-new-events-row"
+                    >
+                      <Button
+                        className="rounded-2xl bg-background/95 px-4 shadow-sm"
+                        data-testid="stream-new-events-button"
+                        onClick={() => {
+                          revealNewerEvents();
+                        }}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        {formatNewEventsLabel(hiddenNewerEventCount)}
+                      </Button>
+                    </div>
+                  ) : null}
 
-                {!hasMoreEvents ? (
-                  <div className="py-2 text-center text-xs text-muted-foreground">
-                    Reached the beginning of the stream.
+                  <div className="flex flex-col gap-2 p-4">
+                    {events.map((event) => (
+                      <StreamEventRow
+                        key={event.id}
+                        event={event}
+                        expandedEventId={expandedEventId}
+                        isNewlyRevealed={recentlyRevealedEventIdSet.has(
+                          event.id,
+                        )}
+                        onToggle={(eventId) => {
+                          setExpandedEventId((currentValue) =>
+                            currentValue === eventId ? null : eventId,
+                          );
+                        }}
+                      />
+                    ))}
+
+                    {isFetching && (hasMoreEvents || hasHiddenNewerEvents) ? (
+                      <div className="grid grid-cols-[minmax(8.5rem,10rem)_minmax(0,10rem)_minmax(0,14rem)_minmax(0,1fr)_5.5rem] gap-3 rounded-lg border border-border bg-card px-4 py-3">
+                        <Skeleton className="h-4 w-24" />
+                        <Skeleton className="h-4 w-20" />
+                        <Skeleton className="h-4 w-28" />
+                        <Skeleton className="h-4 w-full" />
+                        <Skeleton className="ml-auto h-4 w-12" />
+                      </div>
+                    ) : null}
+
+                    {!hasMoreEvents ? (
+                      <div className="py-2 text-center text-xs text-muted-foreground">
+                        Reached the beginning of the stream.
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
-              </div>
+                </>
+              )}
             </div>
           )}
         </div>

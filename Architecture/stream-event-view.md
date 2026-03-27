@@ -11,6 +11,9 @@ This architecture governs:
 - active stream selection in the main view
 - refreshing the active stream's latest event count
 - loading active-stream total byte metadata for the header badge
+- discovering active-stream aggregation rollups
+- loading active-stream aggregate windows
+- rendering the optional aggregation strip above the event header row
 - loading a tail window of decoded stream events
 - TanStack DB caching for stream-event rows
 - infinite-scroll page growth for older events
@@ -23,9 +26,11 @@ This architecture governs:
 
 - [`ui/hooks/use-stream-events.ts`](../ui/hooks/use-stream-events.ts)
 - [`ui/hooks/use-stream-details.ts`](../ui/hooks/use-stream-details.ts)
+- [`ui/hooks/use-stream-aggregations.ts`](../ui/hooks/use-stream-aggregations.ts)
 - [`ui/hooks/use-ui-state.ts`](../ui/hooks/use-ui-state.ts)
 - [`ui/hooks/use-navigation.tsx`](../ui/hooks/use-navigation.tsx)
 - [`ui/studio/views/stream/StreamView.tsx`](../ui/studio/views/stream/StreamView.tsx)
+- [`ui/studio/views/stream/StreamAggregationsPanel.tsx`](../ui/studio/views/stream/StreamAggregationsPanel.tsx)
 - [`ui/studio/context.tsx`](../ui/studio/context.tsx)
 
 ## Data Loading Contract
@@ -81,12 +86,18 @@ This is required to prevent the scroll container from unmounting and resetting t
 
 While a stream is open, Studio MAY refresh the stream metadata count on a short interval through `useStreams`.
 Studio MAY also refresh logical payload-byte totals for the active stream through `useStreamDetails`.
+If the active stream advertises aggregation rollups, Studio MAY also load aggregate rollup windows through `useStreamAggregations`.
 
 The stream view MUST treat that latest metadata count separately from `visibleEventCount`:
 
 - the header count reflects the latest polled metadata count
 - the header MAY append logical payload-byte totals from `useStreamDetails`, labeled clearly so it is distinct from the event count
+- when `useStreamDetails` exposes one or more aggregation measures, the header MUST render a sibling `x aggregations` toggle button
 - the list remains bounded by `visibleEventCount` until the user reveals newer events
+- the aggregation strip, when open, MUST sit above the sticky stream-column header row inside the same scroll container
+- aggregation queries MUST be driven by a persisted range selection with quick buttons for `5 minutes`, `1 hour`, and `12 hours`, plus a custom-range popover for longer presets or an absolute time window
+- aggregation cards MUST render one summary value per advertised measure, using a single horizontal band that scrolls sideways when the card count exceeds the available width
+- each aggregation card MUST show a sparkline-like bucket history behind the headline value instead of introducing a separate chart pane
 - the centered `new events` button sits directly below the sticky summary header row
 - the `new events` button row MUST NOT add a divider between itself and the event rows below it
 - the `new events` button reveals at most 50 newer rows per click
@@ -131,6 +142,11 @@ The active expanded event row MUST be stored through `useUiState` with a stream-
 
 - `stream:${streamName}:expanded-event`
 
+The aggregation panel state MUST also be stored through `useUiState` with stream-scoped keys such as:
+
+- `stream:${streamName}:aggregations-open`
+- `stream:${streamName}:aggregation-range`
+
 Only one event row may be expanded at a time.
 
 The infinite-scroll `pageCount` and `visibleEventCount` are view-local transient state and MUST NOT be written to URL params or shared collections.
@@ -141,6 +157,7 @@ The infinite-scroll `pageCount` and `visibleEventCount` are view-local transient
 - storing the loaded event list in component-local `useState`
 - introducing stream-event URL pagination params
 - allowing more than one expanded row at a time
+- fetching aggregation rollups or aggregate windows directly inside `StreamView` without going through the dedicated hooks
 - deriving fake indexed fields from arbitrary payload properties
 
 ## Testing Requirements
@@ -152,6 +169,8 @@ Changes to this architecture MUST include tests for:
 - newest-first normalization of decoded events
 - stream-view expansion exclusivity
 - stream-view header rendering of total stream bytes
+- aggregation-rollup request normalization in `useStreamAggregations`
+- stream-view aggregation toggle plus range switching
 - infinite-scroll page growth behavior for both older history and newly revealed events
 - stream-view transient highlighting for newly revealed rows, including automatic clearance
 - stream navigation into `view=stream`

@@ -10,6 +10,7 @@ type QueryKey =
   | [] // all
   | ["introspection"]
   | ["stream-details", string]
+  | ["stream-aggregations", string, "stream", string, "rollup", string, "range", string]
   | ["streams", string]
   | [
       "streams",

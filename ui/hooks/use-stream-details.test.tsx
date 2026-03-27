@@ -114,6 +114,31 @@ describe("useStreamDetails", () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
+          schema: {
+            search: {
+              rollups: {
+                metrics: {
+                  intervals: ["10s", "1m", "5m"],
+                  measures: {
+                    value: {
+                      kind: "summary_parts",
+                    },
+                  },
+                },
+                requests: {
+                  intervals: ["1m"],
+                  measures: {
+                    latency: {
+                      kind: "summary",
+                    },
+                    requests: {
+                      kind: "count",
+                    },
+                  },
+                },
+              },
+            },
+          },
           stream: {
             name: "prisma-wal",
             total_size_bytes: "1048576",
@@ -140,6 +165,33 @@ describe("useStreamDetails", () => {
     expect(fetchCall[0]).toBe("/api/streams/v1/stream/prisma-wal/_details");
     expect(fetchCall[1]?.signal).toBeInstanceOf(AbortSignal);
     expect(harness.getLatestState()?.details).toEqual({
+      aggregationCount: 3,
+      aggregationRollups: [
+        {
+          intervals: ["10s", "1m", "5m"],
+          measures: [
+            {
+              kind: "summary_parts",
+              name: "value",
+            },
+          ],
+          name: "metrics",
+        },
+        {
+          intervals: ["1m"],
+          measures: [
+            {
+              kind: "summary",
+              name: "latency",
+            },
+            {
+              kind: "count",
+              name: "requests",
+            },
+          ],
+          name: "requests",
+        },
+      ],
       name: "prisma-wal",
       totalSizeBytes: 1_048_576n,
     });

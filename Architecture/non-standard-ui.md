@@ -80,6 +80,27 @@ It deliberately excludes:
   - The same custom row composite also carries the short-lived highlight animation for newly revealed events, which needs to live on the exact row shell that preserves stream-scroll anchoring.
   - No stock ShadCN component provides that event-log interaction model, so Studio keeps a custom composite while still building it from standard ShadCN primitives.
 
+### Stream Aggregation Strip
+
+- Canonical components:
+  - [`ui/studio/views/stream/StreamAggregationsPanel.tsx`](ui/studio/views/stream/StreamAggregationsPanel.tsx)
+  - [`ui/studio/views/stream/StreamView.tsx`](ui/studio/views/stream/StreamView.tsx)
+- Closest standard ShadCN alternatives:
+  - `Card`
+  - `Button`
+  - `Popover`
+- Why it stays non-standard:
+  - The stream view needs a compact, single-band aggregation surface that mixes horizontally scrollable metric cards, inline sparkline backgrounds, quick time-range toggles, and a small custom-range popover directly above the event log.
+  - No stock ShadCN component covers that event-log-adjacent observability layout, especially once each measure card has to combine a headline value with a faded sparkline in the same tile.
+- Required internals:
+  - `Badge`
+  - `Button`
+  - `Card`
+  - `Input`
+  - `Label`
+  - `Popover`
+  - `Skeleton`
+
 ## Standardization Candidates
 
 These are the current high-signal places where Studio is bypassing a plausible standard ShadCN component or composition pattern.

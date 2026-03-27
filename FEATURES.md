@@ -53,6 +53,12 @@ The view uses TanStack DB-backed infinite scroll to load the newest events first
 The header keeps the latest event count visible and now also surfaces total logical stream payload bytes in human-readable units, so users can gauge stream footprint without scanning event bodies.
 While a stream is open, Studio refreshes the metadata count in place, surfaces a centered `new events` button just below the header row when the stream advances, reveals those newer rows in 50-event batches on demand, briefly highlights the prepended rows so the new batch is easy to spot, and keeps older-history loading on the same infinite-scroll surface.
 
+## Stream Aggregation Rollups
+
+When a stream advertises search rollups, Studio adds an `x aggregations` toggle beside the stream summary badge so users can inspect rollup measures without leaving the event log.
+The aggregation strip renders one horizontally scrollable card per measure, pairing a headline value with a faded sparkline background for the selected time window.
+Quick controls cover `5 minutes`, `1 hour`, and `12 hours`, while a small popover exposes longer presets plus an exact absolute range for targeted inspection.
+
 ## Schema Visualizer
 
 Studio includes a schema graph view with table nodes, column metadata, and detected foreign-key relationships labeled as 1:1 or 1:n.

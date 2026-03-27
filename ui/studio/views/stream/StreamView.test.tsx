@@ -6,6 +6,7 @@ import { StreamView } from "./StreamView";
 
 const {
   useNavigationMock,
+  useStreamAggregationsMock,
   useStreamDetailsMock,
   useStreamEventsMock,
   useStreamsMock,
@@ -15,9 +16,67 @@ const {
       streamParam: string | null;
     }
   >(),
+  useStreamAggregationsMock: vi.fn<
+    (args: {
+      aggregationRollups?: Array<{
+        intervals: string[];
+        measures: Array<{
+          kind: "count" | "summary" | "summary_parts";
+          name: string;
+        }>;
+        name: string;
+      }>;
+      enabled?: boolean;
+      rangeSelection: {
+        duration?: string;
+        fromIso?: string;
+        kind: "absolute" | "relative";
+        toIso?: string;
+      };
+      streamName?: string | null;
+    }) => {
+      aggregations: Array<{
+        coverage: {
+          indexFamiliesUsed: string[];
+          indexedSegments: number;
+          scannedSegments: number;
+          scannedTailDocs: number;
+          usedRollups: boolean;
+        };
+        from: string;
+        interval: string;
+        measures: Array<{
+          kind: "count" | "summary" | "summary_parts";
+          name: string;
+          points: Array<{
+            end: string;
+            start: string;
+            value: number | null;
+          }>;
+          summaryValue: number | null;
+        }>;
+        rollupName: string;
+        to: string;
+      }>;
+      error: Error | null;
+      isError: boolean;
+      isFetching: boolean;
+      isLoading: boolean;
+      refetch: () => Promise<void>;
+    }
+  >(),
   useStreamDetailsMock: vi.fn<
     () => {
       details: {
+        aggregationCount: number;
+        aggregationRollups: Array<{
+          intervals: string[];
+          measures: Array<{
+            kind: "count" | "summary" | "summary_parts";
+            name: string;
+          }>;
+          name: string;
+        }>;
         name: string;
         totalSizeBytes: bigint;
       } | null;
@@ -83,6 +142,52 @@ vi.mock("../../../hooks/use-stream-events", () => ({
 
 vi.mock("../../../hooks/use-stream-details", () => ({
   useStreamDetails: useStreamDetailsMock,
+}));
+
+vi.mock("../../../hooks/use-stream-aggregations", () => ({
+  STREAM_AGGREGATION_QUICK_RANGES: [
+    {
+      duration: "5m",
+      label: "Last 5 minutes",
+    },
+    {
+      duration: "15m",
+      label: "Last 15 minutes",
+    },
+    {
+      duration: "30m",
+      label: "Last 30 minutes",
+    },
+    {
+      duration: "1h",
+      label: "Last 1 hour",
+    },
+    {
+      duration: "3h",
+      label: "Last 3 hours",
+    },
+    {
+      duration: "6h",
+      label: "Last 6 hours",
+    },
+    {
+      duration: "12h",
+      label: "Last 12 hours",
+    },
+    {
+      duration: "24h",
+      label: "Last 24 hours",
+    },
+    {
+      duration: "2d",
+      label: "Last 2 days",
+    },
+    {
+      duration: "7d",
+      label: "Last 7 days",
+    },
+  ] as const,
+  useStreamAggregations: useStreamAggregationsMock,
 }));
 
 vi.mock("../../../hooks/use-streams", () => ({
@@ -238,9 +343,19 @@ describe("StreamView", () => {
     }));
     useStreamDetailsMock.mockReturnValue({
       details: {
+        aggregationCount: 0,
+        aggregationRollups: [],
         name: "prisma-wal",
         totalSizeBytes: 1_536n,
       },
+    });
+    useStreamAggregationsMock.mockReturnValue({
+      aggregations: [],
+      error: null,
+      isError: false,
+      isFetching: false,
+      isLoading: false,
+      refetch: vi.fn(() => Promise.resolve()),
     });
     useStreamEventsMock.mockImplementation(
       ({
@@ -553,6 +668,139 @@ describe("StreamView", () => {
 
     expect(summaryBadge?.textContent).toContain("2 events");
     expect(summaryBadge?.textContent).toContain("1.5 KB total");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("renders an aggregation button and panel with range controls when the stream exposes rollups", () => {
+    useStreamDetailsMock.mockReturnValue({
+      details: {
+        aggregationCount: 2,
+        aggregationRollups: [
+          {
+            intervals: ["1m", "5m", "1h"],
+            measures: [
+              {
+                kind: "count",
+                name: "requests",
+              },
+              {
+                kind: "summary",
+                name: "latency",
+              },
+            ],
+            name: "requests",
+          },
+        ],
+        name: "prisma-wal",
+        totalSizeBytes: 1_536n,
+      },
+    });
+    useStreamAggregationsMock.mockReturnValue({
+      aggregations: [
+        {
+          coverage: {
+            indexFamiliesUsed: ["agg"],
+            indexedSegments: 4,
+            scannedSegments: 0,
+            scannedTailDocs: 0,
+            usedRollups: true,
+          },
+          from: "2026-03-27T03:00:00.000Z",
+          interval: "1m",
+          measures: [
+            {
+              kind: "count",
+              name: "requests",
+              points: [
+                {
+                  end: "2026-03-27T03:01:00.000Z",
+                  start: "2026-03-27T03:00:00.000Z",
+                  value: 4,
+                },
+              ],
+              summaryValue: 28,
+            },
+            {
+              kind: "summary",
+              name: "latency",
+              points: [
+                {
+                  end: "2026-03-27T03:01:00.000Z",
+                  start: "2026-03-27T03:00:00.000Z",
+                  value: 82,
+                },
+              ],
+              summaryValue: 82,
+            },
+          ],
+          rollupName: "requests",
+          to: "2026-03-27T04:00:00.000Z",
+        },
+      ],
+      error: null,
+      isError: false,
+      isFetching: false,
+      isLoading: false,
+      refetch: vi.fn(() => Promise.resolve()),
+    });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamView />);
+    });
+
+    const aggregationButton = container.querySelector<HTMLButtonElement>(
+      '[data-testid="stream-aggregations-button"]',
+    );
+
+    expect(aggregationButton?.textContent).toContain("2 aggregations");
+    expect(
+      container.querySelector('[data-testid="stream-aggregations-panel"]'),
+    ).toBeNull();
+
+    act(() => {
+      aggregationButton?.click();
+    });
+
+    expect(
+      container.querySelector('[data-testid="stream-aggregations-panel"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="stream-aggregations-scroll-area"]')
+        ?.className,
+    ).toContain("overflow-x-auto");
+    expect(container.textContent).toContain("5 minutes");
+    expect(container.textContent).toContain("1 hour");
+    expect(container.textContent).toContain("12 hours");
+    expect(container.textContent).toContain("requests");
+    expect(container.textContent).toContain("latency");
+    expect(container.textContent).toContain("28");
+    expect(container.textContent).toContain("82");
+
+    act(() => {
+      (
+        [...container.querySelectorAll("button")].find((button) =>
+          button.textContent?.includes("12 hours"),
+        ) ?? null
+      )?.click();
+    });
+
+    expect(useStreamAggregationsMock.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        rangeSelection: {
+          duration: "12h",
+          kind: "relative",
+        },
+        streamName: "prisma-wal",
+      }),
+    );
 
     act(() => {
       root.unmount();

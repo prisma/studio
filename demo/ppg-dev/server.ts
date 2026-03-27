@@ -594,16 +594,20 @@ async function handleStreamsProxyRequest(
   if (request.method === "OPTIONS") {
     return new Response(null, {
       headers: {
-        Allow: "GET,HEAD,OPTIONS",
+        Allow: "GET,HEAD,POST,OPTIONS",
       },
       status: 204,
     });
   }
 
-  if (request.method !== "GET" && request.method !== "HEAD") {
+  if (
+    request.method !== "GET" &&
+    request.method !== "HEAD" &&
+    request.method !== "POST"
+  ) {
     return new Response("Method Not Allowed", {
       headers: {
-        Allow: "GET,HEAD,OPTIONS",
+        Allow: "GET,HEAD,POST,OPTIONS",
       },
       status: 405,
     });
@@ -621,10 +625,13 @@ async function handleStreamsProxyRequest(
     `${upstreamBaseUrl.replace(/\/+$/, "")}/`,
   );
   const headers = new Headers(request.headers);
+  const body =
+    request.method === "POST" ? await request.arrayBuffer() : undefined;
 
   headers.delete("host");
 
   const response = await fetch(upstreamUrl, {
+    body,
     headers,
     method: request.method,
     redirect: "manual",
