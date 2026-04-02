@@ -22,6 +22,7 @@ Studio context provides the canonical stores in [`ui/studio/context.tsx`](../ui/
 - `studioUiCollection` (`localStorageCollectionOptions`)
   - Persisted user-level UI preferences:
   - `isNavigationOpen`
+  - `navigationWidth`
   - `themeMode` (`light` | `dark` | `system`)
   - `isDarkMode` (resolved effective theme for the current render)
   - `tablePageSize`
@@ -107,6 +108,7 @@ const studioUiState =
 The following are valid examples of UI state and where they belong:
 
 - Navigation open/closed: `studioUiCollection.isNavigationOpen`
+- Navigation width: `studioUiCollection.navigationWidth`
 - Theme preference: `studioUiCollection.themeMode`
 - Effective dark-mode flag for rendering: `studioUiCollection.isDarkMode`
 - Shared table rows-per-page preference: `studioUiCollection.tablePageSize`

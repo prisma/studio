@@ -55,6 +55,8 @@ interface StreamsMockValue {
 interface StudioMockValue {
   hasDatabase: boolean;
   isDarkMode: boolean;
+  navigationWidth: number;
+  setNavigationWidth: (width: number) => void;
 }
 
 const useNavigationMock = vi.fn<() => NavigationMockValue>();
@@ -62,6 +64,7 @@ const useIntrospectionMock = vi.fn<() => IntrospectionMockValue>();
 const useStreamsMock = vi.fn<() => StreamsMockValue>();
 const useStudioMock = vi.fn<() => StudioMockValue>();
 const uiStateValues = new Map<string, unknown>();
+const setNavigationWidthMock = vi.fn<(width: number) => void>();
 
 vi.mock("../hooks/use-navigation", () => ({
   useNavigation: () => useNavigationMock(),
@@ -137,6 +140,8 @@ vi.mock("../hooks/use-navigation-table-list", () => ({
 }));
 
 vi.mock("./context", () => ({
+  MAX_NAVIGATION_WIDTH: 520,
+  MIN_NAVIGATION_WIDTH: 192,
   useStudio: () => useStudioMock(),
 }));
 
@@ -222,12 +227,23 @@ function keyDown(element: Element, key: string) {
   );
 }
 
+function pointerEvent(type: string, options: { clientX: number }) {
+  return new PointerEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    clientX: options.clientX,
+  });
+}
+
 describe("Navigation", () => {
   beforeEach(() => {
     isDarkMode = false;
+    setNavigationWidthMock.mockReset();
     useStudioMock.mockImplementation(() => ({
       hasDatabase: true,
       isDarkMode,
+      navigationWidth: 192,
+      setNavigationWidth: setNavigationWidthMock,
     }));
     useNavigationMock.mockReturnValue({
       createUrl(values: Record<string, string>) {
@@ -389,6 +405,8 @@ describe("Navigation", () => {
     useStudioMock.mockImplementation(() => ({
       hasDatabase: false,
       isDarkMode,
+      navigationWidth: 192,
+      setNavigationWidth: setNavigationWidthMock,
     }));
     useNavigationMock.mockReturnValue({
       createUrl(values: Record<string, string>) {
@@ -891,6 +909,50 @@ describe("Navigation", () => {
       requestId: 1,
       tableId: "public.team_members",
     });
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("lets the user resize the navigation width by dragging the edge", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const navigation = container.querySelector<HTMLElement>(
+      '[data-testid="studio-navigation"]',
+    );
+    const resizeHandle = container.querySelector<HTMLElement>(
+      '[data-testid="navigation-resize-handle"]',
+    );
+
+    expect(navigation?.style.width).toBe("192px");
+    expect(resizeHandle).not.toBeNull();
+    expect(resizeHandle?.childElementCount).toBe(0);
+
+    act(() => {
+      resizeHandle?.dispatchEvent(
+        pointerEvent("pointerdown", { clientX: 192 }),
+      );
+    });
+
+    act(() => {
+      window.dispatchEvent(pointerEvent("pointermove", { clientX: 320 }));
+    });
+
+    expect(navigation?.style.width).toBe("320px");
+
+    act(() => {
+      window.dispatchEvent(pointerEvent("pointerup", { clientX: 320 }));
+    });
+
+    expect(setNavigationWidthMock).toHaveBeenCalledWith(320);
 
     act(() => {
       root.unmount();

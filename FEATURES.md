@@ -51,6 +51,7 @@ Choosing a filtered table, whether by `Enter` or mouse click, closes the search 
 
 Studio can optionally connect to a Prisma Streams server alongside the database connection and show a `Streams` section directly under `Tables` in the sidebar.
 The list reuses the same compact navigation shell as table browsing, loads live stream names from the configured Streams base URL, and disappears entirely when Studio is embedded without Streams configured.
+The sidebar width is also user-resizable from a drag handle on its right edge, and that width is persisted in Studio UI state so wider stream names stay readable as you move around the app or reopen it later.
 
 ## Stream Event Browsing
 

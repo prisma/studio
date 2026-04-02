@@ -1,6 +1,6 @@
 import { Slot } from "@radix-ui/react-slot";
 import { Search, Table2, Waves } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import PrismaLogo from "../../assets/prisma.svg";
 import PrismaLightSymbol from "../../assets/prisma-light-symbol.svg";
@@ -19,7 +19,11 @@ import { useNavigationTableList } from "../hooks/use-navigation-table-list";
 import { useStreams } from "../hooks/use-streams";
 import { useUiState } from "../hooks/use-ui-state";
 import { cn } from "../lib/utils";
-import { useStudio } from "./context";
+import {
+  MAX_NAVIGATION_WIDTH,
+  MIN_NAVIGATION_WIDTH,
+  useStudio,
+} from "./context";
 import { IntrospectionStatusNotice } from "./IntrospectionStatusNotice";
 import {
   TABLE_GRID_FOCUS_REQUEST_UI_STATE_KEY,
@@ -35,7 +39,8 @@ type NavigationProps = {
 export function Navigation({ className }: NavigationProps) {
   const { metadata, createUrl, streamParam, viewParam, schemaParam } =
     useNavigation();
-  const { hasDatabase, isDarkMode } = useStudio();
+  const { hasDatabase, isDarkMode, navigationWidth, setNavigationWidth } =
+    useStudio();
   const { isFetching, activeTable } = metadata;
   const { errorState, hasResolvedIntrospection, isRefetching, refetch } =
     useIntrospection();
@@ -52,7 +57,16 @@ export function Navigation({ className }: NavigationProps) {
     },
   );
   const [highlightedTableIndex, setHighlightedTableIndex] = useState(-1);
+  const [draftNavigationWidth, setDraftNavigationWidth] = useState<
+    number | null
+  >(null);
+  const [isNavigationResizing, setIsNavigationResizing] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const navigationResizeStateRef = useRef<{
+    lastClientX: number;
+    startWidth: number;
+    startX: number;
+  } | null>(null);
   const { tables, isSearchActive: tableSearchActive } = useNavigationTableList({
     schema: schemaParam,
     searchTerm: tableSearchUiState.term,
@@ -70,12 +84,28 @@ export function Navigation({ className }: NavigationProps) {
   const hasRecoverableIntrospectionWarning =
     errorState != null && hasResolvedIntrospection;
   const prismaLogoSrc = isDarkMode ? PrismaLightSymbol : PrismaLogo;
+  const resolvedNavigationWidth = draftNavigationWidth ?? navigationWidth;
   const {
     hasStreamsServer,
     isError: hasStreamsError,
     isLoading: isStreamsLoading,
     streams,
   } = useStreams();
+
+  const clampNavigationWidth = useCallback((width: number) => {
+    const viewportMaxWidth =
+      typeof window === "undefined"
+        ? MAX_NAVIGATION_WIDTH
+        : Math.max(
+            MIN_NAVIGATION_WIDTH,
+            Math.min(MAX_NAVIGATION_WIDTH, Math.floor(window.innerWidth * 0.6)),
+          );
+
+    return Math.min(
+      viewportMaxWidth,
+      Math.max(MIN_NAVIGATION_WIDTH, Math.round(width)),
+    );
+  }, []);
 
   useEffect(() => {
     if (!tableSearchUiState.isOpen) {
@@ -108,6 +138,71 @@ export function Navigation({ className }: NavigationProps) {
     tableSearchUiState.term,
     viewParam,
   ]);
+
+  useEffect(() => {
+    if (
+      !isNavigationResizing &&
+      draftNavigationWidth !== null &&
+      draftNavigationWidth === navigationWidth
+    ) {
+      setDraftNavigationWidth(null);
+    }
+  }, [draftNavigationWidth, isNavigationResizing, navigationWidth]);
+
+  useEffect(() => {
+    if (!isNavigationResizing) {
+      return;
+    }
+
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const resizeState = navigationResizeStateRef.current;
+
+      if (!resizeState) {
+        return;
+      }
+
+      resizeState.lastClientX = event.clientX;
+      setDraftNavigationWidth(
+        clampNavigationWidth(
+          resizeState.startWidth + (event.clientX - resizeState.startX),
+        ),
+      );
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      const resizeState = navigationResizeStateRef.current;
+
+      if (!resizeState) {
+        return;
+      }
+
+      const nextWidth = clampNavigationWidth(
+        resizeState.startWidth + (event.clientX - resizeState.startX),
+      );
+
+      navigationResizeStateRef.current = null;
+      setDraftNavigationWidth(nextWidth);
+      setIsNavigationResizing(false);
+      setNavigationWidth(nextWidth);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+
+    return () => {
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [clampNavigationWidth, isNavigationResizing, setNavigationWidth]);
 
   function openTableSearch() {
     setTableSearchUiState((previous) => ({
@@ -204,15 +299,71 @@ export function Navigation({ className }: NavigationProps) {
     }
   }
 
+  const handleResizePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      if (event.button !== 0) {
+        return;
+      }
+
+      navigationResizeStateRef.current = {
+        lastClientX: event.clientX,
+        startWidth: resolvedNavigationWidth,
+        startX: event.clientX,
+      };
+      setDraftNavigationWidth(resolvedNavigationWidth);
+      setIsNavigationResizing(true);
+      event.preventDefault();
+    },
+    [resolvedNavigationWidth],
+  );
+
+  const handleResizeKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLButtonElement>) => {
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        setNavigationWidth(clampNavigationWidth(navigationWidth - 16));
+        return;
+      }
+
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        setNavigationWidth(clampNavigationWidth(navigationWidth + 16));
+        return;
+      }
+
+      if (event.key === "Home") {
+        event.preventDefault();
+        setNavigationWidth(MIN_NAVIGATION_WIDTH);
+        return;
+      }
+
+      if (event.key === "End") {
+        event.preventDefault();
+        setNavigationWidth(
+          clampNavigationWidth(
+            typeof window === "undefined"
+              ? MAX_NAVIGATION_WIDTH
+              : Math.floor(window.innerWidth * 0.6),
+          ),
+        );
+      }
+    },
+    [clampNavigationWidth, navigationWidth, setNavigationWidth],
+  );
+
   const sideBarClasses = cn(
-    "flex flex-col w-48 overflow-y-auto min-h-full h-0 text-card-foreground shadow-xs rounded-lg",
+    "relative flex shrink-0 flex-col overflow-y-auto min-h-full h-0 text-card-foreground shadow-xs rounded-lg",
     className,
   );
   const navigationItemClasses =
     "py-1 font-mono text-xs text-foreground/60 hover:text-foreground transition-all cursor-pointer data-[active=true]:bg-accent data-[active=true]:foreground data-[active=true]:text-foreground";
 
   return (
-    <div className={sideBarClasses}>
+    <div
+      className={sideBarClasses}
+      data-testid="studio-navigation"
+      style={{ width: `${resolvedNavigationWidth}px` }}
+    >
       <div className="flex items-center gap-2 pt-4 pb-0.5 px-4">
         <img src={prismaLogoSrc} alt="Prisma Logo" className="h-6 w-auto" />
         <span className="text-lg font-medium font-sans">Prisma Studio</span>
@@ -408,6 +559,18 @@ export function Navigation({ className }: NavigationProps) {
           )}
         </Navigation.Block>
       )}
+
+      <button
+        aria-label="Resize navigation"
+        className={cn(
+          "absolute inset-y-0 right-0 flex w-3 cursor-col-resize touch-none items-stretch justify-center outline-none",
+          isNavigationResizing && "bg-foreground/5",
+        )}
+        data-testid="navigation-resize-handle"
+        onKeyDown={handleResizeKeyDown}
+        onPointerDown={handleResizePointerDown}
+        type="button"
+      />
     </div>
   );
 }
