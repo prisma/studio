@@ -588,7 +588,6 @@ describe("useStreamEvents", () => {
           search_after?: unknown[];
           size: number;
           sort: string[];
-          track_total_hits: boolean;
         };
 
         if (!requestBody.search_after) {
@@ -596,7 +595,6 @@ describe("useStreamEvents", () => {
             q: "req:req_*",
             size: 1,
             sort: ["offset:desc"],
-            track_total_hits: true,
           });
 
           return Promise.resolve(
@@ -627,7 +625,6 @@ describe("useStreamEvents", () => {
           search_after: [firstOffset],
           size: 1,
           sort: ["offset:desc"],
-          track_total_hits: false,
         });
 
         return Promise.resolve(
@@ -691,11 +688,20 @@ describe("useStreamEvents", () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockImplementation((input, init) => {
-        const requestBody = JSON.parse(String(init?.body)) as { size: number };
+        const requestBody = JSON.parse(String(init?.body)) as {
+          q: string;
+          size: number;
+          sort: string[];
+        };
 
         if (searchRequestCount === 0) {
           searchRequestCount += 1;
           expect(requestBody.size).toBe(1);
+          expect(requestBody).toEqual({
+            q: "req:req_*",
+            size: 1,
+            sort: ["offset:desc"],
+          });
 
           return Promise.resolve(
             new Response(
@@ -721,7 +727,11 @@ describe("useStreamEvents", () => {
         }
 
         expect(String(input)).toBe("/api/streams/v1/stream/prisma-wal/_search");
-        expect(requestBody.size).toBe(1);
+        expect(requestBody).toEqual({
+          q: "req:req_*",
+          size: 1,
+          sort: ["offset:desc"],
+        });
 
         return Promise.resolve(
           new Response(

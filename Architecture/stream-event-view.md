@@ -82,10 +82,10 @@ In search mode:
 - when that invalid clause targets a typed field such as a numeric aggregate, the validation message SHOULD also explain the supported value forms for that field, such as plain number literals or comparison operators for numeric fields
 - the query MUST request newest-first append-order sorting with `sort: ["offset:desc"]`
 - infinite scroll MUST continue through `next_search_after`
-- infinite-scroll fetches for older filtered pages SHOULD avoid recomputing exact totals on every paginated request; once the leading page has captured the exact total for the current search snapshot, follow-on page requests SHOULD keep `track_total_hits` disabled
+- `_search` requests MUST NOT send `track_total_hits`; Studio must rely on the normal `total` object returned by Streams instead of requesting exact total-hit counting
 - the rendered event list MUST remain in chronological order even though the results are filtered
 - the footer summary box MUST switch to search progress copy while a search is active, showing the number of matching rows currently loaded into the list plus how many newest stream events have been scanned to reach the oldest visible match
-- that scanned-event count SHOULD be derived from the oldest visible hit relative to the current stream head when Studio is using append-order `offset:desc` pagination
+- that scanned-event count SHOULD be derived from the oldest visible hit relative to the most recent revealed search-head snapshot, and passive follow-mode checks that do not change the visible filtered window MUST NOT inflate that scanned count even though the displayed total stream event count may continue to advance
 - once the filtered result set is exhausted and there are no older matching hits left, that scanned-event count MUST clamp to the full stream event count so the progress copy agrees with the end-of-stream state
 - the search-progress footer SHOULD show a subtle fill proportional to scanned coverage across the stream, and any loading animation in that footer MUST be limited to user-triggered infinite-scroll fetches for older filtered results
 - hidden-new-event detection for `live` and `tail` MUST become filter-aware instead of using the raw stream head count
@@ -157,7 +157,8 @@ The stream view MUST treat that latest metadata count separately from `visibleEv
 - the custom absolute-range editor inside that popover MUST keep its own local draft while it is open, and rerenders from surrounding stream updates MUST NOT overwrite partially edited date or time input values
 - the absolute-range editor SHOULD use separate date and time inputs instead of a native `datetime-local` field so the control stays visually aligned with the rest of Studio and avoids browser-specific overlap issues
 - that aggregation range MUST only be serialized while the aggregation strip is open, so closing the strip clears the range from the hash instead of leaving a stale hidden value behind
-- aggregation queries MUST auto-refresh when the stream follow mode is `live` or `tail`, and MUST stay static when the follow mode is `paused`
+- aggregation queries MUST only run while the aggregation strip is open
+- when the aggregation strip is open, aggregation queries MUST auto-refresh in `live` or `tail`, and MUST stay static in `paused`
 - aggregation cards MUST be grouped by the rollup's primary dimension when one is advertised, so user-facing labels reflect the real aggregation name instead of raw measure ids like `value`
 - when the aggregate group key includes `unit`, the card subtitle SHOULD prefer that unit over the raw rollup name
 - for standard unit families such as bytes or durations, the card value SHOULD auto-scale to the most readable unit and MUST let the user override that unit from the card

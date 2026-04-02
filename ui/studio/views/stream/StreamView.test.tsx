@@ -2576,6 +2576,89 @@ describe("StreamView", () => {
     container.remove();
   });
 
+  it("keeps search scan progress pinned while the live total keeps updating when no new matches arrive", () => {
+    useNavigationMock.mockReturnValue({
+      searchParam: 'metric:"process.rss.bytes"',
+      streamAggregationRangeParam: null,
+      streamAggregationsParam: null,
+      streamFollowParam: "live",
+      streamParam: "prisma-wal",
+    });
+    let currentTotalEventCount = 27_482n;
+    useStreamDetailsMock.mockImplementation(() => ({
+      details: createStreamDetails({
+        nextOffset: currentTotalEventCount.toString(),
+        search: createSearchDetails().search,
+      }),
+    }));
+    useStreamEventsMock.mockImplementation(() => ({
+      collection: null,
+      events: Array.from({ length: 150 }, (_unused, index) => {
+        const sequence = index === 149 ? 26_282n : 27_481n - BigInt(index);
+
+        return {
+          body: {
+            headers: {
+              timestamp: "2026-03-24T14:42:48.875Z",
+            },
+            metric: "process.rss.bytes",
+            value: {
+              id: `synthetic-${sequence.toString()}`,
+            },
+          },
+          exactTimestamp: "2026-03-24T14:42:48.875Z",
+          id: `prisma-wal:search:${sequence.toString()}`,
+          indexedFields: [],
+          key: null,
+          offset: `offset-${sequence.toString()}`,
+          preview: `{"id":"synthetic-${sequence.toString()}"}`,
+          sequence: sequence.toString(),
+          sizeBytes: 96,
+          sortOffset: `offset-${sequence.toString()}`,
+          streamName: "prisma-wal",
+        };
+      }),
+      hasHiddenNewerEvents: false,
+      hasMoreEvents: true,
+      hiddenNewerEventCount: 0n,
+      isFetching: false,
+      matchedEventCount: 400n,
+      pageSize: 50,
+      queryScopeKey: `search-scope:${currentTotalEventCount.toString()}`,
+      refetch: vi.fn(() => Promise.resolve()),
+      totalEventCount: currentTotalEventCount,
+      visibleEventCount: 150n,
+    }));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamView />);
+    });
+
+    expect(
+      container.querySelector('[data-testid="stream-summary-panel"]')
+        ?.textContent,
+    ).toContain("150 results, scanned 1,200 of 27,482 events");
+
+    currentTotalEventCount = 27_582n;
+
+    act(() => {
+      root.render(<StreamView />);
+    });
+
+    expect(
+      container.querySelector('[data-testid="stream-summary-panel"]')
+        ?.textContent,
+    ).toContain("150 results, scanned 1,200 of 27,582 events");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it("reports the full stream as scanned once a filtered search is exhausted", () => {
     useNavigationMock.mockReturnValue({
       searchParam: 'metric:"tieredstore.ingest.queue.requests"',
@@ -3522,11 +3605,11 @@ describe("StreamView", () => {
     container.remove();
   });
 
-  it("uses the stream follow mode to control aggregation auto-refresh", () => {
+  it("only enables aggregation queries while the panel is open, and then uses follow mode to control auto-refresh", () => {
     useNavigationMock.mockReturnValue({
-      streamAggregationRangeParam: "1h",
-      streamAggregationsParam: "",
-      streamFollowParam: "paused",
+      streamAggregationRangeParam: null,
+      streamAggregationsParam: null,
+      streamFollowParam: "live",
       streamParam: "prisma-wal",
     });
     useStreamDetailsMock.mockReturnValue({
@@ -3558,8 +3641,26 @@ describe("StreamView", () => {
 
     expect(useStreamAggregationsMock.mock.calls.at(-1)?.[0]).toEqual(
       expect.objectContaining({
+        enabled: false,
+        liveUpdatesEnabled: true,
+        rangeSelection: {
+          duration: "1h",
+          kind: "relative",
+        },
+        streamName: "prisma-wal",
+      }),
+    );
+
+    act(() => {
+      container
+        .querySelector<HTMLButtonElement>('button[title="Aggregations"]')
+        ?.click();
+    });
+
+    expect(useStreamAggregationsMock.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
         enabled: true,
-        liveUpdatesEnabled: false,
+        liveUpdatesEnabled: true,
         rangeSelection: {
           duration: "1h",
           kind: "relative",
@@ -3571,7 +3672,7 @@ describe("StreamView", () => {
     act(() => {
       container
         .querySelector<HTMLButtonElement>(
-          '[data-testid="stream-follow-mode-live"]',
+          '[data-testid="stream-follow-mode-paused"]',
         )
         ?.click();
     });
@@ -3579,7 +3680,7 @@ describe("StreamView", () => {
     expect(useStreamAggregationsMock.mock.calls.at(-1)?.[0]).toEqual(
       expect.objectContaining({
         enabled: true,
-        liveUpdatesEnabled: true,
+        liveUpdatesEnabled: false,
         rangeSelection: {
           duration: "1h",
           kind: "relative",

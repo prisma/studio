@@ -609,6 +609,10 @@ function ActiveStreamView(props: {
   >(null);
   const [searchHeadMatchCountSnapshot, setSearchHeadMatchCountSnapshot] =
     useState<bigint | null>(null);
+  const [
+    searchHeadTotalEventCountSnapshot,
+    setSearchHeadTotalEventCountSnapshot,
+  ] = useState<bigint | null>(null);
   const [searchSuggestionEvents, setSearchSuggestionEvents] = useState<
     StudioStreamEvent[]
   >([]);
@@ -678,6 +682,10 @@ function ActiveStreamView(props: {
     matchedEventCount !== null
       ? clampBigInt(searchHeadMatchCountSnapshot, 0n, matchedEventCount)
       : searchHeadMatchCountSnapshot;
+  const effectiveSearchHeadTotalEventCountSnapshot =
+    isSearchActive && searchHeadTotalEventCountSnapshot !== null
+      ? clampBigInt(searchHeadTotalEventCountSnapshot, 0n, totalEventCount)
+      : searchHeadTotalEventCountSnapshot;
   const searchHiddenNewerEventCount =
     isSearchActive &&
     matchedEventCount !== null &&
@@ -694,7 +702,7 @@ function ActiveStreamView(props: {
   const aggregationRollups = selectedStreamDetails?.aggregationRollups ?? [];
   const { aggregations } = useStreamAggregations({
     aggregationRollups,
-    enabled: aggregationRollups.length > 0,
+    enabled: isAggregationPanelOpen && aggregationRollups.length > 0,
     liveUpdatesEnabled: isAggregationAutoRefreshEnabled,
     rangeSelection: aggregationRangeSelection,
     streamName: selectedStream?.name,
@@ -718,11 +726,16 @@ function ActiveStreamView(props: {
           )
       : BigInt(events.length)
     : 0n;
+  const searchScannedEventCountBasis = isSearchActive
+    ? hasMoreEvents
+      ? (effectiveSearchHeadTotalEventCountSnapshot ?? totalEventCount)
+      : totalEventCount
+    : 0n;
   const searchScannedEventCount = isSearchActive
     ? getSearchScannedEventCount({
         events,
         hasMoreEvents,
-        totalEventCount,
+        totalEventCount: searchScannedEventCountBasis,
       })
     : 0n;
   const searchScanProgressWidth = isSearchActive
@@ -813,6 +826,7 @@ function ActiveStreamView(props: {
     setRecentlyRevealedEventIds([]);
     setExpandedEventId(null);
     setSearchHeadMatchCountSnapshot(null);
+    setSearchHeadTotalEventCountSnapshot(null);
     suppressNextScrollPaginationRef.current = false;
     setSearchVisibleResultCount(
       isSearchActive ? BigInt(STREAM_EVENTS_PAGE_SIZE) : null,
@@ -839,13 +853,26 @@ function ActiveStreamView(props: {
     if (
       !isSearchActive ||
       matchedEventCount === null ||
-      searchHeadMatchCountSnapshot !== null
+      (searchHeadMatchCountSnapshot !== null &&
+        searchHeadTotalEventCountSnapshot !== null)
     ) {
       return;
     }
 
-    setSearchHeadMatchCountSnapshot(matchedEventCount);
-  }, [isSearchActive, matchedEventCount, searchHeadMatchCountSnapshot]);
+    if (searchHeadMatchCountSnapshot === null) {
+      setSearchHeadMatchCountSnapshot(matchedEventCount);
+    }
+
+    if (searchHeadTotalEventCountSnapshot === null) {
+      setSearchHeadTotalEventCountSnapshot(totalEventCount);
+    }
+  }, [
+    isSearchActive,
+    matchedEventCount,
+    searchHeadMatchCountSnapshot,
+    searchHeadTotalEventCountSnapshot,
+    totalEventCount,
+  ]);
 
   const revealNewerEvents = useCallback(() => {
     if (!selectedStream) {
@@ -894,6 +921,7 @@ function ActiveStreamView(props: {
           matchedEventCount,
         );
       });
+      setSearchHeadTotalEventCountSnapshot(totalEventCount);
 
       return;
     }
@@ -934,6 +962,7 @@ function ActiveStreamView(props: {
     matchedEventCount,
     selectedStream,
     selectedStreamIdentity,
+    totalEventCount,
   ]);
 
   const revealAllNewerEvents = useCallback(() => {
@@ -971,6 +1000,7 @@ function ActiveStreamView(props: {
 
         return (currentValue ?? 0n) + hiddenMatchCount;
       });
+      setSearchHeadTotalEventCountSnapshot(totalEventCount);
 
       return;
     }
@@ -1010,6 +1040,7 @@ function ActiveStreamView(props: {
     matchedEventCount,
     selectedStream,
     selectedStreamIdentity,
+    totalEventCount,
   ]);
 
   const jumpToLatestEvents = useCallback(() => {
@@ -1025,6 +1056,7 @@ function ActiveStreamView(props: {
     if (isSearchActive) {
       setSearchVisibleResultCount(BigInt(STREAM_EVENTS_PAGE_SIZE));
       setSearchHeadMatchCountSnapshot(matchedEventCount);
+      setSearchHeadTotalEventCountSnapshot(totalEventCount);
       setPageCount(1);
       return;
     }
@@ -1037,6 +1069,7 @@ function ActiveStreamView(props: {
     queuePendingScrollPosition,
     selectedStream,
     setIsTailViewportPinned,
+    totalEventCount,
   ]);
 
   const jumpToStreamBeginning = useCallback(() => {
@@ -1051,19 +1084,25 @@ function ActiveStreamView(props: {
       setRecentlyRevealedEventIds([]);
       setSearchVisibleResultCount(matchedEventCount ?? BigInt(events.length));
       setSearchHeadMatchCountSnapshot(matchedEventCount);
+      setSearchHeadTotalEventCountSnapshot(totalEventCount);
       setPageCount(1);
       return;
     }
 
-    const totalEventCount = parseNonNegativeBigInt(selectedStream.nextOffset);
+    const streamTotalEventCount = parseNonNegativeBigInt(
+      selectedStream.nextOffset,
+    );
 
     pendingRevealRef.current = null;
     scrollAnchorSnapshotRef.current = null;
     queuePendingScrollPosition("bottom");
     setRecentlyRevealedEventIds([]);
-    setVisibleEventCount(totalEventCount);
+    setVisibleEventCount(streamTotalEventCount);
     setPageCount(
-      getPageCountForTotalEventCount(totalEventCount, STREAM_EVENTS_PAGE_SIZE),
+      getPageCountForTotalEventCount(
+        streamTotalEventCount,
+        STREAM_EVENTS_PAGE_SIZE,
+      ),
     );
   }, [
     events.length,
@@ -1071,6 +1110,7 @@ function ActiveStreamView(props: {
     matchedEventCount,
     queuePendingScrollPosition,
     selectedStream,
+    totalEventCount,
   ]);
 
   useEffect(() => {

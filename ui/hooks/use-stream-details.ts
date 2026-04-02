@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { useStudio } from "../studio/context";
 import type { StudioStream } from "./use-streams";
@@ -1056,6 +1056,7 @@ async function parseStreamDetailsResponse(args: {
 export function useStreamDetails(args?: UseStreamDetailsArgs) {
   const { streamsUrl } = useStudio();
   const queryClient = useQueryClient();
+  const longPollEtagRef = useRef<string | null>(null);
   const detailsUrl = useMemo(
     () => createStreamDetailsUrl(streamsUrl, args?.streamName),
     [args?.streamName, streamsUrl],
@@ -1095,17 +1096,23 @@ export function useStreamDetails(args?: UseStreamDetailsArgs) {
   const resolvedQueryData = query.data ?? null;
 
   useEffect(() => {
+    longPollEtagRef.current = null;
+  }, [detailsUrl]);
+
+  useEffect(() => {
+    longPollEtagRef.current = resolvedQueryData?.etag ?? null;
+  }, [resolvedQueryData?.etag]);
+
+  useEffect(() => {
     if (
       !isLongPollingEnabled ||
       !detailsUrl ||
       !longPollUrl ||
       !query.isSuccess ||
-      !resolvedQueryData?.etag
+      !longPollEtagRef.current
     ) {
       return;
     }
-
-    const initialEtag = resolvedQueryData.etag;
 
     let isActive = true;
     let abortController: AbortController | null = null;
@@ -1115,9 +1122,13 @@ export function useStreamDetails(args?: UseStreamDetailsArgs) {
     );
 
     const runLongPollLoop = async () => {
-      let currentEtag = initialEtag;
-
       while (isActive) {
+        const currentEtag = longPollEtagRef.current;
+
+        if (!currentEtag) {
+          return;
+        }
+
         abortController = new AbortController();
 
         try {
@@ -1131,7 +1142,8 @@ export function useStreamDetails(args?: UseStreamDetailsArgs) {
           }
 
           if (response.status === 304) {
-            currentEtag = response.headers.get("etag") ?? currentEtag;
+            longPollEtagRef.current =
+              response.headers.get("etag") ?? currentEtag;
             continue;
           }
 
@@ -1147,7 +1159,7 @@ export function useStreamDetails(args?: UseStreamDetailsArgs) {
             response,
           });
 
-          currentEtag = nextQueryData.etag ?? currentEtag;
+          longPollEtagRef.current = nextQueryData.etag ?? currentEtag;
           queryClient.setQueryData(queryKey, nextQueryData);
         } catch (error) {
           if (isAbortError(error)) {
@@ -1175,7 +1187,6 @@ export function useStreamDetails(args?: UseStreamDetailsArgs) {
     queryClient,
     queryKey,
     refreshIntervalMs,
-    resolvedQueryData?.etag,
   ]);
 
   return {

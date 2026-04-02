@@ -998,7 +998,6 @@ export function useStreamEvents(
           q: normalizedSearchQuery,
           size: 1,
           sort: searchSort,
-          track_total_hits: true,
         }),
         headers: {
           "content-type": "application/json",
@@ -1085,14 +1084,12 @@ export function useStreamEvents(
                 const hits: StreamSearchApiHit[] = [];
 
                 while (remainingResultCount > 0) {
-                  const shouldTrackTotalHits = hits.length === 0;
                   const response = await fetch(searchUrl, {
                     body: JSON.stringify({
                       q: normalizedSearchQuery,
                       search_after: searchAfter ?? undefined,
                       size: Math.min(pageSize, remainingResultCount),
                       sort: searchSort,
-                      track_total_hits: shouldTrackTotalHits,
                     }),
                     headers: {
                       "content-type": "application/json",
@@ -1117,12 +1114,8 @@ export function useStreamEvents(
 
                   const pageHits = payload.hits.filter(isStreamSearchApiHit);
 
-                  if (shouldTrackTotalHits) {
-                    totalMatchCount =
-                      payload.total.value > 0
-                        ? BigInt(payload.total.value)
-                        : 0n;
-                  }
+                  totalMatchCount =
+                    payload.total.value > 0 ? BigInt(payload.total.value) : 0n;
 
                   hasMoreOlderResults = payload.next_search_after !== null;
 

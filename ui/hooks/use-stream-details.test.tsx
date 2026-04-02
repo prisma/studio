@@ -912,4 +912,79 @@ describe("useStreamDetails", () => {
 
     harness.cleanup();
   });
+
+  it("keeps one long-poll loop alive across ETag updates instead of aborting and restarting it", async () => {
+    let requestCount = 0;
+    let thirdLongPollAborted = false;
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((_input, init) => {
+        requestCount += 1;
+
+        if (requestCount === 1) {
+          return Promise.resolve(
+            new Response(JSON.stringify(createStreamDetailsPayload()), {
+              headers: {
+                "content-type": "application/json",
+                etag: '"details-v1"',
+              },
+            }),
+          );
+        }
+
+        if (requestCount === 2) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify(
+                createStreamDetailsPayload({
+                  stream: {
+                    next_offset: "5",
+                    total_size_bytes: "2097152",
+                  },
+                }),
+              ),
+              {
+                headers: {
+                  "content-type": "application/json",
+                  etag: '"details-v2"',
+                },
+              },
+            ),
+          );
+        }
+
+        return new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+
+          if (!(signal instanceof AbortSignal)) {
+            return;
+          }
+
+          signal.addEventListener(
+            "abort",
+            () => {
+              thirdLongPollAborted = true;
+              reject(new DOMException("Aborted", "AbortError"));
+            },
+            { once: true },
+          );
+        });
+      });
+    const harness = renderHarness({
+      refreshIntervalMs: 100,
+      streamName: "prisma-wal",
+      streamsUrl: "/api/streams",
+    });
+
+    await waitFor(() => fetchSpy.mock.calls.length >= 3);
+    await waitFor(() => harness.getLatestState()?.details?.nextOffset === "5");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(thirdLongPollAborted).toBe(false);
+
+    harness.cleanup();
+  });
 });
