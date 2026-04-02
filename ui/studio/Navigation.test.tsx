@@ -52,9 +52,15 @@ interface StreamsMockValue {
   }>;
 }
 
+interface StudioMockValue {
+  hasDatabase: boolean;
+  isDarkMode: boolean;
+}
+
 const useNavigationMock = vi.fn<() => NavigationMockValue>();
 const useIntrospectionMock = vi.fn<() => IntrospectionMockValue>();
 const useStreamsMock = vi.fn<() => StreamsMockValue>();
+const useStudioMock = vi.fn<() => StudioMockValue>();
 const uiStateValues = new Map<string, unknown>();
 
 vi.mock("../hooks/use-navigation", () => ({
@@ -131,9 +137,7 @@ vi.mock("../hooks/use-navigation-table-list", () => ({
 }));
 
 vi.mock("./context", () => ({
-  useStudio: () => ({
-    isDarkMode,
-  }),
+  useStudio: () => useStudioMock(),
 }));
 
 vi.mock("../hooks/use-ui-state", async () => {
@@ -221,6 +225,10 @@ function keyDown(element: Element, key: string) {
 describe("Navigation", () => {
   beforeEach(() => {
     isDarkMode = false;
+    useStudioMock.mockImplementation(() => ({
+      hasDatabase: true,
+      isDarkMode,
+    }));
     useNavigationMock.mockReturnValue({
       createUrl(values: Record<string, string>) {
         return `#${Object.entries(values)
@@ -370,6 +378,53 @@ describe("Navigation", () => {
     expect(tableLink).not.toBeUndefined();
     expect(tableLink?.getAttribute("data-sidebar")).toBe("menu-button");
     expect(tableLink?.parentElement?.tagName).toBe("NAV");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("hides schema and table navigation when the session has no database", () => {
+    useStudioMock.mockImplementation(() => ({
+      hasDatabase: false,
+      isDarkMode,
+    }));
+    useNavigationMock.mockReturnValue({
+      createUrl(values: Record<string, string>) {
+        return `#${Object.entries(values)
+          .map(([key, value]) => `${key}=${value}`)
+          .join("&")}`;
+      },
+      metadata: {
+        activeTable: { name: "organizations", schema: "public" },
+        isFetching: false,
+      },
+      schemaParam: "public",
+      setSchemaParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+      setTableParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+      streamParam: null,
+      viewParam: "stream",
+    });
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    expect(container.textContent).not.toContain("Tables");
+    expect(container.textContent).not.toContain("Visualizer");
+    expect(container.textContent).not.toContain("Console");
+    expect(container.textContent).not.toContain("SQL");
+    expect(container.querySelector('button[aria-label="Schema"]')).toBeNull();
+    expect(
+      container.querySelector('button[aria-label="Search tables"]'),
+    ).toBeNull();
+    expect(container.textContent).toContain("Streams");
+    expect(container.textContent).toContain("audit-log");
 
     act(() => {
       root.unmount();

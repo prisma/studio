@@ -78,7 +78,21 @@ It deliberately excludes:
 - Why it stays non-standard:
   - The stream view needs a dense multi-column summary row with inline expansion, single-open-row behavior, clipped preview text, and infinite-scroll loading inside one scroll container.
   - The same custom row composite also carries the short-lived highlight animation for newly revealed events, which needs to live on the exact row shell that preserves stream-scroll anchoring.
+  - The surrounding stream chrome now also mixes a control-only header, a fixed footer summary cluster, follow-mode-specific scroll behavior, and a search-only footer progress fill with a scroll-trigger loading pulse that standard ShadCN layout primitives do not model as one reusable component.
   - No stock ShadCN component provides that event-log interaction model, so Studio keeps a custom composite while still building it from standard ShadCN primitives.
+
+### Inline Stream Search Validation Message
+
+- Canonical component:
+  - [`ui/studio/input/ExpandableSearchControl.tsx`](ui/studio/input/ExpandableSearchControl.tsx)
+- Closest standard ShadCN alternatives:
+  - `Command`
+  - `Popover`
+  - `Alert`
+- Why it stays non-standard:
+  - The stream header search needs syntax feedback and context-aware suggestions that stay visually attached to the expanding inline field without introducing a portal-backed overlay or a full alert block inside the header chrome.
+  - Studio therefore keeps a custom anchored assist panel directly under the input, while still building the suggestion list from standard ShadCN `Command` primitives.
+  - Keeping the feedback and suggestions inline avoids the layering and focus issues of a separate popover in this compact header layout, and it lets the suggestion list open immediately with starter field suggestions, stay content-sized above the sticky header row, hold partial field prefixes locally, preserve a stable keyboard selection during background refreshes, and still draw value candidates from remembered rows even when the currently visible filtered result set is empty.
 
 ### Stream Aggregation Strip
 
@@ -90,16 +104,31 @@ It deliberately excludes:
   - `Button`
   - `Popover`
 - Why it stays non-standard:
-  - The stream view needs a compact, single-band aggregation surface that mixes horizontally scrollable metric cards, inline sparkline backgrounds, quick time-range toggles, and a small custom-range popover directly above the event log.
-  - No stock ShadCN component covers that event-log-adjacent observability layout, especially once each measure card has to combine a headline value with a faded sparkline in the same tile.
+  - The stream view needs a compact, single-band aggregation surface that mixes horizontally scrollable metric cards, inline sparkline backgrounds, quick time-range toggles, follow-mode-driven refresh behavior, and a small custom-range popover directly above an independently scrollable event log.
+  - No stock ShadCN component covers that event-log-adjacent observability layout, especially once each metric column has to support fixed-width horizontal scrolling, stacked percentile cards with plain-text secondary labels, auto-scaled unit display, TanStack DB-backed per-series preferences that survive range switches and stream navigation, hover-revealed dropdown controls without reflowing the card chrome, and a tighter split date/time absolute-range editor instead of the browser's native `datetime-local` chrome.
 - Required internals:
   - `Badge`
   - `Button`
   - `Card`
+  - `DropdownMenu`
   - `Input`
   - `Label`
   - `Popover`
   - `Skeleton`
+
+### Stream Footer Diagnostics Popover
+
+- Canonical components:
+  - [`ui/studio/views/stream/StreamDiagnosticsPopover.tsx`](ui/studio/views/stream/StreamDiagnosticsPopover.tsx)
+  - [`ui/studio/views/stream/StreamView.tsx`](ui/studio/views/stream/StreamView.tsx)
+- Closest standard ShadCN alternatives:
+  - `Popover`
+  - `Card`
+  - `Badge`
+- Why it stays non-standard:
+  - Studio needs a compact, stream-specific diagnostics surface anchored to the footer summary itself, mixing logical payload size, explicit object-storage and local-storage buckets, node-local request accounting, search-family coverage, and state-aware run-accelerator status in one dense popover.
+  - The storage breakdowns also need collapsible ledger-style accounting boxes whose headers surface the section totals when folded shut, which is not a stock ShadCN pattern.
+  - No stock ShadCN pattern covers that descriptor-driven observability layout, especially when the UI must distinguish logical bytes from physical storage signals, separate search coverage from historical run indexes, hide unconfigured routing rows, and keep the remaining cost caveats explicit instead of inventing unavailable totals.
 
 ## Standardization Candidates
 

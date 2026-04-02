@@ -11,6 +11,8 @@ type QueryKey =
   | ["introspection"]
   | ["stream-details", string]
   | ["stream-aggregations", string, "stream", string, "rollup", string, "range", string]
+  | ["stream-search-metadata", string]
+  | ["stream-search-head", string, number, string, string, string]
   | ["streams", string]
   | [
       "streams",
@@ -24,6 +26,22 @@ type QueryKey =
       "pageSize",
       number,
       "pageCount",
+      number,
+    ]
+  | [
+      "streams",
+      string,
+      "stream",
+      string,
+      "epoch",
+      number,
+      "search",
+      string,
+      "sort",
+      string,
+      "visibleSearchResultCount",
+      string,
+      "pageSize",
       number,
     ]
   | [

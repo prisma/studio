@@ -232,6 +232,7 @@ function normalizeStudioUiState(
  */
 interface StudioContextValue {
   adapter: Adapter;
+  hasDatabase: boolean;
   llm?: StudioLlm;
   streamsUrl?: string;
   hasAiFilter: boolean;
@@ -259,7 +260,9 @@ interface StudioContextValue {
     string | number
   >;
   getOrCreateRowsCollection<T>(key: string, factory: () => T): T;
-  getOrCreateTableQueryExecutionState: (key: string) => TableQueryExecutionState;
+  getOrCreateTableQueryExecutionState: (
+    key: string,
+  ) => TableQueryExecutionState;
 }
 
 /**
@@ -269,6 +272,7 @@ const StudioContext = createContext<StudioContextValue | undefined>(undefined);
 
 export type StudioContextProviderProps = PropsWithChildren<{
   adapter: Adapter;
+  hasDatabase?: boolean;
   llm?: StudioLlm;
   onEvent?: (event: StudioEvent) => void;
   streamsUrl?: string;
@@ -280,6 +284,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
     children,
     onEvent: emitEvent,
     adapter,
+    hasDatabase = true,
     llm,
     streamsUrl,
     theme,
@@ -503,7 +508,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
     tableQueryExecutionStateCacheRef.current.clear();
     clearRowsCollections();
     void queryClient.resetQueries({ exact: false, queryKey: [] });
-  }, [adapter, clearRowsCollections, queryClient]);
+  }, [adapter, clearRowsCollections, hasDatabase, queryClient]);
 
   // Watch for changes to the HTML element's class attribute.
   useEffect(() => {
@@ -782,6 +787,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
       <StudioContext.Provider
         value={{
           adapter,
+          hasDatabase,
           llm,
           streamsUrl,
           hasAiFilter,

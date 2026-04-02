@@ -1,10 +1,9 @@
 import { useIsMutating } from "@tanstack/react-query";
 import { type ColumnDef, type ColumnPinningState } from "@tanstack/react-table";
-import { ChevronDown, RefreshCw, Search } from "lucide-react";
+import { ChevronDown, RefreshCw } from "lucide-react";
 import {
   type Dispatch,
   type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent as ReactMouseEvent,
   type SetStateAction,
   useCallback,
   useEffect,
@@ -40,7 +39,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../../../components/ui/dropdown-menu";
-import { Input } from "../../../components/ui/input";
 import { TableHead } from "../../../components/ui/table";
 import { useActiveTableInsert } from "../../../hooks/use-active-table-insert";
 import { useActiveTableQuery } from "../../../hooks/use-active-table-query";
@@ -88,6 +86,7 @@ import {
   type GridSelectionMachineState,
   transitionGridSelectionMachine,
 } from "../../grid/selection-state-machine";
+import { ExpandableSearchControl } from "../../input/ExpandableSearchControl";
 import {
   type CellEditNavigationDirection,
   getInput,
@@ -1525,11 +1524,11 @@ export function ActiveTableView(_props: ViewProps) {
         }
       >
         <div className="flex min-w-0 items-center gap-2">
-          <ActiveTableRowSearchControl
+          <ExpandableSearchControl
             disabled={hasStagedChanges}
             onBlockedInteraction={triggerDiscardButtonWiggle}
             rowSearch={rowSearch}
-            supportsFullTableSearch={supportsFullTableSearch}
+            supportsSearch={supportsFullTableSearch}
           />
         </div>
         <InlineTableFilterAddButton
@@ -2291,157 +2290,6 @@ function adapterSupportsSqlLint(adapter: Adapter): adapter is Adapter & {
   sqlLint: NonNullable<Adapter["sqlLint"]>;
 } {
   return typeof adapter.sqlLint === "function";
-}
-
-interface ActiveTableRowSearchControlProps {
-  disabled?: boolean;
-  onBlockedInteraction?: () => void;
-  rowSearch: ReturnType<typeof useActiveTableRowSearch>;
-  supportsFullTableSearch: boolean;
-}
-
-function ActiveTableRowSearchControl(props: ActiveTableRowSearchControlProps) {
-  const {
-    disabled = false,
-    onBlockedInteraction,
-    rowSearch,
-    supportsFullTableSearch,
-  } = props;
-  const {
-    closeRowSearch,
-    isRowSearchOpen,
-    openRowSearch,
-    rowSearchInputRef,
-    searchInput,
-    setSearchInput,
-  } = rowSearch;
-
-  useEffect(() => {
-    if (!disabled) {
-      return;
-    }
-
-    closeRowSearch();
-  }, [closeRowSearch, disabled]);
-
-  function handleBlockedInteraction() {
-    onBlockedInteraction?.();
-  }
-
-  function handleBlockedMouseDown(event: ReactMouseEvent<HTMLElement>) {
-    if (!disabled) {
-      return;
-    }
-
-    event.preventDefault();
-    handleBlockedInteraction();
-  }
-
-  if (!supportsFullTableSearch) {
-    return null;
-  }
-
-  return (
-    <div
-      className={cn(
-        "relative h-9 transition-[width] duration-200 ease-out",
-        isRowSearchOpen ? "w-56" : "w-9",
-      )}
-      data-row-search-open={isRowSearchOpen ? "true" : "false"}
-    >
-      <Button
-        aria-disabled={disabled || undefined}
-        aria-label="Global search"
-        variant="outline"
-        size="icon"
-        className={cn(
-          "absolute right-0 top-0 min-w-9 w-auto px-2 transition-opacity duration-200",
-          disabled && "opacity-70",
-          isRowSearchOpen && "opacity-0 pointer-events-none",
-        )}
-        onMouseDown={handleBlockedMouseDown}
-        onClick={() => {
-          if (disabled) {
-            handleBlockedInteraction();
-            return;
-          }
-
-          openRowSearch();
-        }}
-      >
-        <Search />
-      </Button>
-      <div
-        data-row-search-input-wrapper
-        className={cn(
-          "absolute right-0 top-1/2 -translate-y-1/2 origin-right transition-[opacity,transform] duration-200 ease-out will-change-transform w-56 z-10",
-          isRowSearchOpen
-            ? "opacity-100 scale-x-100"
-            : "opacity-0 scale-x-0 pointer-events-none",
-        )}
-      >
-        <Input
-          aria-disabled={disabled || undefined}
-          aria-label="Global search"
-          className={cn(
-            "h-9 w-full bg-background shadow-none",
-            disabled && "opacity-70",
-          )}
-          onMouseDown={handleBlockedMouseDown}
-          onBlur={(event) => {
-            if (disabled) {
-              return;
-            }
-
-            if (event.currentTarget.value.trim().length > 0) {
-              return;
-            }
-
-            closeRowSearch();
-          }}
-          onChange={(event) => {
-            if (disabled) {
-              handleBlockedInteraction();
-              return;
-            }
-
-            setSearchInput(event.currentTarget.value);
-          }}
-          onClick={() => {
-            if (disabled) {
-              handleBlockedInteraction();
-            }
-          }}
-          onFocus={(event) => {
-            if (!disabled) {
-              return;
-            }
-
-            handleBlockedInteraction();
-            event.currentTarget.blur();
-          }}
-          onKeyDown={(event) => {
-            if (disabled) {
-              handleBlockedInteraction();
-              event.preventDefault();
-              return;
-            }
-
-            if (event.key !== "Escape") {
-              return;
-            }
-
-            event.preventDefault();
-            closeRowSearch();
-          }}
-          placeholder="Global search"
-          ref={rowSearchInputRef}
-          readOnly={disabled}
-          value={searchInput}
-        />
-      </div>
-    </div>
-  );
 }
 
 function getPageCount(

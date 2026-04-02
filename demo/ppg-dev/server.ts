@@ -2,10 +2,8 @@ import { existsSync, type FSWatcher, watch } from "node:fs";
 import { basename, extname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { startPrismaDevServer } from "@prisma/dev";
 import postcss, { type AcceptedPlugin } from "postcss";
 import type { Sql } from "postgres";
-import postgres from "postgres";
 
 import { serializeError, type StudioBFFRequest } from "../../data/bff";
 import {
@@ -14,11 +12,15 @@ import {
   type StudioLlmRequest,
   type StudioLlmResponse,
 } from "../../data/llm";
-import { createPostgresJSExecutor } from "../../data/postgresjs";
 import pkg from "../../package.json" with { type: "json" };
 import { AnthropicOutputLimitError, runAnthropicLlmRequest } from "./anthropic";
 import { buildDemoConfig, resolveDemoAiEnabled } from "./config";
-import { seedDatabase } from "./seed-database";
+import { type DemoRuntime, startDemoRuntime } from "./runtime";
+import {
+  formatDemoRuntimeUsage,
+  parseDemoRuntimeOptions,
+} from "./runtime-options";
+import { registerDemoShutdownHandlers } from "./shutdown";
 import { lintPostgresSql } from "./sql-lint";
 import {
   addDemoStartupFailureHint,
@@ -56,13 +58,12 @@ declare const Bun: {
   };
 };
 
-type PrismaDevServer = Awaited<ReturnType<typeof startPrismaDevServer>>;
 type BuiltAsset = {
   bytes: ArrayBuffer;
   contentType: string;
 };
 
-type PostgresExecutor = ReturnType<typeof createPostgresJSExecutor>;
+type PostgresExecutor = DemoRuntime["postgresExecutor"];
 
 // When the server is bundled by build-compute.ts, the virtual:prebuilt-assets
 // module is resolved at bundle time and provides the pre-built client JS, CSS,
@@ -137,10 +138,10 @@ const BUILD_DEFINE = {
   VERSION_INJECTED_AT_BUILD_TIME: JSON.stringify(pkg.version),
 };
 
-let prismaDevServer: PrismaDevServer | null = null;
 let postgresClient: Sql | null = null;
 let postgresExecutor: PostgresExecutor | null = null;
-let seededAt = "";
+let seededAt: string | null = null;
+let streamsServerUrl: string | null = null;
 let appScript = "";
 let appStyles = "";
 let builtAssets = new Map<string, BuiltAsset>();
@@ -247,25 +248,30 @@ function looksLikeProjectRoot(candidate: string): boolean {
 }
 
 async function main(): Promise<void> {
+  if (
+    process.argv
+      .slice(2)
+      .some((argument) => argument === "-h" || argument === "--help")
+  ) {
+    console.info(formatDemoRuntimeUsage());
+    return;
+  }
+
   await ensurePortAvailable({
     envVar: "STUDIO_DEMO_PORT",
     port: APP_PORT,
     serviceName: "Studio demo HTTP server",
   });
 
-  prismaDevServer = await startPrismaDevServer({
-    name: `studio-ppg-demo-${process.pid}`,
-  });
-  cleanupCallbacks.push(() => prismaDevServer?.close());
+  const runtime = await startDemoRuntime(
+    parseDemoRuntimeOptions(process.argv.slice(2)),
+  );
 
-  await seedDatabase(prismaDevServer.database.connectionString);
-  seededAt = new Date().toISOString();
-
-  postgresClient = postgres(prismaDevServer.database.connectionString, {
-    max: 1,
-  });
-  postgresExecutor = createPostgresJSExecutor(postgresClient);
-  cleanupCallbacks.push(() => postgresClient?.end({ timeout: 5 }));
+  cleanupCallbacks.push(...runtime.cleanupCallbacks);
+  postgresClient = runtime.postgresClient;
+  postgresExecutor = runtime.postgresExecutor;
+  seededAt = runtime.seededAt;
+  streamsServerUrl = runtime.streamsServerUrl;
 
   if (prebuiltAssets) {
     appScript = prebuiltAssets.appScript;
@@ -289,18 +295,39 @@ async function main(): Promise<void> {
   });
   cleanupCallbacks.push(() => server.stop(true));
 
-  registerShutdownHandlers();
+  registerDemoShutdownHandlers({
+    cleanupCallbacks,
+  });
 
   console.info(`[demo] Studio demo running at http://localhost:${APP_PORT}`);
-  console.info(
-    `[demo] direct tcp DB URL: ${prismaDevServer.database.connectionString}`,
-  );
-  console.info(
-    `[demo] streams server URL: ${prismaDevServer.experimental.streams.serverUrl}`,
-  );
-  console.info(
-    `[demo] streams proxy URL: http://localhost:${APP_PORT}${STREAMS_PROXY_BASE_PATH}`,
-  );
+
+  if (runtime.mode === "external") {
+    if (runtime.databaseConnectionString) {
+      console.info(
+        `[demo] external DB URL: ${runtime.databaseConnectionString}`,
+      );
+    } else {
+      console.info("[demo] database disabled; running in streams-only mode");
+    }
+
+    if (streamsServerUrl) {
+      console.info(`[demo] external streams server URL: ${streamsServerUrl}`);
+    }
+  } else {
+    console.info(
+      `[demo] direct tcp DB URL: ${runtime.databaseConnectionString}`,
+    );
+
+    if (streamsServerUrl) {
+      console.info(`[demo] streams server URL: ${streamsServerUrl}`);
+    }
+  }
+
+  if (streamsServerUrl) {
+    console.info(
+      `[demo] streams proxy URL: http://localhost:${APP_PORT}${STREAMS_PROXY_BASE_PATH}`,
+    );
+  }
 }
 
 async function handleRequest(request: Request): Promise<Response> {
@@ -317,8 +344,9 @@ async function handleRequest(request: Request): Promise<Response> {
       buildDemoConfig({
         aiEnabled: AI_ENABLED,
         bootId: BOOT_ID,
+        databaseEnabled: postgresExecutor != null,
         seededAt,
-        streamsUrl: STREAMS_PROXY_BASE_PATH,
+        streamsUrl: streamsServerUrl ? STREAMS_PROXY_BASE_PATH : undefined,
       }),
     );
   }
@@ -613,16 +641,15 @@ async function handleStreamsProxyRequest(
     });
   }
 
-  if (!prismaDevServer) {
+  if (!streamsServerUrl) {
     return new Response("Streams server is not ready", { status: 503 });
   }
 
-  const upstreamBaseUrl = prismaDevServer.experimental.streams.serverUrl;
   const proxyPathname = url.pathname.slice(STREAMS_PROXY_BASE_PATH.length);
   const normalizedPathname = proxyPathname.length > 0 ? proxyPathname : "/";
   const upstreamUrl = new URL(
     `${normalizedPathname}${url.search}`,
-    `${upstreamBaseUrl.replace(/\/+$/, "")}/`,
+    `${streamsServerUrl.replace(/\/+$/, "")}/`,
   );
   const headers = new Headers(request.headers);
   const body =
@@ -877,36 +904,6 @@ async function buildAppStyles(): Promise<string> {
   );
 
   return result.css;
-}
-
-function registerShutdownHandlers(): void {
-  let isShuttingDown = false;
-
-  const shutdown = async (signal: string) => {
-    if (isShuttingDown) {
-      return;
-    }
-
-    isShuttingDown = true;
-
-    console.info(`[demo] shutting down (${signal})`);
-
-    for (const callback of cleanupCallbacks.reverse()) {
-      try {
-        await callback();
-      } catch (error: unknown) {
-        console.error(`[demo] cleanup failed: ${toErrorMessage(error)}`);
-      }
-    }
-
-    process.exit(0);
-  };
-
-  for (const signal of ["SIGINT", "SIGTERM", "SIGQUIT"] as const) {
-    process.on(signal, () => {
-      void shutdown(signal);
-    });
-  }
 }
 
 function getContentTypeForPath(path: string): string {

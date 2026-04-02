@@ -35,7 +35,7 @@ type NavigationProps = {
 export function Navigation({ className }: NavigationProps) {
   const { metadata, createUrl, streamParam, viewParam, schemaParam } =
     useNavigation();
-  const { isDarkMode } = useStudio();
+  const { hasDatabase, isDarkMode } = useStudio();
   const { isFetching, activeTable } = metadata;
   const { errorState, hasResolvedIntrospection, isRefetching, refetch } =
     useIntrospection();
@@ -218,147 +218,158 @@ export function Navigation({ className }: NavigationProps) {
         <span className="text-lg font-medium font-sans">Prisma Studio</span>
       </div>
 
-      <Navigation.SchemaSelector />
+      {hasDatabase ? (
+        <>
+          <Navigation.SchemaSelector />
 
-      <Navigation.Block label="Studio">
-        <Navigation.Item
-          asChild
-          isActive={viewParam === "schema"}
-          className={navigationItemClasses}
-        >
-          <a href={createUrl({ viewParam: "schema" })} className="w-full">
-            Visualizer
-          </a>
-        </Navigation.Item>
-        <Navigation.Item
-          asChild
-          isActive={viewParam === "console"}
-          className={navigationItemClasses}
-        >
-          <a href={createUrl({ viewParam: "console" })} className="w-full">
-            Console
-          </a>
-        </Navigation.Item>
-        <Navigation.Item
-          asChild
-          isActive={viewParam === "sql"}
-          className={navigationItemClasses}
-        >
-          <a href={createUrl({ viewParam: "sql" })} className="w-full">
-            SQL
-          </a>
-        </Navigation.Item>
-      </Navigation.Block>
+          <Navigation.Block label="Studio">
+            <Navigation.Item
+              asChild
+              isActive={viewParam === "schema"}
+              className={navigationItemClasses}
+            >
+              <a href={createUrl({ viewParam: "schema" })} className="w-full">
+                Visualizer
+              </a>
+            </Navigation.Item>
+            <Navigation.Item
+              asChild
+              isActive={viewParam === "console"}
+              className={navigationItemClasses}
+            >
+              <a href={createUrl({ viewParam: "console" })} className="w-full">
+                Console
+              </a>
+            </Navigation.Item>
+            <Navigation.Item
+              asChild
+              isActive={viewParam === "sql"}
+              className={navigationItemClasses}
+            >
+              <a href={createUrl({ viewParam: "sql" })} className="w-full">
+                SQL
+              </a>
+            </Navigation.Item>
+          </Navigation.Block>
 
-      <Navigation.TablesBlock
-        isSearchOpen={tableSearchUiState.isOpen}
-        onOpenSearch={openTableSearch}
-        onCloseSearch={closeTableSearch}
-        onSearchKeyDown={handleTableSearchKeyDown}
-        searchInputRef={searchInputRef}
-        searchTerm={tableSearchUiState.term}
-        setSearchTerm={setTableSearchTerm}
-      >
-        {hasStartupIntrospectionFailure ? (
-          <IntrospectionStatusNotice
-            className="mx-2 mb-2"
-            compact
-            description="Retry to reload schema and table metadata."
-            isRetrying={isRefetching}
-            message={errorState.message}
-            onRetry={() => void refetch()}
-            queryPreview={errorState.queryPreview}
-            source={errorState.adapterSource}
-            title="Schema metadata unavailable"
-          />
-        ) : (
-          <>
-            {hasRecoverableIntrospectionWarning && (
+          <Navigation.TablesBlock
+            isSearchOpen={tableSearchUiState.isOpen}
+            onOpenSearch={openTableSearch}
+            onCloseSearch={closeTableSearch}
+            onSearchKeyDown={handleTableSearchKeyDown}
+            searchInputRef={searchInputRef}
+            searchTerm={tableSearchUiState.term}
+            setSearchTerm={setTableSearchTerm}
+          >
+            {hasStartupIntrospectionFailure ? (
               <IntrospectionStatusNotice
                 className="mx-2 mb-2"
                 compact
-                description="Studio is showing the last successful schema snapshot."
+                description="Retry to reload schema and table metadata."
                 isRetrying={isRefetching}
                 message={errorState.message}
                 onRetry={() => void refetch()}
                 queryPreview={errorState.queryPreview}
                 source={errorState.adapterSource}
-                title="Schema refresh failed"
-                variant="warning"
+                title="Schema metadata unavailable"
               />
-            )}
-            {isInitialIntrospectionLoad ? (
-              Array(4)
-                .fill(null)
-                .map((_, index) => (
-                  <Navigation.Item key={index} wrapChildrenInSpan={false}>
-                    <Skeleton className="h-3 w-full" />
-                  </Navigation.Item>
-                ))
-            ) : tables.length > 0 ? (
-              tables.map((table, index) => {
-                const isHighlighted =
-                  tableSearchUiState.isOpen && index === highlightedTableIndex;
-                const isCurrentTable =
-                  activeTable?.schema === table.schema &&
-                  activeTable?.name === table.table &&
-                  viewParam === "table";
-
-                return (
-                  <Navigation.Item
-                    key={table.id}
-                    asChild
-                    data-search-highlighted={isHighlighted ? "true" : "false"}
-                    isActive={
-                      tableSearchUiState.isOpen ? isHighlighted : isCurrentTable
-                    }
-                    className={navigationItemClasses}
-                    onMouseEnter={() => {
-                      if (!tableSearchUiState.isOpen) {
-                        return;
-                      }
-
-                      setHighlightedTableIndex(index);
-                    }}
-                  >
-                    <a
-                      href={createUrl({
-                        tableParam: table.table,
-                        schemaParam: table.schema,
-                        viewParam: "table",
-                      })}
-                      className="w-full"
-                      onClick={(event) => {
-                        if (
-                          event.button !== 0 ||
-                          event.altKey ||
-                          event.ctrlKey ||
-                          event.metaKey ||
-                          event.shiftKey
-                        ) {
-                          return;
-                        }
-
-                        event.preventDefault();
-                        selectTable({
-                          schema: table.schema,
-                          table: table.table,
-                        });
-                      }}
-                    >
-                      {table.table}
-                    </a>
-                  </Navigation.Item>
-                );
-              })
             ) : (
-              <Navigation.Item>
-                {tableSearchActive ? "No matching tables" : "No tables found"}
-              </Navigation.Item>
+              <>
+                {hasRecoverableIntrospectionWarning && (
+                  <IntrospectionStatusNotice
+                    className="mx-2 mb-2"
+                    compact
+                    description="Studio is showing the last successful schema snapshot."
+                    isRetrying={isRefetching}
+                    message={errorState.message}
+                    onRetry={() => void refetch()}
+                    queryPreview={errorState.queryPreview}
+                    source={errorState.adapterSource}
+                    title="Schema refresh failed"
+                    variant="warning"
+                  />
+                )}
+                {isInitialIntrospectionLoad ? (
+                  Array(4)
+                    .fill(null)
+                    .map((_, index) => (
+                      <Navigation.Item key={index} wrapChildrenInSpan={false}>
+                        <Skeleton className="h-3 w-full" />
+                      </Navigation.Item>
+                    ))
+                ) : tables.length > 0 ? (
+                  tables.map((table, index) => {
+                    const isHighlighted =
+                      tableSearchUiState.isOpen &&
+                      index === highlightedTableIndex;
+                    const isCurrentTable =
+                      activeTable?.schema === table.schema &&
+                      activeTable?.name === table.table &&
+                      viewParam === "table";
+
+                    return (
+                      <Navigation.Item
+                        key={table.id}
+                        asChild
+                        data-search-highlighted={
+                          isHighlighted ? "true" : "false"
+                        }
+                        isActive={
+                          tableSearchUiState.isOpen
+                            ? isHighlighted
+                            : isCurrentTable
+                        }
+                        className={navigationItemClasses}
+                        onMouseEnter={() => {
+                          if (!tableSearchUiState.isOpen) {
+                            return;
+                          }
+
+                          setHighlightedTableIndex(index);
+                        }}
+                      >
+                        <a
+                          href={createUrl({
+                            tableParam: table.table,
+                            schemaParam: table.schema,
+                            viewParam: "table",
+                          })}
+                          className="w-full"
+                          onClick={(event) => {
+                            if (
+                              event.button !== 0 ||
+                              event.altKey ||
+                              event.ctrlKey ||
+                              event.metaKey ||
+                              event.shiftKey
+                            ) {
+                              return;
+                            }
+
+                            event.preventDefault();
+                            selectTable({
+                              schema: table.schema,
+                              table: table.table,
+                            });
+                          }}
+                        >
+                          {table.table}
+                        </a>
+                      </Navigation.Item>
+                    );
+                  })
+                ) : (
+                  <Navigation.Item>
+                    {tableSearchActive
+                      ? "No matching tables"
+                      : "No tables found"}
+                  </Navigation.Item>
+                )}
+              </>
             )}
-          </>
-        )}
-      </Navigation.TablesBlock>
+          </Navigation.TablesBlock>
+        </>
+      ) : null}
 
       {hasStreamsServer && (
         <Navigation.Block icon={Waves} label="Streams">

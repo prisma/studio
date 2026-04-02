@@ -7,6 +7,7 @@ describe("buildDemoConfig", () => {
     const config = buildDemoConfig({
       aiEnabled: true,
       bootId: "boot-123",
+      databaseEnabled: true,
       seededAt: "2026-03-09T10:00:00.000Z",
       streamsUrl: "/api/streams",
     });
@@ -16,12 +17,39 @@ describe("buildDemoConfig", () => {
         enabled: true,
       },
       bootId: "boot-123",
+      database: {
+        enabled: true,
+      },
       seededAt: "2026-03-09T10:00:00.000Z",
       streams: {
         url: "/api/streams",
       },
     });
     expect("agentation" in config).toBe(false);
+  });
+
+  it("omits the seeded timestamp when the demo is using external data sources", () => {
+    const config = buildDemoConfig({
+      aiEnabled: false,
+      bootId: "boot-456",
+      databaseEnabled: false,
+      seededAt: null,
+      streamsUrl: "/api/streams",
+    });
+
+    expect(config).toEqual({
+      ai: {
+        enabled: false,
+      },
+      bootId: "boot-456",
+      database: {
+        enabled: false,
+      },
+      streams: {
+        url: "/api/streams",
+      },
+    });
+    expect("seededAt" in config).toBe(false);
   });
 });
 

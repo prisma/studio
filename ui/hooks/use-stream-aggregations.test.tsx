@@ -103,16 +103,19 @@ describe("useStreamAggregations", () => {
               end: "2026-03-27T02:31:00.000Z",
               groups: [
                 {
-                  key: {},
+                  key: {
+                    metric: "process.rss.bytes",
+                    unit: "bytes",
+                  },
                   measures: {
                     value: {
-                      avg: 15,
                       count: 2,
+                      histogram: {
+                        "10": 1,
+                        "20": 1,
+                      },
                       max: 20,
                       min: 10,
-                      p50: 16,
-                      p95: 20,
-                      p99: 20,
                       sum: 30,
                     },
                   },
@@ -124,16 +127,18 @@ describe("useStreamAggregations", () => {
               end: "2026-03-27T02:32:00.000Z",
               groups: [
                 {
-                  key: {},
+                  key: {
+                    metric: "process.rss.bytes",
+                    unit: "bytes",
+                  },
                   measures: {
                     value: {
-                      avg: 40,
                       count: 1,
+                      histogram: {
+                        "40": 1,
+                      },
                       max: 40,
                       min: 40,
-                      p50: 40,
-                      p95: 40,
-                      p99: 40,
                       sum: 40,
                     },
                   },
@@ -165,6 +170,7 @@ describe("useStreamAggregations", () => {
     const harness = renderHarness({
       aggregationRollups: [
         {
+          dimensions: ["metric", "unit"],
           intervals: ["10s", "1m", "5m", "1h"],
           measures: [
             {
@@ -184,12 +190,14 @@ describe("useStreamAggregations", () => {
 
     await waitFor(() => harness.getLatestState()?.isLoading === false);
 
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
     const fetchCall = fetchSpy.mock.calls[0] as [
       string,
       RequestInit | undefined,
     ];
     const requestBody = JSON.parse(String(fetchCall[1]?.body)) as {
       from: string;
+      group_by: string[];
       interval: string;
       measures: string[];
       rollup: string;
@@ -206,6 +214,7 @@ describe("useStreamAggregations", () => {
     expect(fetchCall[1]?.signal).toBeInstanceOf(AbortSignal);
     expect(requestBody).toEqual({
       from: "2026-03-27T02:30:00.000Z",
+      group_by: ["metric", "unit"],
       interval: "1m",
       measures: ["value"],
       rollup: "metrics",
@@ -222,29 +231,122 @@ describe("useStreamAggregations", () => {
         },
         from: "2026-03-27T02:30:00.000Z",
         interval: "1m",
-        measures: [
+        rollupName: "metrics",
+        series: [
           {
+            availableStatistics: ["avg", "p50", "p95", "p99", "min", "max"],
+            id: 'metrics:value:[["metric","process.rss.bytes"],["unit","bytes"]]',
             kind: "summary_parts",
-            name: "value",
+            label: "process.rss.bytes",
+            measureName: "value",
             points: [
               {
                 end: "2026-03-27T02:31:00.000Z",
                 start: "2026-03-27T02:30:00.000Z",
-                value: 15,
+                statistics: {
+                  avg: 15,
+                  count: 2,
+                  max: 20,
+                  min: 10,
+                  p50: 10,
+                  p95: 20,
+                  p99: 20,
+                },
               },
               {
                 end: "2026-03-27T02:32:00.000Z",
                 start: "2026-03-27T02:31:00.000Z",
-                value: 40,
+                statistics: {
+                  avg: 40,
+                  count: 1,
+                  max: 40,
+                  min: 40,
+                  p50: 40,
+                  p95: 40,
+                  p99: 40,
+                },
               },
             ],
-            summaryValue: 70 / 3,
+            rollupName: "metrics",
+            statisticValues: {
+              avg: 70 / 3,
+              count: 3,
+              max: 40,
+              min: 10,
+              p50: 20,
+              p95: 40,
+              p99: 40,
+            },
+            subtitle: "bytes",
+            unit: "bytes",
           },
         ],
-        rollupName: "metrics",
         to: "2026-03-27T03:30:00.000Z",
       },
     ]);
+
+    harness.cleanup();
+  });
+
+  it("uses the full stream window when the relative range is all", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          buckets: [],
+          coverage: {
+            indexed_segments: 0,
+            index_families_used: [],
+            scanned_segments: 0,
+            scanned_tail_docs: 0,
+            used_rollups: true,
+          },
+          from: "1970-01-01T00:00:00.000Z",
+          interval: "1h",
+          rollup: "metrics",
+          stream: "__stream_metrics__",
+          to: "2026-03-27T03:30:00.000Z",
+        }),
+        {
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+      ),
+    );
+    const harness = renderHarness({
+      aggregationRollups: [
+        {
+          dimensions: ["metric", "unit"],
+          intervals: ["10s", "1m", "5m", "1h"],
+          measures: [
+            {
+              kind: "summary_parts",
+              name: "value",
+            },
+          ],
+          name: "metrics",
+        },
+      ],
+      rangeSelection: {
+        duration: "all",
+        kind: "relative",
+      },
+      streamName: "__stream_metrics__",
+    });
+
+    await waitFor(() => harness.getLatestState()?.isLoading === false);
+
+    const fetchCall = fetchSpy.mock.calls[0] as [
+      string,
+      RequestInit | undefined,
+    ];
+    const requestBody = JSON.parse(String(fetchCall[1]?.body)) as {
+      from: string;
+      to: string;
+    };
+
+    expect(requestBody.from).toBe("1970-01-01T00:00:00.000Z");
+    expect(requestBody.to).toBe("2026-03-27T03:30:00.000Z");
 
     harness.cleanup();
   });

@@ -5,14 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Adapter } from "../../data/adapter";
 import { Studio } from "./Studio";
 
-const { refetchMock, useIntrospectionMock, useNavigationMock } = vi.hoisted(
-  () => ({
-    refetchMock: vi.fn(() => Promise.resolve()),
-    useIntrospectionMock: vi.fn<() => IntrospectionMockValue>(),
-    useNavigationMock: vi.fn<() => NavigationMockValue>(),
-  }),
-);
-
 type NavigationMockValue = {
   metadata: {
     activeTable: undefined;
@@ -35,6 +27,20 @@ type IntrospectionMockValue = {
   isRefetching: boolean;
   refetch: () => Promise<unknown>;
 };
+
+type StudioMockValue = {
+  hasDatabase: boolean;
+  isNavigationOpen: boolean;
+  streamsUrl?: string;
+};
+
+const { refetchMock, useIntrospectionMock, useNavigationMock, useStudioMock } =
+  vi.hoisted(() => ({
+    refetchMock: vi.fn(() => Promise.resolve()),
+    useIntrospectionMock: vi.fn<() => IntrospectionMockValue>(),
+    useNavigationMock: vi.fn<() => NavigationMockValue>(),
+    useStudioMock: vi.fn<() => StudioMockValue>(),
+  }));
 
 vi.mock("motion/react", () => ({
   AnimatePresence: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -66,9 +72,7 @@ vi.mock("./context", () => ({
   StudioContextProvider: ({ children }: { children: ReactNode }) => (
     <>{children}</>
   ),
-  useStudio: () => ({
-    isNavigationOpen: true,
-  }),
+  useStudio: () => useStudioMock(),
 }));
 
 vi.mock("./Navigation", () => ({
@@ -106,6 +110,11 @@ vi.mock("./views/View", () => ({
 describe("Studio", () => {
   beforeEach(() => {
     refetchMock.mockClear();
+    useStudioMock.mockReturnValue({
+      hasDatabase: true,
+      isNavigationOpen: true,
+      streamsUrl: "/api/streams",
+    });
     useNavigationMock.mockReturnValue({
       metadata: {
         activeTable: undefined,
@@ -218,6 +227,70 @@ describe("Studio", () => {
     });
 
     expect(container.textContent).toContain("Stream view");
+    expect(container.textContent).not.toContain(
+      "Could not load schema metadata",
+    );
+    expect(
+      container.querySelector('[data-testid="studio-root"]')?.className,
+    ).toContain("overflow-hidden");
+    expect(
+      container.querySelector('[data-testid="studio-shell"]')?.className,
+    ).toContain("h-full");
+    expect(
+      container.querySelector('[data-testid="studio-shell"]')?.className,
+    ).toContain("overflow-hidden");
+    expect(
+      container.querySelector('[data-testid="studio-main-pane"]')?.className,
+    ).toContain("self-stretch");
+    expect(
+      container.querySelector('[data-testid="studio-main-pane"]')?.className,
+    ).not.toContain("self-start");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("renders a database-unavailable placeholder for database views when the session has no database", () => {
+    useStudioMock.mockReturnValue({
+      hasDatabase: false,
+      isNavigationOpen: true,
+      streamsUrl: "/api/streams",
+    });
+    useNavigationMock.mockReturnValue({
+      metadata: {
+        activeTable: undefined,
+      },
+      viewParam: "table",
+    });
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <Studio
+          adapter={
+            {
+              delete: vi.fn(),
+              introspect: vi.fn(),
+              insert: vi.fn(),
+              query: vi.fn(),
+              raw: vi.fn(),
+              update: vi.fn(),
+            } as unknown as Adapter
+          }
+          hasDatabase={false}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain(
+      "This Studio session was started without a database URL.",
+    );
+    expect(container.textContent).not.toContain("Active table view");
     expect(container.textContent).not.toContain(
       "Could not load schema metadata",
     );

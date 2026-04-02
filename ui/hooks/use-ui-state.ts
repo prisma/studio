@@ -34,7 +34,47 @@ function cloneValue<T>(value: T): T {
     return value;
   }
 
-  return structuredClone(value);
+  try {
+    return structuredClone(value);
+  } catch (_error) {
+    return cloneProxyCompatibleValue(value);
+  }
+}
+
+function cloneProxyCompatibleValue<T>(
+  value: T,
+  seen = new WeakMap<object, unknown>(),
+): T {
+  if (typeof value !== "object" || value == null) {
+    return value;
+  }
+
+  if (value instanceof Date) {
+    return new Date(value.getTime()) as T;
+  }
+
+  if (Array.isArray(value)) {
+    const clonedEntries = value.map<unknown>((entry) =>
+      cloneProxyCompatibleValue(entry, seen),
+    );
+    return clonedEntries as T;
+  }
+
+  if (seen.has(value)) {
+    return seen.get(value) as T;
+  }
+
+  const clone = {} as Record<PropertyKey, unknown>;
+  seen.set(value, clone);
+
+  for (const key of Reflect.ownKeys(value)) {
+    clone[key] = cloneProxyCompatibleValue(
+      (value as Record<PropertyKey, unknown>)[key],
+      seen,
+    );
+  }
+
+  return clone as T;
 }
 
 function resolveUpdater<T>(previous: T, updater: Updater<T>): T {
@@ -159,7 +199,7 @@ export function useUiState<T>(
       }
 
       uiLocalStateCollection.update(key, (draft) => {
-        const previous = draft.value as T;
+        const previous = cloneValue(draft.value as T);
         draft.value = cloneValue(resolveUpdater(previous, updater));
       });
     },

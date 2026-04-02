@@ -65,6 +65,7 @@ export type StudioEvent = StudioEventBase & {
 
 export interface StudioProps {
   adapter: Adapter;
+  hasDatabase?: boolean;
   llm?: StudioLlm;
   onEvent?: (error: StudioEvent) => void;
   streamsUrl?: string;
@@ -79,7 +80,14 @@ export interface StudioProps {
  * Main Studio component that provides database visualization and management
  */
 export function Studio(props: StudioProps) {
-  const { adapter, llm, onEvent, streamsUrl, theme } = props;
+  const {
+    adapter,
+    hasDatabase = true,
+    llm,
+    onEvent,
+    streamsUrl,
+    theme,
+  } = props;
 
   if (!adapter) {
     console.error("No adapter provided to Studio component");
@@ -89,6 +97,7 @@ export function Studio(props: StudioProps) {
   return (
     <StudioContextProvider
       adapter={adapter}
+      hasDatabase={hasDatabase}
       llm={llm}
       onEvent={onEvent}
       streamsUrl={streamsUrl}
@@ -109,7 +118,7 @@ const views: Record<string, (props: ViewProps) => JSX.Element | null> = {
 };
 
 function StudioContent() {
-  const { isNavigationOpen } = useStudio();
+  const { hasDatabase, isNavigationOpen, streamsUrl } = useStudio();
   const {
     metadata: { activeTable },
     viewParam,
@@ -117,20 +126,32 @@ function StudioContent() {
   const { errorState, hasResolvedIntrospection, isRefetching, refetch } =
     useIntrospection();
 
-  const containerClasses = cn("flex flex-col w-full h-full font-sans");
+  const containerClasses = cn(
+    "flex min-w-0 max-w-full flex-col w-full h-full min-h-0 overflow-hidden font-sans",
+  );
 
   const View = views[viewParam ?? "default"] ?? BasicView;
   const shouldShowStartupIntrospectionRecovery =
+    hasDatabase &&
     viewParam === "table" &&
     activeTable == null &&
     errorState != null &&
     !hasResolvedIntrospection;
+  const shouldShowDatabaseUnavailableView =
+    !hasDatabase && viewParam !== "stream";
 
   return (
-    <div className="ps" style={{ width: "100%", height: "100%" }}>
+    <div
+      className="ps min-h-0 min-w-0 max-w-full overflow-hidden"
+      data-testid="studio-root"
+      style={{ width: "100%", height: "100%" }}
+    >
       <StudioCommandPaletteProvider>
         <div className={containerClasses}>
-          <div className="flex gap-0 bg-background relative min-h-full rounded-lg">
+          <div
+            className="relative flex h-full min-h-0 w-full min-w-0 gap-0 overflow-hidden rounded-lg bg-background"
+            data-testid="studio-shell"
+          >
             <AnimatePresence mode="wait">
               {isNavigationOpen && (
                 <motion.div
@@ -145,7 +166,8 @@ function StudioContent() {
             </AnimatePresence>
 
             <motion.div
-              className="flex w-full bg-secondary flex-col p-px rounded-lg self-start h-full min-h-full max-h-full overflow-clip"
+              className="flex h-full min-h-0 min-w-0 flex-1 flex-col self-stretch overflow-hidden rounded-lg bg-secondary p-px"
+              data-testid="studio-main-pane"
               transition={{ duration: 0.14 }}
             >
               {shouldShowStartupIntrospectionRecovery ? (
@@ -154,6 +176,10 @@ function StudioContent() {
                   isRetrying={isRefetching}
                   onRetry={() => void refetch()}
                 />
+              ) : shouldShowDatabaseUnavailableView ? (
+                <DatabaseUnavailableView
+                  hasStreamsServer={typeof streamsUrl === "string"}
+                />
               ) : (
                 <View />
               )}
@@ -161,6 +187,21 @@ function StudioContent() {
           </div>
         </div>
       </StudioCommandPaletteProvider>
+    </div>
+  );
+}
+
+function DatabaseUnavailableView(props: { hasStreamsServer: boolean }) {
+  const description = props.hasStreamsServer
+    ? "This Studio session was started without a database URL. Select a stream from the sidebar to browse stream data."
+    : "This Studio session was started without a database URL.";
+
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <StudioHeader />
+      <div className="flex flex-1 items-center justify-center px-6 py-10 text-sm text-muted-foreground">
+        {description}
+      </div>
     </div>
   );
 }

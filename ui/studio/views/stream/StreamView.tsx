@@ -1,4 +1,4 @@
-import { Waves } from "lucide-react";
+import { ChartColumn, ChevronsLeft, ChevronsRight } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -10,6 +10,11 @@ import {
 
 import { Badge } from "@/ui/components/ui/badge";
 import { Button } from "@/ui/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/ui/components/ui/popover";
 import { Skeleton } from "@/ui/components/ui/skeleton";
 import {
   Tooltip,
@@ -20,27 +25,79 @@ import {
 import { cn } from "@/ui/lib/utils";
 
 import { useNavigation } from "../../../hooks/use-navigation";
-import { type StreamAggregationRangeSelection } from "../../../hooks/use-stream-aggregations";
-import { useStreamDetails } from "../../../hooks/use-stream-details";
 import {
+  STREAM_AGGREGATION_QUICK_RANGES,
+  type StreamAggregationRangeSelection,
+  type StreamAggregationRelativeDuration,
+  useStreamAggregations,
+} from "../../../hooks/use-stream-aggregations";
+import {
+  type StudioStreamDetails,
+  type StudioStreamSearchConfig,
+  useStreamDetails,
+} from "../../../hooks/use-stream-details";
+import {
+  STREAM_EVENTS_PAGE_SIZE,
   type StudioStreamEvent,
   type StudioStreamEventIndexedField,
   useStreamEvents,
 } from "../../../hooks/use-stream-events";
-import { useStreams } from "../../../hooks/use-streams";
 import { useUiState } from "../../../hooks/use-ui-state";
+import { ExpandableSearchControl } from "../../input/ExpandableSearchControl";
 import { StudioHeader } from "../../StudioHeader";
 import { ViewProps } from "../View";
+import { HighlightedStreamEventJson } from "./stream-search-highlight";
+import {
+  mergeRememberedStreamSearchEvents,
+  STREAM_SEARCH_SUGGESTION_EVENT_MEMORY_LIMIT,
+} from "./stream-search-suggestions";
 import { StreamAggregationsPanel } from "./StreamAggregationsPanel";
+import { StreamDiagnosticsPopover } from "./StreamDiagnosticsPopover";
+import { useStreamEventSearch } from "./use-stream-event-search";
 
 const LOAD_MORE_THRESHOLD_PX = 160;
 const NEW_EVENTS_BATCH_SIZE = 50n;
 const NEW_EVENTS_HIGHLIGHT_DURATION_MS = 1_800;
-const STREAM_COUNT_REFRESH_INTERVAL_MS = 5000;
+const STREAM_FOLLOW_REFRESH_INTERVAL_MS = 100;
+const STREAM_TAIL_PIN_THRESHOLD_PX = 16;
 const DEFAULT_STREAM_AGGREGATION_RANGE_SELECTION = {
   duration: "1h",
   kind: "relative",
 } as const satisfies StreamAggregationRangeSelection;
+const STREAM_FOLLOW_MODE_DEFAULT = "tail" as const satisfies StreamFollowMode;
+const STREAM_AGGREGATION_ABSOLUTE_RANGE_PREFIX = "absolute:";
+const STREAM_AGGREGATION_ABSOLUTE_RANGE_SEPARATOR = "|";
+const STREAM_AGGREGATION_RELATIVE_DURATIONS = new Set(
+  STREAM_AGGREGATION_QUICK_RANGES.map((range) => range.duration),
+);
+type StreamFollowMode = "paused" | "live" | "tail";
+
+const STREAM_FOLLOW_MODE_HELP_TEXT = {
+  live: "Check for new events automatically.",
+  paused: "Don't load new events.",
+  tail: "Load and display new events in real time.",
+} as const satisfies Record<StreamFollowMode, string>;
+
+const STREAM_FOLLOW_MODE_OPTIONS = [
+  {
+    label: "Paused",
+    value: "paused",
+  },
+  {
+    label: "Live",
+    value: "live",
+  },
+  {
+    label: "Tail",
+    value: "tail",
+  },
+] as const satisfies ReadonlyArray<{
+  label: string;
+  value: StreamFollowMode;
+}>;
+
+const STREAM_FOLLOW_MODE_ITEM_CLASS_NAME =
+  "h-8 rounded-none border-0 px-2.5 shadow-none transition-colors data-[state=on]:bg-background data-[state=on]:font-semibold data-[state=on]:text-foreground data-[state=on]:shadow-sm";
 
 interface ScrollAnchorSnapshot {
   anchorEventId: string | null;
@@ -52,46 +109,9 @@ interface ScrollAnchorSnapshot {
   streamIdentity: string | null;
 }
 
-function stringifyForExpandedView(value: unknown): string {
-  if (typeof value === "string") {
-    return value;
-  }
-
-  if (
-    typeof value === "number" ||
-    typeof value === "boolean" ||
-    typeof value === "bigint"
-  ) {
-    return String(value);
-  }
-
-  if (value === undefined) {
-    return "undefined";
-  }
-
-  const seen = new WeakSet<object>();
-
-  return (
-    JSON.stringify(
-      value,
-      (_key, currentValue: unknown) => {
-        if (typeof currentValue === "bigint") {
-          return currentValue.toString();
-        }
-
-        if (typeof currentValue === "object" && currentValue !== null) {
-          if (seen.has(currentValue)) {
-            return "[Circular]";
-          }
-
-          seen.add(currentValue);
-        }
-
-        return currentValue;
-      },
-      2,
-    ) ?? String(value)
-  );
+interface PendingScrollPositionRequest {
+  position: "bottom" | "top";
+  streamIdentity: string | null;
 }
 
 function formatRelativeTime(isoTimestamp: string | null): string {
@@ -196,6 +216,180 @@ function formatNewEventsLabel(count: bigint): string {
   return `${count.toString()} new events`;
 }
 
+function formatCount(value: bigint): string {
+  return value.toLocaleString("en-US");
+}
+
+function clampBigInt(value: bigint, min: bigint, max: bigint): bigint {
+  if (value < min) {
+    return min;
+  }
+
+  if (value > max) {
+    return max;
+  }
+
+  return value;
+}
+
+function getSearchScannedEventCount(args: {
+  events: Pick<StudioStreamEvent, "sequence">[];
+  hasMoreEvents: boolean;
+  totalEventCount: bigint;
+}): bigint {
+  const totalEventCount =
+    args.totalEventCount >= 0n ? args.totalEventCount : 0n;
+
+  if (totalEventCount === 0n) {
+    return 0n;
+  }
+
+  const oldestVisibleEvent = args.events.at(-1);
+
+  if (!oldestVisibleEvent) {
+    return args.hasMoreEvents ? 0n : totalEventCount;
+  }
+
+  if (!args.hasMoreEvents) {
+    return totalEventCount;
+  }
+
+  const oldestVisibleSequence = parseNonNegativeBigInt(
+    oldestVisibleEvent.sequence,
+  );
+  const scannedEventCount = totalEventCount - oldestVisibleSequence;
+
+  return clampBigInt(scannedEventCount, 0n, totalEventCount);
+}
+
+function getSearchScanProgressWidth(scannedEventCount: bigint, total: bigint) {
+  if (total <= 0n || scannedEventCount <= 0n) {
+    return "0%";
+  }
+
+  const basisPoints = clampBigInt(
+    (scannedEventCount * 10_000n) / total,
+    0n,
+    10_000n,
+  );
+
+  return `${(Number(basisPoints) / 100).toFixed(2)}%`;
+}
+
+function formatSearchSummary(args: {
+  resultsLoadedCount: bigint;
+  scannedEventCount: bigint;
+  totalEventCount: bigint;
+}) {
+  return `${formatCount(args.resultsLoadedCount)} results, scanned ${formatCount(args.scannedEventCount)} of ${formatCount(args.totalEventCount)} events`;
+}
+
+function parseStreamFollowMode(
+  value: string | null | undefined,
+): StreamFollowMode | null {
+  if (value === "paused" || value === "live" || value === "tail") {
+    return value;
+  }
+
+  return null;
+}
+
+function parseAggregationPanelOpenState(
+  value: string | null | undefined,
+): boolean | null {
+  if (value === "") {
+    return true;
+  }
+
+  return null;
+}
+
+function serializeAggregationRangeSelection(
+  selection: StreamAggregationRangeSelection,
+): string {
+  if (selection.kind === "relative") {
+    return selection.duration;
+  }
+
+  return `${STREAM_AGGREGATION_ABSOLUTE_RANGE_PREFIX}${selection.fromIso}${STREAM_AGGREGATION_ABSOLUTE_RANGE_SEPARATOR}${selection.toIso}`;
+}
+
+function parseAggregationRangeSelection(
+  value: string | null | undefined,
+): StreamAggregationRangeSelection | null {
+  if (!value) {
+    return null;
+  }
+
+  if (
+    STREAM_AGGREGATION_RELATIVE_DURATIONS.has(
+      value as StreamAggregationRelativeDuration,
+    )
+  ) {
+    return {
+      duration: value as StreamAggregationRelativeDuration,
+      kind: "relative",
+    };
+  }
+
+  if (!value.startsWith(STREAM_AGGREGATION_ABSOLUTE_RANGE_PREFIX)) {
+    return null;
+  }
+
+  const payload = value.slice(STREAM_AGGREGATION_ABSOLUTE_RANGE_PREFIX.length);
+  const separatorIndex = payload.indexOf(
+    STREAM_AGGREGATION_ABSOLUTE_RANGE_SEPARATOR,
+  );
+
+  if (separatorIndex <= 0 || separatorIndex >= payload.length - 1) {
+    return null;
+  }
+
+  const fromIso = payload.slice(0, separatorIndex);
+  const toIso = payload.slice(separatorIndex + 1);
+
+  return fromIso && toIso
+    ? {
+        fromIso,
+        kind: "absolute",
+        toIso,
+      }
+    : null;
+}
+
+function getPageCountForTotalEventCount(
+  totalEventCount: bigint,
+  pageSize: number,
+): number {
+  const resolvedPageSize = Math.max(1, Math.trunc(pageSize));
+
+  if (totalEventCount <= 0n) {
+    return 1;
+  }
+
+  const totalPages =
+    (totalEventCount + BigInt(resolvedPageSize) - 1n) /
+    BigInt(resolvedPageSize);
+
+  return totalPages > BigInt(Number.MAX_SAFE_INTEGER)
+    ? Number.MAX_SAFE_INTEGER
+    : Number(totalPages);
+}
+
+function scrollContainerToPosition(
+  scrollContainer: HTMLDivElement,
+  position: "bottom" | "top",
+): void {
+  const top = position === "top" ? 0 : scrollContainer.scrollHeight;
+
+  if (typeof scrollContainer.scrollTo === "function") {
+    scrollContainer.scrollTo({ top });
+    return;
+  }
+
+  scrollContainer.scrollTop = top;
+}
+
 function formatIndexedField(field: StudioStreamEventIndexedField): string {
   return field.value ? `${field.label}: ${field.value}` : field.label;
 }
@@ -205,8 +399,17 @@ function StreamEventRow(props: {
   expandedEventId: string | null;
   isNewlyRevealed: boolean;
   onToggle: (eventId: string) => void;
+  searchConfig: StudioStreamSearchConfig | null | undefined;
+  searchQuery: string;
 }) {
-  const { event, expandedEventId, isNewlyRevealed, onToggle } = props;
+  const {
+    event,
+    expandedEventId,
+    isNewlyRevealed,
+    onToggle,
+    searchConfig,
+    searchQuery,
+  } = props;
   const isExpanded = expandedEventId === event.id;
 
   return (
@@ -232,16 +435,12 @@ function StreamEventRow(props: {
         type="button"
       >
         <div className="min-w-0 text-xs text-muted-foreground">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="block truncate">
-                {formatRelativeTime(event.exactTimestamp)}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>
-              {formatExactTimestamp(event.exactTimestamp)}
-            </TooltipContent>
-          </Tooltip>
+          <span
+            className="block truncate"
+            title={formatExactTimestamp(event.exactTimestamp)}
+          >
+            {formatRelativeTime(event.exactTimestamp)}
+          </span>
         </div>
 
         <div className="min-w-0">
@@ -285,7 +484,11 @@ function StreamEventRow(props: {
       {isExpanded ? (
         <div className="border-t border-border bg-background px-4 py-4">
           <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-xs leading-5 text-foreground">
-            {stringifyForExpandedView(event.body)}
+            <HighlightedStreamEventJson
+              searchConfig={searchConfig}
+              searchQuery={searchQuery}
+              value={event.body}
+            />
           </pre>
         </div>
       ) : null}
@@ -318,11 +521,39 @@ function HeaderRow() {
       className="sticky top-0 z-10 grid grid-cols-[minmax(8.5rem,10rem)_minmax(0,10rem)_minmax(0,14rem)_minmax(0,1fr)_5.5rem] gap-3 border-b border-border bg-background/95 px-4 py-2 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground backdrop-blur-sm"
       data-testid="stream-header-row"
     >
-      <span>Time</span>
-      <span>Key</span>
-      <span>Indexed</span>
-      <span>Preview</span>
-      <span className="text-right">Size</span>
+      <span className="pl-4">Time</span>
+      <span className="pl-4">Key</span>
+      <span className="pl-4">Indexed</span>
+      <span className="pl-4">Preview</span>
+      <span className="pr-4 text-right">Size</span>
+    </div>
+  );
+}
+
+function StreamSearchHeaderControl(props: {
+  searchConfig: StudioStreamSearchConfig | null | undefined;
+  searchTerm: string;
+  setSearchParam: (value: string) => Promise<URLSearchParams>;
+  streamName: string;
+  suggestionEvents: StudioStreamEvent[];
+}) {
+  const streamSearch = useStreamEventSearch({
+    scopeKey: props.streamName,
+    searchConfig: props.searchConfig,
+    searchTerm: props.searchTerm,
+    setSearchParam: props.setSearchParam,
+    suggestionEvents: props.suggestionEvents,
+    supportsSearch: true,
+  });
+
+  return (
+    <div className="min-w-0 flex-1" data-testid="stream-header-search-slot">
+      <ExpandableSearchControl
+        alignment="left"
+        expandedWidthClassName="w-full"
+        rowSearch={streamSearch}
+        supportsSearch
+      />
     </div>
   );
 }
@@ -343,64 +574,97 @@ function getVisibleAnchorRow(
   return null;
 }
 
-export function StreamView(_props: ViewProps) {
-  const { streamParam } = useNavigation();
-  const { isError, isLoading, streams } = useStreams({
-    refreshIntervalMs: streamParam
-      ? STREAM_COUNT_REFRESH_INTERVAL_MS
-      : undefined,
-  });
-  const selectedStream = useMemo(
-    () => streams.find((stream) => stream.name === streamParam) ?? null,
-    [streamParam, streams],
-  );
-  const selectedStreamIdentity = selectedStream
-    ? `${selectedStream.name}:${selectedStream.epoch}`
-    : null;
+function ActiveStreamView(props: {
+  followMode: StreamFollowMode;
+  isAggregationPanelOpen: boolean;
+  rangeSelection: StreamAggregationRangeSelection;
+  searchParam: string | null;
+  selectedStream: StudioStreamDetails;
+  setSearchParam: (value: string) => Promise<URLSearchParams>;
+  setStreamAggregationRangeParam: (
+    value: string | null | ((previous: string | null) => string | null),
+  ) => Promise<URLSearchParams>;
+  setStreamAggregationsParam: (
+    value: string | null | ((previous: string | null) => string | null),
+  ) => Promise<URLSearchParams>;
+  setStreamFollowParam: (
+    value: string | null | ((previous: string | null) => string | null),
+  ) => Promise<URLSearchParams>;
+  streamAggregationRangeParam: string | null;
+}) {
+  const followMode = props.followMode;
+  const isPollingEnabled = followMode !== "paused";
+  const selectedStream = props.selectedStream;
+  const selectedStreamDetails = props.selectedStream;
+  const supportsStreamSearch = selectedStreamDetails?.search != null;
+  const activeSearchQuery = supportsStreamSearch
+    ? (props.searchParam?.trim() ?? "")
+    : "";
+  const isSearchActive = activeSearchQuery.length > 0;
+  const selectedStreamIdentity = `${selectedStream.name}:${selectedStream.epoch}`;
+  const streamEventWindowResetKey = `${selectedStreamIdentity ?? "none"}::${activeSearchQuery}`;
   const [pageCount, setPageCount] = useState(1);
+  const [searchVisibleResultCount, setSearchVisibleResultCount] = useState<
+    bigint | null
+  >(null);
+  const [searchHeadMatchCountSnapshot, setSearchHeadMatchCountSnapshot] =
+    useState<bigint | null>(null);
+  const [searchSuggestionEvents, setSearchSuggestionEvents] = useState<
+    StudioStreamEvent[]
+  >([]);
+  const [
+    pendingScrollTriggeredSearchVisibleResultCount,
+    setPendingScrollTriggeredSearchVisibleResultCount,
+  ] = useState<bigint | null>(null);
   const [visibleEventCount, setVisibleEventCount] = useState<bigint | null>(
     null,
   );
+  const [isTailViewportPinned, setIsTailViewportPinned] = useState(true);
   const [recentlyRevealedEventIds, setRecentlyRevealedEventIds] = useState<
     string[]
   >([]);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const lastResetStreamIdentityRef = useRef<string | null>(null);
+  const lastSuggestionStreamIdentityRef = useRef<string | null>(null);
   const pendingRevealRef = useRef<{
     batchSize: number;
     previousFirstEventId: string | null;
     streamIdentity: string | null;
   } | null>(null);
   const scrollAnchorSnapshotRef = useRef<ScrollAnchorSnapshot | null>(null);
-  const expandedEventStateKey = selectedStream
-    ? `stream:${selectedStream.name}:expanded-event`
-    : undefined;
-  const aggregationPanelStateKey = selectedStream
-    ? `stream:${selectedStream.name}:aggregations-open`
-    : undefined;
-  const aggregationRangeStateKey = selectedStream
-    ? `stream:${selectedStream.name}:aggregation-range`
-    : undefined;
+  const pendingScrollPositionRef = useRef<PendingScrollPositionRequest | null>(
+    null,
+  );
+  const suppressNextScrollPaginationRef = useRef(false);
+  const expandedEventStateKey = `stream:${selectedStream.name}:expanded-event`;
   const [expandedEventId, setExpandedEventId] = useUiState<string | null>(
     expandedEventStateKey,
     null,
   );
-  const [isAggregationPanelOpen, setIsAggregationPanelOpen] =
-    useUiState<boolean>(aggregationPanelStateKey, false);
-  const [aggregationRangeSelection, setAggregationRangeSelection] =
-    useUiState<StreamAggregationRangeSelection>(
-      aggregationRangeStateKey,
-      DEFAULT_STREAM_AGGREGATION_RANGE_SELECTION,
-    );
+  const isAggregationPanelOpen = props.isAggregationPanelOpen;
+  const aggregationRangeSelection = props.rangeSelection;
+  const isAggregationAutoRefreshEnabled = followMode !== "paused";
+  const requestedSearchResultCount = isSearchActive
+    ? (searchVisibleResultCount ?? BigInt(STREAM_EVENTS_PAGE_SIZE))
+    : 0n;
+  const isScrollTriggeredSearchLoadPending =
+    pendingScrollTriggeredSearchVisibleResultCount !== null;
   const {
     events,
-    hasHiddenNewerEvents,
+    hasHiddenNewerEvents: hookHasHiddenNewerEvents,
     hasMoreEvents,
-    hiddenNewerEventCount,
+    hiddenNewerEventCount: hookHiddenNewerEventCount,
     isFetching,
+    matchedEventCount,
     totalEventCount,
   } = useStreamEvents({
+    liveUpdatesEnabled: isPollingEnabled && !isScrollTriggeredSearchLoadPending,
     pageCount,
+    searchConfig: selectedStreamDetails?.search,
+    searchQuery: activeSearchQuery,
+    searchVisibleResultCount: isSearchActive
+      ? requestedSearchResultCount
+      : undefined,
     stream: selectedStream,
     visibleEventCount:
       visibleEventCount ??
@@ -408,35 +672,229 @@ export function StreamView(_props: ViewProps) {
         ? parseNonNegativeBigInt(selectedStream.nextOffset)
         : undefined),
   });
-  const { details: selectedStreamDetails } = useStreamDetails({
-    refreshIntervalMs: STREAM_COUNT_REFRESH_INTERVAL_MS,
+  const effectiveSearchHeadMatchCountSnapshot =
+    isSearchActive &&
+    searchHeadMatchCountSnapshot !== null &&
+    matchedEventCount !== null
+      ? clampBigInt(searchHeadMatchCountSnapshot, 0n, matchedEventCount)
+      : searchHeadMatchCountSnapshot;
+  const searchHiddenNewerEventCount =
+    isSearchActive &&
+    matchedEventCount !== null &&
+    effectiveSearchHeadMatchCountSnapshot !== null &&
+    matchedEventCount > effectiveSearchHeadMatchCountSnapshot
+      ? matchedEventCount - effectiveSearchHeadMatchCountSnapshot
+      : 0n;
+  const hiddenNewerEventCount = isSearchActive
+    ? searchHiddenNewerEventCount
+    : hookHiddenNewerEventCount;
+  const hasHiddenNewerEvents = isSearchActive
+    ? searchHiddenNewerEventCount > 0n
+    : hookHasHiddenNewerEvents;
+  const aggregationRollups = selectedStreamDetails?.aggregationRollups ?? [];
+  const { aggregations } = useStreamAggregations({
+    aggregationRollups,
+    enabled: aggregationRollups.length > 0,
+    liveUpdatesEnabled: isAggregationAutoRefreshEnabled,
+    rangeSelection: aggregationRangeSelection,
     streamName: selectedStream?.name,
   });
-  const aggregationCount = selectedStreamDetails?.aggregationCount ?? 0;
-  const aggregationRollups = selectedStreamDetails?.aggregationRollups ?? [];
+  const resolvedAggregationSeriesCount = useMemo(
+    () => aggregations.flatMap((aggregation) => aggregation.series).length,
+    [aggregations],
+  );
+  const aggregationCount =
+    resolvedAggregationSeriesCount > 0
+      ? resolvedAggregationSeriesCount
+      : (selectedStreamDetails?.aggregationCount ?? 0);
+  const searchResultsLoadedCount = isSearchActive
+    ? isScrollTriggeredSearchLoadPending
+      ? matchedEventCount === null
+        ? pendingScrollTriggeredSearchVisibleResultCount
+        : clampBigInt(
+            pendingScrollTriggeredSearchVisibleResultCount,
+            0n,
+            matchedEventCount,
+          )
+      : BigInt(events.length)
+    : 0n;
+  const searchScannedEventCount = isSearchActive
+    ? getSearchScannedEventCount({
+        events,
+        hasMoreEvents,
+        totalEventCount,
+      })
+    : 0n;
+  const searchScanProgressWidth = isSearchActive
+    ? getSearchScanProgressWidth(searchScannedEventCount, totalEventCount)
+    : "0%";
   const firstEventId = events[0]?.id ?? null;
   const recentlyRevealedEventIdSet = useMemo(
     () => new Set(recentlyRevealedEventIds),
     [recentlyRevealedEventIds],
   );
+  const queuePendingScrollPosition = useCallback(
+    (position: "bottom" | "top") => {
+      pendingScrollPositionRef.current = {
+        position,
+        streamIdentity: selectedStreamIdentity,
+      };
+    },
+    [selectedStreamIdentity],
+  );
+  const performProgrammaticScroll = useCallback(
+    (position: "bottom" | "top") => {
+      const scrollContainer = scrollContainerRef.current;
+
+      if (!scrollContainer) {
+        return;
+      }
+
+      const targetTop = position === "top" ? 0 : scrollContainer.scrollHeight;
+
+      if (scrollContainer.scrollTop === targetTop) {
+        return;
+      }
+
+      suppressNextScrollPaginationRef.current = true;
+      scrollContainerToPosition(scrollContainer, position);
+    },
+    [],
+  );
 
   useEffect(() => {
-    if (lastResetStreamIdentityRef.current === selectedStreamIdentity) {
+    if (!supportsStreamSearch) {
+      lastSuggestionStreamIdentityRef.current = selectedStreamIdentity;
+      setSearchSuggestionEvents((currentEvents) =>
+        currentEvents.length === 0 ? currentEvents : [],
+      );
       return;
     }
 
-    lastResetStreamIdentityRef.current = selectedStreamIdentity;
+    if (lastSuggestionStreamIdentityRef.current !== selectedStreamIdentity) {
+      lastSuggestionStreamIdentityRef.current = selectedStreamIdentity;
+      setSearchSuggestionEvents(
+        events.slice(0, STREAM_SEARCH_SUGGESTION_EVENT_MEMORY_LIMIT),
+      );
+      return;
+    }
+
+    if (events.length === 0) {
+      return;
+    }
+
+    setSearchSuggestionEvents((currentEvents) => {
+      const nextSearchSuggestionEvents = mergeRememberedStreamSearchEvents({
+        limit: STREAM_SEARCH_SUGGESTION_EVENT_MEMORY_LIMIT,
+        nextEvents: events,
+        previousEvents: currentEvents,
+      });
+
+      const isUnchanged =
+        nextSearchSuggestionEvents.length === currentEvents.length &&
+        nextSearchSuggestionEvents.every(
+          (event, index) => event.id === currentEvents[index]?.id,
+        );
+
+      return isUnchanged ? currentEvents : nextSearchSuggestionEvents;
+    });
+  }, [events, selectedStreamIdentity, supportsStreamSearch]);
+
+  useEffect(() => {
+    if (lastResetStreamIdentityRef.current === streamEventWindowResetKey) {
+      return;
+    }
+
+    lastResetStreamIdentityRef.current = streamEventWindowResetKey;
     pendingRevealRef.current = null;
+    pendingScrollPositionRef.current = null;
+    setPendingScrollTriggeredSearchVisibleResultCount(null);
+    setIsTailViewportPinned(true);
     setRecentlyRevealedEventIds([]);
+    setExpandedEventId(null);
+    setSearchHeadMatchCountSnapshot(null);
+    suppressNextScrollPaginationRef.current = false;
+    setSearchVisibleResultCount(
+      isSearchActive ? BigInt(STREAM_EVENTS_PAGE_SIZE) : null,
+    );
     setVisibleEventCount(
-      selectedStream ? parseNonNegativeBigInt(selectedStream.nextOffset) : null,
+      isSearchActive
+        ? null
+        : selectedStream
+          ? parseNonNegativeBigInt(selectedStream.nextOffset)
+          : null,
     );
     setPageCount(1);
-    scrollContainerRef.current?.scrollTo({ top: 0 });
-  }, [selectedStream, selectedStreamIdentity]);
+    if (scrollContainerRef.current) {
+      scrollContainerToPosition(scrollContainerRef.current, "top");
+    }
+  }, [
+    isSearchActive,
+    selectedStream,
+    setExpandedEventId,
+    streamEventWindowResetKey,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isSearchActive ||
+      matchedEventCount === null ||
+      searchHeadMatchCountSnapshot !== null
+    ) {
+      return;
+    }
+
+    setSearchHeadMatchCountSnapshot(matchedEventCount);
+  }, [isSearchActive, matchedEventCount, searchHeadMatchCountSnapshot]);
 
   const revealNewerEvents = useCallback(() => {
     if (!selectedStream) {
+      return;
+    }
+
+    if (isSearchActive) {
+      const hiddenMatchCount = hiddenNewerEventCount;
+      const revealBatchSize = Number(
+        hiddenMatchCount > NEW_EVENTS_BATCH_SIZE
+          ? NEW_EVENTS_BATCH_SIZE
+          : hiddenMatchCount,
+      );
+
+      setSearchVisibleResultCount((currentValue) => {
+        const resolvedCurrentValue =
+          currentValue ?? BigInt(STREAM_EVENTS_PAGE_SIZE);
+
+        if (hiddenMatchCount === 0n) {
+          pendingRevealRef.current = null;
+          return resolvedCurrentValue;
+        }
+
+        pendingRevealRef.current = {
+          batchSize: revealBatchSize,
+          previousFirstEventId: firstEventId,
+          streamIdentity: selectedStreamIdentity,
+        };
+
+        return resolvedCurrentValue + BigInt(revealBatchSize);
+      });
+      setSearchHeadMatchCountSnapshot((currentValue) => {
+        const resolvedCurrentValue =
+          currentValue ??
+          (matchedEventCount !== null
+            ? matchedEventCount - hiddenMatchCount
+            : 0n);
+
+        if (matchedEventCount === null) {
+          return resolvedCurrentValue + BigInt(revealBatchSize);
+        }
+
+        return clampBigInt(
+          resolvedCurrentValue + BigInt(revealBatchSize),
+          0n,
+          matchedEventCount,
+        );
+      });
+
       return;
     }
 
@@ -469,7 +927,151 @@ export function StreamView(_props: ViewProps) {
       return resolvedCurrentValue + BigInt(revealBatchSize);
     });
     setPageCount((currentPageCount) => currentPageCount + 1);
-  }, [firstEventId, selectedStream, selectedStreamIdentity]);
+  }, [
+    firstEventId,
+    hiddenNewerEventCount,
+    isSearchActive,
+    matchedEventCount,
+    selectedStream,
+    selectedStreamIdentity,
+  ]);
+
+  const revealAllNewerEvents = useCallback(() => {
+    if (!selectedStream) {
+      return;
+    }
+
+    if (isSearchActive) {
+      const hiddenMatchCount = hiddenNewerEventCount;
+
+      setSearchVisibleResultCount((currentValue) => {
+        const resolvedCurrentValue =
+          currentValue ?? BigInt(STREAM_EVENTS_PAGE_SIZE);
+
+        if (hiddenMatchCount === 0n) {
+          pendingRevealRef.current = null;
+          return resolvedCurrentValue;
+        }
+
+        pendingRevealRef.current = {
+          batchSize:
+            hiddenMatchCount > BigInt(Number.MAX_SAFE_INTEGER)
+              ? Number.MAX_SAFE_INTEGER
+              : Number(hiddenMatchCount),
+          previousFirstEventId: firstEventId,
+          streamIdentity: selectedStreamIdentity,
+        };
+
+        return resolvedCurrentValue + hiddenMatchCount;
+      });
+      setSearchHeadMatchCountSnapshot((currentValue) => {
+        if (matchedEventCount !== null) {
+          return matchedEventCount;
+        }
+
+        return (currentValue ?? 0n) + hiddenMatchCount;
+      });
+
+      return;
+    }
+
+    const latestEventCount = parseNonNegativeBigInt(selectedStream.nextOffset);
+
+    setVisibleEventCount((currentValue) => {
+      const resolvedCurrentValue = currentValue ?? latestEventCount;
+      const hiddenEventCount =
+        latestEventCount > resolvedCurrentValue
+          ? latestEventCount - resolvedCurrentValue
+          : 0n;
+
+      if (hiddenEventCount === 0n) {
+        pendingRevealRef.current = null;
+        return resolvedCurrentValue;
+      }
+
+      pendingRevealRef.current = {
+        batchSize:
+          hiddenEventCount > BigInt(Number.MAX_SAFE_INTEGER)
+            ? Number.MAX_SAFE_INTEGER
+            : Number(hiddenEventCount),
+        previousFirstEventId: firstEventId,
+        streamIdentity: selectedStreamIdentity,
+      };
+
+      return latestEventCount;
+    });
+    setPageCount(
+      getPageCountForTotalEventCount(latestEventCount, STREAM_EVENTS_PAGE_SIZE),
+    );
+  }, [
+    firstEventId,
+    hiddenNewerEventCount,
+    isSearchActive,
+    matchedEventCount,
+    selectedStream,
+    selectedStreamIdentity,
+  ]);
+
+  const jumpToLatestEvents = useCallback(() => {
+    if (!selectedStream) {
+      return;
+    }
+
+    pendingRevealRef.current = null;
+    scrollAnchorSnapshotRef.current = null;
+    setIsTailViewportPinned(true);
+    queuePendingScrollPosition("top");
+    setRecentlyRevealedEventIds([]);
+    if (isSearchActive) {
+      setSearchVisibleResultCount(BigInt(STREAM_EVENTS_PAGE_SIZE));
+      setSearchHeadMatchCountSnapshot(matchedEventCount);
+      setPageCount(1);
+      return;
+    }
+
+    setVisibleEventCount(parseNonNegativeBigInt(selectedStream.nextOffset));
+    setPageCount(1);
+  }, [
+    isSearchActive,
+    matchedEventCount,
+    queuePendingScrollPosition,
+    selectedStream,
+    setIsTailViewportPinned,
+  ]);
+
+  const jumpToStreamBeginning = useCallback(() => {
+    if (!selectedStream) {
+      return;
+    }
+
+    if (isSearchActive) {
+      pendingRevealRef.current = null;
+      scrollAnchorSnapshotRef.current = null;
+      queuePendingScrollPosition("bottom");
+      setRecentlyRevealedEventIds([]);
+      setSearchVisibleResultCount(matchedEventCount ?? BigInt(events.length));
+      setSearchHeadMatchCountSnapshot(matchedEventCount);
+      setPageCount(1);
+      return;
+    }
+
+    const totalEventCount = parseNonNegativeBigInt(selectedStream.nextOffset);
+
+    pendingRevealRef.current = null;
+    scrollAnchorSnapshotRef.current = null;
+    queuePendingScrollPosition("bottom");
+    setRecentlyRevealedEventIds([]);
+    setVisibleEventCount(totalEventCount);
+    setPageCount(
+      getPageCountForTotalEventCount(totalEventCount, STREAM_EVENTS_PAGE_SIZE),
+    );
+  }, [
+    events.length,
+    isSearchActive,
+    matchedEventCount,
+    queuePendingScrollPosition,
+    selectedStream,
+  ]);
 
   useEffect(() => {
     const pendingReveal = pendingRevealRef.current;
@@ -505,6 +1107,65 @@ export function StreamView(_props: ViewProps) {
     };
   }, [recentlyRevealedEventIds]);
 
+  useEffect(() => {
+    if (!isSearchActive) {
+      if (pendingScrollTriggeredSearchVisibleResultCount !== null) {
+        setPendingScrollTriggeredSearchVisibleResultCount(null);
+      }
+
+      return;
+    }
+
+    if (pendingScrollTriggeredSearchVisibleResultCount === null) {
+      return;
+    }
+
+    if (
+      BigInt(events.length) >= pendingScrollTriggeredSearchVisibleResultCount ||
+      !hasMoreEvents
+    ) {
+      setPendingScrollTriggeredSearchVisibleResultCount(null);
+    }
+  }, [
+    events.length,
+    hasMoreEvents,
+    isSearchActive,
+    pendingScrollTriggeredSearchVisibleResultCount,
+  ]);
+
+  useEffect(() => {
+    if (followMode !== "tail" || !selectedStream || !isTailViewportPinned) {
+      return;
+    }
+
+    performProgrammaticScroll("top");
+  }, [
+    followMode,
+    isTailViewportPinned,
+    performProgrammaticScroll,
+    selectedStream,
+    selectedStreamIdentity,
+  ]);
+
+  useEffect(() => {
+    if (followMode !== "tail" || !selectedStream || !hasHiddenNewerEvents) {
+      return;
+    }
+
+    if (isTailViewportPinned) {
+      queuePendingScrollPosition("top");
+    }
+
+    revealAllNewerEvents();
+  }, [
+    followMode,
+    hasHiddenNewerEvents,
+    isTailViewportPinned,
+    queuePendingScrollPosition,
+    revealAllNewerEvents,
+    selectedStream,
+  ]);
+
   const recordScrollAnchorSnapshot = useCallback(() => {
     const scrollContainer = scrollContainerRef.current;
 
@@ -524,29 +1185,61 @@ export function StreamView(_props: ViewProps) {
     };
   }, [firstEventId, hasHiddenNewerEvents, selectedStreamIdentity]);
 
-  const maybeLoadOlderEvents = useCallback(() => {
-    const scrollContainer = scrollContainerRef.current;
+  const maybeLoadOlderEvents = useCallback(
+    (trigger: "auto" | "scroll") => {
+      const scrollContainer = scrollContainerRef.current;
 
-    if (!scrollContainer || !hasMoreEvents || isFetching) {
-      return;
-    }
+      if (
+        !scrollContainer ||
+        !hasMoreEvents ||
+        isFetching ||
+        (isSearchActive && isScrollTriggeredSearchLoadPending)
+      ) {
+        return;
+      }
 
-    if (scrollContainer.clientHeight <= 0) {
-      return;
-    }
+      if (scrollContainer.clientHeight <= 0) {
+        return;
+      }
 
-    const distanceToBottom =
-      scrollContainer.scrollHeight -
-      (scrollContainer.scrollTop + scrollContainer.clientHeight);
+      const distanceToBottom =
+        scrollContainer.scrollHeight -
+        (scrollContainer.scrollTop + scrollContainer.clientHeight);
 
-    if (distanceToBottom <= LOAD_MORE_THRESHOLD_PX) {
-      setPageCount((currentPageCount) => currentPageCount + 1);
-    }
-  }, [hasMoreEvents, isFetching]);
+      if (distanceToBottom <= LOAD_MORE_THRESHOLD_PX) {
+        if (isSearchActive) {
+          const nextVisibleResultCount =
+            requestedSearchResultCount + BigInt(STREAM_EVENTS_PAGE_SIZE);
+
+          if (trigger === "scroll") {
+            setPendingScrollTriggeredSearchVisibleResultCount(
+              nextVisibleResultCount,
+            );
+          }
+
+          setSearchVisibleResultCount(nextVisibleResultCount);
+          return;
+        }
+
+        setPageCount((currentPageCount) => currentPageCount + 1);
+      }
+    },
+    [
+      hasMoreEvents,
+      isFetching,
+      isScrollTriggeredSearchLoadPending,
+      isSearchActive,
+      requestedSearchResultCount,
+    ],
+  );
 
   useEffect(() => {
-    maybeLoadOlderEvents();
-  }, [events.length, maybeLoadOlderEvents]);
+    if (isSearchActive) {
+      return;
+    }
+
+    maybeLoadOlderEvents("auto");
+  }, [events.length, isSearchActive, maybeLoadOlderEvents]);
 
   useLayoutEffect(() => {
     const scrollContainer = scrollContainerRef.current;
@@ -620,6 +1313,29 @@ export function StreamView(_props: ViewProps) {
       }
     }
 
+    const pendingScrollPosition = pendingScrollPositionRef.current;
+
+    if (
+      pendingScrollPosition &&
+      pendingScrollPosition.streamIdentity === selectedStreamIdentity
+    ) {
+      const targetTop =
+        pendingScrollPosition.position === "top"
+          ? 0
+          : scrollContainer.scrollHeight;
+
+      if (scrollContainer.scrollTop !== targetTop) {
+        suppressNextScrollPaginationRef.current = true;
+        scrollContainerToPosition(
+          scrollContainer,
+          pendingScrollPosition.position,
+        );
+      }
+
+      currentSnapshot.scrollTop = scrollContainer.scrollTop;
+      pendingScrollPositionRef.current = null;
+    }
+
     const currentAnchorRow = getVisibleAnchorRow(scrollContainer);
     currentSnapshot.anchorEventId =
       currentAnchorRow?.dataset.streamEventId ?? null;
@@ -629,156 +1345,495 @@ export function StreamView(_props: ViewProps) {
   }, [firstEventId, hasHiddenNewerEvents, selectedStreamIdentity]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div
+      className="flex h-full min-h-0 flex-col overflow-hidden bg-background"
+      data-testid="stream-view-root"
+    >
       <StudioHeader
         endContent={
           selectedStream ? (
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <Badge data-testid="stream-summary-badge" variant="secondary">
-                {totalEventCount.toString()} events
-                {selectedStreamDetails
-                  ? `, ${formatBytes(selectedStreamDetails.totalSizeBytes)} total`
-                  : ""}
-              </Badge>
-              {aggregationCount > 0 ? (
-                <Button
-                  data-testid="stream-aggregations-button"
-                  onClick={() => {
-                    setIsAggregationPanelOpen((currentValue) => !currentValue);
-                  }}
-                  size="sm"
-                  type="button"
-                  variant={isAggregationPanelOpen ? "secondary" : "outline"}
-                >
-                  {aggregationCount} aggregations
-                </Button>
-              ) : null}
+            <div
+              aria-label="Stream follow mode"
+              className="inline-flex items-stretch gap-0 overflow-hidden rounded-sm border border-input bg-muted/60 shadow-none"
+              data-testid="stream-follow-mode-toggle"
+              role="group"
+            >
+              {STREAM_FOLLOW_MODE_OPTIONS.map((option, index) => {
+                const isSelected = followMode === option.value;
+
+                return (
+                  <Button
+                    aria-pressed={isSelected}
+                    className={cn(
+                      STREAM_FOLLOW_MODE_ITEM_CLASS_NAME,
+                      index < STREAM_FOLLOW_MODE_OPTIONS.length - 1 &&
+                        "border-r border-input",
+                    )}
+                    data-state={isSelected ? "on" : "off"}
+                    data-testid={`stream-follow-mode-${option.value}`}
+                    key={option.value}
+                    onClick={() => {
+                      if (followMode === option.value) {
+                        return;
+                      }
+
+                      void props.setStreamFollowParam(option.value);
+                    }}
+                    size="sm"
+                    title={STREAM_FOLLOW_MODE_HELP_TEXT[option.value]}
+                    type="button"
+                    variant="ghost"
+                  >
+                    {option.label}
+                  </Button>
+                );
+              })}
             </div>
           ) : null
         }
       >
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex size-8 items-center justify-center rounded-full bg-muted text-muted-foreground">
-            <Waves className="size-4" />
-          </span>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-foreground">
-              {selectedStream?.name ?? "Stream events"}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {selectedStream
-                ? "Latest events from the selected stream"
-                : "Select a stream from the sidebar"}
-            </p>
-          </div>
+        <div
+          className="flex min-w-0 flex-1 items-center gap-2"
+          data-testid="stream-header-start-controls"
+        >
+          {selectedStream && aggregationCount > 0 ? (
+            <Button
+              aria-label="Toggle aggregations"
+              className="size-9"
+              data-testid="stream-aggregations-button"
+              onClick={() => {
+                const nextIsOpen = !isAggregationPanelOpen;
+
+                void props.setStreamAggregationsParam(nextIsOpen ? "" : null);
+
+                if (!nextIsOpen) {
+                  void props.setStreamAggregationRangeParam(null);
+                  return;
+                }
+
+                const nextRangeSelection =
+                  parseAggregationRangeSelection(
+                    props.streamAggregationRangeParam,
+                  ) ?? DEFAULT_STREAM_AGGREGATION_RANGE_SELECTION;
+
+                void props.setStreamAggregationRangeParam(
+                  serializeAggregationRangeSelection(nextRangeSelection),
+                );
+              }}
+              size="icon"
+              title="Aggregations"
+              type="button"
+              variant={isAggregationPanelOpen ? "secondary" : "outline"}
+            >
+              <ChartColumn />
+            </Button>
+          ) : null}
+          {supportsStreamSearch ? (
+            <StreamSearchHeaderControl
+              searchConfig={selectedStreamDetails?.search}
+              searchTerm={activeSearchQuery}
+              setSearchParam={props.setSearchParam}
+              streamName={selectedStream.name}
+              suggestionEvents={searchSuggestionEvents}
+            />
+          ) : null}
         </div>
       </StudioHeader>
 
-      <TooltipProvider>
-        <div className="flex min-h-0 flex-1 flex-col">
-          {isLoading && !selectedStream ? (
-            <LoadingState />
-          ) : isError ? (
-            <div className="flex flex-1 items-center justify-center px-6 py-10 text-sm text-muted-foreground">
-              Stream metadata is unavailable right now.
-            </div>
-          ) : streamParam == null ? (
-            <div className="flex flex-1 items-center justify-center px-6 py-10 text-sm text-muted-foreground">
-              Select a stream from the sidebar to browse its events.
-            </div>
-          ) : selectedStream == null ? (
-            <div className="flex flex-1 items-center justify-center px-6 py-10 text-sm text-muted-foreground">
-              This stream could not be found. Refresh the Streams list and try
-              again.
-            </div>
-          ) : (
-            <div
-              ref={scrollContainerRef}
-              className="flex-1 overflow-y-auto"
-              data-testid="stream-events-scroll-container"
-              onScroll={() => {
-                recordScrollAnchorSnapshot();
-                maybeLoadOlderEvents();
+      <div
+        className="flex min-h-0 flex-1 flex-col overflow-hidden"
+        data-testid="stream-view-content"
+      >
+        <>
+          {isAggregationPanelOpen && aggregationRollups.length > 0 ? (
+            <StreamAggregationsPanel
+              aggregationRollups={aggregationRollups}
+              liveUpdatesEnabled={isAggregationAutoRefreshEnabled}
+              onRangeSelectionChange={(nextSelection) => {
+                void props.setStreamAggregationRangeParam(
+                  serializeAggregationRangeSelection(nextSelection),
+                );
               }}
-            >
-              {isAggregationPanelOpen && aggregationRollups.length > 0 ? (
-                <StreamAggregationsPanel
-                  aggregationRollups={aggregationRollups}
-                  onRangeSelectionChange={setAggregationRangeSelection}
-                  rangeSelection={aggregationRangeSelection}
-                  streamName={selectedStream.name}
-                />
-              ) : null}
+              rangeSelection={aggregationRangeSelection}
+              streamName={selectedStream.name}
+            />
+          ) : null}
 
-              {isFetching && events.length === 0 ? (
-                <LoadingState />
-              ) : events.length === 0 ? (
-                <div className="flex min-h-full items-center justify-center px-6 py-10 text-sm text-muted-foreground">
-                  This stream does not contain any events yet.
-                </div>
-              ) : (
-                <>
-                  <HeaderRow />
+          <div
+            ref={scrollContainerRef}
+            className="flex-1 overflow-y-auto"
+            data-testid="stream-events-scroll-container"
+            onScroll={() => {
+              if (followMode === "tail") {
+                const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
+                const shouldPinViewport =
+                  scrollTop <= STREAM_TAIL_PIN_THRESHOLD_PX;
 
-                  {hasHiddenNewerEvents ? (
-                    <div
-                      className="flex justify-center px-4 py-3"
-                      data-testid="stream-new-events-row"
+                setIsTailViewportPinned((currentValue) =>
+                  currentValue === shouldPinViewport
+                    ? currentValue
+                    : shouldPinViewport,
+                );
+              }
+
+              recordScrollAnchorSnapshot();
+              if (suppressNextScrollPaginationRef.current) {
+                suppressNextScrollPaginationRef.current = false;
+                return;
+              }
+
+              maybeLoadOlderEvents("scroll");
+            }}
+          >
+            {isFetching && events.length === 0 ? (
+              <LoadingState />
+            ) : events.length === 0 ? (
+              <div className="flex min-h-full items-center justify-center px-6 py-10 text-sm text-muted-foreground">
+                {isSearchActive
+                  ? "No events match this search."
+                  : "This stream does not contain any events yet."}
+              </div>
+            ) : (
+              <>
+                <HeaderRow />
+
+                {hasHiddenNewerEvents ? (
+                  <div
+                    className="flex justify-center px-4 py-3"
+                    data-testid="stream-new-events-row"
+                  >
+                    <Button
+                      className="rounded-2xl bg-background/95 px-4 shadow-sm"
+                      data-testid="stream-new-events-button"
+                      onClick={() => {
+                        revealNewerEvents();
+                      }}
+                      size="sm"
+                      type="button"
+                      variant="outline"
                     >
-                      <Button
-                        className="rounded-2xl bg-background/95 px-4 shadow-sm"
-                        data-testid="stream-new-events-button"
-                        onClick={() => {
-                          revealNewerEvents();
-                        }}
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        {formatNewEventsLabel(hiddenNewerEventCount)}
-                      </Button>
+                      {formatNewEventsLabel(hiddenNewerEventCount)}
+                    </Button>
+                  </div>
+                ) : null}
+
+                <div className="flex flex-col gap-2 p-4">
+                  {events.map((event) => (
+                    <StreamEventRow
+                      key={event.id}
+                      event={event}
+                      expandedEventId={expandedEventId}
+                      isNewlyRevealed={recentlyRevealedEventIdSet.has(event.id)}
+                      onToggle={(eventId) => {
+                        setExpandedEventId((currentValue) =>
+                          currentValue === eventId ? null : eventId,
+                        );
+                      }}
+                      searchConfig={selectedStreamDetails?.search}
+                      searchQuery={activeSearchQuery}
+                    />
+                  ))}
+
+                  {isFetching && (hasMoreEvents || hasHiddenNewerEvents) ? (
+                    <div className="grid grid-cols-[minmax(8.5rem,10rem)_minmax(0,10rem)_minmax(0,14rem)_minmax(0,1fr)_5.5rem] gap-3 rounded-lg border border-border bg-card px-4 py-3">
+                      <Skeleton className="h-4 w-24" />
+                      <Skeleton className="h-4 w-20" />
+                      <Skeleton className="h-4 w-28" />
+                      <Skeleton className="h-4 w-full" />
+                      <Skeleton className="ml-auto h-4 w-12" />
                     </div>
                   ) : null}
 
-                  <div className="flex flex-col gap-2 p-4">
-                    {events.map((event) => (
-                      <StreamEventRow
-                        key={event.id}
-                        event={event}
-                        expandedEventId={expandedEventId}
-                        isNewlyRevealed={recentlyRevealedEventIdSet.has(
-                          event.id,
+                  {!isFetching && !hasMoreEvents ? (
+                    <div className="py-2 text-center text-xs text-muted-foreground">
+                      Reached the beginning of the stream.
+                    </div>
+                  ) : null}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div
+            className="border-t border-table-border bg-background/90 px-2 py-3 backdrop-blur-sm"
+            data-testid="stream-footer"
+          >
+            <div className="flex flex-wrap items-center justify-start gap-2">
+              <TooltipProvider>
+                <div
+                  aria-label="Stream navigation"
+                  className="inline-flex items-stretch overflow-hidden rounded-md border border-input bg-background shadow-sm"
+                  role="group"
+                >
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        aria-label="Jump to beginning of stream"
+                        className="h-9 w-9 rounded-none border-0 border-r border-input shadow-none"
+                        data-testid="stream-jump-start-button"
+                        onClick={jumpToStreamBeginning}
+                        size="icon"
+                        type="button"
+                        variant="outline"
+                      >
+                        <ChevronsLeft data-icon="inline-start" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Jump to beginning</TooltipContent>
+                  </Tooltip>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        aria-label="Open stream diagnostics"
+                        className={cn(
+                          "relative flex min-w-[14rem] items-center justify-center overflow-hidden border-r border-input bg-background px-4 text-sm font-medium text-foreground tabular-nums transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                         )}
-                        onToggle={(eventId) => {
-                          setExpandedEventId((currentValue) =>
-                            currentValue === eventId ? null : eventId,
-                          );
-                        }}
+                        data-testid="stream-summary-panel"
+                        type="button"
+                      >
+                        {isSearchActive ? (
+                          <>
+                            <div
+                              aria-hidden="true"
+                              className="pointer-events-none absolute inset-y-0 left-0 bg-sky-500/8 transition-[width] duration-200 ease-out"
+                              data-testid="stream-search-scan-progress"
+                              style={{
+                                width: searchScanProgressWidth,
+                              }}
+                            />
+                            {isScrollTriggeredSearchLoadPending ? (
+                              <div
+                                aria-hidden="true"
+                                className="pointer-events-none absolute inset-0 animate-pulse bg-foreground/5"
+                                data-testid="stream-search-load-indicator"
+                              />
+                            ) : null}
+                            <span className="relative z-10">
+                              {formatSearchSummary({
+                                resultsLoadedCount: searchResultsLoadedCount,
+                                scannedEventCount: searchScannedEventCount,
+                                totalEventCount,
+                              })}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            {formatCount(totalEventCount)} events
+                            {selectedStreamDetails
+                              ? `, ${formatBytes(selectedStreamDetails.totalSizeBytes)} total`
+                              : ""}
+                          </>
+                        )}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      align="center"
+                      className="w-[40rem] max-w-[calc(100vw-2rem)] p-0"
+                      side="top"
+                      sideOffset={8}
+                    >
+                      <StreamDiagnosticsPopover
+                        details={selectedStreamDetails}
                       />
-                    ))}
-
-                    {isFetching && (hasMoreEvents || hasHiddenNewerEvents) ? (
-                      <div className="grid grid-cols-[minmax(8.5rem,10rem)_minmax(0,10rem)_minmax(0,14rem)_minmax(0,1fr)_5.5rem] gap-3 rounded-lg border border-border bg-card px-4 py-3">
-                        <Skeleton className="h-4 w-24" />
-                        <Skeleton className="h-4 w-20" />
-                        <Skeleton className="h-4 w-28" />
-                        <Skeleton className="h-4 w-full" />
-                        <Skeleton className="ml-auto h-4 w-12" />
-                      </div>
-                    ) : null}
-
-                    {!hasMoreEvents ? (
-                      <div className="py-2 text-center text-xs text-muted-foreground">
-                        Reached the beginning of the stream.
-                      </div>
-                    ) : null}
-                  </div>
-                </>
-              )}
+                    </PopoverContent>
+                  </Popover>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        aria-label="Jump to end of stream"
+                        className="h-9 w-9 rounded-none border-0 shadow-none"
+                        data-testid="stream-jump-end-button"
+                        onClick={jumpToLatestEvents}
+                        size="icon"
+                        type="button"
+                        variant="outline"
+                      >
+                        <ChevronsRight data-icon="inline-start" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Jump to end</TooltipContent>
+                  </Tooltip>
+                </div>
+              </TooltipProvider>
             </div>
-          )}
-        </div>
-      </TooltipProvider>
+          </div>
+        </>
+      </div>
     </div>
+  );
+}
+
+export function StreamView(_props: ViewProps) {
+  const {
+    searchParam,
+    setSearchParam,
+    setStreamAggregationRangeParam,
+    setStreamAggregationsParam,
+    setStreamFollowParam,
+    streamAggregationRangeParam,
+    streamAggregationsParam,
+    streamFollowParam,
+    streamParam,
+  } = useNavigation();
+  const followMode =
+    parseStreamFollowMode(streamFollowParam) ?? STREAM_FOLLOW_MODE_DEFAULT;
+  const isPollingEnabled = followMode !== "paused";
+  const selectedStreamName = streamParam?.trim() || null;
+  const {
+    details: selectedStream,
+    isError: isSelectedStreamDetailsError,
+    isLoading: isSelectedStreamDetailsLoading,
+  } = useStreamDetails({
+    refreshIntervalMs:
+      selectedStreamName && isPollingEnabled
+        ? STREAM_FOLLOW_REFRESH_INTERVAL_MS
+        : undefined,
+    streamName: selectedStreamName,
+  });
+  const isLoading =
+    selectedStreamName != null &&
+    isSelectedStreamDetailsLoading &&
+    selectedStream == null;
+  const isError = selectedStreamName != null && isSelectedStreamDetailsError;
+  const isAggregationPanelOpen =
+    parseAggregationPanelOpenState(streamAggregationsParam) ?? false;
+  const parsedAggregationRangeSelection = useMemo(
+    () => parseAggregationRangeSelection(streamAggregationRangeParam),
+    [streamAggregationRangeParam],
+  );
+  const aggregationRangeSelection =
+    parsedAggregationRangeSelection ??
+    DEFAULT_STREAM_AGGREGATION_RANGE_SELECTION;
+
+  useEffect(() => {
+    if (!selectedStreamName) {
+      return;
+    }
+
+    if (parseStreamFollowMode(streamFollowParam) !== null) {
+      return;
+    }
+
+    void setStreamFollowParam(STREAM_FOLLOW_MODE_DEFAULT);
+  }, [selectedStreamName, setStreamFollowParam, streamFollowParam]);
+
+  useEffect(() => {
+    if (!selectedStreamName) {
+      return;
+    }
+
+    if (!isAggregationPanelOpen) {
+      if (streamAggregationRangeParam != null) {
+        void setStreamAggregationRangeParam(null);
+      }
+
+      return;
+    }
+
+    if (parsedAggregationRangeSelection !== null) {
+      return;
+    }
+
+    void setStreamAggregationRangeParam(
+      serializeAggregationRangeSelection(
+        DEFAULT_STREAM_AGGREGATION_RANGE_SELECTION,
+      ),
+    );
+  }, [
+    isAggregationPanelOpen,
+    selectedStreamName,
+    setStreamAggregationRangeParam,
+    parsedAggregationRangeSelection,
+    streamAggregationRangeParam,
+  ]);
+
+  if (isLoading) {
+    return (
+      <div
+        className="flex h-full min-h-0 flex-col overflow-hidden bg-background"
+        data-testid="stream-view-root"
+      >
+        <StudioHeader />
+        <div
+          className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          data-testid="stream-view-content"
+        >
+          <LoadingState />
+        </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div
+        className="flex h-full min-h-0 flex-col overflow-hidden bg-background"
+        data-testid="stream-view-root"
+      >
+        <StudioHeader />
+        <div
+          className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          data-testid="stream-view-content"
+        >
+          <div className="flex flex-1 items-center justify-center px-6 py-10 text-sm text-muted-foreground">
+            Stream metadata is unavailable right now.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (streamParam == null) {
+    return (
+      <div
+        className="flex h-full min-h-0 flex-col overflow-hidden bg-background"
+        data-testid="stream-view-root"
+      >
+        <StudioHeader />
+        <div
+          className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          data-testid="stream-view-content"
+        >
+          <div className="flex flex-1 items-center justify-center px-6 py-10 text-sm text-muted-foreground">
+            Select a stream from the sidebar to browse its events.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (selectedStream == null) {
+    return (
+      <div
+        className="flex h-full min-h-0 flex-col overflow-hidden bg-background"
+        data-testid="stream-view-root"
+      >
+        <StudioHeader />
+        <div
+          className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          data-testid="stream-view-content"
+        >
+          <div className="flex flex-1 items-center justify-center px-6 py-10 text-sm text-muted-foreground">
+            This stream could not be found. Refresh the Streams list and try
+            again.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <ActiveStreamView
+      followMode={followMode}
+      isAggregationPanelOpen={isAggregationPanelOpen}
+      rangeSelection={aggregationRangeSelection}
+      searchParam={searchParam}
+      selectedStream={selectedStream}
+      setSearchParam={setSearchParam}
+      setStreamAggregationRangeParam={setStreamAggregationRangeParam}
+      setStreamAggregationsParam={setStreamAggregationsParam}
+      setStreamFollowParam={setStreamFollowParam}
+      streamAggregationRangeParam={streamAggregationRangeParam}
+    />
   );
 }

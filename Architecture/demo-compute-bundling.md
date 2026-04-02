@@ -6,6 +6,7 @@ The `demo/ppg-dev` server has two runtime modes:
 
 - local development mode, where it rebuilds browser assets from source and watches the repo
 - deploy mode, where it serves prebuilt browser assets from a bundled artifact
+- external data-source mode, where the demo keeps serving the Studio shell locally but proxies Streams to a caller-provided upstream server and runs direct TCP queries against a caller-provided PostgreSQL connection string instead of starting local Prisma Dev
 
 The deploy path exists because the demo server is not just a Bun server entrypoint. In development it expects the Studio repo checkout so it can rebuild `client.tsx` and `ui/index.css` at runtime.
 
@@ -55,6 +56,31 @@ This is an explicit exception to the "no manual runtime asset copying" rule abov
 - If the import fails, the server falls back to local development mode.
 
 That keeps one server implementation for both workflows without adding a separate production-only server entrypoint.
+
+## Local Development Shutdown
+
+In local development mode, `demo/ppg-dev/server.ts` also owns the lifecycle of the Prisma Dev child runtime, including the local Prisma Streams server.
+
+- The first shutdown signal MUST start orderly cleanup for the Bun HTTP server, Prisma Dev runtime, Postgres client, and file watchers.
+- If cleanup stalls, a repeated shutdown signal MUST force the demo process to exit instead of being ignored.
+- The demo process SHOULD also force-exit after a short timeout if cleanup never finishes, so orphaned Prisma Dev and Streams listeners do not block the next `pnpm demo:ppg` run.
+
+## External Demo Mode
+
+The `pnpm demo:ppg` entrypoint MAY also be launched against external data sources:
+
+- `pnpm demo:ppg -- --streams-server-url <streams-url>`
+- `pnpm demo:ppg -- --database-url <postgres-url> --streams-server-url <streams-url>`
+
+When `--streams-server-url` is provided, Studio MUST treat the run as external mode.
+
+- It MUST NOT start local Prisma Dev.
+- It MUST NOT start a local Prisma Streams server.
+- It MUST NOT set up local `prisma-wal` wiring, because that is part of the colocated Prisma Dev + Streams startup path.
+- If `--database-url` is also provided, it MUST connect the BFF executor directly to that PostgreSQL URL.
+- If `--database-url` is omitted, the demo MUST run in streams-only mode and MUST NOT expose database-driven Studio navigation or views.
+- The browser config MUST continue to expose Streams through Studio's own `/api/streams` proxy path so the UI contract stays unchanged.
+- The demo shell MUST NOT claim the database was locally seeded when external mode is active.
 
 ## Local Streams Development Override
 

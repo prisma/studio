@@ -51,6 +51,10 @@ export const STREAM_AGGREGATION_QUICK_RANGES = [
     duration: "7d",
     label: "Last 7 days",
   },
+  {
+    duration: "all",
+    label: "All",
+  },
 ] as const;
 
 export type StreamAggregationRelativeDuration =
@@ -83,33 +87,72 @@ interface StreamAggregationApiPayload {
   to: string;
 }
 
+export type StudioStreamAggregationStatistic =
+  | "avg"
+  | "count"
+  | "max"
+  | "min"
+  | "p50"
+  | "p95"
+  | "p99";
+
+const SUMMARY_STATISTICS = [
+  "avg",
+  "p50",
+  "p95",
+  "p99",
+  "min",
+  "max",
+] as const satisfies ReadonlyArray<StudioStreamAggregationStatistic>;
+
+type HistogramBuckets = Record<string, number>;
+
 type CountAggregateValue = {
   count: number;
   kind: "count";
 };
 
 type SummaryAggregateValue = {
-  avg: number | null;
   count: number;
+  histogram: HistogramBuckets | null;
   kind: "summary";
   max: number | null;
   min: number | null;
+  p50: number | null;
+  p95: number | null;
+  p99: number | null;
   sum: number;
 };
 
 type AggregateValue = CountAggregateValue | SummaryAggregateValue;
 
+export interface StudioStreamAggregationStatisticValues {
+  avg: number | null;
+  count: number | null;
+  max: number | null;
+  min: number | null;
+  p50: number | null;
+  p95: number | null;
+  p99: number | null;
+}
+
 export interface StudioStreamAggregationPoint {
   end: string;
   start: string;
-  value: number | null;
+  statistics: StudioStreamAggregationStatisticValues;
 }
 
-export interface StudioStreamAggregationMeasureSeries {
+export interface StudioStreamAggregationSeries {
+  availableStatistics: StudioStreamAggregationStatistic[];
+  id: string;
   kind: StudioStreamAggregationMeasureKind;
-  name: string;
+  label: string;
+  measureName: string;
   points: StudioStreamAggregationPoint[];
-  summaryValue: number | null;
+  rollupName: string;
+  statisticValues: StudioStreamAggregationStatisticValues;
+  subtitle: string | null;
+  unit: string | null;
 }
 
 export interface StudioStreamAggregationResult {
@@ -122,14 +165,26 @@ export interface StudioStreamAggregationResult {
   };
   from: string;
   interval: string;
-  measures: StudioStreamAggregationMeasureSeries[];
   rollupName: string;
+  series: StudioStreamAggregationSeries[];
   to: string;
+}
+
+interface AggregationSeriesAccumulator {
+  kind: StudioStreamAggregationMeasureKind;
+  label: string;
+  measureName: string;
+  points: StudioStreamAggregationPoint[];
+  rollupName: string;
+  subtitle: string | null;
+  totalValue: AggregateValue | null;
+  unit: string | null;
 }
 
 export interface UseStreamAggregationsArgs {
   aggregationRollups?: StudioStreamAggregationRollup[];
   enabled?: boolean;
+  liveUpdatesEnabled?: boolean;
   refreshIntervalMs?: number;
   rangeSelection: StreamAggregationRangeSelection;
   streamName?: string | null;
@@ -218,6 +273,14 @@ function resolveRangeWindow(
   toIso: string;
 } {
   if (selection.kind === "relative") {
+    if (selection.duration === "all") {
+      return {
+        durationMs: Math.max(1, nowMs),
+        fromIso: new Date(0).toISOString(),
+        toIso: new Date(nowMs).toISOString(),
+      };
+    }
+
     const durationMs = parseDurationMs(selection.duration) ?? 3_600_000;
     const toMs = nowMs;
     const fromMs = Math.max(0, toMs - durationMs);
@@ -272,6 +335,99 @@ function toFiniteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function normalizeHistogram(value: unknown): HistogramBuckets | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const histogramEntries = Object.entries(value)
+    .map(([bucket, count]) => {
+      const normalizedCount = toFiniteNumber(count);
+
+      if (!Number.isFinite(Number(bucket)) || normalizedCount === null) {
+        return null;
+      }
+
+      return [bucket, normalizedCount] as const;
+    })
+    .filter(
+      (entry): entry is readonly [string, number] =>
+        entry !== null && entry[1] > 0,
+    );
+
+  if (histogramEntries.length === 0) {
+    return null;
+  }
+
+  return Object.fromEntries(histogramEntries);
+}
+
+function mergeHistograms(
+  left: HistogramBuckets | null,
+  right: HistogramBuckets | null,
+): HistogramBuckets | null {
+  if (!left && !right) {
+    return null;
+  }
+
+  const mergedHistogram: HistogramBuckets = {};
+
+  for (const [bucket, count] of Object.entries(left ?? {})) {
+    mergedHistogram[bucket] = (mergedHistogram[bucket] ?? 0) + count;
+  }
+
+  for (const [bucket, count] of Object.entries(right ?? {})) {
+    mergedHistogram[bucket] = (mergedHistogram[bucket] ?? 0) + count;
+  }
+
+  return Object.keys(mergedHistogram).length > 0 ? mergedHistogram : null;
+}
+
+function computeHistogramPercentile(
+  histogram: HistogramBuckets | null,
+  percentile: number,
+): number | null {
+  if (!histogram) {
+    return null;
+  }
+
+  const entries = Object.entries(histogram)
+    .map(([bucket, count]) => ({
+      bucket: Number(bucket),
+      count,
+    }))
+    .filter(
+      (entry) =>
+        Number.isFinite(entry.bucket) &&
+        Number.isFinite(entry.count) &&
+        entry.count > 0,
+    )
+    .sort((left, right) => left.bucket - right.bucket);
+
+  if (entries.length === 0) {
+    return null;
+  }
+
+  const totalCount = entries.reduce((sum, entry) => sum + entry.count, 0);
+
+  if (totalCount <= 0) {
+    return null;
+  }
+
+  const threshold = totalCount * percentile;
+  let accumulatedCount = 0;
+
+  for (const entry of entries) {
+    accumulatedCount += entry.count;
+
+    if (accumulatedCount >= threshold) {
+      return entry.bucket;
+    }
+  }
+
+  return entries.at(-1)?.bucket ?? null;
+}
+
 function normalizeCountValue(raw: unknown): CountAggregateValue | null {
   if (!isRecord(raw)) {
     return null;
@@ -301,12 +457,23 @@ function normalizeSummaryValue(raw: unknown): SummaryAggregateValue | null {
     return null;
   }
 
+  const histogram = normalizeHistogram(raw.histogram);
+  const p50 =
+    computeHistogramPercentile(histogram, 0.5) ?? toFiniteNumber(raw.p50);
+  const p95 =
+    computeHistogramPercentile(histogram, 0.95) ?? toFiniteNumber(raw.p95);
+  const p99 =
+    computeHistogramPercentile(histogram, 0.99) ?? toFiniteNumber(raw.p99);
+
   return {
-    avg: count > 0 ? sum / count : null,
     count,
+    histogram,
     kind: "summary",
     max: toFiniteNumber(raw.max),
     min: toFiniteNumber(raw.min),
+    p50,
+    p95,
+    p99,
     sum,
   };
 }
@@ -342,10 +509,14 @@ function mergeAggregateValues(
   if (currentValue.kind === "summary" && nextValue.kind === "summary") {
     const count = currentValue.count + nextValue.count;
     const sum = currentValue.sum + nextValue.sum;
+    const histogram = mergeHistograms(
+      currentValue.histogram,
+      nextValue.histogram,
+    );
 
     return {
-      avg: count > 0 ? sum / count : null,
       count,
+      histogram,
       kind: "summary",
       max:
         currentValue.max === null
@@ -359,6 +530,9 @@ function mergeAggregateValues(
           : nextValue.min === null
             ? currentValue.min
             : Math.min(currentValue.min, nextValue.min),
+      p50: computeHistogramPercentile(histogram, 0.5),
+      p95: computeHistogramPercentile(histogram, 0.95),
+      p99: computeHistogramPercentile(histogram, 0.99),
       sum,
     };
   }
@@ -366,12 +540,153 @@ function mergeAggregateValues(
   return currentValue;
 }
 
-function getAggregateDisplayValue(value: AggregateValue | null): number | null {
+function createEmptyStatisticValues(): StudioStreamAggregationStatisticValues {
+  return {
+    avg: null,
+    count: null,
+    max: null,
+    min: null,
+    p50: null,
+    p95: null,
+    p99: null,
+  };
+}
+
+function toStatisticValues(
+  value: AggregateValue | null,
+): StudioStreamAggregationStatisticValues {
   if (!value) {
-    return null;
+    return createEmptyStatisticValues();
   }
 
-  return value.kind === "count" ? value.count : value.avg;
+  if (value.kind === "count") {
+    return {
+      ...createEmptyStatisticValues(),
+      count: value.count,
+    };
+  }
+
+  return {
+    avg: value.count > 0 ? value.sum / value.count : null,
+    count: value.count,
+    max: value.max,
+    min: value.min,
+    p50: value.p50,
+    p95: value.p95,
+    p99: value.p99,
+  };
+}
+
+function getAvailableStatistics(
+  kind: StudioStreamAggregationMeasureKind,
+  statisticValues: StudioStreamAggregationStatisticValues,
+): StudioStreamAggregationStatistic[] {
+  if (kind === "count") {
+    return statisticValues.count === null ? [] : ["count"];
+  }
+
+  return SUMMARY_STATISTICS.filter(
+    (statistic) => statisticValues[statistic] !== null,
+  );
+}
+
+function normalizeGroupKeyLabelValue(value: unknown): string | null {
+  if (typeof value === "string") {
+    return value.trim().length > 0 ? value : null;
+  }
+
+  if (
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
+  ) {
+    return String(value);
+  }
+
+  return null;
+}
+
+function serializeGroupKey(value: unknown): string {
+  if (!isRecord(value)) {
+    return "all";
+  }
+
+  const normalizedEntries = Object.entries(value)
+    .map(
+      ([key, entryValue]) =>
+        [key, normalizeGroupKeyLabelValue(entryValue) ?? null] as const,
+    )
+    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey));
+
+  return JSON.stringify(normalizedEntries);
+}
+
+function resolveAggregateGroupByDimensions(
+  rollup: StudioStreamAggregationRollup,
+): string[] {
+  const primaryDimension = rollup.dimensions[0];
+
+  if (!primaryDimension) {
+    return [];
+  }
+
+  const groupByDimensions = [primaryDimension];
+
+  if (primaryDimension !== "unit" && rollup.dimensions.includes("unit")) {
+    groupByDimensions.push("unit");
+  }
+
+  return groupByDimensions;
+}
+
+function resolveSeriesLabel(args: {
+  groupKey: unknown;
+  measureName: string;
+  rollup: StudioStreamAggregationRollup;
+}): {
+  label: string;
+  subtitle: string | null;
+  unit: string | null;
+} {
+  const { groupKey, measureName, rollup } = args;
+  const resolvedGroupKey = isRecord(groupKey) ? groupKey : {};
+  const primaryDimension = rollup.dimensions[0];
+  const unitLabel = normalizeGroupKeyLabelValue(resolvedGroupKey.unit);
+  const primaryDimensionLabel =
+    primaryDimension &&
+    normalizeGroupKeyLabelValue(resolvedGroupKey[primaryDimension]);
+  const fallbackDimensionLabel = Object.values(resolvedGroupKey)
+    .map((value) => normalizeGroupKeyLabelValue(value))
+    .find((value): value is string => value !== null);
+  const groupLabel = primaryDimensionLabel ?? fallbackDimensionLabel ?? null;
+
+  if (groupLabel) {
+    return {
+      label: groupLabel,
+      subtitle:
+        unitLabel ??
+        (measureName === "value"
+          ? rollup.name
+          : rollup.measures.length > 1
+            ? measureName
+            : rollup.name),
+      unit: unitLabel,
+    };
+  }
+
+  if (measureName === "value") {
+    return {
+      label: rollup.name,
+      subtitle: null,
+      unit: unitLabel,
+    };
+  }
+
+  return {
+    label: measureName,
+    subtitle: rollup.name,
+    unit: unitLabel,
+  };
 }
 
 function isStreamAggregationApiPayload(
@@ -397,6 +712,115 @@ function normalizeStreamAggregationResult(args: {
   rollup: StudioStreamAggregationRollup;
 }): StudioStreamAggregationResult {
   const { payload, rollup } = args;
+  const normalizedBuckets = payload.buckets
+    .map((bucket) => {
+      if (!isRecord(bucket)) {
+        return null;
+      }
+
+      const start = typeof bucket.start === "string" ? bucket.start : null;
+      const end = typeof bucket.end === "string" ? bucket.end : null;
+      const groups = Array.isArray(bucket.groups) ? bucket.groups : [];
+
+      if (!start || !end) {
+        return null;
+      }
+
+      return {
+        end,
+        groups,
+        start,
+      };
+    })
+    .filter(
+      (
+        bucket,
+      ): bucket is {
+        end: string;
+        groups: unknown[];
+        start: string;
+      } => bucket !== null,
+    );
+  const seriesById = new Map<string, AggregationSeriesAccumulator>();
+
+  for (const [bucketIndex, bucket] of normalizedBuckets.entries()) {
+    for (const group of bucket.groups) {
+      if (!isRecord(group) || !isRecord(group.measures)) {
+        continue;
+      }
+
+      for (const measure of rollup.measures) {
+        const normalizedValue = normalizeMeasureValue(
+          measure.kind,
+          group.measures[measure.name],
+        );
+
+        if (!normalizedValue) {
+          continue;
+        }
+
+        const { label, subtitle, unit } = resolveSeriesLabel({
+          groupKey: group.key,
+          measureName: measure.name,
+          rollup,
+        });
+        const seriesId = `${payload.rollup}:${measure.name}:${serializeGroupKey(group.key)}`;
+        const existingSeries = seriesById.get(seriesId);
+
+        if (!existingSeries) {
+          const points: StudioStreamAggregationPoint[] = normalizedBuckets.map(
+            (normalizedBucket) => ({
+              end: normalizedBucket.end,
+              start: normalizedBucket.start,
+              statistics: createEmptyStatisticValues(),
+            }),
+          );
+          const point = points[bucketIndex];
+
+          if (!point) {
+            continue;
+          }
+
+          const nextSeries: AggregationSeriesAccumulator = {
+            kind: measure.kind,
+            label,
+            measureName: measure.name,
+            points,
+            rollupName: payload.rollup,
+            subtitle,
+            totalValue: null,
+            unit,
+          };
+
+          nextSeries.points[bucketIndex] = {
+            ...point,
+            statistics: toStatisticValues(normalizedValue),
+          };
+          nextSeries.totalValue = mergeAggregateValues(
+            nextSeries.totalValue,
+            normalizedValue,
+          );
+          seriesById.set(seriesId, nextSeries);
+          continue;
+        }
+
+        const point = existingSeries.points[bucketIndex];
+
+        if (!point) {
+          continue;
+        }
+
+        existingSeries.points[bucketIndex] = {
+          ...point,
+          statistics: toStatisticValues(normalizedValue),
+        };
+        existingSeries.totalValue = mergeAggregateValues(
+          existingSeries.totalValue,
+          normalizedValue,
+        );
+      }
+    }
+  }
 
   return {
     coverage: {
@@ -412,59 +836,32 @@ function normalizeStreamAggregationResult(args: {
     },
     from: payload.from,
     interval: payload.interval,
-    measures: rollup.measures.map((measure) => {
-      let totalValue: AggregateValue | null = null;
-      const points = payload.buckets
-        .map((bucket) => {
-          if (!isRecord(bucket)) {
-            return null;
-          }
-
-          const start = typeof bucket.start === "string" ? bucket.start : null;
-          const end = typeof bucket.end === "string" ? bucket.end : null;
-          const groups = Array.isArray(bucket.groups) ? bucket.groups : [];
-
-          if (!start || !end) {
-            return null;
-          }
-
-          const mergedValue = groups.reduce<AggregateValue | null>(
-            (currentValue, group) => {
-              if (!isRecord(group) || !isRecord(group.measures)) {
-                return currentValue;
-              }
-
-              return mergeAggregateValues(
-                currentValue,
-                normalizeMeasureValue(
-                  measure.kind,
-                  group.measures[measure.name],
-                ),
-              );
-            },
-            null,
-          );
-
-          totalValue = mergeAggregateValues(totalValue, mergedValue);
-
-          return {
-            end,
-            start,
-            value: getAggregateDisplayValue(mergedValue),
-          } satisfies StudioStreamAggregationPoint;
-        })
-        .filter(
-          (point): point is StudioStreamAggregationPoint => point !== null,
-        );
-
-      return {
-        kind: measure.kind,
-        name: measure.name,
-        points,
-        summaryValue: getAggregateDisplayValue(totalValue),
-      } satisfies StudioStreamAggregationMeasureSeries;
-    }),
     rollupName: payload.rollup,
+    series: [...seriesById.entries()]
+      .map(([seriesId, series]) => {
+        const statisticValues = toStatisticValues(series.totalValue);
+
+        return {
+          availableStatistics: getAvailableStatistics(
+            series.kind,
+            statisticValues,
+          ),
+          id: seriesId,
+          kind: series.kind,
+          label: series.label,
+          measureName: series.measureName,
+          points: series.points,
+          rollupName: series.rollupName,
+          statisticValues,
+          subtitle: series.subtitle,
+          unit: series.unit,
+        } satisfies StudioStreamAggregationSeries;
+      })
+      .sort(
+        (left, right) =>
+          left.label.localeCompare(right.label) ||
+          left.measureName.localeCompare(right.measureName),
+      ),
     to: payload.to,
   };
 }
@@ -480,6 +877,7 @@ export function useStreamAggregations(args: UseStreamAggregationsArgs) {
     typeof args.refreshIntervalMs === "number" && args.refreshIntervalMs > 0
       ? args.refreshIntervalMs
       : DEFAULT_STREAM_AGGREGATION_REFRESH_INTERVAL_MS;
+  const liveUpdatesEnabled = args.liveUpdatesEnabled === true;
   const aggregationRollups = args.aggregationRollups ?? [];
   const isEnabled =
     args.enabled !== false &&
@@ -501,9 +899,12 @@ export function useStreamAggregations(args: UseStreamAggregationsArgs) {
           rollup.intervals,
           rangeWindow.durationMs,
         );
+        const groupByDimensions = resolveAggregateGroupByDimensions(rollup);
         const response = await fetch(aggregateUrl, {
           body: JSON.stringify({
             from: rangeWindow.fromIso,
+            group_by:
+              groupByDimensions.length > 0 ? groupByDimensions : undefined,
             interval,
             measures: rollup.measures.map((measure) => measure.name),
             rollup: rollup.name,
@@ -546,7 +947,9 @@ export function useStreamAggregations(args: UseStreamAggregationsArgs) {
         rangeKey,
       ] as const,
       refetchInterval:
-        isEnabled && args.rangeSelection.kind === "relative"
+        isEnabled &&
+        liveUpdatesEnabled &&
+        args.rangeSelection.kind === "relative"
           ? refreshIntervalMs
           : false,
       refetchOnReconnect: false,

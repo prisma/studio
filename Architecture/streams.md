@@ -3,6 +3,7 @@
 This document is normative for Prisma Streams integration in Studio.
 
 Studio MAY be configured with a Prisma Streams base URL in addition to the database adapter. When configured, Studio exposes both sidebar stream navigation and a dedicated stream-event view in the main pane.
+Studio MAY also run in a streams-only shell mode with no database connection at all; in that case, the stream UI stays available while database-driven navigation and views are suppressed.
 
 ## Scope
 
@@ -11,8 +12,10 @@ This architecture governs:
 - the optional `streamsUrl` Studio setup contract
 - fetching stream metadata from a Prisma Streams server
 - refreshing active-stream metadata while a stream view is open
+- discovering active-stream search capability metadata
 - discovering active-stream aggregation rollups from stream details metadata
 - loading active-stream aggregate rollup windows through the Prisma Streams aggregate endpoint
+- loading active-stream filtered events through the Prisma Streams search endpoint
 - rendering the sidebar `Streams` section underneath `Tables`
 - routing the main view into a selected stream
 - loading stream events through the Prisma Streams read endpoint
@@ -38,14 +41,19 @@ This architecture governs:
 - Streams configuration MUST remain optional at the Studio boundary.
 - Streams support MUST be passed as a plain `streamsUrl` string on `Studio`; do not hide it behind the database adapter contract.
 - When `streamsUrl` is absent, Studio MUST behave exactly as before and MUST NOT render a `Streams` section.
+- When Studio is launched without a database connection, it MUST still allow stream browsing when `streamsUrl` is present, and MUST hide schema selection, table navigation, and database-only views instead of surfacing adapter errors.
 - Stream discovery MUST go through [`useStreams`](../ui/hooks/use-streams.ts); feature code MUST NOT fetch `/v1/streams` ad hoc.
 - Active-stream total-size loading MUST go through [`useStreamDetails`](../ui/hooks/use-stream-details.ts); feature code MUST NOT fetch stream `_details` ad hoc from view components.
+- Active-stream search-capability discovery MUST go through [`useStreamDetails`](../ui/hooks/use-stream-details.ts); feature code MUST NOT read `_details.schema.search` ad hoc from view components.
 - Active-stream aggregation-rollup discovery MUST go through [`useStreamDetails`](../ui/hooks/use-stream-details.ts); feature code MUST NOT read `_details.schema.search.rollups` ad hoc from view components.
+- Active-stream storage, upload, and index-status diagnostics MUST go through [`useStreamDetails`](../ui/hooks/use-stream-details.ts); feature code MUST NOT add a separate `_index_status` fetch path from the stream footer or other active-stream chrome.
 - Active-stream aggregate window loading MUST go through [`useStreamAggregations`](../ui/hooks/use-stream-aggregations.ts); feature code MUST NOT `POST` stream `_aggregate` ad hoc from view components.
-- Active-stream count refresh MUST reuse [`useStreams`](../ui/hooks/use-streams.ts); feature code MUST NOT introduce a second count or metadata polling path.
+- Active-stream count refresh MUST reuse [`useStreamDetails`](../ui/hooks/use-stream-details.ts); feature code MUST NOT introduce a second count or metadata polling path for the active stream page.
 - Stream event loading MUST go through [`useStreamEvents`](../ui/hooks/use-stream-events.ts); feature code MUST NOT fetch `/v1/stream/:name` ad hoc from view components.
+- Stream search loading MUST also go through [`useStreamEvents`](../ui/hooks/use-stream-events.ts); feature code MUST NOT `POST` stream `_search` ad hoc from view components.
 - `useStreams` MUST treat `streamsUrl` as a base URL and append the Prisma Streams list endpoint path (`/v1/streams`) itself.
 - `useStreamEvents` MUST treat `streamsUrl` as a base URL and append the Prisma Streams read endpoint path (`/v1/stream/{name}`) itself.
+- In search mode, `useStreamEvents` MUST append the Prisma Streams search endpoint path (`/v1/stream/{name}/_search`) itself.
 - Active stream navigation MUST stay URL-driven through `view=stream` plus a `stream` URL key; do not introduce a parallel local router for Streams.
 - Stream events MUST be cached in TanStack DB query collections and read via live query, following the stream-event view architecture in [`Architecture/stream-event-view.md`](stream-event-view.md).
 - Sidebar Streams items MUST reuse the existing navigation shell and visual language from [`ui/studio/Navigation.tsx`](../ui/studio/Navigation.tsx); do not introduce a second sidebar component system for Streams.
@@ -71,6 +79,10 @@ For active-stream aggregation cards, Studio also expects the stream aggregate en
 
 - `POST {streamsUrl}/v1/stream/{streamName}/_aggregate`
 
+For searchable streams, Studio also expects the stream search endpoint:
+
+- `POST {streamsUrl}/v1/stream/{streamName}/_search`
+
 The response is treated as a list of stream records containing at least:
 
 - `name`
@@ -82,12 +94,17 @@ The response is treated as a list of stream records containing at least:
 - `uploaded_through`
 
 `useStreams` normalizes that payload into the `StudioStream` shape used by the sidebar.
-The stream's current event count comes from `next_offset` on this metadata response. When a stream view is open, Studio MAY refetch this metadata endpoint on a short interval to keep the count fresh without re-reading event bodies.
-The active stream's logical payload-byte size comes from `total_size_bytes` on the details response, exposed through `useStreamDetails`.
-If `_details.schema.search.rollups` is present, `useStreamDetails` also normalizes that rollup metadata into Studio's aggregation-rollup model so the view can render aggregation controls without re-parsing raw schema JSON.
+On the active stream page, Studio instead uses `_details.stream` as the authoritative summary payload for `epoch`, `next_offset`, and the footer byte total, and keeps that summary current through `_details` conditional long polling.
+If `_details.schema.search` is present, `useStreamDetails` also normalizes the advertised field bindings, aliases, default fields, and primary timestamp metadata so the stream view can render the shared search control and build correct `_search` requests without re-parsing raw schema JSON.
+If `_details.schema.search.rollups` is present, `useStreamDetails` also normalizes that rollup metadata into Studio's aggregation-rollup model, including advertised dimensions, so the view can render aggregation controls without re-parsing raw schema JSON.
+If `_details.stream` includes WAL or pending-tail metadata, `_details.storage` exposes byte/object buckets, `_details.object_store_requests` exposes node-local request accounting, and `_details.index_status` is present, `useStreamDetails` also normalizes those diagnostics into the active-stream details model so the footer diagnostics popover can describe upload coverage, object-storage composition, retained-local-storage buckets, node-local object-store request counts, and per-index/search-family progress without inventing a second metadata request.
 
 `useStreamEvents` computes the encoded `offset` for the currently requested tail window, fetches decoded JSON events from the stream read endpoint, and normalizes them into `StudioStreamEvent` rows for the main event list.
-`useStreamAggregations` resolves the selected relative or absolute time window, picks the tightest advertised rollup interval that stays within Studio's bucket budget, posts that request to `_aggregate`, and normalizes the returned buckets into sparkline-ready measure series.
+When the active stream search term is non-empty and the stream advertises search capability, `useStreamEvents` switches to the search endpoint, requests newest-first append-order sort with `sort: ["offset:desc"]`, paginates through `next_search_after`, and keeps hidden-new-match detection aligned with the active filter for `live` and `tail`. Studio still requests exact totals on that path because the stream view uses them for filtered hidden-new-event counts and jump-to-beginning behavior. Partial or syntactically invalid stream-search input must stay local in the reusable search control and must not be committed into URL state or executed against `_search`. When that search term is empty, the hook must fall back to the normal read endpoint and stop any stale `_search` activity for the previous filter scope.
+`useStreamAggregations` resolves the selected relative or absolute time window, picks the tightest advertised rollup interval that stays within Studio's bucket budget, groups by the rollup's primary dimension when available, includes `unit` in that group key when the rollup advertises it, and normalizes the returned buckets into sparkline-ready aggregation series with per-statistic values plus explicit raw-unit metadata for display scaling.
+Studio uses those resolved series both to render the aggregation strip and to upgrade the header aggregation toggle from raw rollup-count metadata to the real visible aggregation count once the aggregate query has loaded.
+The hook only polls those aggregate windows when the stream view is in `live` or `tail` follow mode and the selected range is relative.
+Per-series aggregation preferences such as enabled statistics and unit overrides remain in the TanStack DB-backed local UI state collection as user-authored state; aggregate fetches may read them but MUST NOT rewrite them just because a different range resolves a different set of series or statistics.
 
 ## Demo Contract
 
@@ -96,6 +113,7 @@ If `_details.schema.search.rollups` is present, `useStreamDetails` also normaliz
 - Prisma Dev remains the source of truth for the actual Streams server URL.
 - `/api/config` exposes Studio's browser-facing Streams base URL.
 - `/api/streams` proxies read and aggregate requests to the upstream Streams server.
+- In streams-only demo mode, `/api/config` also marks the database as disabled so the browser shell can drop database navigation while keeping Streams enabled.
 
 This keeps the browser on the same origin as the Studio app and avoids binding Studio UI behavior to upstream CORS details.
 
@@ -114,12 +132,16 @@ Streams changes MUST include tests for:
 - `Studio`/context propagation of `streamsUrl`
 - `useStreams` fetch behavior and response normalization
 - `useStreamDetails` fetch behavior and total-byte normalization
+- `useStreamDetails` normalization of advertised search metadata
 - `useStreamDetails` normalization of advertised aggregation rollups
+- `useStreamDetails` normalization of stream-storage and index-status diagnostics
 - `useStreamAggregations` aggregate-request behavior and bucket normalization
 - `useStreamEvents` tail-window fetch behavior and normalization
+- `useStreamEvents` search request behavior, including `next_search_after`
 - sidebar rendering of the `Streams` section and stream links
 - stream-view routing plus one-row-at-a-time expansion behavior
-- stream-view header rendering of total stream bytes
+- stream-view searchable-header behavior and expanded-row match highlighting
+- stream-view compact header/footer summary rendering plus follow-mode behavior
 - stream-view aggregation-button rendering and aggregation-panel range behavior
 - `ppg-dev` config wiring for the browser-facing Streams URL
 - `ppg-dev` proxy handling for aggregate `POST` requests
