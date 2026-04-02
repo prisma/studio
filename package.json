@@ -197,7 +197,7 @@
     "eslint-plugin-unicorn": "55.0.0",
     "eslint-plugin-vitest": "0.5.4",
     "globals": "15.9.0",
-    "happy-dom": "20.7.0",
+    "happy-dom": "20.8.9",
     "kysely": "0.28.10",
     "lucide-react": "0.562.0",
     "motion": "12.27.1",
