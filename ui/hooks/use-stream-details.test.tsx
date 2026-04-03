@@ -48,6 +48,18 @@ function createStreamDetailsPayload(overrides?: {
       retired_run_count?: number;
       updated_at?: string | null;
     };
+    routing_key_lexicon?: {
+      active_run_count?: number;
+      bytes_at_rest?: string;
+      configured?: boolean;
+      fully_indexed_uploaded_segments?: boolean;
+      indexed_segment_count?: number;
+      lag_ms?: string | null;
+      lag_segments?: number;
+      object_count?: number;
+      retired_run_count?: number;
+      updated_at?: string | null;
+    };
     search_families?: unknown[];
     segments?: {
       total_count?: number;
@@ -65,6 +77,10 @@ function createStreamDetailsPayload(overrides?: {
     reads?: string;
   };
   schema?: {
+    routingKey?: {
+      jsonPointer?: unknown;
+      required?: unknown;
+    };
     search?: {
       aliases?: Record<string, unknown>;
       defaultFields?: unknown[];
@@ -83,6 +99,7 @@ function createStreamDetailsPayload(overrides?: {
     local_storage?: {
       companion_cache_bytes?: string;
       exact_index_cache_bytes?: string;
+      lexicon_index_cache_bytes?: string;
       pending_sealed_segment_bytes?: string;
       pending_tail_bytes?: string;
       routing_index_cache_bytes?: string;
@@ -98,6 +115,7 @@ function createStreamDetailsPayload(overrides?: {
       manifest_and_meta_bytes?: string;
       manifest_bytes?: string;
       routing_index_object_count?: number;
+      routing_lexicon_object_count?: number;
       schema_registry_bytes?: string;
       segment_object_count?: number;
       segments_bytes?: string;
@@ -178,8 +196,86 @@ function createStreamDetailsPayload(overrides?: {
   };
 }
 
+function createStreamsServerDetailsPayload(overrides?: {
+  configured_limits?: {
+    caches?: {
+      companion_file_cache_bytes?: string | number;
+      companion_section_cache_bytes?: string | number;
+      companion_toc_cache_bytes?: string | number;
+      index_run_disk_cache_bytes?: string | number;
+      index_run_memory_cache_bytes?: string | number;
+      segment_cache_bytes?: string | number;
+      sqlite_cache_bytes?: string | number;
+      worker_sqlite_cache_bytes?: string | number;
+    };
+  };
+}) {
+  return {
+    configured_limits: {
+      caches: {
+        companion_file_cache_bytes: "536870912",
+        companion_section_cache_bytes: "33554432",
+        companion_toc_cache_bytes: "1048576",
+        index_run_disk_cache_bytes: "268435456",
+        index_run_memory_cache_bytes: "33554432",
+        segment_cache_bytes: "536870912",
+        sqlite_cache_bytes: "134217728",
+        worker_sqlite_cache_bytes: "16777216",
+        ...overrides?.configured_limits?.caches,
+      },
+    },
+  };
+}
+
+function createJsonResponse(body: unknown, headers?: HeadersInit): Response {
+  return new Response(JSON.stringify(body), {
+    headers: {
+      "content-type": "application/json",
+      ...headers,
+    },
+  });
+}
+
+function resolveFetchUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") {
+    return input;
+  }
+
+  if (input instanceof URL) {
+    return input.toString();
+  }
+
+  return input.url;
+}
+
+function mockStreamDetailsFetch(args?: {
+  serverDetailsPayload?: unknown;
+  streamDetailsPayload?: unknown;
+}) {
+  return vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+    const url = resolveFetchUrl(input);
+
+    if (url.endsWith("/v1/server/_details")) {
+      return Promise.resolve(
+        createJsonResponse(
+          args?.serverDetailsPayload ?? createStreamsServerDetailsPayload(),
+        ),
+      );
+    }
+
+    return Promise.resolve(
+      createJsonResponse(
+        args?.streamDetailsPayload ?? createStreamDetailsPayload(),
+      ),
+    );
+  });
+}
+
 function renderHarness(args?: {
   refreshIntervalMs?: number;
+  shouldEnableLongPolling?: NonNullable<
+    Parameters<typeof useStreamDetails>[0]
+  >["shouldEnableLongPolling"];
   streamName?: string | null;
   streamsUrl?: string;
 }) {
@@ -270,26 +366,24 @@ describe("useStreamDetails", () => {
   });
 
   it("loads total byte metadata from the stream details endpoint", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify(createStreamDetailsPayload()), {
-        headers: {
-          "content-type": "application/json",
-        },
-      }),
-    );
+    const fetchSpy = mockStreamDetailsFetch();
     const harness = renderHarness({
       streamName: "prisma-wal",
       streamsUrl: "/api/streams",
     });
 
     await waitFor(() => harness.getLatestState()?.isSuccess === true);
-    const fetchCall = fetchSpy.mock.calls[0] as [
-      string,
-      RequestInit | undefined,
-    ];
+    const fetchCall = fetchSpy.mock.calls.find(([input]) =>
+      resolveFetchUrl(input).includes("/v1/stream/prisma-wal/_details"),
+    ) as [string, RequestInit | undefined] | undefined;
 
-    expect(fetchCall[0]).toBe("/api/streams/v1/stream/prisma-wal/_details");
-    expect(fetchCall[1]?.signal).toBeInstanceOf(AbortSignal);
+    expect(fetchCall).toBeDefined();
+    const resolvedFetchCall = fetchCall as [string, RequestInit | undefined];
+
+    expect(resolvedFetchCall[0]).toBe(
+      "/api/streams/v1/stream/prisma-wal/_details",
+    );
+    expect(resolvedFetchCall[1]?.signal).toBeInstanceOf(AbortSignal);
     expect(harness.getLatestState()?.details).toEqual({
       aggregationCount: 2,
       aggregationRollups: [
@@ -332,6 +426,19 @@ describe("useStreamDetails", () => {
       objectStoreRequests: null,
       pendingBytes: 128n,
       pendingRows: 3n,
+      routingKey: null,
+      serverConfiguredLimits: {
+        caches: {
+          companionFileCacheBytes: 536_870_912n,
+          companionSectionCacheBytes: 33_554_432n,
+          companionTocCacheBytes: 1_048_576n,
+          indexRunDiskCacheBytes: 268_435_456n,
+          indexRunMemoryCacheBytes: 33_554_432n,
+          segmentCacheBytes: 536_870_912n,
+          sqliteCacheBytes: 134_217_728n,
+          workerSqliteCacheBytes: 16_777_216n,
+        },
+      },
       search: null,
       sealedThrough: "-1",
       segmentCount: 0,
@@ -346,140 +453,145 @@ describe("useStreamDetails", () => {
   });
 
   it("normalizes storage and index diagnostics from the combined details endpoint", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(
-        JSON.stringify(
-          createStreamDetailsPayload({
-            index_status: {
-              bundled_companions: {
-                bytes_at_rest: "4096",
-                fully_indexed_uploaded_segments: false,
-                object_count: 4,
-              },
-              desired_index_plan_generation: 3,
-              exact_indexes: [
-                {
-                  active_run_count: 1,
-                  bytes_at_rest: "2048",
-                  fully_indexed_uploaded_segments: false,
-                  indexed_segment_count: 5,
-                  kind: "keyword",
-                  lag_ms: "180000",
-                  lag_segments: 3,
-                  name: "metric",
-                  object_count: 3,
-                  retired_run_count: 2,
-                  stale_configuration: false,
-                  updated_at: "2026-03-24T14:43:10.000Z",
-                },
-              ],
-              manifest: {
-                generation: 7,
-                last_uploaded_at: "2026-03-24T14:43:00.000Z",
-                last_uploaded_etag: "etag-7",
-                last_uploaded_size_bytes: "512",
-                uploaded_generation: 7,
-              },
-              profile: "metrics",
-              routing_key_index: {
-                active_run_count: 1,
-                bytes_at_rest: "1024",
-                configured: true,
-                fully_indexed_uploaded_segments: true,
-                indexed_segment_count: 8,
-                lag_ms: "0",
-                lag_segments: 0,
-                object_count: 1,
-                retired_run_count: 1,
-                updated_at: "2026-03-24T14:42:59.000Z",
-              },
-              search_families: [
-                {
-                  bytes_at_rest: "8192",
-                  contiguous_covered_segment_count: 5,
-                  covered_segment_count: 6,
-                  family: "agg",
-                  fields: ["metric", "stream"],
-                  fully_indexed_uploaded_segments: false,
-                  lag_ms: "240000",
-                  lag_segments: 3,
-                  object_count: 2,
-                  plan_generation: 3,
-                  stale_segment_count: 2,
-                  updated_at: "2026-03-24T14:43:11.000Z",
-                },
-              ],
-              segments: {
-                total_count: 10,
-                uploaded_count: 8,
-              },
-              stream: "prisma-wal",
+    mockStreamDetailsFetch({
+      streamDetailsPayload: createStreamDetailsPayload({
+        index_status: {
+          bundled_companions: {
+            bytes_at_rest: "4096",
+            fully_indexed_uploaded_segments: false,
+            object_count: 4,
+          },
+          desired_index_plan_generation: 3,
+          exact_indexes: [
+            {
+              active_run_count: 1,
+              bytes_at_rest: "2048",
+              fully_indexed_uploaded_segments: false,
+              indexed_segment_count: 5,
+              kind: "keyword",
+              lag_ms: "180000",
+              lag_segments: 3,
+              name: "metric",
+              object_count: 3,
+              retired_run_count: 2,
+              stale_configuration: false,
+              updated_at: "2026-03-24T14:43:10.000Z",
             },
-            object_store_requests: {
-              by_artifact: [
-                {
-                  artifact: "segments",
-                  gets: "2",
-                  heads: "1",
-                  lists: "0",
-                  puts: "5",
-                  reads: "3",
-                },
-              ],
-              deletes: "0",
+          ],
+          manifest: {
+            generation: 7,
+            last_uploaded_at: "2026-03-24T14:43:00.000Z",
+            last_uploaded_etag: "etag-7",
+            last_uploaded_size_bytes: "512",
+            uploaded_generation: 7,
+          },
+          profile: "metrics",
+          routing_key_index: {
+            active_run_count: 1,
+            bytes_at_rest: "1024",
+            configured: true,
+            fully_indexed_uploaded_segments: true,
+            indexed_segment_count: 8,
+            lag_ms: "0",
+            lag_segments: 0,
+            object_count: 1,
+            retired_run_count: 1,
+            updated_at: "2026-03-24T14:42:59.000Z",
+          },
+          routing_key_lexicon: {
+            active_run_count: 2,
+            bytes_at_rest: "1536",
+            configured: true,
+            fully_indexed_uploaded_segments: false,
+            indexed_segment_count: 6,
+            lag_ms: "60000",
+            lag_segments: 2,
+            object_count: 2,
+            retired_run_count: 0,
+            updated_at: "2026-03-24T14:42:58.000Z",
+          },
+          search_families: [
+            {
+              bytes_at_rest: "8192",
+              contiguous_covered_segment_count: 5,
+              covered_segment_count: 6,
+              family: "agg",
+              fields: ["metric", "stream"],
+              fully_indexed_uploaded_segments: false,
+              lag_ms: "240000",
+              lag_segments: 3,
+              object_count: 2,
+              plan_generation: 3,
+              stale_segment_count: 2,
+              updated_at: "2026-03-24T14:43:11.000Z",
+            },
+          ],
+          segments: {
+            total_count: 10,
+            uploaded_count: 8,
+          },
+          stream: "prisma-wal",
+        },
+        object_store_requests: {
+          by_artifact: [
+            {
+              artifact: "segments",
               gets: "2",
               heads: "1",
               lists: "0",
               puts: "5",
               reads: "3",
             },
-            storage: {
-              companion_families: {
-                agg_bytes: "256",
-                col_bytes: "1024",
-                fts_bytes: "2048",
-                mblk_bytes: "128",
-              },
-              local_storage: {
-                companion_cache_bytes: "5408",
-                exact_index_cache_bytes: "64",
-                pending_sealed_segment_bytes: "128",
-                pending_tail_bytes: "256",
-                routing_index_cache_bytes: "32",
-                segment_cache_bytes: "512",
-                sqlite_shared_total_bytes: "4096",
-                total_bytes: "8192",
-                wal_retained_bytes: "2048",
-              },
-              object_storage: {
-                bundled_companion_object_count: 4,
-                exact_index_object_count: 3,
-                indexes_bytes: "16384",
-                manifest_and_meta_bytes: "768",
-                manifest_bytes: "512",
-                routing_index_object_count: 1,
-                schema_registry_bytes: "256",
-                segment_object_count: 8,
-                segments_bytes: "65536",
-                total_bytes: "82688",
-              },
-            },
-            stream: {
-              pending_bytes: "512",
-              pending_rows: "9",
-              segment_count: 10,
-              uploaded_segment_count: 8,
-              wal_bytes: "2048",
-            },
-          }),
-        ),
-        {
-          headers: {
-            "content-type": "application/json",
+          ],
+          deletes: "0",
+          gets: "2",
+          heads: "1",
+          lists: "0",
+          puts: "5",
+          reads: "3",
+        },
+        storage: {
+          companion_families: {
+            agg_bytes: "256",
+            col_bytes: "1024",
+            fts_bytes: "2048",
+            mblk_bytes: "128",
+          },
+          local_storage: {
+            companion_cache_bytes: "5408",
+            exact_index_cache_bytes: "64",
+            lexicon_index_cache_bytes: "96",
+            pending_sealed_segment_bytes: "128",
+            pending_tail_bytes: "256",
+            routing_index_cache_bytes: "32",
+            segment_cache_bytes: "512",
+            sqlite_shared_total_bytes: "4096",
+            total_bytes: "8192",
+            wal_retained_bytes: "2048",
+          },
+          object_storage: {
+            bundled_companion_object_count: 4,
+            exact_index_object_count: 3,
+            indexes_bytes: "16384",
+            manifest_and_meta_bytes: "768",
+            manifest_bytes: "512",
+            routing_index_object_count: 1,
+            routing_lexicon_object_count: 2,
+            schema_registry_bytes: "256",
+            segment_object_count: 8,
+            segments_bytes: "65536",
+            total_bytes: "82688",
           },
         },
-      ),
-    );
+        stream: {
+          pending_bytes: "512",
+          pending_rows: "9",
+          segment_count: 10,
+          uploaded_segment_count: 8,
+          wal_bytes: "2048",
+        },
+      }),
+    });
     const harness = renderHarness({
       streamName: "prisma-wal",
       streamsUrl: "/api/streams",
@@ -532,6 +644,18 @@ describe("useStreamDetails", () => {
             retiredRunCount: 1,
             updatedAt: "2026-03-24T14:42:59.000Z",
           },
+          routingKeyLexicon: {
+            activeRunCount: 2,
+            bytesAtRest: 1_536n,
+            configured: true,
+            fullyIndexedUploadedSegments: false,
+            indexedSegmentCount: 6,
+            lagMs: 60_000n,
+            lagSegments: 2,
+            objectCount: 2,
+            retiredRunCount: 0,
+            updatedAt: "2026-03-24T14:42:58.000Z",
+          },
           searchFamilies: [
             {
               bytesAtRest: 8_192n,
@@ -575,6 +699,18 @@ describe("useStreamDetails", () => {
         },
         pendingBytes: 512n,
         pendingRows: 9n,
+        serverConfiguredLimits: {
+          caches: {
+            companionFileCacheBytes: 536_870_912n,
+            companionSectionCacheBytes: 33_554_432n,
+            companionTocCacheBytes: 1_048_576n,
+            indexRunDiskCacheBytes: 268_435_456n,
+            indexRunMemoryCacheBytes: 33_554_432n,
+            segmentCacheBytes: 536_870_912n,
+            sqliteCacheBytes: 134_217_728n,
+            workerSqliteCacheBytes: 16_777_216n,
+          },
+        },
         segmentCount: 10,
         storage: {
           companionFamilies: {
@@ -586,6 +722,7 @@ describe("useStreamDetails", () => {
           localStorage: {
             companionCacheBytes: 5_408n,
             exactIndexCacheBytes: 64n,
+            lexiconIndexCacheBytes: 96n,
             pendingSealedSegmentBytes: 128n,
             pendingTailBytes: 256n,
             routingIndexCacheBytes: 32n,
@@ -601,6 +738,7 @@ describe("useStreamDetails", () => {
             manifestAndMetaBytes: 768n,
             manifestBytes: 512n,
             routingIndexObjectCount: 1,
+            routingLexiconObjectCount: 2,
             schemaRegistryBytes: 256n,
             segmentObjectCount: 8,
             segmentsBytes: 65_536n,
@@ -616,71 +754,66 @@ describe("useStreamDetails", () => {
   });
 
   it("normalizes searchable stream schema details", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(
-        JSON.stringify(
-          createStreamDetailsPayload({
-            schema: {
-              search: {
-                aliases: {
-                  req: "requestId",
-                },
-                defaultFields: [
+    mockStreamDetailsFetch({
+      streamDetailsPayload: createStreamDetailsPayload({
+        schema: {
+          routingKey: {
+            jsonPointer: "/requestId",
+            required: false,
+          },
+          search: {
+            aliases: {
+              req: "requestId",
+            },
+            defaultFields: [
+              {
+                boost: 2,
+                field: "message",
+              },
+            ],
+            fields: {
+              eventTime: {
+                bindings: [
                   {
-                    boost: 2,
-                    field: "message",
+                    jsonPointer: "/eventTime",
+                    version: 1,
                   },
                 ],
-                fields: {
-                  eventTime: {
-                    bindings: [
-                      {
-                        jsonPointer: "/eventTime",
-                        version: 1,
-                      },
-                    ],
-                    column: true,
-                    exact: true,
-                    exists: true,
-                    kind: "date",
-                    sortable: true,
+                column: true,
+                exact: true,
+                exists: true,
+                kind: "date",
+                sortable: true,
+              },
+              message: {
+                bindings: [
+                  {
+                    jsonPointer: "/message",
+                    version: 1,
                   },
-                  message: {
-                    bindings: [
-                      {
-                        jsonPointer: "/message",
-                        version: 1,
-                      },
-                    ],
-                    exists: true,
-                    kind: "text",
-                    positions: true,
+                ],
+                exists: true,
+                kind: "text",
+                positions: true,
+              },
+              requestId: {
+                bindings: [
+                  {
+                    jsonPointer: "/requestId",
+                    version: 1,
                   },
-                  requestId: {
-                    bindings: [
-                      {
-                        jsonPointer: "/requestId",
-                        version: 1,
-                      },
-                    ],
-                    exact: true,
-                    exists: true,
-                    kind: "keyword",
-                    prefix: true,
-                  },
-                },
-                primaryTimestampField: "eventTime",
+                ],
+                exact: true,
+                exists: true,
+                kind: "keyword",
+                prefix: true,
               },
             },
-          }),
-        ),
-        {
-          headers: {
-            "content-type": "application/json",
+            primaryTimestampField: "eventTime",
           },
         },
-      ),
-    );
+      }),
+    });
     const harness = renderHarness({
       streamName: "prisma-wal",
       streamsUrl: "/api/streams",
@@ -688,6 +821,10 @@ describe("useStreamDetails", () => {
 
     await waitFor(() => harness.getLatestState()?.isSuccess === true);
 
+    expect(harness.getLatestState()?.details?.routingKey).toEqual({
+      jsonPointer: "/requestId",
+      required: false,
+    });
     expect(harness.getLatestState()?.details?.search).toEqual({
       aliases: {
         req: "requestId",
@@ -758,36 +895,36 @@ describe("useStreamDetails", () => {
     let requestCount = 0;
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockImplementation((_input, init) => {
+      .mockImplementation((input, init) => {
+        const url = resolveFetchUrl(input);
+
+        if (url.endsWith("/v1/server/_details")) {
+          return Promise.resolve(
+            createJsonResponse(createStreamsServerDetailsPayload()),
+          );
+        }
+
         requestCount += 1;
 
         if (requestCount === 1) {
           return Promise.resolve(
-            new Response(JSON.stringify(createStreamDetailsPayload()), {
-              headers: {
-                "content-type": "application/json",
-                etag: '"details-v1"',
-              },
+            createJsonResponse(createStreamDetailsPayload(), {
+              etag: '"details-v1"',
             }),
           );
         }
 
         if (requestCount === 2) {
           return Promise.resolve(
-            new Response(
-              JSON.stringify(
-                createStreamDetailsPayload({
-                  stream: {
-                    next_offset: "5",
-                    total_size_bytes: "2097152",
-                  },
-                }),
-              ),
-              {
-                headers: {
-                  "content-type": "application/json",
-                  etag: '"details-v2"',
+            createJsonResponse(
+              createStreamDetailsPayload({
+                stream: {
+                  next_offset: "5",
+                  total_size_bytes: "2097152",
                 },
+              }),
+              {
+                etag: '"details-v2"',
               },
             ),
           );
@@ -815,17 +952,17 @@ describe("useStreamDetails", () => {
       streamsUrl: "/api/streams",
     });
 
-    await waitFor(() => fetchSpy.mock.calls.length >= 2);
+    await waitFor(() => requestCount >= 2);
     await waitFor(() => harness.getLatestState()?.details?.nextOffset === "5");
 
-    const initialFetchCall = fetchSpy.mock.calls[0] as [
+    const detailsCalls = fetchSpy.mock.calls.filter(([input]) =>
+      resolveFetchUrl(input).includes("/v1/stream/prisma-wal/_details"),
+    );
+    const initialFetchCall = detailsCalls[0] as [
       string,
       RequestInit | undefined,
     ];
-    const longPollCall = fetchSpy.mock.calls[1] as [
-      string,
-      RequestInit | undefined,
-    ];
+    const longPollCall = detailsCalls[1] as [string, RequestInit | undefined];
 
     expect(initialFetchCall[0]).toBe(
       "/api/streams/v1/stream/prisma-wal/_details",
@@ -846,63 +983,118 @@ describe("useStreamDetails", () => {
     harness.cleanup();
   });
 
-  it("treats a same-ETag long-poll 200 response as unchanged", async () => {
-    let requestCount = 0;
+  it("skips the long-poll loop when the resolved stream details disable it", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockImplementation((_input, init) => {
-        requestCount += 1;
+      .mockImplementation((input) => {
+        const url = resolveFetchUrl(input);
 
-        if (requestCount === 1) {
+        if (url.endsWith("/v1/server/_details")) {
           return Promise.resolve(
-            new Response(JSON.stringify(createStreamDetailsPayload()), {
-              headers: {
-                "content-type": "application/json",
-                etag: '"details-v1"',
-              },
-            }),
+            createJsonResponse(createStreamsServerDetailsPayload()),
           );
         }
 
-        if (requestCount === 2) {
-          return Promise.resolve(
-            new Response(JSON.stringify(createStreamDetailsPayload()), {
-              headers: {
-                "content-type": "application/json",
-                etag: '"details-v1"',
+        return Promise.resolve(
+          createJsonResponse(
+            createStreamDetailsPayload({
+              schema: {
+                routingKey: {
+                  jsonPointer: "/repoName",
+                  required: false,
+                },
+              },
+              stream: {
+                name: "golden-stream-2",
               },
             }),
-          );
-        }
-
-        return new Promise<Response>((_resolve, reject) => {
-          const signal = init?.signal;
-
-          if (!(signal instanceof AbortSignal)) {
-            return;
-          }
-
-          signal.addEventListener(
-            "abort",
-            () => {
-              reject(new DOMException("Aborted", "AbortError"));
+            {
+              etag: '"details-v1"',
             },
-            { once: true },
-          );
-        });
+          ),
+        );
       });
+    const harness = renderHarness({
+      refreshIntervalMs: 100,
+      shouldEnableLongPolling: (details) => details.search != null,
+      streamName: "golden-stream-2",
+      streamsUrl: "/api/streams",
+    });
+
+    await waitFor(() => harness.getLatestState()?.isSuccess === true);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    const detailsCalls = fetchSpy.mock.calls.filter(([input]) =>
+      resolveFetchUrl(input).includes("/v1/stream/golden-stream-2/_details"),
+    );
+
+    expect(detailsCalls).toHaveLength(1);
+    expect(resolveFetchUrl(detailsCalls[0]![0])).toBe(
+      "/api/streams/v1/stream/golden-stream-2/_details",
+    );
+
+    harness.cleanup();
+  });
+
+  it("treats a same-ETag long-poll 200 response as unchanged", async () => {
+    let requestCount = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = resolveFetchUrl(input);
+
+      if (url.endsWith("/v1/server/_details")) {
+        return Promise.resolve(
+          createJsonResponse(createStreamsServerDetailsPayload()),
+        );
+      }
+
+      requestCount += 1;
+
+      if (requestCount === 1) {
+        return Promise.resolve(
+          createJsonResponse(createStreamDetailsPayload(), {
+            etag: '"details-v1"',
+          }),
+        );
+      }
+
+      if (requestCount === 2) {
+        return Promise.resolve(
+          createJsonResponse(createStreamDetailsPayload(), {
+            etag: '"details-v1"',
+          }),
+        );
+      }
+
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+
+        if (!(signal instanceof AbortSignal)) {
+          return;
+        }
+
+        signal.addEventListener(
+          "abort",
+          () => {
+            reject(new DOMException("Aborted", "AbortError"));
+          },
+          { once: true },
+        );
+      });
+    });
     const harness = renderHarness({
       refreshIntervalMs: 100,
       streamName: "prisma-wal",
       streamsUrl: "/api/streams",
     });
 
-    await waitFor(() => fetchSpy.mock.calls.length >= 2);
+    await waitFor(() => requestCount >= 2);
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
 
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(requestCount).toBe(2);
     expect(harness.getLatestState()?.details).toEqual(
       expect.objectContaining({
         nextOffset: "2",
@@ -916,74 +1108,96 @@ describe("useStreamDetails", () => {
   it("keeps one long-poll loop alive across ETag updates instead of aborting and restarting it", async () => {
     let requestCount = 0;
     let thirdLongPollAborted = false;
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockImplementation((_input, init) => {
-        requestCount += 1;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = resolveFetchUrl(input);
 
-        if (requestCount === 1) {
-          return Promise.resolve(
-            new Response(JSON.stringify(createStreamDetailsPayload()), {
-              headers: {
-                "content-type": "application/json",
-                etag: '"details-v1"',
+      if (url.endsWith("/v1/server/_details")) {
+        return Promise.resolve(
+          createJsonResponse(createStreamsServerDetailsPayload()),
+        );
+      }
+
+      requestCount += 1;
+
+      if (requestCount === 1) {
+        return Promise.resolve(
+          createJsonResponse(createStreamDetailsPayload(), {
+            etag: '"details-v1"',
+          }),
+        );
+      }
+
+      if (requestCount === 2) {
+        return Promise.resolve(
+          createJsonResponse(
+            createStreamDetailsPayload({
+              stream: {
+                next_offset: "5",
+                total_size_bytes: "2097152",
               },
             }),
-          );
-        }
-
-        if (requestCount === 2) {
-          return Promise.resolve(
-            new Response(
-              JSON.stringify(
-                createStreamDetailsPayload({
-                  stream: {
-                    next_offset: "5",
-                    total_size_bytes: "2097152",
-                  },
-                }),
-              ),
-              {
-                headers: {
-                  "content-type": "application/json",
-                  etag: '"details-v2"',
-                },
-              },
-            ),
-          );
-        }
-
-        return new Promise<Response>((_resolve, reject) => {
-          const signal = init?.signal;
-
-          if (!(signal instanceof AbortSignal)) {
-            return;
-          }
-
-          signal.addEventListener(
-            "abort",
-            () => {
-              thirdLongPollAborted = true;
-              reject(new DOMException("Aborted", "AbortError"));
+            {
+              etag: '"details-v2"',
             },
-            { once: true },
-          );
-        });
+          ),
+        );
+      }
+
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+
+        if (!(signal instanceof AbortSignal)) {
+          return;
+        }
+
+        signal.addEventListener(
+          "abort",
+          () => {
+            thirdLongPollAborted = true;
+            reject(new DOMException("Aborted", "AbortError"));
+          },
+          { once: true },
+        );
       });
+    });
     const harness = renderHarness({
       refreshIntervalMs: 100,
       streamName: "prisma-wal",
       streamsUrl: "/api/streams",
     });
 
-    await waitFor(() => fetchSpy.mock.calls.length >= 3);
+    await waitFor(() => requestCount >= 3);
     await waitFor(() => harness.getLatestState()?.details?.nextOffset === "5");
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
 
-    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(requestCount).toBe(3);
     expect(thirdLongPollAborted).toBe(false);
+
+    harness.cleanup();
+  });
+
+  it("gracefully omits server cache limits when the server-wide endpoint is unavailable", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = resolveFetchUrl(input);
+
+      if (url.endsWith("/v1/server/_details")) {
+        return Promise.resolve(new Response("not found", { status: 404 }));
+      }
+
+      return Promise.resolve(createJsonResponse(createStreamDetailsPayload()));
+    });
+    const harness = renderHarness({
+      streamName: "prisma-wal",
+      streamsUrl: "/api/streams",
+    });
+
+    await waitFor(() => harness.getLatestState()?.isSuccess === true);
+
+    expect(
+      harness.getLatestState()?.details?.serverConfiguredLimits,
+    ).toBeNull();
 
     harness.cleanup();
   });

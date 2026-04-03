@@ -263,9 +263,8 @@ async function main(): Promise<void> {
     serviceName: "Studio demo HTTP server",
   });
 
-  const runtime = await startDemoRuntime(
-    parseDemoRuntimeOptions(process.argv.slice(2)),
-  );
+  const runtimeOptions = parseDemoRuntimeOptions(process.argv.slice(2));
+  const runtime = await startDemoRuntime(runtimeOptions);
 
   cleanupCallbacks.push(...runtime.cleanupCallbacks);
   postgresClient = runtime.postgresClient;

@@ -33,6 +33,18 @@ interface StreamDetailsApiPayload {
       retired_run_count?: unknown;
       updated_at?: unknown;
     };
+    routing_key_lexicon?: {
+      active_run_count?: unknown;
+      bytes_at_rest?: unknown;
+      configured?: unknown;
+      fully_indexed_uploaded_segments?: unknown;
+      indexed_segment_count?: unknown;
+      lag_ms?: unknown;
+      lag_segments?: unknown;
+      object_count?: unknown;
+      retired_run_count?: unknown;
+      updated_at?: unknown;
+    };
     search_families?: unknown[];
     segments?: {
       total_count?: unknown;
@@ -50,6 +62,10 @@ interface StreamDetailsApiPayload {
     reads?: unknown;
   };
   schema?: {
+    routingKey?: {
+      jsonPointer?: unknown;
+      required?: unknown;
+    };
     search?: {
       aliases?: Record<string, unknown>;
       defaultFields?: unknown[];
@@ -67,6 +83,7 @@ interface StreamDetailsApiPayload {
     };
     local_storage?: {
       exact_index_cache_bytes?: unknown;
+      lexicon_index_cache_bytes?: unknown;
       pending_sealed_segment_bytes?: unknown;
       pending_tail_bytes?: unknown;
       routing_index_cache_bytes?: unknown;
@@ -82,6 +99,7 @@ interface StreamDetailsApiPayload {
       manifest_and_meta_bytes?: unknown;
       manifest_bytes?: unknown;
       routing_index_object_count?: unknown;
+      routing_lexicon_object_count?: unknown;
       schema_registry_bytes?: unknown;
       segment_object_count?: unknown;
       segments_bytes?: unknown;
@@ -105,6 +123,21 @@ interface StreamDetailsApiPayload {
     uploaded_segment_count?: number;
     uploaded_through: string;
     wal_bytes?: string;
+  };
+}
+
+interface StreamsServerDetailsApiPayload {
+  configured_limits?: {
+    caches?: {
+      companion_file_cache_bytes?: unknown;
+      companion_section_cache_bytes?: unknown;
+      companion_toc_cache_bytes?: unknown;
+      index_run_disk_cache_bytes?: unknown;
+      index_run_memory_cache_bytes?: unknown;
+      segment_cache_bytes?: unknown;
+      sqlite_cache_bytes?: unknown;
+      worker_sqlite_cache_bytes?: unknown;
+    };
   };
 }
 
@@ -154,6 +187,11 @@ export interface StudioStreamSearchField {
   sortable: boolean;
 }
 
+export interface StudioStreamRoutingKeyConfig {
+  jsonPointer: string;
+  required: boolean;
+}
+
 export interface StudioStreamSearchConfig {
   aliases: Record<string, string>;
   defaultFields: StudioStreamSearchDefaultField[];
@@ -173,6 +211,9 @@ export interface StudioStreamRoutingKeyIndexStatus {
   retiredRunCount: number;
   updatedAt: string | null;
 }
+
+export type StudioStreamRoutingKeyLexiconStatus =
+  StudioStreamRoutingKeyIndexStatus;
 
 export interface StudioStreamExactIndexStatus {
   activeRunCount: number;
@@ -225,6 +266,7 @@ export interface StudioStreamIndexStatus {
   manifest: StudioStreamManifestStatus;
   profile: string | null;
   routingKeyIndex: StudioStreamRoutingKeyIndexStatus | null;
+  routingKeyLexicon: StudioStreamRoutingKeyLexiconStatus | null;
   searchFamilies: StudioStreamSearchFamilyStatus[];
   segments: {
     totalCount: number;
@@ -240,6 +282,7 @@ export interface StudioStreamObjectStorageBreakdown {
   manifestAndMetaBytes: bigint;
   manifestBytes: bigint;
   routingIndexObjectCount: number;
+  routingLexiconObjectCount: number;
   schemaRegistryBytes: bigint;
   segmentObjectCount: number;
   segmentsBytes: bigint;
@@ -249,6 +292,7 @@ export interface StudioStreamObjectStorageBreakdown {
 export interface StudioStreamLocalStorageBreakdown {
   companionCacheBytes: bigint;
   exactIndexCacheBytes: bigint;
+  lexiconIndexCacheBytes: bigint;
   pendingSealedSegmentBytes: bigint;
   pendingTailBytes: bigint;
   routingIndexCacheBytes: bigint;
@@ -291,6 +335,21 @@ export interface StudioStreamObjectStoreRequestSummary {
   reads: bigint;
 }
 
+export interface StudioStreamsServerCacheLimits {
+  companionFileCacheBytes: bigint;
+  companionSectionCacheBytes: bigint;
+  companionTocCacheBytes: bigint;
+  indexRunDiskCacheBytes: bigint;
+  indexRunMemoryCacheBytes: bigint;
+  segmentCacheBytes: bigint;
+  sqliteCacheBytes: bigint;
+  workerSqliteCacheBytes: bigint;
+}
+
+export interface StudioStreamsServerConfiguredLimits {
+  caches: StudioStreamsServerCacheLimits;
+}
+
 export interface StudioStreamDetails extends StudioStream {
   aggregationCount: number;
   aggregationRollups: StudioStreamAggregationRollup[];
@@ -301,6 +360,8 @@ export interface StudioStreamDetails extends StudioStream {
   pendingBytes: bigint;
   pendingRows: bigint;
   objectStoreRequests: StudioStreamObjectStoreRequestSummary | null;
+  routingKey: StudioStreamRoutingKeyConfig | null;
+  serverConfiguredLimits: StudioStreamsServerConfiguredLimits | null;
   search: StudioStreamSearchConfig | null;
   segmentCount: number;
   storage: StudioStreamStorageBreakdown | null;
@@ -311,6 +372,7 @@ export interface StudioStreamDetails extends StudioStream {
 
 export interface UseStreamDetailsArgs {
   refreshIntervalMs?: number;
+  shouldEnableLongPolling?: (details: StudioStreamDetails) => boolean;
   streamName?: string | null;
 }
 
@@ -320,6 +382,7 @@ interface StreamDetailsQueryData {
 }
 
 type StreamDetailsQueryKey = ["stream-details", string];
+type StreamsServerDetailsQueryKey = ["streams-server-details", string];
 
 const STREAM_DETAILS_LONG_POLL_TIMEOUT = "30s";
 const STREAM_DETAILS_LONG_POLL_RETRY_DELAY_MS = 1_000;
@@ -396,6 +459,12 @@ function isStreamDetailsApiPayload(
     typeof stream.total_size_bytes === "string" &&
     typeof stream.uploaded_through === "string"
   );
+}
+
+function isStreamsServerDetailsApiPayload(
+  value: unknown,
+): value is StreamsServerDetailsApiPayload {
+  return isRecord(value);
 }
 
 function normalizeAggregationRollups(
@@ -644,6 +713,19 @@ function normalizeSearchConfig(
   };
 }
 
+function normalizeRoutingKeyConfig(
+  value: unknown,
+): StudioStreamRoutingKeyConfig | null {
+  if (!isRecord(value) || typeof value.jsonPointer !== "string") {
+    return null;
+  }
+
+  return {
+    jsonPointer: value.jsonPointer,
+    required: value.required === true,
+  };
+}
+
 function normalizeRoutingKeyIndexStatus(
   value: unknown,
 ): StudioStreamRoutingKeyIndexStatus | null {
@@ -777,6 +859,9 @@ function normalizeIndexStatus(value: unknown): StudioStreamIndexStatus | null {
     },
     profile: parseNullableString(value.profile),
     routingKeyIndex: normalizeRoutingKeyIndexStatus(value.routing_key_index),
+    routingKeyLexicon: normalizeRoutingKeyIndexStatus(
+      value.routing_key_lexicon,
+    ),
     searchFamilies: normalizeSearchFamilies(value.search_families),
     segments: {
       totalCount: parseNonNegativeInteger(segments?.total_count),
@@ -817,6 +902,9 @@ function normalizeStorageBreakdown(
       exactIndexCacheBytes: parseNonNegativeBigInt(
         localStorage?.exact_index_cache_bytes,
       ),
+      lexiconIndexCacheBytes: parseNonNegativeBigInt(
+        localStorage?.lexicon_index_cache_bytes,
+      ),
       pendingSealedSegmentBytes: parseNonNegativeBigInt(
         localStorage?.pending_sealed_segment_bytes,
       ),
@@ -851,6 +939,9 @@ function normalizeStorageBreakdown(
       manifestBytes: parseNonNegativeBigInt(objectStorage?.manifest_bytes),
       routingIndexObjectCount: parseNonNegativeInteger(
         objectStorage?.routing_index_object_count,
+      ),
+      routingLexiconObjectCount: parseNonNegativeInteger(
+        objectStorage?.routing_lexicon_object_count,
       ),
       schemaRegistryBytes: parseNonNegativeBigInt(
         objectStorage?.schema_registry_bytes,
@@ -906,12 +997,52 @@ function normalizeObjectStoreRequestSummary(
   };
 }
 
+function normalizeServerConfiguredLimits(
+  value: unknown,
+): StudioStreamsServerConfiguredLimits | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const caches = isRecord(value.caches) ? value.caches : null;
+
+  if (!caches) {
+    return null;
+  }
+
+  return {
+    caches: {
+      companionFileCacheBytes: parseNonNegativeBigInt(
+        caches.companion_file_cache_bytes,
+      ),
+      companionSectionCacheBytes: parseNonNegativeBigInt(
+        caches.companion_section_cache_bytes,
+      ),
+      companionTocCacheBytes: parseNonNegativeBigInt(
+        caches.companion_toc_cache_bytes,
+      ),
+      indexRunDiskCacheBytes: parseNonNegativeBigInt(
+        caches.index_run_disk_cache_bytes,
+      ),
+      indexRunMemoryCacheBytes: parseNonNegativeBigInt(
+        caches.index_run_memory_cache_bytes,
+      ),
+      segmentCacheBytes: parseNonNegativeBigInt(caches.segment_cache_bytes),
+      sqliteCacheBytes: parseNonNegativeBigInt(caches.sqlite_cache_bytes),
+      workerSqliteCacheBytes: parseNonNegativeBigInt(
+        caches.worker_sqlite_cache_bytes,
+      ),
+    },
+  };
+}
+
 function normalizeStreamDetailsPayload(
   payload: StreamDetailsApiPayload,
 ): StudioStreamDetails {
   const aggregationRollups = normalizeAggregationRollups(
     payload.schema?.search?.rollups,
   );
+  const routingKey = normalizeRoutingKeyConfig(payload.schema?.routingKey);
   const search = normalizeSearchConfig(payload.schema?.search);
   const indexStatus = normalizeIndexStatus(payload.index_status);
   const storage = normalizeStorageBreakdown(payload.storage);
@@ -937,6 +1068,8 @@ function normalizeStreamDetailsPayload(
     objectStoreRequests,
     pendingBytes: parseNonNegativeBigInt(payload.stream.pending_bytes ?? "0"),
     pendingRows: parseNonNegativeBigInt(payload.stream.pending_rows ?? "0"),
+    routingKey,
+    serverConfiguredLimits: null,
     search,
     sealedThrough: payload.stream.sealed_through,
     segmentCount:
@@ -967,6 +1100,33 @@ function createStreamDetailsUrl(
 
   const encodedStreamName = encodeURIComponent(trimmedStreamName);
   const suffix = `/v1/stream/${encodedStreamName}/_details`;
+
+  try {
+    const url = new URL(trimmedStreamsUrl);
+    const pathname = url.pathname.replace(/\/+$/, "");
+
+    url.pathname = `${pathname}${suffix}`;
+    url.search = "";
+    url.hash = "";
+
+    return url.toString();
+  } catch {
+    const pathname = trimmedStreamsUrl
+      .replace(/[?#].*$/, "")
+      .replace(/\/+$/, "");
+
+    return `${pathname}${suffix}`;
+  }
+}
+
+function createStreamsServerDetailsUrl(streamsUrl: string | undefined): string {
+  const trimmedStreamsUrl = streamsUrl?.trim();
+
+  if (!trimmedStreamsUrl) {
+    return "";
+  }
+
+  const suffix = "/v1/server/_details";
 
   try {
     const url = new URL(trimmedStreamsUrl);
@@ -1053,6 +1213,26 @@ async function parseStreamDetailsResponse(args: {
   };
 }
 
+async function parseStreamsServerDetailsResponse(
+  response: Response,
+): Promise<StudioStreamsServerConfiguredLimits | null> {
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = (await response.json()) as unknown;
+
+  if (!isStreamsServerDetailsApiPayload(payload)) {
+    return null;
+  }
+
+  return normalizeServerConfiguredLimits(payload.configured_limits);
+}
+
 export function useStreamDetails(args?: UseStreamDetailsArgs) {
   const { streamsUrl } = useStudio();
   const queryClient = useQueryClient();
@@ -1061,7 +1241,12 @@ export function useStreamDetails(args?: UseStreamDetailsArgs) {
     () => createStreamDetailsUrl(streamsUrl, args?.streamName),
     [args?.streamName, streamsUrl],
   );
+  const serverDetailsUrl = useMemo(
+    () => createStreamsServerDetailsUrl(streamsUrl),
+    [streamsUrl],
+  );
   const refreshIntervalMs = args?.refreshIntervalMs;
+  const shouldEnableLongPolling = args?.shouldEnableLongPolling;
   const isLongPollingEnabled =
     typeof refreshIntervalMs === "number" && refreshIntervalMs > 0;
   const longPollUrl = useMemo(
@@ -1071,6 +1256,13 @@ export function useStreamDetails(args?: UseStreamDetailsArgs) {
   const queryKey = useMemo(
     (): StreamDetailsQueryKey => ["stream-details", detailsUrl],
     [detailsUrl],
+  );
+  const serverDetailsQueryKey = useMemo(
+    (): StreamsServerDetailsQueryKey => [
+      "streams-server-details",
+      serverDetailsUrl,
+    ],
+    [serverDetailsUrl],
   );
   const query = useQuery<
     StreamDetailsQueryData,
@@ -1092,8 +1284,46 @@ export function useStreamDetails(args?: UseStreamDetailsArgs) {
     retryOnMount: false,
     staleTime: Infinity,
   });
+  const serverDetailsQuery = useQuery<
+    StudioStreamsServerConfiguredLimits | null,
+    Error,
+    StudioStreamsServerConfiguredLimits | null,
+    StreamsServerDetailsQueryKey
+  >({
+    enabled: detailsUrl.length > 0 && serverDetailsUrl.length > 0,
+    queryFn: async ({ signal }) => {
+      const response = await fetch(serverDetailsUrl, { signal });
+
+      return await parseStreamsServerDetailsResponse(response);
+    },
+    queryKey: serverDetailsQueryKey,
+    refetchInterval: false,
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
+    retry: false,
+    retryOnMount: false,
+    staleTime: Infinity,
+  });
 
   const resolvedQueryData = query.data ?? null;
+  const resolvedServerConfiguredLimits = serverDetailsQuery.data ?? null;
+  const isLongPollingEnabledForResolvedDetails =
+    resolvedQueryData == null
+      ? shouldEnableLongPolling == null
+      : (shouldEnableLongPolling?.(resolvedQueryData.details) ?? true);
+  const mergedQueryData = useMemo(() => {
+    if (!resolvedQueryData) {
+      return null;
+    }
+
+    return {
+      ...resolvedQueryData,
+      details: {
+        ...resolvedQueryData.details,
+        serverConfiguredLimits: resolvedServerConfiguredLimits,
+      },
+    } satisfies StreamDetailsQueryData;
+  }, [resolvedQueryData, resolvedServerConfiguredLimits]);
 
   useEffect(() => {
     longPollEtagRef.current = null;
@@ -1106,6 +1336,7 @@ export function useStreamDetails(args?: UseStreamDetailsArgs) {
   useEffect(() => {
     if (
       !isLongPollingEnabled ||
+      !isLongPollingEnabledForResolvedDetails ||
       !detailsUrl ||
       !longPollUrl ||
       !query.isSuccess ||
@@ -1181,6 +1412,7 @@ export function useStreamDetails(args?: UseStreamDetailsArgs) {
     };
   }, [
     detailsUrl,
+    isLongPollingEnabledForResolvedDetails,
     isLongPollingEnabled,
     longPollUrl,
     query.isSuccess,
@@ -1191,7 +1423,7 @@ export function useStreamDetails(args?: UseStreamDetailsArgs) {
 
   return {
     ...query,
-    data: resolvedQueryData ?? undefined,
-    details: resolvedQueryData?.details ?? null,
+    data: mergedQueryData ?? undefined,
+    details: mergedQueryData?.details ?? null,
   };
 }

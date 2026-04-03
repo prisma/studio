@@ -52,6 +52,33 @@ function formatCount(value: bigint | number): string {
     : Math.max(0, Math.trunc(value)).toLocaleString("en-US");
 }
 
+function formatCapBytes(sizeBytes: bigint | number): string {
+  const numericValue =
+    typeof sizeBytes === "bigint" ? Number(sizeBytes) : sizeBytes;
+
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return "0 B";
+  }
+
+  const gib = 1024 ** 3;
+  const mib = 1024 ** 2;
+  const kib = 1024;
+
+  if (numericValue >= gib && numericValue % gib === 0) {
+    return `${numericValue / gib} GiB`;
+  }
+
+  if (numericValue >= mib && numericValue % mib === 0) {
+    return `${numericValue / mib} MiB`;
+  }
+
+  if (numericValue >= kib && numericValue % kib === 0) {
+    return `${numericValue / kib} KiB`;
+  }
+
+  return formatBytes(numericValue);
+}
+
 function formatRelativeTime(isoTimestamp: string | null): string {
   if (!isoTimestamp) {
     return "Unavailable";
@@ -151,6 +178,14 @@ function getRoutingRunObjectCount(details: StudioStreamDetails): number {
   );
 }
 
+function getRoutingLexiconObjectCount(details: StudioStreamDetails): number {
+  return (
+    details.storage?.objectStorage.routingLexiconObjectCount ??
+    details.indexStatus?.routingKeyLexicon?.objectCount ??
+    0
+  );
+}
+
 function getExactRunObjectCount(details: StudioStreamDetails): number {
   return (
     details.storage?.objectStorage.exactIndexObjectCount ??
@@ -172,6 +207,10 @@ function getBundledCompanionObjectCount(details: StudioStreamDetails): number {
 
 function getRoutingRunBytes(details: StudioStreamDetails): bigint {
   return details.indexStatus?.routingKeyIndex?.bytesAtRest ?? 0n;
+}
+
+function getRoutingLexiconBytes(details: StudioStreamDetails): bigint {
+  return details.indexStatus?.routingKeyLexicon?.bytesAtRest ?? 0n;
 }
 
 function getExactRunBytes(details: StudioStreamDetails): bigint {
@@ -257,6 +296,21 @@ function createRunAcceleratorItems(
       name: "routing key",
       objectCount: routing.objectCount,
       updatedAt: routing.updatedAt,
+    });
+  }
+
+  if (details.indexStatus?.routingKeyLexicon?.configured) {
+    const lexicon = details.indexStatus.routingKeyLexicon;
+
+    items.push({
+      bytesAtRest: lexicon.bytesAtRest,
+      indexedSegmentCount: lexicon.indexedSegmentCount,
+      kindLabel: "Routing key lexicographic index",
+      lagMs: lexicon.lagMs,
+      lagSegments: lexicon.lagSegments,
+      name: "routing key lexicon",
+      objectCount: lexicon.objectCount,
+      updatedAt: lexicon.updatedAt,
     });
   }
 
@@ -403,7 +457,32 @@ function DiagnosticsSection(props: {
   );
 }
 
+const LEDGER_COLUMNS_CLASS =
+  "grid-cols-[minmax(0,1fr)_minmax(0,7rem)_minmax(0,11rem)]";
+const SHARED_SERVER_CAP_TOOLTIP =
+  "This is a server cap, shared by all streams.";
+
+function SharedCapAnnotation(props: { value: bigint | null | undefined }) {
+  if (props.value == null || props.value <= 0n) {
+    return null;
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-block cursor-default text-[11px] leading-5 text-muted-foreground/80">
+          ({formatCapBytes(props.value)} cap)
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs text-balance">
+        {SHARED_SERVER_CAP_TOOLTIP}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 function LedgerRow(props: {
+  annotation?: ReactNode;
   label: string;
   tooltip?: string;
   total?: boolean;
@@ -427,7 +506,8 @@ function LedgerRow(props: {
   return (
     <div
       className={cn(
-        "grid grid-cols-[minmax(0,1fr)_minmax(0,7rem)_minmax(0,7rem)] items-baseline gap-x-3 gap-y-1 px-3 py-2",
+        "grid items-baseline gap-x-3 gap-y-1 px-3 py-2",
+        LEDGER_COLUMNS_CLASS,
         props.total
           ? "border-t border-border/70 text-foreground"
           : "text-muted-foreground",
@@ -441,13 +521,13 @@ function LedgerRow(props: {
       </div>
       <div
         className={cn(
-          "text-right text-sm tabular-nums",
+          "text-sm tabular-nums",
           props.total
-            ? "font-semibold text-foreground"
-            : "text-muted-foreground",
+            ? "text-right font-semibold text-foreground"
+            : "text-left text-muted-foreground",
         )}
       >
-        {props.total ? props.value : null}
+        {props.total ? props.value : (props.annotation ?? null)}
       </div>
     </div>
   );
@@ -589,12 +669,15 @@ export function StreamDiagnosticsPopover(props: {
   const localCacheBytes =
     (details.storage?.localStorage.segmentCacheBytes ?? 0n) +
     (details.storage?.localStorage.routingIndexCacheBytes ?? 0n) +
+    (details.storage?.localStorage.lexiconIndexCacheBytes ?? 0n) +
     (details.storage?.localStorage.exactIndexCacheBytes ?? 0n) +
     (details.storage?.localStorage.companionCacheBytes ?? 0n);
   const routingRunBytes = getRoutingRunBytes(details);
+  const routingLexiconBytes = getRoutingLexiconBytes(details);
   const exactRunBytes = getExactRunBytes(details);
   const bundledCompanionBytes = getBundledCompanionBytes(details);
   const routingRunObjectCount = getRoutingRunObjectCount(details);
+  const routingLexiconObjectCount = getRoutingLexiconObjectCount(details);
   const exactRunObjectCount = getExactRunObjectCount(details);
   const bundledCompanionObjectCount = getBundledCompanionObjectCount(details);
   const runAcceleratorItems = createRunAcceleratorItems(details);
@@ -603,6 +686,11 @@ export function StreamDiagnosticsPopover(props: {
   const requestTotal =
     (details.objectStoreRequests?.puts ?? 0n) +
     (details.objectStoreRequests?.reads ?? 0n);
+  const hasRoutingLexiconDiagnostics =
+    details.indexStatus?.routingKeyLexicon?.configured === true ||
+    routingLexiconBytes > 0n ||
+    routingLexiconObjectCount > 0 ||
+    (details.storage?.localStorage.lexiconIndexCacheBytes ?? 0n) > 0n;
 
   return (
     <div
@@ -671,9 +759,16 @@ export function StreamDiagnosticsPopover(props: {
                 tooltip={`${formatCount(routingRunObjectCount)} routing run objects currently at rest.`}
                 value={formatBytes(routingRunBytes)}
               />
+              {hasRoutingLexiconDiagnostics ? (
+                <LedgerRow
+                  label="Routing key lexicon"
+                  tooltip={`${formatCount(routingLexiconObjectCount)} routing-key lexicon objects currently at rest.`}
+                  value={formatBytes(routingLexiconBytes)}
+                />
+              ) : null}
               <LedgerRow
                 label="Indexes total"
-                tooltip={`${formatCount(bundledCompanionObjectCount)} companion objects + ${formatCount(exactRunObjectCount)} exact run objects + ${formatCount(routingRunObjectCount)} routing run objects.`}
+                tooltip={`${formatCount(bundledCompanionObjectCount)} companion objects + ${formatCount(exactRunObjectCount)} exact run objects + ${formatCount(routingRunObjectCount)} routing run objects + ${formatCount(routingLexiconObjectCount)} routing-key lexicon objects.`}
                 total
                 value={formatBytes(
                   details.storage?.objectStorage.indexesBytes ?? 0n,
@@ -709,7 +804,12 @@ export function StreamDiagnosticsPopover(props: {
                   details.storage?.objectStorage.segmentsBytes ?? 0n,
                 )}
               />
-              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,7rem)_minmax(0,7rem)] items-baseline gap-x-3 gap-y-1 border-t-2 border-foreground/20 bg-muted/20 px-3 py-2.5">
+              <div
+                className={cn(
+                  "grid items-baseline gap-x-3 gap-y-1 border-t-2 border-foreground/20 bg-muted/20 px-3 py-2.5",
+                  LEDGER_COLUMNS_CLASS,
+                )}
+              >
                 <div className="text-sm font-medium text-foreground">Total</div>
                 <div />
                 <div className="text-right text-sm font-semibold tabular-nums text-foreground">
@@ -759,38 +859,84 @@ export function StreamDiagnosticsPopover(props: {
               <LedgerRow
                 label="Segment cache"
                 tooltip="Locally cached segment data."
+                annotation={
+                  <SharedCapAnnotation
+                    value={
+                      details.serverConfiguredLimits?.caches.segmentCacheBytes
+                    }
+                  />
+                }
                 value={formatBytes(
                   details.storage?.localStorage.segmentCacheBytes ?? 0n,
                 )}
               />
-              <LedgerRow
-                label="Routing cache"
-                tooltip="Locally cached routing index state."
-                value={formatBytes(
-                  details.storage?.localStorage.routingIndexCacheBytes ?? 0n,
-                )}
-              />
-              <LedgerRow
-                label="Exact cache"
-                tooltip="Locally cached exact-index state."
-                value={formatBytes(
-                  details.storage?.localStorage.exactIndexCacheBytes ?? 0n,
-                )}
-              />
+              <div className="relative">
+                <LedgerRow
+                  label="Routing cache"
+                  tooltip="Locally cached routing index state."
+                  value={formatBytes(
+                    details.storage?.localStorage.routingIndexCacheBytes ?? 0n,
+                  )}
+                />
+                {hasRoutingLexiconDiagnostics ? (
+                  <LedgerRow
+                    label="Routing lexicon cache"
+                    tooltip="Locally cached routing-key lexicon state used for alphabetical key listing."
+                    value={formatBytes(
+                      details.storage?.localStorage.lexiconIndexCacheBytes ??
+                        0n,
+                    )}
+                  />
+                ) : null}
+                <LedgerRow
+                  label="Exact cache"
+                  tooltip="Locally cached exact-index state."
+                  value={formatBytes(
+                    details.storage?.localStorage.exactIndexCacheBytes ?? 0n,
+                  )}
+                />
+                {details.serverConfiguredLimits?.caches
+                  .indexRunDiskCacheBytes ? (
+                  <div className="pointer-events-none absolute bottom-2.5 right-3 top-2.5 flex w-[11rem] items-center gap-1.5">
+                    <div className="my-1 h-auto self-stretch w-px bg-border/70" />
+                    <div className="pointer-events-auto flex min-w-0 items-center">
+                      <SharedCapAnnotation
+                        value={
+                          details.serverConfiguredLimits.caches
+                            .indexRunDiskCacheBytes
+                        }
+                      />
+                    </div>
+                  </div>
+                ) : null}
+              </div>
               <LedgerRow
                 label="Companion cache"
                 tooltip="Locally cached bundled companion state used to accelerate search-family coverage."
+                annotation={
+                  <SharedCapAnnotation
+                    value={
+                      details.serverConfiguredLimits?.caches
+                        .companionFileCacheBytes
+                    }
+                  />
+                }
                 value={formatBytes(
                   details.storage?.localStorage.companionCacheBytes ?? 0n,
                 )}
               />
               <LedgerRow
                 label="Caches total"
-                tooltip="Segment, routing, exact-index, and companion cache bytes combined."
+                tooltip="Segment, routing, routing-key lexicon, exact-index, and companion cache bytes combined."
                 total
                 value={formatBytes(localCacheBytes)}
               />
-              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,7rem)_minmax(0,7rem)] items-baseline gap-x-3 gap-y-1 border-t-2 border-foreground/20 bg-muted/20 px-3 py-2.5">
+              <div
+                className={cn(
+                  "grid items-baseline gap-x-3 gap-y-1 border-t-2 border-foreground/20 bg-muted/20 px-3 py-2.5",
+                  LEDGER_COLUMNS_CLASS,
+                )}
+              >
                 <div className="text-sm font-medium text-foreground">Total</div>
                 <div />
                 <div className="text-right text-sm font-semibold tabular-nums text-foreground">

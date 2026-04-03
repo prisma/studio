@@ -10,11 +10,13 @@ interface MockNavigationState {
   streamAggregationRangeParam: string | null;
   streamAggregationsParam: string | null;
   streamFollowParam: string | null;
+  streamRoutingKeyParam: string | null;
   streamParam: string | null;
 }
 
 const {
   useNavigationMock,
+  streamRoutingKeySelectorMock,
   useStreamAggregationsMock,
   useStreamDetailsMock,
   useStreamEventsMock,
@@ -22,6 +24,16 @@ const {
   useStreamsMock,
 } = vi.hoisted(() => ({
   useNavigationMock: vi.fn<() => Partial<MockNavigationState>>(),
+  streamRoutingKeySelectorMock:
+    vi.fn<
+      (props: {
+        selectedRoutingKey: string | null;
+        setSelectedRoutingKeyParam: (
+          value: string | null,
+        ) => Promise<URLSearchParams>;
+        streamName: string;
+      }) => void
+    >(),
   useStreamAggregationsMock: vi.fn<
     (args: {
       aggregationRollups?: Array<{
@@ -98,7 +110,11 @@ const {
     }
   >(),
   useStreamDetailsMock: vi.fn<
-    (args?: { refreshIntervalMs?: number; streamName?: string | null }) => {
+    (args?: {
+      refreshIntervalMs?: number;
+      shouldEnableLongPolling?: (details: StudioStreamDetails) => boolean;
+      streamName?: string | null;
+    }) => {
       details: StudioStreamDetails | null;
     }
   >(),
@@ -107,6 +123,7 @@ const {
       liveUpdatesEnabled?: boolean;
       pageCount: number;
       pageSize?: number;
+      routingKey?: string | null;
       searchConfig?: unknown;
       searchQuery?: string;
       searchVisibleResultCount?: bigint;
@@ -202,6 +219,8 @@ vi.mock("../../../hooks/use-navigation", async () => {
         useMockNavigationParamState("streamAggregationsParam");
       const [streamFollowParam, setStreamFollowParam] =
         useMockNavigationParamState("streamFollowParam");
+      const [streamRoutingKeyParam, setStreamRoutingKeyParam] =
+        useMockNavigationParamState("streamRoutingKeyParam");
       const [streamParam, setStreamParam] =
         useMockNavigationParamState("streamParam");
 
@@ -211,10 +230,12 @@ vi.mock("../../../hooks/use-navigation", async () => {
         setStreamAggregationRangeParam,
         setStreamAggregationsParam,
         setStreamFollowParam,
+        setStreamRoutingKeyParam,
         setStreamParam,
         streamAggregationRangeParam,
         streamAggregationsParam,
         streamFollowParam,
+        streamRoutingKeyParam,
         streamParam,
       };
     },
@@ -289,6 +310,25 @@ vi.mock("../../../hooks/use-streams", () => ({
 
 vi.mock("./use-stream-event-search", () => ({
   useStreamEventSearch: useStreamEventSearchMock,
+}));
+
+vi.mock("./StreamRoutingKeySelector", () => ({
+  StreamRoutingKeySelector: (props: {
+    selectedRoutingKey: string | null;
+    setSelectedRoutingKeyParam: (
+      value: string | null,
+    ) => Promise<URLSearchParams>;
+    streamName: string;
+  }) => {
+    streamRoutingKeySelectorMock(props);
+
+    return (
+      <div
+        data-selected-routing-key={props.selectedRoutingKey ?? ""}
+        data-testid="stream-routing-key-selector"
+      />
+    );
+  },
 }));
 
 vi.mock("../../../hooks/use-ui-state", async () => {
@@ -442,6 +482,8 @@ function createStreamDetails(
     objectStoreRequests: null,
     pendingBytes: 128n,
     pendingRows: 3n,
+    routingKey: null,
+    serverConfiguredLimits: null,
     search: null,
     sealedThrough: "-1",
     segmentCount: 0,
@@ -456,6 +498,10 @@ function createStreamDetails(
 
 function createSearchDetails() {
   return createStreamDetails({
+    routingKey: {
+      jsonPointer: "/requestId",
+      required: false,
+    },
     search: {
       aliases: {
         req: "requestId",
@@ -573,6 +619,7 @@ describe("StreamView", () => {
   beforeEach(() => {
     uiStateValues.clear();
     navigationStateValues.clear();
+    streamRoutingKeySelectorMock.mockReset();
     let currentNextOffset = 2n;
     let lastPolledNextOffset = currentNextOffset;
     useNavigationMock.mockReturnValue({
@@ -1111,6 +1158,259 @@ describe("StreamView", () => {
     });
 
     expect(scrollContainer.scrollTop).toBe(200);
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("does not expand a tailing stream to full history when only a small newer batch arrives", async () => {
+    useNavigationMock.mockReturnValue({
+      searchParam: null,
+      streamAggregationRangeParam: null,
+      streamAggregationsParam: null,
+      streamFollowParam: "tail",
+      streamParam: "golden-stream-2",
+    });
+
+    let currentNextOffset = 13_230_750n;
+
+    useStreamDetailsMock.mockImplementation(
+      (args?: { refreshIntervalMs?: number; streamName?: string | null }) => ({
+        details: args?.streamName
+          ? createStreamDetails({
+              name: args.streamName,
+              nextOffset: currentNextOffset.toString(),
+              totalSizeBytes: 5_800_000_000n,
+            })
+          : null,
+      }),
+    );
+
+    useStreamEventsMock.mockImplementation(
+      ({
+        pageCount,
+        stream,
+        visibleEventCount,
+      }: {
+        pageCount: number;
+        stream: { name: string; nextOffset: string } | null;
+        visibleEventCount?: bigint;
+      }) => {
+        const latestEventCount = stream
+          ? BigInt(stream.nextOffset)
+          : currentNextOffset;
+        const resolvedVisibleEventCount = visibleEventCount ?? latestEventCount;
+        const hiddenNewerEventCount =
+          latestEventCount > resolvedVisibleEventCount
+            ? latestEventCount - resolvedVisibleEventCount
+            : 0n;
+        const events = Array.from({ length: 50 }, (_unused, index) => {
+          const sequence = latestEventCount - BigInt(index);
+
+          return {
+            body: {
+              headers: {
+                timestamp: "2026-03-24T14:42:48.875Z",
+              },
+              message: `golden-${sequence.toString()}`,
+              value: {
+                id: `golden-${sequence.toString()}`,
+              },
+            },
+            exactTimestamp: "2026-03-24T14:42:48.875Z",
+            id: `golden-stream-2:event:${pageCount}:${sequence.toString()}`,
+            indexedFields: [],
+            key: null,
+            offset: `offset-${sequence.toString()}`,
+            preview: `{"id":"golden-${sequence.toString()}"}`,
+            sequence: sequence.toString(),
+            sizeBytes: 96,
+            sortOffset: `offset-${sequence.toString()}`,
+            streamName: "golden-stream-2",
+          };
+        });
+
+        return {
+          collection: null,
+          events,
+          hasHiddenNewerEvents: hiddenNewerEventCount > 0n,
+          hasMoreEvents: true,
+          hiddenNewerEventCount,
+          isFetching: false,
+          matchedEventCount: null,
+          pageSize: 50,
+          queryScopeKey: `scope:${pageCount}:${resolvedVisibleEventCount.toString()}`,
+          refetch: vi.fn(() => Promise.resolve()),
+          totalEventCount: latestEventCount,
+          visibleEventCount: resolvedVisibleEventCount,
+        };
+      },
+    );
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<StreamView />);
+      await Promise.resolve();
+    });
+
+    useStreamEventsMock.mockClear();
+    currentNextOffset = 13_231_000n;
+
+    await act(async () => {
+      root.render(<StreamView />);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const pageCounts = useStreamEventsMock.mock.calls.map(
+      (call) => call[0]?.pageCount ?? 0,
+    );
+
+    expect(pageCounts).toContain(6);
+    expect(Math.max(...pageCounts)).toBe(6);
+    expect(useStreamEventsMock.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        pageCount: 6,
+        visibleEventCount: 13_231_000n,
+      }),
+    );
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("does not auto-expand tail results while the initial event window is still loading", async () => {
+    useNavigationMock.mockReturnValue({
+      searchParam: null,
+      streamAggregationRangeParam: null,
+      streamAggregationsParam: null,
+      streamFollowParam: "tail",
+      streamParam: "golden-stream-2",
+    });
+
+    let currentNextOffset = 13_230_750n;
+    let phase: "initial" | "hidden-while-fetching" | "resolved" = "initial";
+
+    useStreamDetailsMock.mockImplementation(
+      (args?: { refreshIntervalMs?: number; streamName?: string | null }) => ({
+        details: args?.streamName
+          ? createStreamDetails({
+              name: args.streamName,
+              nextOffset: currentNextOffset.toString(),
+            })
+          : null,
+      }),
+    );
+
+    useStreamEventsMock.mockImplementation(
+      ({
+        pageCount,
+        stream,
+        visibleEventCount,
+      }: {
+        pageCount: number;
+        stream: { name: string; nextOffset: string } | null;
+        visibleEventCount?: bigint;
+      }) => {
+        const latestEventCount = stream
+          ? BigInt(stream.nextOffset)
+          : currentNextOffset;
+        const resolvedVisibleEventCount = visibleEventCount ?? 13_230_750n;
+        const hiddenNewerEventCount =
+          phase === "initial"
+            ? 0n
+            : latestEventCount - resolvedVisibleEventCount;
+        const shouldReturnEvents = phase === "resolved";
+
+        return {
+          collection: null,
+          events: shouldReturnEvents
+            ? Array.from({ length: 50 }, (_unused, index) => {
+                const sequence = latestEventCount - BigInt(index);
+
+                return {
+                  body: {
+                    headers: {
+                      timestamp: "2026-03-24T14:42:48.875Z",
+                    },
+                    message: `golden-${sequence.toString()}`,
+                    value: {
+                      id: `golden-${sequence.toString()}`,
+                    },
+                  },
+                  exactTimestamp: "2026-03-24T14:42:48.875Z",
+                  id: `golden-stream-2:event:${pageCount}:${sequence.toString()}`,
+                  indexedFields: [],
+                  key: null,
+                  offset: `offset-${sequence.toString()}`,
+                  preview: `{"id":"golden-${sequence.toString()}"}`,
+                  sequence: sequence.toString(),
+                  sizeBytes: 96,
+                  sortOffset: `offset-${sequence.toString()}`,
+                  streamName: "golden-stream-2",
+                };
+              })
+            : [],
+          hasHiddenNewerEvents: hiddenNewerEventCount > 0n,
+          hasMoreEvents: true,
+          hiddenNewerEventCount,
+          isFetching: !shouldReturnEvents,
+          matchedEventCount: null,
+          pageSize: 50,
+          queryScopeKey: `scope:${phase}:${pageCount}:${resolvedVisibleEventCount.toString()}`,
+          refetch: vi.fn(() => Promise.resolve()),
+          totalEventCount: latestEventCount,
+          visibleEventCount: resolvedVisibleEventCount,
+        };
+      },
+    );
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<StreamView />);
+      await Promise.resolve();
+    });
+
+    useStreamEventsMock.mockClear();
+    currentNextOffset = 13_231_000n;
+    phase = "hidden-while-fetching";
+
+    await act(async () => {
+      root.render(<StreamView />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(
+      useStreamEventsMock.mock.calls.every(
+        (call) => (call[0]?.pageCount ?? 0) === 1,
+      ),
+    ).toBe(true);
+
+    useStreamEventsMock.mockClear();
+    phase = "resolved";
+
+    await act(async () => {
+      root.render(<StreamView />);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(
+      useStreamEventsMock.mock.calls.map((call) => call[0]?.pageCount),
+    ).toContain(6);
 
     act(() => {
       root.unmount();
@@ -2034,6 +2334,278 @@ describe("StreamView", () => {
     container.remove();
   });
 
+  it("shows the routing-key selector when the stream exposes a routing key", () => {
+    useStreamDetailsMock.mockReturnValue({
+      details: createSearchDetails(),
+    });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamView />);
+    });
+
+    expect(
+      container.querySelector('[data-testid="stream-routing-key-selector"]'),
+    ).not.toBeNull();
+    const selectorProps = streamRoutingKeySelectorMock.mock.calls[0]?.[0];
+
+    expect(selectorProps?.selectedRoutingKey).toBeNull();
+    expect(selectorProps?.streamName).toBe("prisma-wal");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("shows the routing-key selector even when the stream does not advertise search support", () => {
+    useStreamDetailsMock.mockReturnValue({
+      details: createStreamDetails({
+        routingKey: {
+          jsonPointer: "/repoName",
+          required: false,
+        },
+        search: null,
+      }),
+    });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamView />);
+    });
+
+    expect(
+      container.querySelector('[data-testid="stream-routing-key-selector"]'),
+    ).not.toBeNull();
+    const selectorProps = streamRoutingKeySelectorMock.mock.calls[0]?.[0];
+
+    expect(selectorProps?.selectedRoutingKey).toBeNull();
+    expect(selectorProps?.streamName).toBe("prisma-wal");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("passes the selected routing key to the selector and composes it into the effective search query", () => {
+    useNavigationMock.mockReturnValue({
+      searchParam: 'metric:"process.rss.bytes"',
+      streamAggregationRangeParam: null,
+      streamAggregationsParam: null,
+      streamFollowParam: "paused",
+      streamRoutingKeyParam: "repo/api",
+      streamParam: "prisma-wal",
+    });
+    useStreamDetailsMock.mockReturnValue({
+      details: createSearchDetails(),
+    });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamView />);
+    });
+
+    const selectorProps = streamRoutingKeySelectorMock.mock.calls[0]?.[0];
+    const useStreamEventsArgs = useStreamEventsMock.mock.calls.at(-1)?.[0];
+
+    expect(selectorProps?.selectedRoutingKey).toBe("repo/api");
+    expect(useStreamEventsArgs?.routingKey).toBe("repo/api");
+    expect(useStreamEventsArgs?.searchQuery).toBe(
+      'req:"repo/api" AND (metric:"process.rss.bytes")',
+    );
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("passes the selected routing key to normal stream reads when search support is absent", () => {
+    useNavigationMock.mockReturnValue({
+      searchParam: null,
+      streamAggregationRangeParam: null,
+      streamAggregationsParam: null,
+      streamFollowParam: "paused",
+      streamRoutingKeyParam: "repo/api",
+      streamParam: "prisma-wal",
+    });
+    useStreamDetailsMock.mockReturnValue({
+      details: createStreamDetails({
+        routingKey: {
+          jsonPointer: "/repoName",
+          required: false,
+        },
+        search: null,
+      }),
+    });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamView />);
+    });
+
+    const useStreamEventsArgs = useStreamEventsMock.mock.calls.at(-1)?.[0];
+
+    expect(useStreamEventsArgs?.routingKey).toBe("repo/api");
+    expect(useStreamEventsArgs?.searchQuery).toBe("");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("does not auto-grow the viewport window for standalone routing-key filtering when no rows are loaded", async () => {
+    useNavigationMock.mockReturnValue({
+      searchParam: null,
+      streamAggregationRangeParam: null,
+      streamAggregationsParam: null,
+      streamFollowParam: "paused",
+      streamRoutingKeyParam: "repo/api",
+      streamParam: "prisma-wal",
+    });
+    useStreamDetailsMock.mockReturnValue({
+      details: createStreamDetails({
+        routingKey: {
+          jsonPointer: "/repoName",
+          required: false,
+        },
+        search: null,
+      }),
+    });
+    useStreamEventsMock.mockImplementation(
+      ({
+        pageCount,
+        routingKey,
+        visibleEventCount,
+      }: {
+        pageCount: number;
+        routingKey?: string | null;
+        visibleEventCount?: bigint;
+      }) => ({
+        collection: null,
+        events: [],
+        hasHiddenNewerEvents: false,
+        hasMoreEvents: true,
+        hiddenNewerEventCount: 0n,
+        isFetching: false,
+        matchedEventCount: null,
+        pageSize: 50,
+        queryScopeKey: `routing:${routingKey ?? ""}:${pageCount}`,
+        refetch: vi.fn(() => Promise.resolve()),
+        totalEventCount: 500n,
+        visibleEventCount: visibleEventCount ?? 500n,
+      }),
+    );
+    const clientHeightDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLDivElement.prototype,
+      "clientHeight",
+    );
+    const scrollHeightDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLDivElement.prototype,
+      "scrollHeight",
+    );
+    const scrollTopDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLDivElement.prototype,
+      "scrollTop",
+    );
+    const getTestId = (value: unknown) =>
+      value instanceof HTMLDivElement ? value.getAttribute("data-testid") : "";
+
+    Object.defineProperty(HTMLDivElement.prototype, "clientHeight", {
+      configurable: true,
+      get() {
+        return getTestId(this) === "stream-events-scroll-container"
+          ? 400
+          : Number(clientHeightDescriptor?.get?.call(this) ?? 0);
+      },
+    });
+    Object.defineProperty(HTMLDivElement.prototype, "scrollHeight", {
+      configurable: true,
+      get() {
+        return getTestId(this) === "stream-events-scroll-container"
+          ? 120
+          : Number(scrollHeightDescriptor?.get?.call(this) ?? 0);
+      },
+    });
+    Object.defineProperty(HTMLDivElement.prototype, "scrollTop", {
+      configurable: true,
+      get() {
+        return 0;
+      },
+      set() {},
+    });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    try {
+      act(() => {
+        root.render(<StreamView />);
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      const latestCall = useStreamEventsMock.mock.calls.at(-1)?.[0];
+
+      expect(latestCall?.routingKey).toBe("repo/api");
+      expect(latestCall?.searchQuery).toBe("");
+      expect(latestCall?.pageCount).toBe(1);
+      expect(container.textContent).toContain(
+        "No recent events match this routing key.",
+      );
+    } finally {
+      act(() => {
+        root.unmount();
+      });
+      container.remove();
+
+      if (clientHeightDescriptor) {
+        Object.defineProperty(
+          HTMLDivElement.prototype,
+          "clientHeight",
+          clientHeightDescriptor,
+        );
+      } else {
+        delete (HTMLDivElement.prototype as { clientHeight?: number })
+          .clientHeight;
+      }
+
+      if (scrollHeightDescriptor) {
+        Object.defineProperty(
+          HTMLDivElement.prototype,
+          "scrollHeight",
+          scrollHeightDescriptor,
+        );
+      } else {
+        delete (HTMLDivElement.prototype as { scrollHeight?: number })
+          .scrollHeight;
+      }
+
+      if (scrollTopDescriptor) {
+        Object.defineProperty(
+          HTMLDivElement.prototype,
+          "scrollTop",
+          scrollTopDescriptor,
+        );
+      } else {
+        delete (HTMLDivElement.prototype as { scrollTop?: number }).scrollTop;
+      }
+    }
+  });
+
   it("opens stream diagnostics from the footer summary and shows available storage details", () => {
     useNavigationMock.mockReturnValue({
       searchParam: null,
@@ -2087,6 +2659,18 @@ describe("StreamView", () => {
             retiredRunCount: 1,
             updatedAt: "2026-03-24T14:42:59.000Z",
           },
+          routingKeyLexicon: {
+            activeRunCount: 2,
+            bytesAtRest: 1_536n,
+            configured: true,
+            fullyIndexedUploadedSegments: false,
+            indexedSegmentCount: 6,
+            lagMs: 60_000n,
+            lagSegments: 2,
+            objectCount: 2,
+            retiredRunCount: 0,
+            updatedAt: "2026-03-24T14:42:58.000Z",
+          },
           searchFamilies: [
             {
               bytesAtRest: 8_192n,
@@ -2130,6 +2714,18 @@ describe("StreamView", () => {
         },
         pendingBytes: 512n,
         pendingRows: 9n,
+        serverConfiguredLimits: {
+          caches: {
+            companionFileCacheBytes: 512n * 1024n * 1024n,
+            companionSectionCacheBytes: 32n * 1024n * 1024n,
+            companionTocCacheBytes: 1n * 1024n * 1024n,
+            indexRunDiskCacheBytes: 256n * 1024n * 1024n,
+            indexRunMemoryCacheBytes: 32n * 1024n * 1024n,
+            segmentCacheBytes: 512n * 1024n * 1024n,
+            sqliteCacheBytes: 128n * 1024n * 1024n,
+            workerSqliteCacheBytes: 16n * 1024n * 1024n,
+          },
+        },
         segmentCount: 10,
         storage: {
           companionFamilies: {
@@ -2141,6 +2737,7 @@ describe("StreamView", () => {
           localStorage: {
             companionCacheBytes: 5_408n,
             exactIndexCacheBytes: 64n,
+            lexiconIndexCacheBytes: 96n,
             pendingSealedSegmentBytes: 128n,
             pendingTailBytes: 256n,
             routingIndexCacheBytes: 32n,
@@ -2156,6 +2753,7 @@ describe("StreamView", () => {
             manifestAndMetaBytes: 768n,
             manifestBytes: 512n,
             routingIndexObjectCount: 1,
+            routingLexiconObjectCount: 2,
             schemaRegistryBytes: 256n,
             segmentObjectCount: 8,
             segmentsBytes: 65_536n,
@@ -2216,6 +2814,7 @@ describe("StreamView", () => {
     expect(document.body.textContent).toContain("Segment index files");
     expect(document.body.textContent).toContain("Exact runs");
     expect(document.body.textContent).toContain("Routing runs");
+    expect(document.body.textContent).toContain("Routing key lexicon");
     expect(document.body.textContent).toContain("Indexes total");
     expect(document.body.textContent).toContain("Manifest");
     expect(document.body.textContent).toContain("Schema");
@@ -2236,6 +2835,7 @@ describe("StreamView", () => {
       "Next build at 21 uploaded segments",
     );
     expect(document.body.textContent).toContain("routing key");
+    expect(document.body.textContent).toContain("routing key lexicon");
     expect(document.body.textContent).toContain("metric");
     expect(document.body.textContent).toContain(
       "GET + HEAD + LIST read-side requests recorded by this Streams process.",
@@ -2267,9 +2867,15 @@ describe("StreamView", () => {
     expect(localStorageSection?.getAttribute("data-state")).toBe("open");
     expect(localStorageSection?.textContent).toContain("Retained stream data");
     expect(localStorageSection?.textContent).toContain("2.1 KB");
+    expect(localStorageSection?.textContent).toContain("Routing lexicon cache");
     expect(localStorageSection?.textContent).toContain("Companion cache");
     expect(localStorageSection?.textContent).toContain("5.3 KB");
-    expect(localStorageSection?.textContent).toContain("5.9 KB");
+    expect(localStorageSection?.textContent).toContain("6.0 KB");
+    expect(localStorageSection?.textContent).toContain("(512 MiB cap)");
+    expect(localStorageSection?.textContent).toContain("(256 MiB cap)");
+    expect(localStorageSection?.textContent).toContain(
+      "This is a server cap, shared by all streams.",
+    );
     expect(localStorageToggle?.textContent).not.toContain("8.0 KB");
     expect(requestAccountingSection?.getAttribute("data-state")).toBe("open");
     expect(requestAccountingSection?.textContent).toContain("GET");
@@ -2334,6 +2940,18 @@ describe("StreamView", () => {
           },
           profile: "metrics",
           routingKeyIndex: {
+            activeRunCount: 0,
+            bytesAtRest: 0n,
+            configured: false,
+            fullyIndexedUploadedSegments: false,
+            indexedSegmentCount: 0,
+            lagMs: null,
+            lagSegments: 0,
+            objectCount: 0,
+            retiredRunCount: 0,
+            updatedAt: null,
+          },
+          routingKeyLexicon: {
             activeRunCount: 0,
             bytesAtRest: 0n,
             configured: false,
@@ -2435,6 +3053,18 @@ describe("StreamView", () => {
           },
           profile: "metrics",
           routingKeyIndex: {
+            activeRunCount: 0,
+            bytesAtRest: 0n,
+            configured: false,
+            fullyIndexedUploadedSegments: false,
+            indexedSegmentCount: 0,
+            lagMs: null,
+            lagSegments: 0,
+            objectCount: 0,
+            retiredRunCount: 0,
+            updatedAt: null,
+          },
+          routingKeyLexicon: {
             activeRunCount: 0,
             bytesAtRest: 0n,
             configured: false,
@@ -3598,6 +4228,58 @@ describe("StreamView", () => {
       refreshIntervalMs: undefined,
       streamName: "prisma-wal",
     });
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("disables _details live polling for standalone routing-key reads", () => {
+    useNavigationMock.mockReturnValue({
+      streamAggregationRangeParam: null,
+      streamAggregationsParam: null,
+      streamFollowParam: "live",
+      streamParam: "golden-stream-2",
+      streamRoutingKeyParam: "0--key/boomerang",
+    });
+    useStreamDetailsMock.mockReturnValue({
+      details: createStreamDetails({
+        name: "golden-stream-2",
+        routingKey: {
+          jsonPointer: "/repoName",
+          required: false,
+        },
+        search: null,
+      }),
+    });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamView />);
+    });
+
+    const useStreamDetailsArgs = useStreamDetailsMock.mock.calls.at(-1)?.[0];
+
+    expect(useStreamDetailsArgs?.refreshIntervalMs).toBe(100);
+    expect(useStreamDetailsArgs?.streamName).toBe("golden-stream-2");
+    expect(typeof useStreamDetailsArgs?.shouldEnableLongPolling).toBe(
+      "function",
+    );
+    expect(
+      useStreamDetailsArgs?.shouldEnableLongPolling?.(
+        createStreamDetails({
+          name: "golden-stream-2",
+          routingKey: {
+            jsonPointer: "/repoName",
+            required: false,
+          },
+          search: null,
+        }),
+      ),
+    ).toBe(false);
 
     act(() => {
       root.unmount();

@@ -46,6 +46,10 @@ import { useUiState } from "../../../hooks/use-ui-state";
 import { ExpandableSearchControl } from "../../input/ExpandableSearchControl";
 import { StudioHeader } from "../../StudioHeader";
 import { ViewProps } from "../View";
+import {
+  applyRoutingKeySearchSelection,
+  resolveRoutingKeySearchField,
+} from "./stream-routing-key-search";
 import { HighlightedStreamEventJson } from "./stream-search-highlight";
 import {
   mergeRememberedStreamSearchEvents,
@@ -53,6 +57,7 @@ import {
 } from "./stream-search-suggestions";
 import { StreamAggregationsPanel } from "./StreamAggregationsPanel";
 import { StreamDiagnosticsPopover } from "./StreamDiagnosticsPopover";
+import { StreamRoutingKeySelector } from "./StreamRoutingKeySelector";
 import { useStreamEventSearch } from "./use-stream-event-search";
 
 const LOAD_MORE_THRESHOLD_PX = 160;
@@ -206,6 +211,10 @@ function parseNonNegativeBigInt(value: string): bigint {
   } catch {
     return 0n;
   }
+}
+
+function normalizeRoutingKeySelection(value: string | null): string {
+  return value?.trim() ?? "";
 }
 
 function formatNewEventsLabel(count: bigint): string {
@@ -374,6 +383,23 @@ function getPageCountForTotalEventCount(
   return totalPages > BigInt(Number.MAX_SAFE_INTEGER)
     ? Number.MAX_SAFE_INTEGER
     : Number(totalPages);
+}
+
+function getPageCountForRevealedTailWindow(args: {
+  currentPageCount: number;
+  hiddenNewerEventCount: bigint;
+  pageSize: number;
+  visibleEventCount: bigint;
+}): number {
+  const currentVisibleWindowEventCount =
+    args.visibleEventCount < BigInt(args.currentPageCount * args.pageSize)
+      ? args.visibleEventCount
+      : BigInt(args.currentPageCount * args.pageSize);
+
+  return getPageCountForTotalEventCount(
+    currentVisibleWindowEventCount + args.hiddenNewerEventCount,
+    args.pageSize,
+  );
 }
 
 function scrollContainerToPosition(
@@ -590,19 +616,46 @@ function ActiveStreamView(props: {
   setStreamFollowParam: (
     value: string | null | ((previous: string | null) => string | null),
   ) => Promise<URLSearchParams>;
+  setStreamRoutingKeyParam: (
+    value: string | null | ((previous: string | null) => string | null),
+  ) => Promise<URLSearchParams>;
   streamAggregationRangeParam: string | null;
+  streamRoutingKeyParam: string | null;
 }) {
   const followMode = props.followMode;
   const isPollingEnabled = followMode !== "paused";
   const selectedStream = props.selectedStream;
   const selectedStreamDetails = props.selectedStream;
   const supportsStreamSearch = selectedStreamDetails?.search != null;
+  const supportsRoutingKeySelection = selectedStreamDetails?.routingKey != null;
+  const selectedRoutingKey = supportsRoutingKeySelection
+    ? normalizeRoutingKeySelection(props.streamRoutingKeyParam)
+    : "";
+  const routingKeySearchField = useMemo(
+    () =>
+      resolveRoutingKeySearchField({
+        routingKey: selectedStreamDetails?.routingKey,
+        searchConfig: selectedStreamDetails?.search,
+      }),
+    [selectedStreamDetails?.routingKey, selectedStreamDetails?.search],
+  );
   const activeSearchQuery = supportsStreamSearch
     ? (props.searchParam?.trim() ?? "")
     : "";
-  const isSearchActive = activeSearchQuery.length > 0;
+  const effectiveSearchQuery =
+    selectedRoutingKey.length > 0 && routingKeySearchField
+      ? applyRoutingKeySearchSelection({
+          currentSearchTerm: activeSearchQuery,
+          queryFieldName: routingKeySearchField.queryFieldName,
+          routingKey: selectedRoutingKey,
+        })
+      : activeSearchQuery;
+  const isSearchActive =
+    supportsStreamSearch && effectiveSearchQuery.length > 0;
+  const hasStandaloneRoutingKeyFilter =
+    selectedRoutingKey.length > 0 && !isSearchActive;
   const selectedStreamIdentity = `${selectedStream.name}:${selectedStream.epoch}`;
-  const streamEventWindowResetKey = `${selectedStreamIdentity ?? "none"}::${activeSearchQuery}`;
+  const streamEventWindowResetKey = `${selectedStreamIdentity ?? "none"}::${selectedRoutingKey}::${effectiveSearchQuery}`;
   const [pageCount, setPageCount] = useState(1);
   const [searchVisibleResultCount, setSearchVisibleResultCount] = useState<
     bigint | null
@@ -664,8 +717,9 @@ function ActiveStreamView(props: {
   } = useStreamEvents({
     liveUpdatesEnabled: isPollingEnabled && !isScrollTriggeredSearchLoadPending,
     pageCount,
+    routingKey: selectedRoutingKey,
     searchConfig: selectedStreamDetails?.search,
-    searchQuery: activeSearchQuery,
+    searchQuery: effectiveSearchQuery,
     searchVisibleResultCount: isSearchActive
       ? requestedSearchResultCount
       : undefined,
@@ -695,10 +749,14 @@ function ActiveStreamView(props: {
       : 0n;
   const hiddenNewerEventCount = isSearchActive
     ? searchHiddenNewerEventCount
-    : hookHiddenNewerEventCount;
+    : hasStandaloneRoutingKeyFilter
+      ? 0n
+      : hookHiddenNewerEventCount;
   const hasHiddenNewerEvents = isSearchActive
     ? searchHiddenNewerEventCount > 0n
-    : hookHasHiddenNewerEvents;
+    : hasStandaloneRoutingKeyFilter
+      ? false
+      : hookHasHiddenNewerEvents;
   const aggregationRollups = selectedStreamDetails?.aggregationRollups ?? [];
   const { aggregations } = useStreamAggregations({
     aggregationRollups,
@@ -1006,6 +1064,11 @@ function ActiveStreamView(props: {
     }
 
     const latestEventCount = parseNonNegativeBigInt(selectedStream.nextOffset);
+    const currentVisibleEventCount = visibleEventCount ?? latestEventCount;
+    const hiddenEventCount =
+      latestEventCount > currentVisibleEventCount
+        ? latestEventCount - currentVisibleEventCount
+        : 0n;
 
     setVisibleEventCount((currentValue) => {
       const resolvedCurrentValue = currentValue ?? latestEventCount;
@@ -1030,8 +1093,15 @@ function ActiveStreamView(props: {
 
       return latestEventCount;
     });
-    setPageCount(
-      getPageCountForTotalEventCount(latestEventCount, STREAM_EVENTS_PAGE_SIZE),
+    setPageCount((currentPageCount) =>
+      hiddenEventCount === 0n
+        ? currentPageCount
+        : getPageCountForRevealedTailWindow({
+            currentPageCount,
+            hiddenNewerEventCount: hiddenEventCount,
+            pageSize: STREAM_EVENTS_PAGE_SIZE,
+            visibleEventCount: totalEventCount,
+          }),
     );
   }, [
     firstEventId,
@@ -1041,6 +1111,7 @@ function ActiveStreamView(props: {
     selectedStream,
     selectedStreamIdentity,
     totalEventCount,
+    visibleEventCount,
   ]);
 
   const jumpToLatestEvents = useCallback(() => {
@@ -1192,6 +1263,10 @@ function ActiveStreamView(props: {
       return;
     }
 
+    if (isFetching && events.length === 0) {
+      return;
+    }
+
     if (isTailViewportPinned) {
       queuePendingScrollPosition("top");
     }
@@ -1201,6 +1276,8 @@ function ActiveStreamView(props: {
     followMode,
     hasHiddenNewerEvents,
     isTailViewportPinned,
+    isFetching,
+    events.length,
     queuePendingScrollPosition,
     revealAllNewerEvents,
     selectedStream,
@@ -1238,6 +1315,14 @@ function ActiveStreamView(props: {
         return;
       }
 
+      if (
+        trigger === "auto" &&
+        hasStandaloneRoutingKeyFilter &&
+        events.length === 0
+      ) {
+        return;
+      }
+
       if (scrollContainer.clientHeight <= 0) {
         return;
       }
@@ -1265,7 +1350,9 @@ function ActiveStreamView(props: {
       }
     },
     [
+      events.length,
       hasMoreEvents,
+      hasStandaloneRoutingKeyFilter,
       isFetching,
       isScrollTriggeredSearchLoadPending,
       isSearchActive,
@@ -1468,6 +1555,15 @@ function ActiveStreamView(props: {
               <ChartColumn />
             </Button>
           ) : null}
+          {selectedStream && supportsRoutingKeySelection ? (
+            <StreamRoutingKeySelector
+              selectedRoutingKey={
+                selectedRoutingKey.length > 0 ? selectedRoutingKey : null
+              }
+              setSelectedRoutingKeyParam={props.setStreamRoutingKeyParam}
+              streamName={selectedStream.name}
+            />
+          ) : null}
           {supportsStreamSearch ? (
             <StreamSearchHeaderControl
               searchConfig={selectedStreamDetails?.search}
@@ -1531,7 +1627,9 @@ function ActiveStreamView(props: {
               <div className="flex min-h-full items-center justify-center px-6 py-10 text-sm text-muted-foreground">
                 {isSearchActive
                   ? "No events match this search."
-                  : "This stream does not contain any events yet."}
+                  : hasStandaloneRoutingKeyFilter
+                    ? "No recent events match this routing key."
+                    : "This stream does not contain any events yet."}
               </div>
             ) : (
               <>
@@ -1710,15 +1808,45 @@ export function StreamView(_props: ViewProps) {
     setStreamAggregationRangeParam,
     setStreamAggregationsParam,
     setStreamFollowParam,
+    setStreamRoutingKeyParam,
     streamAggregationRangeParam,
     streamAggregationsParam,
     streamFollowParam,
+    streamRoutingKeyParam,
     streamParam,
   } = useNavigation();
   const followMode =
     parseStreamFollowMode(streamFollowParam) ?? STREAM_FOLLOW_MODE_DEFAULT;
   const isPollingEnabled = followMode !== "paused";
   const selectedStreamName = streamParam?.trim() || null;
+  const selectedRoutingKey = normalizeRoutingKeySelection(
+    streamRoutingKeyParam,
+  );
+  const shouldEnableStreamDetailsLongPolling = useCallback(
+    (details: StudioStreamDetails) => {
+      if (selectedRoutingKey.length === 0) {
+        return true;
+      }
+
+      const routingKeySearchField = resolveRoutingKeySearchField({
+        routingKey: details.routingKey,
+        searchConfig: details.search,
+      });
+      const activeSearchQuery =
+        details.search != null ? (searchParam?.trim() ?? "") : "";
+      const effectiveSearchQuery =
+        routingKeySearchField != null
+          ? applyRoutingKeySearchSelection({
+              currentSearchTerm: activeSearchQuery,
+              queryFieldName: routingKeySearchField.queryFieldName,
+              routingKey: selectedRoutingKey,
+            })
+          : activeSearchQuery;
+
+      return details.search != null && effectiveSearchQuery.length > 0;
+    },
+    [searchParam, selectedRoutingKey],
+  );
   const {
     details: selectedStream,
     isError: isSelectedStreamDetailsError,
@@ -1727,6 +1855,10 @@ export function StreamView(_props: ViewProps) {
     refreshIntervalMs:
       selectedStreamName && isPollingEnabled
         ? STREAM_FOLLOW_REFRESH_INTERVAL_MS
+        : undefined,
+    shouldEnableLongPolling:
+      selectedRoutingKey.length > 0
+        ? shouldEnableStreamDetailsLongPolling
         : undefined,
     streamName: selectedStreamName,
   });
@@ -1873,7 +2005,9 @@ export function StreamView(_props: ViewProps) {
       setStreamAggregationRangeParam={setStreamAggregationRangeParam}
       setStreamAggregationsParam={setStreamAggregationsParam}
       setStreamFollowParam={setStreamFollowParam}
+      setStreamRoutingKeyParam={setStreamRoutingKeyParam}
       streamAggregationRangeParam={streamAggregationRangeParam}
+      streamRoutingKeyParam={streamRoutingKeyParam}
     />
   );
 }

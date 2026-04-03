@@ -188,6 +188,8 @@ function useNavigationInternal() {
     useQueryState("aggregations");
   const [streamFollowParam, setStreamFollowParam] =
     useQueryState("streamFollow");
+  const [streamRoutingKeyParam, setStreamRoutingKeyParam] =
+    useQueryState("streamRoutingKey");
   const [streamParam, setStreamParam] = useQueryState("stream");
   const [tableParam, setTableParam] = useQueryState("table", {
     defaultValue: defaults.table,
@@ -240,6 +242,7 @@ function useNavigationInternal() {
     streamAggregationRangeParam,
     streamAggregationsParam,
     streamFollowParam,
+    streamRoutingKeyParam,
     streamParam,
     tableParam,
     viewParam: resolvedViewParam,
@@ -256,6 +259,8 @@ function useNavigationInternal() {
     setStreamAggregationsParam:
       setStreamAggregationsParam as NuqsSetNullableValue<string>,
     setStreamFollowParam: setStreamFollowParam as NuqsSetNullableValue<string>,
+    setStreamRoutingKeyParam:
+      setStreamRoutingKeyParam as NuqsSetNullableValue<string>,
     setStreamParam: setStreamParam as NuqsSetNullableValue<string>,
     setTableParam: setTableParam as NuqsSetNullableValue<string>,
     setViewParam: setViewParam as NuqsSetNullableValue<string>,

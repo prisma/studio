@@ -21,6 +21,7 @@ This architecture governs:
 - infinite-scroll page growth for older events
 - URL-backed stream follow mode selection
 - URL-backed stream search term state
+- URL-backed stream routing-key selection state
 - URL-backed aggregation-panel visibility and aggregation range selection
 - batched reveal of newly arrived events
 - transient highlighting of newly revealed event rows
@@ -48,6 +49,7 @@ Stream-event reads MUST be parameterized by:
 - `streamsUrl`
 - `stream.name`
 - `stream.epoch`
+- the URL-backed selected routing key, when one is active
 - either the tail-window inputs `visibleEventCount`, `pageSize`, and `pageCount`
 - or the search inputs `searchQuery`, `visibleSearchResultCount`, and the resolved search sort order
 
@@ -73,6 +75,8 @@ The view MUST reset `pageCount` back to `1` and reset `visibleEventCount` back t
 
 When the active stream advertises `schema.search` metadata and the URL-backed `search` param is non-empty, `useStreamEvents` MUST switch from the normal stream read endpoint to `POST /v1/stream/{name}/_search`.
 
+If the stream also has a selected routing key and `schema.search` exposes an exact keyword field bound to the routing-key pointer, `useStreamEvents` SHOULD compose that selected key into the effective search query instead of mutating the visible search-box value.
+
 In search mode:
 
 - the visible list MUST be reset before loading the new result set
@@ -93,7 +97,10 @@ In search mode:
 - the "Reached the beginning of the stream" message MUST stay hidden while an older filtered page is still loading, and MUST appear only after the filtered request resolves without any additional older results
 
 When the search term is empty, `useStreamEvents` MUST stay on the normal `GET /v1/stream/{name}` read path and MUST tear down any stale search-query work instead of letting `_search` continue in the background.
+When a selected routing key is active but the stream does not expose a compatible exact keyword search field, `useStreamEvents` MUST keep using the normal read path and apply the routing-key filter through `key=<routingKey>` on the read URL instead of fabricating a `_search` clause that the schema cannot represent.
+In that standalone routing-key mode, `useStreamEvents` MUST reset the keyed browse cursor back to `offset=-1` when the selected key changes instead of preserving the current tail-window cursor from the unfiltered stream. Older keyed history MUST then page forward from the returned `Stream-Next-Offset` headers until Studio has collected the requested number of matching rows or the keyed scan reaches the current stream end.
 The stream view MUST clear search-mode visible-result state when the active stream or active search term changes.
+The routing-key selector MUST treat `_routing_keys` as a best-effort browse surface when `coverage.complete=false`, even if the server also returns `next_after`. That browse-only selector MUST NOT present operator-facing lexicon lag or local `.lex` cache residency inside the picker itself; that status belongs in the stream diagnostics popover instead.
 
 ### 4. Collection creation and reuse
 
@@ -127,9 +134,17 @@ The stream view MUST treat that latest metadata count separately from `visibleEv
 - the latest event count plus logical payload-byte total MUST render together in a fixed footer summary box, labeled clearly so byte totals stay distinct from the event count
 - the active stream page MUST derive `epoch`, `nextOffset`, and the rest of the active stream summary from `useStreamDetails`, not by polling the full `/v1/streams` list in parallel
 - when `useStreamDetails` exposes `schema.search`, the header MUST render the same expandable search control used by the table view instead of introducing a stream-only search input
+- when `useStreamDetails` exposes `schema.routingKey`, the header MUST render a routing-key selector beside search even if the stream does not advertise `schema.search`
+- when a routing key is selected, that header selector SHOULD expand from its icon-only trigger and show the selected key inline so the active filter remains visible even while the popover is closed
+- when a routing key is selected, the clear action SHOULD live in that same closed trigger as a hover-only affordance instead of duplicating the selected-key state in a second row inside the popover
 - that shared stream search control MUST live in the left header control cluster beside the aggregation toggle and expand to fill the remaining header width instead of consuming a fixed narrow slot on the right
 - when the shared stream search control is open, it MUST expose a trailing close button inside the field so the expanded state can be dismissed without reaching back to the original icon trigger
 - stream search state MUST be URL-backed through the shared `search` param so search deep links work the same way for tables and searchable streams
+- routing-key selection MUST keep its own URL-backed `streamRoutingKey` state instead of rewriting the shared `search` param; clearing that selector MUST remove the routing-key filter without disturbing the visible search text
+- applying a standalone routing-key selection on a non-search stream MUST restart keyed browsing from the beginning of the stream instead of preserving the previously revealed near-head window
+- when a standalone routing-key filter is active on a non-search stream, the page shell MUST suppress `_details` live/tail long polling as soon as the resolved stream descriptor proves the selected key is using the plain read path, because that stream-wide metadata cannot tell Studio whether newer appends match the selected key
+- when a standalone routing-key filter is active on a non-search stream and the newest loaded window contains no matching rows, the stream view MUST stop the automatic viewport-fill pagination loop instead of repeatedly widening the keyed read window in the background
+- in that standalone routing-key case, the empty state MUST explain that no recent events match the selected routing key instead of claiming the stream is empty
 - while the user is typing into stream search, the shared search control SHOULD offer syntactically valid inline suggestions derived from the active stream search schema plus values from the event rows currently loaded in the UI
 - when the stream search control first opens with an empty input, it SHOULD immediately offer starter field-clause suggestions so autocomplete is discoverable without a priming keystroke
 - those inline suggestions MUST be context-aware: incomplete field-name prefixes such as `met` SHOULD suggest complete field clauses like `metric:`, incomplete fielded clauses such as `metric:` SHOULD suggest valid field values from the currently loaded rows, and a complete clause followed by whitespace SHOULD suggest boolean operators such as `AND`, `OR`, and `NOT`
@@ -148,6 +163,8 @@ The stream view MUST treat that latest metadata count separately from `visibleEv
 - when the follow mode is `paused`, Studio MUST stop the active-stream details polling loop so the stream view no longer issues background refresh requests
 - when the follow mode is `live`, Studio MUST keep the current hidden-new-events behavior: detect newer rows, keep them out of the list, surface the centered `new events` button, and drive active-stream summary refresh through `_details` conditional long polling with `If-None-Match`
 - when the follow mode is `tail`, Studio MUST automatically reveal newer rows, retain the same motion-safe row highlight treatment used for manual reveal, and use that same `_details` conditional long-poll path
+- when `tail` reveals newer rows, it MUST only grow the visible window enough to preserve the already rendered rows plus the newly revealed batch; it MUST NOT inflate `pageCount` to the full stream history just because the total stream count is large
+- when the first tail-window fetch is still unresolved and the list is still empty, `tail` MUST defer auto-reveal until that first window has rendered so the event pane does not stay trapped on the loading skeleton while the stream head keeps advancing
 - while the user remains at the head of the stream in `tail`, Studio MUST keep the event list pinned back to the top when newer rows arrive
 - once the user intentionally scrolls away from the head in `tail`, Studio MUST stop forcing the viewport back to the top until they return to the head or explicitly jump back to the newest rows
 - when stream search is active, `live` and `tail` MUST respect the active filter instead of reverting to raw stream-head behavior
@@ -186,15 +203,16 @@ The stream view MUST treat that latest metadata count separately from `visibleEv
 - clicking that footer summary box MUST open a diagnostics popover directly above it
 - that diagnostics popover MUST be driven only from `useStreamDetails`; the stream view MUST NOT add a second `_details`, `/_index_status`, or metrics polling path just for footer diagnostics
 - the diagnostics popover MUST separate logical payload size from physical storage signals, using `_details.stream.total_size_bytes` for the former and the richer `_details.storage`, `_details.object_store_requests`, and `_details.index_status` buckets for the latter
-- the diagnostics popover MUST split remote bytes into explicit buckets for segments, bundled companions, exact runs, routing runs, and manifest/schema metadata instead of collapsing them into a generic `objects known` label
-- the diagnostics popover MUST split local retained bytes into retained WAL, pending tail, pending sealed segments, and caches; pending tail MUST be presented as a non-additive breakdown of retained WAL rather than a second bucket added into retained-stream totals, and cache totals MUST include any companion-cache bytes surfaced by Streams
+- the diagnostics popover MUST split remote bytes into explicit buckets for segments, bundled companions, exact runs, routing runs, routing-key lexicon files, and manifest/schema metadata instead of collapsing them into a generic `objects known` label
+- the diagnostics popover MUST split local retained bytes into retained WAL, pending tail, pending sealed segments, and caches; pending tail MUST be presented as a non-additive breakdown of retained WAL rather than a second bucket added into retained-stream totals, and cache totals MUST include any companion-cache bytes plus routing-key lexicon cache bytes surfaced by Streams
 - the remote and local storage breakdowns inside that diagnostics popover SHOULD render as compact collapsible ledger boxes with the section title embedded in the box header, and when collapsed that header MUST surface the section total while the detailed rows fold closed with a short CSS transition
 - request accounting inside that diagnostics popover SHOULD use the same ledger language: `GET`, `HEAD`, and `LIST` rows MUST roll up into `Reads total`, `Puts total` MUST remain separate, and the section MUST expose a final request total for the current Streams node
-- the diagnostics popover MUST separate bundled search coverage from run accelerators: search-family rows answer whether bundled companions are fully accelerating search right now, while routing and exact run rows answer how much historical pruning has been built
+- the diagnostics popover MUST separate bundled search coverage from run accelerators: search-family rows answer whether bundled companions are fully accelerating search right now, while routing runs, routing-key lexicon runs, and exact run rows answer how much historical pruning or routing-key listing coverage has been built
 - run-accelerator rows MUST use state-aware text instead of a generic `N segments behind` badge: `Caught up`, `Waiting for next full 16-segment span`, or `Backfilling`, based on the single-snapshot lag and the fixed 16-segment build span
-- when the routing-key index is not configured, the diagnostics popover MUST hide that run-accelerator row instead of presenting it as lagging progress
+- when the routing-key index or routing-key lexicon is not configured, the diagnostics popover MUST hide that run-accelerator row instead of presenting it as lagging progress
 - the diagnostics popover MUST treat `_details.object_store_requests` as node-local accounting for the current Streams process and MUST label it accordingly
 - when the current Streams descriptor does not expose a requested cost or storage number, the diagnostics popover MUST render that field as unavailable instead of guessing or deriving a misleading approximation
+- when a standalone routing-key filter is active on a non-search stream, the stream footer MUST NOT derive hidden-new-event counts from the raw stream head because the read endpoint does not expose routing-key-aware match totals on that path
 
 When a newer-event batch is revealed, the view MUST also grow `pageCount` so previously visible rows stay in the list instead of being replaced by the newer batch.
 
@@ -241,6 +259,7 @@ The active expanded event row MUST be stored through `useUiState` with a stream-
 Stream navigation chrome MUST be URL-backed through `useNavigation` with keys such as:
 
 - `streamFollow`
+- `streamRoutingKey`
 - `aggregations`
 - `streamAggregationRange`
 - `search`

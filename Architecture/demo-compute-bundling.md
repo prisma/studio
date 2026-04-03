@@ -10,6 +10,8 @@ The `demo/ppg-dev` server has two runtime modes:
 
 The deploy path exists because the demo server is not just a Bun server entrypoint. In development it expects the Studio repo checkout so it can rebuild `client.tsx` and `ui/index.css` at runtime.
 
+Bundled deploy mode uses the embedded local Prisma Streams runtime exactly as published by `@prisma/streams-local`, so Studio does not carry a second demo-local memory autotune layer on top of Streams' own defaults.
+
 ## Build Responsibilities
 
 `demo/ppg-dev/build-compute.ts` is the production packager for the demo.

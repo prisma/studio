@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { StudioStreamSearchConfig } from "./use-stream-details";
 import {
+  createStreamReadUrl,
   encodeStreamOffset,
   getStreamEventsWindow,
   useStreamEvents,
@@ -53,6 +54,7 @@ function renderHarness(args: {
   liveUpdatesEnabled?: boolean;
   pageCount?: number;
   pageSize?: number;
+  routingKey?: string | null;
   searchConfig?: StudioStreamSearchConfig | null;
   searchQuery?: string;
   searchVisibleResultCount?: bigint;
@@ -75,6 +77,7 @@ function renderHarness(args: {
       liveUpdatesEnabled: currentArgs.liveUpdatesEnabled,
       pageCount: currentArgs.pageCount ?? 1,
       pageSize: currentArgs.pageSize,
+      routingKey: currentArgs.routingKey,
       searchConfig: currentArgs.searchConfig,
       searchQuery: currentArgs.searchQuery,
       searchVisibleResultCount: currentArgs.searchVisibleResultCount,
@@ -251,6 +254,14 @@ describe("useStreamEvents", () => {
     });
   });
 
+  it("appends the selected routing key to normal read URLs", () => {
+    expect(
+      createStreamReadUrl("/api/streams", "golden-stream-2", "-1", "repo/api"),
+    ).toBe(
+      "/api/streams/v1/stream/golden-stream-2?format=json&offset=-1&key=repo%2Fapi",
+    );
+  });
+
   it("loads a tail window and normalizes events into newest-first rows", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
@@ -337,6 +348,119 @@ describe("useStreamEvents", () => {
     );
     expect(latestState?.events[0]?.sizeBytes).toBeGreaterThan(0);
     expect(latestState?.hasMoreEvents).toBe(true);
+
+    harness.cleanup();
+  });
+
+  it("uses the selected routing key on normal stream reads", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify(createStreamPayloadRange({ from: 0, toExclusive: 2 })),
+        {
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+      ),
+    );
+    const harness = renderHarness({
+      pageCount: 1,
+      routingKey: "repo/api",
+      stream: {
+        createdAt: "2026-03-24T14:42:38.890Z",
+        epoch: 0,
+        expiresAt: null,
+        name: "golden-stream-2",
+        nextOffset: "2",
+        sealedThrough: "-1",
+        uploadedThrough: "-1",
+      },
+      visibleEventCount: 2n,
+    });
+
+    await waitFor(() => harness.getLatestState()?.events.length === 2);
+
+    const fetchCall = fetchSpy.mock.calls[0] as [
+      string,
+      RequestInit | undefined,
+    ];
+
+    expect(fetchCall[0]).toBe(
+      "/api/streams/v1/stream/golden-stream-2?format=json&offset=-1&key=repo%2Fapi",
+    );
+
+    harness.cleanup();
+  });
+
+  it("starts standalone routing-key reads from the beginning of the stream and follows Stream-Next-Offset", async () => {
+    const nextOffset = encodeStreamOffset(0, 49n);
+    const endOffset = encodeStreamOffset(0, 199n);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((input) => {
+        const url = String(input);
+
+        if (
+          url ===
+          "/api/streams/v1/stream/golden-stream-2?format=json&offset=-1&key=0--key%2Fboomerang"
+        ) {
+          return Promise.resolve(
+            new Response(JSON.stringify([]), {
+              headers: {
+                "Stream-End-Offset": endOffset,
+                "Stream-Next-Offset": nextOffset,
+                "content-type": "application/json",
+              },
+            }),
+          );
+        }
+
+        if (
+          url ===
+          `/api/streams/v1/stream/golden-stream-2?format=json&offset=${nextOffset}&key=0--key%2Fboomerang`
+        ) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify(
+                createStreamPayloadRange({ from: 0, toExclusive: 2 }),
+              ),
+              {
+                headers: {
+                  "Stream-End-Offset": endOffset,
+                  "Stream-Next-Offset": endOffset,
+                  "content-type": "application/json",
+                },
+              },
+            ),
+          );
+        }
+
+        throw new Error(`Unexpected fetch URL: ${url}`);
+      });
+    const harness = renderHarness({
+      pageCount: 1,
+      routingKey: "0--key/boomerang",
+      stream: {
+        createdAt: "2026-03-24T14:42:38.890Z",
+        epoch: 0,
+        expiresAt: null,
+        name: "golden-stream-2",
+        nextOffset: "200",
+        sealedThrough: "-1",
+        uploadedThrough: "-1",
+      },
+    });
+
+    await waitFor(() => harness.getLatestState()?.events.length === 2);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe(
+      "/api/streams/v1/stream/golden-stream-2?format=json&offset=-1&key=0--key%2Fboomerang",
+    );
+    expect(fetchSpy.mock.calls[1]?.[0]).toBe(
+      `/api/streams/v1/stream/golden-stream-2?format=json&offset=${nextOffset}&key=0--key%2Fboomerang`,
+    );
+    expect(harness.getLatestState()?.hasMoreEvents).toBe(false);
 
     harness.cleanup();
   });

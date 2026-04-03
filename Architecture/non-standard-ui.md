@@ -94,6 +94,21 @@ It deliberately excludes:
   - Studio therefore keeps a custom anchored assist panel directly under the input, while still building the suggestion list from standard ShadCN `Command` primitives.
   - Keeping the feedback and suggestions inline avoids the layering and focus issues of a separate popover in this compact header layout, and it lets the suggestion list open immediately with starter field suggestions, stay content-sized above the sticky header row, hold partial field prefixes locally, preserve a stable keyboard selection during background refreshes, and still draw value candidates from remembered rows even when the currently visible filtered result set is empty.
 
+### Stream Routing Key Selector
+
+- Canonical components:
+  - [`ui/studio/views/stream/StreamRoutingKeySelector.tsx`](ui/studio/views/stream/StreamRoutingKeySelector.tsx)
+  - [`ui/hooks/use-stream-routing-keys.ts`](../ui/hooks/use-stream-routing-keys.ts)
+- Closest standard ShadCN alternatives:
+  - `Popover`
+  - `Command`
+  - `Input`
+- Why it stays non-standard:
+  - The stream header needs a compact routing-key picker that can sit beside the expanding search field, page through a potentially massive lexicographically sorted keyspace, and still support keyboard-first selection without rendering every key at once.
+  - The API only exposes cursor-based routing-key pages, and the selector now also owns a clearable selected-key state that must work even when the stream has no search schema.
+  - When a key is selected, the closed trigger also needs to expand into a compact inline pill that keeps the chosen routing key visible without stealing the full search-field slot.
+  - Studio therefore keeps a custom popover composite with a prefix input, a virtualized infinite list, and a hover-only clear affordance on the trigger itself instead of trying to force that behavior into a stock `Command` list.
+
 ### Stream Aggregation Strip
 
 - Canonical components:
@@ -127,7 +142,7 @@ It deliberately excludes:
   - `Badge`
 - Why it stays non-standard:
   - Studio needs a compact, stream-specific diagnostics surface anchored to the footer summary itself, mixing logical payload size, explicit object-storage and local-storage buckets, node-local request accounting, search-family coverage, and state-aware run-accelerator status in one dense popover.
-  - The storage breakdowns also need collapsible ledger-style accounting boxes whose headers surface the section totals when folded shut, which is not a stock ShadCN pattern.
+  - The storage breakdowns also need collapsible ledger-style accounting boxes whose headers surface the section totals when folded shut, plus faint shared-cap annotations that sit beside right-aligned byte values and one shared cap marker spanning both Routing and Exact cache rows, which is not a stock ShadCN pattern.
   - No stock ShadCN pattern covers that descriptor-driven observability layout, especially when the UI must distinguish logical bytes from physical storage signals, separate search coverage from historical run indexes, hide unconfigured routing rows, and keep the remaining cost caveats explicit instead of inventing unavailable totals.
 
 ## Standardization Candidates

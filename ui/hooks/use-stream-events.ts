@@ -60,6 +60,7 @@ export interface UseStreamEventsArgs {
   liveUpdatesEnabled?: boolean;
   pageCount: number;
   pageSize?: number;
+  routingKey?: string | null;
   searchConfig?: StudioStreamSearchConfig | null;
   searchQuery?: string;
   searchVisibleResultCount?: bigint;
@@ -85,6 +86,7 @@ export interface UseStreamEventsState {
 interface LastResolvedStreamEventsState {
   epoch: number;
   events: StudioStreamEvent[];
+  routingKey: string;
   searchQuery: string;
   streamName: string;
 }
@@ -117,11 +119,22 @@ interface StreamSearchMetadata {
   totalMatchCount: bigint;
 }
 
+interface StandaloneRoutingKeyReadMetadata {
+  hasMoreOlderResults: boolean;
+  isResolved: boolean;
+}
+
 const EMPTY_STREAM_SEARCH_METADATA: StreamSearchMetadata = {
   hasMoreOlderResults: false,
   isResolved: false,
   totalMatchCount: 0n,
 };
+
+const EMPTY_STANDALONE_ROUTING_KEY_READ_METADATA: StandaloneRoutingKeyReadMetadata =
+  {
+    hasMoreOlderResults: false,
+    isResolved: false,
+  };
 
 function isStreamSearchMetadata(value: unknown): value is StreamSearchMetadata {
   return (
@@ -129,6 +142,16 @@ function isStreamSearchMetadata(value: unknown): value is StreamSearchMetadata {
     typeof value.hasMoreOlderResults === "boolean" &&
     typeof value.isResolved === "boolean" &&
     typeof value.totalMatchCount === "bigint"
+  );
+}
+
+function isStandaloneRoutingKeyReadMetadata(
+  value: unknown,
+): value is StandaloneRoutingKeyReadMetadata {
+  return (
+    isRecord(value) &&
+    typeof value.hasMoreOlderResults === "boolean" &&
+    typeof value.isResolved === "boolean"
   );
 }
 
@@ -569,6 +592,16 @@ function bigintToRequestCount(value: bigint): number {
     : Number(value);
 }
 
+function getStandaloneRoutingKeyRequestedResultCount(args: {
+  pageCount: number;
+  pageSize: number;
+}): number {
+  const pageCount = Math.max(1, Math.trunc(args.pageCount));
+  const pageSize = Math.max(1, Math.trunc(args.pageSize));
+
+  return pageCount * pageSize;
+}
+
 export function getStreamEventsWindow(args: {
   epoch: number;
   visibleEventCount: bigint;
@@ -603,8 +636,10 @@ export function createStreamReadUrl(
   streamsUrl: string | undefined,
   streamName: string,
   offset: string,
+  routingKey?: string | null,
 ): string {
   const trimmed = streamsUrl?.trim();
+  const normalizedRoutingKey = normalizeRoutingKey(routingKey);
 
   if (!trimmed) {
     return "";
@@ -617,14 +652,30 @@ export function createStreamReadUrl(
     const pathname = url.pathname.replace(/\/+$/, "");
 
     url.pathname = `${pathname}/v1/stream/${encodedName}`;
-    url.search = `?format=json&offset=${encodeURIComponent(offset)}`;
+    url.searchParams.set("format", "json");
+    url.searchParams.set("offset", offset);
+
+    if (normalizedRoutingKey.length > 0) {
+      url.searchParams.set("key", normalizedRoutingKey);
+    } else {
+      url.searchParams.delete("key");
+    }
+
     url.hash = "";
 
     return url.toString();
   } catch {
     const pathname = trimmed.replace(/[?#].*$/, "").replace(/\/+$/, "");
+    const searchParams = new URLSearchParams();
 
-    return `${pathname}/v1/stream/${encodedName}?format=json&offset=${encodeURIComponent(offset)}`;
+    searchParams.set("format", "json");
+    searchParams.set("offset", offset);
+
+    if (normalizedRoutingKey.length > 0) {
+      searchParams.set("key", normalizedRoutingKey);
+    }
+
+    return `${pathname}/v1/stream/${encodedName}?${searchParams.toString()}`;
   }
 }
 
@@ -682,6 +733,10 @@ function normalizeSearchQuery(value: string | undefined): string {
   return value?.trim() ?? "";
 }
 
+function normalizeRoutingKey(value: string | null | undefined): string {
+  return value?.trim() ?? "";
+}
+
 export function getStreamSearchSort(
   _searchConfig: StudioStreamSearchConfig | null | undefined,
 ): string[] {
@@ -724,6 +779,33 @@ export function normalizeStreamEvents(
   });
 }
 
+function normalizeStandaloneRoutingKeyEvents(args: {
+  events: unknown[];
+  searchConfig?: StudioStreamSearchConfig | null;
+  stream: Pick<StudioStream, "epoch" | "name">;
+}): StudioStreamEvent[] {
+  const { events, searchConfig, stream } = args;
+
+  return events.map((event, index) => {
+    const sequence = BigInt(index);
+    const offset = encodeStreamOffset(stream.epoch, sequence);
+
+    return {
+      body: event,
+      exactTimestamp: extractExactTimestamp(event, searchConfig),
+      id: `${stream.name}:routing-key:${offset}`,
+      indexedFields: extractIndexedFields(event),
+      key: extractKey(event),
+      offset,
+      preview: createPreview(event),
+      sequence: sequence.toString(),
+      sizeBytes: estimateSizeBytes(event),
+      sortOffset: offset,
+      streamName: stream.name,
+    };
+  });
+}
+
 function normalizeStreamSearchHits(args: {
   hits: StreamSearchApiHit[];
   searchConfig?: StudioStreamSearchConfig | null;
@@ -753,6 +835,7 @@ function normalizeStreamSearchHits(args: {
 export function getStreamEventsQueryScopeKey(
   streamsUrl: string | undefined,
   stream: StudioStream | null | undefined,
+  routingKey: string,
   pageSize: number,
   pageCount: number,
   visibleEventCount: bigint,
@@ -766,6 +849,7 @@ export function getStreamEventsQueryScopeKey(
     stream.name,
     String(stream.epoch),
     visibleEventCount.toString(),
+    routingKey,
     String(pageSize),
     String(pageCount),
   ].join("::");
@@ -842,6 +926,7 @@ export function useStreamEvents(
     liveUpdatesEnabled = false,
     pageCount,
     pageSize = STREAM_EVENTS_PAGE_SIZE,
+    routingKey,
     searchConfig,
     searchQuery,
     searchVisibleResultCount,
@@ -851,9 +936,15 @@ export function useStreamEvents(
   const studio = useStudio();
   const { streamsUrl, queryClient } = studio;
   const normalizedPageCount = Math.max(1, Math.trunc(pageCount));
+  const normalizedRoutingKey = normalizeRoutingKey(routingKey);
   const normalizedSearchQuery = normalizeSearchQuery(searchQuery);
   const isSearchActive =
     stream != null && searchConfig != null && normalizedSearchQuery.length > 0;
+  const isStandaloneRoutingKeyReadActive =
+    stream != null &&
+    !isSearchActive &&
+    normalizedRoutingKey.length > 0 &&
+    Boolean(streamsUrl);
   const latestEventCount = useMemo(
     () => (stream ? parseNonNegativeBigInt(stream.nextOffset) : 0n),
     [stream],
@@ -870,6 +961,14 @@ export function useStreamEvents(
   const searchSort = useMemo(
     () => getStreamSearchSort(searchConfig),
     [searchConfig],
+  );
+  const standaloneRoutingKeyRequestedResultCount = useMemo(
+    () =>
+      getStandaloneRoutingKeyRequestedResultCount({
+        pageCount: normalizedPageCount,
+        pageSize,
+      }),
+    [normalizedPageCount, pageSize],
   );
   const searchUrl = useMemo(
     () => (stream ? createStreamSearchUrl(streamsUrl, stream.name) : ""),
@@ -904,21 +1003,36 @@ export function useStreamEvents(
       });
     }
 
+    if (isStandaloneRoutingKeyReadActive) {
+      return [
+        streamsUrl?.trim() ?? "",
+        stream?.name ?? "",
+        String(stream?.epoch ?? -1),
+        "routing-key-read",
+        normalizedRoutingKey,
+        String(standaloneRoutingKeyRequestedResultCount),
+      ].join("::");
+    }
+
     return getStreamEventsQueryScopeKey(
       streamsUrl,
       stream,
+      normalizedRoutingKey,
       pageSize,
       normalizedPageCount,
       resolvedVisibleEventCount,
     );
   }, [
     isSearchActive,
+    isStandaloneRoutingKeyReadActive,
     normalizedPageCount,
+    normalizedRoutingKey,
     normalizedSearchQuery,
     pageSize,
     resolvedVisibleEventCount,
     resolvedVisibleSearchResultCount,
     searchSort,
+    standaloneRoutingKeyRequestedResultCount,
     stream,
     streamsUrl,
   ]);
@@ -946,6 +1060,21 @@ export function useStreamEvents(
       ];
     }
 
+    if (isStandaloneRoutingKeyReadActive) {
+      return [
+        "streams",
+        streamsUrl,
+        "stream",
+        stream.name,
+        "epoch",
+        stream.epoch,
+        "routingKeyRead",
+        normalizedRoutingKey,
+        "requestedResultCount",
+        standaloneRoutingKeyRequestedResultCount,
+      ];
+    }
+
     return [
       "streams",
       streamsUrl,
@@ -955,6 +1084,8 @@ export function useStreamEvents(
       stream.epoch,
       "visibleEventCount",
       resolvedVisibleEventCount.toString(),
+      "routingKey",
+      normalizedRoutingKey,
       "pageSize",
       pageSize,
       "pageCount",
@@ -962,12 +1093,15 @@ export function useStreamEvents(
     ];
   }, [
     isSearchActive,
+    isStandaloneRoutingKeyReadActive,
     normalizedPageCount,
+    normalizedRoutingKey,
     normalizedSearchQuery,
     pageSize,
     resolvedVisibleEventCount,
     resolvedVisibleSearchResultCount,
     searchSort,
+    standaloneRoutingKeyRequestedResultCount,
     stream,
     streamsUrl,
   ]);
@@ -985,6 +1119,23 @@ export function useStreamEvents(
   const searchMetadata = isStreamSearchMetadata(searchMetadataQuery.data)
     ? searchMetadataQuery.data
     : EMPTY_STREAM_SEARCH_METADATA;
+  const standaloneRoutingKeyReadMetadataQueryKey = useMemo<QueryKey>(
+    () => ["stream-routing-key-read-metadata", queryScopeKey || "inactive"],
+    [queryScopeKey],
+  );
+  const standaloneRoutingKeyReadMetadataQuery =
+    useQuery<StandaloneRoutingKeyReadMetadata>({
+      enabled: false,
+      initialData: EMPTY_STANDALONE_ROUTING_KEY_READ_METADATA,
+      queryFn: () => EMPTY_STANDALONE_ROUTING_KEY_READ_METADATA,
+      queryKey: standaloneRoutingKeyReadMetadataQueryKey,
+      staleTime: Infinity,
+    });
+  const standaloneRoutingKeyReadMetadata = isStandaloneRoutingKeyReadMetadata(
+    standaloneRoutingKeyReadMetadataQuery.data,
+  )
+    ? standaloneRoutingKeyReadMetadataQuery.data
+    : EMPTY_STANDALONE_ROUTING_KEY_READ_METADATA;
   const searchHeadQuery = useQuery<StreamSearchMetadata>({
     enabled:
       isSearchActive &&
@@ -1146,8 +1297,112 @@ export function useStreamEvents(
                 });
               }
 
+              if (isStandaloneRoutingKeyReadActive) {
+                if (standaloneRoutingKeyRequestedResultCount === 0) {
+                  queryClient.setQueryData(
+                    standaloneRoutingKeyReadMetadataQueryKey,
+                    {
+                      hasMoreOlderResults: false,
+                      isResolved: true,
+                    } satisfies StandaloneRoutingKeyReadMetadata,
+                  );
+
+                  return [];
+                }
+
+                let remainingResultCount =
+                  standaloneRoutingKeyRequestedResultCount;
+                let readOffset = "-1";
+                let hasMoreOlderResults = false;
+                const keyedEvents: unknown[] = [];
+
+                while (remainingResultCount > 0) {
+                  const keyedResponse = await fetch(
+                    createStreamReadUrl(
+                      streamsUrl,
+                      stream.name,
+                      readOffset,
+                      normalizedRoutingKey,
+                    ),
+                    { signal },
+                  );
+
+                  if (keyedResponse.status === 204) {
+                    hasMoreOlderResults = false;
+                    break;
+                  }
+
+                  if (!keyedResponse.ok) {
+                    throw new Error(
+                      `Failed loading stream events (${keyedResponse.status} ${keyedResponse.statusText})`,
+                    );
+                  }
+
+                  const keyedPayload = (await keyedResponse.json()) as unknown;
+
+                  if (!Array.isArray(keyedPayload)) {
+                    throw new Error(
+                      "Streams server returned an invalid events response shape.",
+                    );
+                  }
+
+                  const nextOffset =
+                    keyedResponse.headers.get("Stream-Next-Offset") ?? "";
+                  const endOffset =
+                    keyedResponse.headers.get("Stream-End-Offset") ?? "";
+
+                  if (keyedPayload.length > 0) {
+                    for (const keyedEvent of keyedPayload) {
+                      keyedEvents.push(keyedEvent);
+                    }
+
+                    remainingResultCount -= keyedPayload.length;
+                  }
+
+                  const madeCursorProgress =
+                    nextOffset.length > 0 && nextOffset !== readOffset;
+                  const reachedStreamEnd =
+                    nextOffset.length > 0 && nextOffset === endOffset;
+
+                  if (!madeCursorProgress || reachedStreamEnd) {
+                    hasMoreOlderResults = false;
+                    break;
+                  }
+
+                  hasMoreOlderResults = true;
+
+                  if (remainingResultCount <= 0) {
+                    break;
+                  }
+
+                  readOffset = nextOffset;
+                }
+
+                queryClient.setQueryData(
+                  standaloneRoutingKeyReadMetadataQueryKey,
+                  {
+                    hasMoreOlderResults,
+                    isResolved: true,
+                  } satisfies StandaloneRoutingKeyReadMetadata,
+                );
+
+                return normalizeStandaloneRoutingKeyEvents({
+                  events: keyedEvents.slice(
+                    0,
+                    standaloneRoutingKeyRequestedResultCount,
+                  ),
+                  searchConfig,
+                  stream,
+                });
+              }
+
               const response = await fetch(
-                createStreamReadUrl(streamsUrl, stream.name, window.offset),
+                createStreamReadUrl(
+                  streamsUrl,
+                  stream.name,
+                  window.offset,
+                  normalizedRoutingKey,
+                ),
                 { signal },
               );
 
@@ -1199,9 +1454,13 @@ export function useStreamEvents(
     searchMetadataQueryKey,
     searchSort,
     searchUrl,
+    isStandaloneRoutingKeyReadActive,
+    standaloneRoutingKeyReadMetadataQueryKey,
+    standaloneRoutingKeyRequestedResultCount,
     stream,
     streamsUrl,
     studio,
+    normalizedRoutingKey,
     window.offset,
     window.requestedEventCount,
     window.startExclusiveSequence,
@@ -1299,6 +1558,7 @@ export function useStreamEvents(
       currentResolvedState &&
       (currentResolvedState.streamName !== stream.name ||
         currentResolvedState.epoch !== stream.epoch ||
+        currentResolvedState.routingKey !== normalizedRoutingKey ||
         currentResolvedState.searchQuery !== currentSearchKey)
     ) {
       lastResolvedEventsRef.current = null;
@@ -1311,10 +1571,17 @@ export function useStreamEvents(
     lastResolvedEventsRef.current = {
       epoch: stream.epoch,
       events,
+      routingKey: normalizedRoutingKey,
       searchQuery: currentSearchKey,
       streamName: stream.name,
     };
-  }, [events, isSearchActive, normalizedSearchQuery, stream]);
+  }, [
+    events,
+    isSearchActive,
+    normalizedRoutingKey,
+    normalizedSearchQuery,
+    stream,
+  ]);
 
   const visibleEvents =
     stream &&
@@ -1322,6 +1589,7 @@ export function useStreamEvents(
     events.length === 0 &&
     lastResolvedEventsRef.current?.streamName === stream.name &&
     lastResolvedEventsRef.current?.epoch === stream.epoch &&
+    lastResolvedEventsRef.current?.routingKey === normalizedRoutingKey &&
     lastResolvedEventsRef.current?.searchQuery ===
       (isSearchActive ? normalizedSearchQuery : "")
       ? lastResolvedEventsRef.current.events
@@ -1345,7 +1613,11 @@ export function useStreamEvents(
     ? searchMetadata.isResolved
       ? searchMetadata.hasMoreOlderResults
       : true
-    : BigInt(visibleEvents.length) < window.totalEventCount;
+    : isStandaloneRoutingKeyReadActive
+      ? standaloneRoutingKeyReadMetadata.isResolved
+        ? standaloneRoutingKeyReadMetadata.hasMoreOlderResults
+        : true
+      : BigInt(visibleEvents.length) < window.totalEventCount;
 
   const refetch = useCallback(async () => {
     if (!collection) {
@@ -1376,6 +1648,8 @@ export function useStreamEvents(
     totalEventCount: latestEventCount,
     visibleEventCount: isSearchActive
       ? resolvedVisibleSearchResultCount
-      : resolvedVisibleEventCount,
+      : isStandaloneRoutingKeyReadActive
+        ? BigInt(visibleEvents.length)
+        : resolvedVisibleEventCount,
   };
 }
