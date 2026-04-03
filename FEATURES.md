@@ -45,12 +45,15 @@ Table-name metadata is normalized into local TanStack DB state and queried live 
 
 Table filtering is available inline in the Tables header, so search is there when needed without permanent UI clutter.
 The field opens and closes with keyboard-friendly behavior, filters table names in real time from local state, and supports `ArrowUp` / `ArrowDown` plus `Enter` to choose a table without leaving the keyboard.
+The same hover affordance also exposes a refresh action next to search, so users can reload schema and table metadata from the sidebar header without permanently spending space on extra controls.
 Choosing a filtered table, whether by `Enter` or mouse click, closes the search field and hands focus to the table grid so users can continue scrolling the new result set immediately.
 
 ## Sidebar Streams Navigation
 
 Studio can optionally connect to a Prisma Streams server alongside the database connection and show a `Streams` section directly under `Tables` in the sidebar.
 The list reuses the same compact navigation shell as table browsing, loads live stream names from the configured Streams base URL, and disappears entirely when Studio is embedded without Streams configured.
+Streams also reuse the same inline filter disclosure as tables, so the `Streams` header can open an in-place search field with the same keyboard flow, real-time local filtering, and `ArrowUp` / `ArrowDown` plus `Enter` selection behavior instead of introducing a second sidebar filtering pattern.
+That shared hover affordance also adds a stream-list refresh button beside search, so the current Streams server can be queried again on demand without opening the field first or adding permanent chrome to the sidebar header.
 The sidebar width is also user-resizable from a drag handle on its right edge, and that width is persisted in Studio UI state so wider stream names stay readable as you move around the app or reopen it later.
 
 ## Stream Event Browsing

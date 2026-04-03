@@ -173,7 +173,7 @@ These are the current high-signal places where Studio is bypassing a plausible s
 - Files:
   - [`ui/studio/Navigation.tsx`](ui/studio/Navigation.tsx)
 - Current UI:
-  - Custom sidebar sections, custom table search disclosure, custom sidebar item primitive, and a draggable resize separator on the sidebar edge.
+  - Custom sidebar sections, shared inline search-and-refresh disclosure for both tables and streams, custom sidebar item primitive, and a draggable resize separator on the sidebar edge.
 - Plausible standard ShadCN alternative:
   - `Sidebar`
   - standard sidebar/menu composition

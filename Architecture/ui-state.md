@@ -129,6 +129,7 @@ The following are valid examples of UI state and where they belong:
   - Prompt-history browsing MAY use local transient preview state while the
     actual persisted history list remains in the collection as the source of truth.
 - Navigation table-name search term/open state: `uiLocalStateCollection` via `useUiState`
+- Navigation stream-name search term/open state: `uiLocalStateCollection` via `useUiState`
 - Navigation table-selection grid-focus request: `uiLocalStateCollection` via `useUiState`
 - Navigation table-name source rows: `navigationTableNamesCollection`
 - Schema visualizer node positions and layout state: `uiLocalStateCollection` via `useUiState`
