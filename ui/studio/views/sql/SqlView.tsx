@@ -24,6 +24,7 @@ import { createSqlEditorSchemaFromIntrospection } from "../../../../data/sql-edi
 import { getTopLevelSqlStatementAtCursor } from "../../../../data/sql-statements";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
+import { cn } from "../../../lib/utils";
 import { TableHead, TableRow } from "../../../components/ui/table";
 import { useColumnPinning } from "../../../hooks/use-column-pinning";
 import { useIntrospection } from "../../../hooks/use-introspection";
@@ -875,41 +876,47 @@ export function SqlView(_props: ViewProps) {
         ) : null}
       </StudioHeader>
 
-      <div className="flex flex-col gap-3 p-3 border-b border-border bg-background">
-        <div className="rounded-md border border-border overflow-hidden bg-background">
-          <CodeMirror
-            aria-label="SQL editor"
-            basicSetup={{
-              foldGutter: false,
-            }}
-            className={[
-              "[&_.cm-editor]:!border-0 [&_.cm-editor]:font-mono",
-              "[&_.cm-gutters]:border-r [&_.cm-gutters]:border-border [&_.cm-gutters]:bg-muted/30",
-              "[&_.cm-line]:text-[15px] [&_.cm-scroller]:font-mono",
-            ].join(" ")}
-            extensions={sqlEditorExtensions}
-            minHeight="128px"
-            onCreateEditor={(view) => {
-              editorViewRef.current = view;
-              const cursorIndex = view.state.doc.length;
-              view.dispatch({
-                selection: {
-                  anchor: cursorIndex,
-                  head: cursorIndex,
-                },
-              });
-              view.focus();
-            }}
-            onChange={(value) => {
-              hasUserEditedEditorValueRef.current = true;
-              latestEditorValueRef.current = value;
-              setEditorValue(value);
-            }}
-            placeholder="Write SQL..."
-            theme={isDarkMode ? "dark" : "light"}
-            value={editorValue}
-          />
-        </div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden border-b border-border bg-background p-3">
+          <div
+            className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border bg-background"
+            data-testid="sql-editor-scroll-container"
+          >
+            <CodeMirror
+              aria-label="SQL editor"
+              basicSetup={{
+                foldGutter: false,
+              }}
+              className={[
+                "min-h-0 flex-1",
+                "[&_.cm-editor]:!border-0 [&_.cm-editor]:font-mono",
+                "[&_.cm-gutters]:border-r [&_.cm-gutters]:border-border [&_.cm-gutters]:bg-muted/30",
+                "[&_.cm-line]:text-[15px] [&_.cm-scroller]:font-mono",
+              ].join(" ")}
+              extensions={sqlEditorExtensions}
+              height="100%"
+              minHeight="128px"
+              onCreateEditor={(view) => {
+                editorViewRef.current = view;
+                const cursorIndex = view.state.doc.length;
+                view.dispatch({
+                  selection: {
+                    anchor: cursorIndex,
+                    head: cursorIndex,
+                  },
+                });
+                view.focus();
+              }}
+              onChange={(value) => {
+                hasUserEditedEditorValueRef.current = true;
+                latestEditorValueRef.current = value;
+                setEditorValue(value);
+              }}
+              placeholder="Write SQL..."
+              theme={isDarkMode ? "dark" : "light"}
+              value={editorValue}
+            />
+          </div>
         {aiGenerationErrorMessage ? (
           <div className="text-sm text-destructive">
             <strong>AI SQL generation error:</strong> {aiGenerationErrorMessage}
@@ -969,25 +976,29 @@ export function SqlView(_props: ViewProps) {
             ) : null}
           </div>
         ) : null}
-      </div>
+        </div>
 
-      <div
-        data-testid="sql-result-grid-container"
-        className="grow min-h-0 flex flex-col"
-      >
-        {result == null ? null : (
-          <SqlResultGrid
-            isRunning={isRunning}
-            paginationState={paginationState}
-            pinnedColumnIds={pinnedColumnIds}
-            result={result}
-            rowSelectionState={rowSelectionState}
-            setPaginationState={setPaginationState}
-            setPinnedColumnIds={setPinnedColumnIds}
-            setRowSelectionState={setRowSelectionState}
-            visualizationState={visualization.state}
-          />
-        )}
+        <div
+          data-testid="sql-result-grid-container"
+          className={cn(
+            "flex min-h-0 flex-col",
+            result != null ? "flex-1" : "flex-none",
+          )}
+        >
+          {result == null ? null : (
+            <SqlResultGrid
+              isRunning={isRunning}
+              paginationState={paginationState}
+              pinnedColumnIds={pinnedColumnIds}
+              result={result}
+              rowSelectionState={rowSelectionState}
+              setPaginationState={setPaginationState}
+              setPinnedColumnIds={setPinnedColumnIds}
+              setRowSelectionState={setRowSelectionState}
+              visualizationState={visualization.state}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
