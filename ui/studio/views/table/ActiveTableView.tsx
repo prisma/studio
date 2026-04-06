@@ -1,6 +1,6 @@
 import { useIsMutating } from "@tanstack/react-query";
 import { type ColumnDef, type ColumnPinningState } from "@tanstack/react-table";
-import { ChevronDown, RefreshCw } from "lucide-react";
+import { ChevronDown, History, RefreshCw } from "lucide-react";
 import {
   type Dispatch,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -51,6 +51,7 @@ import { useNavigation } from "../../../hooks/use-navigation";
 import { usePagination } from "../../../hooks/use-pagination";
 import { useSelection } from "../../../hooks/use-selection";
 import { useSorting } from "../../../hooks/use-sorting";
+import { useStreams } from "../../../hooks/use-streams";
 import { useTableUiState } from "../../../hooks/use-table-ui-state";
 import { useUiState } from "../../../hooks/use-ui-state";
 import { cn } from "../../../lib/utils";
@@ -284,6 +285,7 @@ export function ActiveTableView(_props: ViewProps) {
     rowSelectionState,
     setRowSelectionState,
   } = useSelection(visibleData);
+  const { streams } = useStreams();
   const { tableUiState, updateTableUiState } = useTableUiState({
     editingFilter,
   });
@@ -353,6 +355,46 @@ export function ActiveTableView(_props: ViewProps) {
   const [isDeleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const selectedRowCount =
     Object.values(rowSelectionState).filter(Boolean).length;
+  const hasPrismaWalStream = useMemo(
+    () => streams.some((stream) => stream.name === "prisma-wal"),
+    [streams],
+  );
+  const selectedRowHistoryClause = useMemo(
+    () =>
+      resolveWalHistoryKeyClause({
+        columns: activeTable?.columns,
+        rows,
+        rowSelectionState,
+      }),
+    [activeTable?.columns, rowSelectionState, rows],
+  );
+  const tableHistoryUrl = useMemo(() => {
+    if (!activeTable || !hasPrismaWalStream) {
+      return null;
+    }
+
+    const tableClause = `table:${JSON.stringify(
+      `${activeTable.schema}.${activeTable.name}`,
+    )}`;
+    const searchParam = selectedRowHistoryClause
+      ? `${tableClause} AND ${selectedRowHistoryClause}`
+      : tableClause;
+
+    return createUrl({
+      searchParam,
+      streamParam: "prisma-wal",
+      viewParam: "stream",
+    });
+  }, [activeTable, createUrl, hasPrismaWalStream, selectedRowHistoryClause]);
+  const tableHistoryAriaLabel = useMemo(() => {
+    if (!activeTable || !hasPrismaWalStream) {
+      return null;
+    }
+
+    return selectedRowHistoryClause
+      ? `Open history for selected ${activeTable.schema}.${activeTable.name} row`
+      : `Open history for ${activeTable.schema}.${activeTable.name}`;
+  }, [activeTable, hasPrismaWalStream, selectedRowHistoryClause]);
   const cellSelectionRange = getCellSelectionRange(gridSelectionState);
   const hasSelectionExport = cellSelectionRange != null || selectedRowCount > 0;
   const deleteSelectionLabel = getDeleteSelectionLabel(selectedRowCount);
@@ -1509,18 +1551,32 @@ export function ActiveTableView(_props: ViewProps) {
           editingFilter.filters.length > 0 ? "border-b-0 pb-2" : undefined
         }
         endContent={
-          <Button
-            aria-label="Refresh table"
-            variant="outline"
-            size="icon"
-            onClick={() => void reload()}
-            disabled={isFetching}
-          >
-            <RefreshCw
-              data-icon="inline-start"
-              className={cn(isFetching && "animate-spin")}
-            />
-          </Button>
+          <>
+            {tableHistoryUrl ? (
+              <Button
+                aria-label={tableHistoryAriaLabel ?? "Open table history"}
+                variant="outline"
+                size="icon"
+                asChild
+              >
+                <a href={tableHistoryUrl}>
+                  <History data-icon="inline-start" />
+                </a>
+              </Button>
+            ) : null}
+            <Button
+              aria-label="Refresh table"
+              variant="outline"
+              size="icon"
+              onClick={() => void reload()}
+              disabled={isFetching}
+            >
+              <RefreshCw
+                data-icon="inline-start"
+                className={cn(isFetching && "animate-spin")}
+              />
+            </Button>
+          </>
         }
       >
         <div className="flex min-w-0 items-center gap-2">
@@ -1956,6 +2012,45 @@ function getDefaultTableColumnIds(args: {
       .map((column) => column.name),
     ...backRelationColumns.map((column) => column.name),
   ];
+}
+
+function resolveWalHistoryKeyClause(args: {
+  columns: Record<string, Column> | undefined;
+  rows: Record<string, unknown>[];
+  rowSelectionState: Record<string, boolean>;
+}): string | null {
+  const { columns, rows, rowSelectionState } = args;
+  const selectedRowIds = Object.entries(rowSelectionState)
+    .filter(([, isSelected]) => isSelected)
+    .map(([rowId]) => rowId);
+
+  if (selectedRowIds.length !== 1) {
+    return null;
+  }
+
+  const primaryKeyColumns = Object.values(columns ?? {})
+    .filter((column) => column.pkPosition != null)
+    .sort((left, right) => (left.pkPosition ?? 0) - (right.pkPosition ?? 0));
+
+  if (primaryKeyColumns.length !== 1) {
+    return null;
+  }
+
+  const selectedRow = rows.find(
+    (row) => String(row.__ps_rowid ?? "") === selectedRowIds[0],
+  );
+
+  if (!selectedRow) {
+    return null;
+  }
+
+  const primaryKeyValue = selectedRow[primaryKeyColumns[0]!.name];
+
+  if (primaryKeyValue == null) {
+    return null;
+  }
+
+  return `key:${JSON.stringify(String(primaryKeyValue))}`;
 }
 
 function BackRelationHeaderCell(props: { name: string }) {

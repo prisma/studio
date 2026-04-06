@@ -19,6 +19,7 @@ This architecture governs:
 - loading active-stream aggregate rollup windows through the Prisma Streams aggregate endpoint
 - loading active-stream filtered events through the Prisma Streams search endpoint
 - loading active-stream routing-key pages through the Prisma Streams routing-key listing endpoint
+- deep-linking from a table view into Prisma WAL stream history when `prisma-wal` is available
 - rendering the sidebar `Streams` section underneath `Tables`
 - routing the main view into a selected stream
 - loading stream events through the Prisma Streams read endpoint
@@ -35,6 +36,7 @@ This architecture governs:
 - [`ui/hooks/use-stream-aggregations.ts`](../ui/hooks/use-stream-aggregations.ts)
 - [`ui/hooks/use-stream-events.ts`](../ui/hooks/use-stream-events.ts)
 - [`ui/studio/Navigation.tsx`](../ui/studio/Navigation.tsx)
+- [`ui/studio/views/table/ActiveTableView.tsx`](../ui/studio/views/table/ActiveTableView.tsx)
 - [`ui/studio/views/stream/StreamView.tsx`](../ui/studio/views/stream/StreamView.tsx)
 - [`ui/studio/views/stream/StreamRoutingKeySelector.tsx`](../ui/studio/views/stream/StreamRoutingKeySelector.tsx)
 - [`ui/studio/views/stream/StreamAggregationsPanel.tsx`](../ui/studio/views/stream/StreamAggregationsPanel.tsx)
@@ -58,6 +60,8 @@ This architecture governs:
 - Stream event loading MUST go through [`useStreamEvents`](../ui/hooks/use-stream-events.ts); feature code MUST NOT fetch `/v1/stream/:name` ad hoc from view components.
 - Stream search loading MUST also go through [`useStreamEvents`](../ui/hooks/use-stream-events.ts); feature code MUST NOT `POST` stream `_search` ad hoc from view components.
 - Stream routing-key listing MUST go through [`useStreamRoutingKeys`](../ui/hooks/use-stream-routing-keys.ts); feature code MUST NOT fetch stream `_routing_keys` ad hoc from view components.
+- When Studio discovers a `prisma-wal` stream, table view MAY expose a history affordance that deep-links into `view=stream&stream=prisma-wal`, but that jump MUST still be expressed through normal URL state and the shared stream search param rather than inventing a table-specific WAL route.
+- When the active stream is `prisma-wal`, the resolved stream profile is `state-protocol`, and the visible search term matches Studio's table-history deep-link shapes, the stream view SHOULD render a compact WAL scope banner describing the current table or row scope instead of leaving that context implicit in the raw search string alone.
 - `useStreams` MUST treat `streamsUrl` as a base URL and append the Prisma Streams list endpoint path (`/v1/streams`) itself.
 - `useStreamEvents` MUST treat `streamsUrl` as a base URL and append the Prisma Streams read endpoint path (`/v1/stream/{name}`) itself.
 - In search mode, `useStreamEvents` MUST append the Prisma Streams search endpoint path (`/v1/stream/{name}/_search`) itself.
@@ -119,6 +123,8 @@ When the active stream search term is non-empty and the stream advertises search
 Studio uses those resolved series both to render the aggregation strip and to upgrade the header aggregation toggle from raw rollup-count metadata to the real visible aggregation count once the aggregate query has loaded.
 The hook only polls those aggregate windows when the stream view is in `live` or `tail` follow mode and the selected range is relative.
 Per-series aggregation preferences such as enabled statistics and unit overrides remain in the TanStack DB-backed local UI state collection as user-authored state; aggregate fetches may read them but MUST NOT rewrite them just because a different range resolves a different set of series or statistics.
+When a table is open and the discovered stream list includes `prisma-wal`, `ActiveTableView` may construct a stream deep link using the WAL schema's exact-search aliases. The table-scoped jump must use `table:"schema.table"`, and if exactly one visible row is selected and the table has exactly one primary-key column, the row-scoped jump may refine that query to `table:"schema.table" AND key:"value"`. Composite or multi-row selections must not invent an unsupported key encoding.
+When Studio later opens that `prisma-wal` search in the stream view, the active page may recognize exactly those table-scoped and row-scoped query forms and render a small contextual banner such as `Showing wal events for public.posts` or `Showing wal events for row key 42 in public.posts`. That banner is intentionally narrow: if the search term adds any extra clauses or stops matching the known WAL history shapes, Studio must hide the banner instead of trying to summarize an arbitrary WAL query.
 
 ## Demo Contract
 

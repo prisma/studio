@@ -57,6 +57,12 @@ Streams also reuse the same inline filter disclosure as tables, so the `Streams`
 That shared hover affordance also adds a stream-list refresh button beside search, so the current Streams server can be queried again on demand without opening the field first or adding permanent chrome to the sidebar header.
 The sidebar width is also user-resizable from a drag handle on its right edge, and that width is persisted in Studio UI state so wider stream names stay readable as you move around the app or reopen it later.
 
+## Prisma WAL Table History
+
+When Studio discovers a `prisma-wal` stream, the table header adds a history button beside refresh so users can jump straight from table browsing into the WAL event log for that table.
+With no row selected, the button opens `prisma-wal` filtered to `table:"schema.table"`. With exactly one selected row on a single-column primary key, it narrows further to `table:"schema.table" AND key:"value"` so users can inspect one row's change history without hand-writing the stream query.
+When that deep link lands on a `state-protocol` WAL stream, the stream view also shows a compact scope banner so the current table or row history stays obvious even if the raw search string is collapsed.
+
 ## Stream Event Browsing
 
 Selecting a stream opens a dedicated event log view in the main pane instead of the table grid.

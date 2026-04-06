@@ -582,6 +582,83 @@ function createSearchDetails() {
   });
 }
 
+function createStateProtocolWalDetails(
+  overrides?: Partial<
+    NonNullable<ReturnType<typeof useStreamDetailsMock>["details"]>
+  >,
+) {
+  return createStreamDetails({
+    indexStatus: {
+      bundledCompanions: {
+        bytesAtRest: 0n,
+        fullyIndexedUploadedSegments: false,
+        objectCount: 0,
+      },
+      desiredIndexPlanGeneration: 0,
+      exactIndexes: [],
+      manifest: {
+        generation: 0,
+        lastUploadedAt: null,
+        lastUploadedEtag: null,
+        lastUploadedSizeBytes: 0n,
+        uploadedGeneration: 0,
+      },
+      profile: "state-protocol",
+      routingKeyIndex: null,
+      routingKeyLexicon: null,
+      searchFamilies: [],
+      segments: {
+        totalCount: 0,
+        uploadedCount: 0,
+      },
+      stream: "prisma-wal",
+    },
+    search: {
+      aliases: {
+        rowKey: "key",
+        table: "type",
+      },
+      defaultFields: [],
+      fields: {
+        key: {
+          aggregatable: false,
+          bindings: [
+            {
+              jsonPointer: "/key",
+              version: 1,
+            },
+          ],
+          column: false,
+          exact: true,
+          exists: true,
+          kind: "keyword",
+          positions: false,
+          prefix: true,
+          sortable: false,
+        },
+        type: {
+          aggregatable: false,
+          bindings: [
+            {
+              jsonPointer: "/type",
+              version: 1,
+            },
+          ],
+          column: false,
+          exact: true,
+          exists: true,
+          kind: "keyword",
+          positions: false,
+          prefix: true,
+          sortable: false,
+        },
+      },
+      primaryTimestampField: "timestamp",
+    },
+    ...overrides,
+  });
+}
+
 function installDynamicScrollMetrics(
   container: HTMLElement,
   scrollContainer: HTMLDivElement,
@@ -2464,6 +2541,103 @@ describe("StreamView", () => {
     container.remove();
   });
 
+  it("shows a WAL table-history banner for state-protocol prisma-wal table searches", () => {
+    useNavigationMock.mockReturnValue({
+      searchParam: 'table:"public.all_data_types"',
+      streamAggregationRangeParam: null,
+      streamAggregationsParam: null,
+      streamFollowParam: "paused",
+      streamParam: "prisma-wal",
+    });
+    useStreamDetailsMock.mockReturnValue({
+      details: createStateProtocolWalDetails(),
+    });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamView />);
+    });
+
+    const banner = container.querySelector(
+      '[data-testid="prisma-wal-history-banner"]',
+    );
+
+    expect(banner).not.toBeNull();
+    expect(banner?.textContent).toContain(
+      "Showing wal events for public.all_data_types",
+    );
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("shows a WAL row-history banner for state-protocol prisma-wal row searches", () => {
+    useNavigationMock.mockReturnValue({
+      searchParam: 'table:"public.all_data_types" AND key:"100"',
+      streamAggregationRangeParam: null,
+      streamAggregationsParam: null,
+      streamFollowParam: "paused",
+      streamParam: "prisma-wal",
+    });
+    useStreamDetailsMock.mockReturnValue({
+      details: createStateProtocolWalDetails(),
+    });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamView />);
+    });
+
+    const banner = container.querySelector(
+      '[data-testid="prisma-wal-history-banner"]',
+    );
+
+    expect(banner).not.toBeNull();
+    expect(banner?.textContent).toContain(
+      "Showing wal events for row key 100 in public.all_data_types",
+    );
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("does not show the WAL history banner for non-matching searches", () => {
+    useNavigationMock.mockReturnValue({
+      searchParam: 'table:"public.all_data_types" AND operation:"insert"',
+      streamAggregationRangeParam: null,
+      streamAggregationsParam: null,
+      streamFollowParam: "paused",
+      streamParam: "prisma-wal",
+    });
+    useStreamDetailsMock.mockReturnValue({
+      details: createStateProtocolWalDetails(),
+    });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamView />);
+    });
+
+    expect(
+      container.querySelector('[data-testid="prisma-wal-history-banner"]'),
+    ).toBeNull();
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it("does not auto-grow the viewport window for standalone routing-key filtering when no rows are loaded", async () => {
     useNavigationMock.mockReturnValue({
       searchParam: null,
@@ -2864,6 +3038,12 @@ describe("StreamView", () => {
 
     expect(objectStorageSection?.getAttribute("data-state")).toBe("open");
     expect(objectStorageToggle?.textContent).not.toContain("81 KB");
+    expect(objectStorageSection?.textContent).toContain("Average segment size");
+    expect(objectStorageSection?.textContent).toContain("0.01 MB");
+    expect(objectStorageSection?.textContent).toContain(
+      "Average segment compression",
+    );
+    expect(objectStorageSection?.textContent).toContain("95.8%");
     expect(localStorageSection?.getAttribute("data-state")).toBe("open");
     expect(localStorageSection?.textContent).toContain("Retained stream data");
     expect(localStorageSection?.textContent).toContain("2.1 KB");
@@ -2887,6 +3067,9 @@ describe("StreamView", () => {
     expect(requestAccountingSection?.textContent).toContain("5");
     expect(requestAccountingSection?.textContent).toContain("Requests total");
     expect(requestAccountingSection?.textContent).toContain("8");
+    expect(requestAccountingSection?.textContent).toMatch(
+      /Ready for upload\s*2/,
+    );
     expect(requestAccountingToggle?.textContent).not.toContain("8 requests");
 
     act(() => {
@@ -3003,6 +3186,15 @@ describe("StreamView", () => {
         ?.click();
     });
 
+    const objectStorageSection = document.body.querySelector(
+      '[data-testid="stream-diagnostics-object-storage"]',
+    );
+
+    expect(objectStorageSection?.textContent).toContain("Average segment size");
+    expect(objectStorageSection?.textContent).toContain("Unavailable");
+    expect(objectStorageSection?.textContent).toContain(
+      "Average segment compression",
+    );
     expect(document.body.textContent).not.toContain("routing key");
 
     act(() => {

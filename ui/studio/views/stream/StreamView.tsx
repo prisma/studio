@@ -103,6 +103,10 @@ const STREAM_FOLLOW_MODE_OPTIONS = [
 
 const STREAM_FOLLOW_MODE_ITEM_CLASS_NAME =
   "h-8 rounded-none border-0 px-2.5 shadow-none transition-colors data-[state=on]:bg-background data-[state=on]:font-semibold data-[state=on]:text-foreground data-[state=on]:shadow-sm";
+const PRISMA_WAL_STREAM_NAME = "prisma-wal";
+const STATE_PROTOCOL_PROFILE = "state-protocol";
+const PRISMA_WAL_HISTORY_CLAUSE_PATTERN =
+  /^(?<field>table|type|key|rowKey):(?<value>"(?:\\.|[^"\\])*"|[^\s()]+)$/i;
 
 interface ScrollAnchorSnapshot {
   anchorEventId: string | null;
@@ -117,6 +121,11 @@ interface ScrollAnchorSnapshot {
 interface PendingScrollPositionRequest {
   position: "bottom" | "top";
   streamIdentity: string | null;
+}
+
+interface PrismaWalHistorySummary {
+  rowKey: string | null;
+  tableName: string;
 }
 
 function formatRelativeTime(isoTimestamp: string | null): string {
@@ -420,6 +429,90 @@ function formatIndexedField(field: StudioStreamEventIndexedField): string {
   return field.value ? `${field.label}: ${field.value}` : field.label;
 }
 
+function parsePrismaWalSearchLiteral(literal: string): string | null {
+  if (!literal.startsWith('"')) {
+    return literal;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(literal);
+    return typeof parsed === "string" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function parsePrismaWalHistorySummary(
+  searchQuery: string,
+): PrismaWalHistorySummary | null {
+  const trimmedQuery = searchQuery.trim();
+
+  if (trimmedQuery.length === 0) {
+    return null;
+  }
+
+  const clauses = trimmedQuery
+    .split(/\s+AND\s+/i)
+    .map((clause) => clause.trim())
+    .filter((clause) => clause.length > 0);
+
+  if (clauses.length === 0 || clauses.length > 2) {
+    return null;
+  }
+
+  let tableName: string | null = null;
+  let rowKey: string | null = null;
+
+  for (const clause of clauses) {
+    const match = clause.match(PRISMA_WAL_HISTORY_CLAUSE_PATTERN);
+    const field = match?.groups?.field?.toLowerCase() ?? null;
+    const rawValue = match?.groups?.value ?? null;
+
+    if (!field || !rawValue) {
+      return null;
+    }
+
+    const value = parsePrismaWalSearchLiteral(rawValue);
+
+    if (!value) {
+      return null;
+    }
+
+    if (field === "table" || field === "type") {
+      if (tableName !== null) {
+        return null;
+      }
+
+      tableName = value;
+      continue;
+    }
+
+    if (field === "key" || field === "rowkey") {
+      if (rowKey !== null) {
+        return null;
+      }
+
+      rowKey = value;
+      continue;
+    }
+
+    return null;
+  }
+
+  if (tableName === null) {
+    return null;
+  }
+
+  if (clauses.length === 2 && rowKey === null) {
+    return null;
+  }
+
+  return {
+    rowKey,
+    tableName,
+  };
+}
+
 function StreamEventRow(props: {
   event: StudioStreamEvent;
   expandedEventId: string | null;
@@ -556,6 +649,49 @@ function HeaderRow() {
   );
 }
 
+function PrismaWalHistoryBanner(props: PrismaWalHistorySummary) {
+  return (
+    <div
+      className="border-b border-border bg-muted/20 px-4 py-2.5"
+      data-testid="prisma-wal-history-banner"
+    >
+      <div className="flex flex-wrap items-center gap-2 text-sm text-foreground">
+        <Badge
+          className="rounded-sm px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.12em]"
+          variant="secondary"
+        >
+          WAL
+        </Badge>
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+          {props.rowKey === null ? (
+            <>
+              <span className="text-sm text-foreground">
+                Showing wal events for{" "}
+              </span>
+              <span className="min-w-0 truncate font-mono text-xs text-foreground">
+                {props.tableName}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="text-sm text-foreground">
+                Showing wal events for row key{" "}
+              </span>
+              <span className="min-w-0 truncate font-mono text-xs text-foreground">
+                {props.rowKey}
+              </span>
+              <span className="text-sm text-foreground"> in </span>
+              <span className="min-w-0 truncate font-mono text-xs text-foreground">
+                {props.tableName}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StreamSearchHeaderControl(props: {
   searchConfig: StudioStreamSearchConfig | null | undefined;
   searchTerm: string;
@@ -654,6 +790,20 @@ function ActiveStreamView(props: {
     supportsStreamSearch && effectiveSearchQuery.length > 0;
   const hasStandaloneRoutingKeyFilter =
     selectedRoutingKey.length > 0 && !isSearchActive;
+  const prismaWalHistorySummary = useMemo(() => {
+    if (
+      selectedStream.name !== PRISMA_WAL_STREAM_NAME ||
+      selectedStreamDetails?.indexStatus?.profile !== STATE_PROTOCOL_PROFILE
+    ) {
+      return null;
+    }
+
+    return parsePrismaWalHistorySummary(activeSearchQuery);
+  }, [
+    activeSearchQuery,
+    selectedStream.name,
+    selectedStreamDetails?.indexStatus?.profile,
+  ]);
   const selectedStreamIdentity = `${selectedStream.name}:${selectedStream.epoch}`;
   const streamEventWindowResetKey = `${selectedStreamIdentity ?? "none"}::${selectedRoutingKey}::${effectiveSearchQuery}`;
   const [pageCount, setPageCount] = useState(1);
@@ -1581,6 +1731,12 @@ function ActiveStreamView(props: {
         data-testid="stream-view-content"
       >
         <>
+          {prismaWalHistorySummary ? (
+            <PrismaWalHistoryBanner
+              rowKey={prismaWalHistorySummary.rowKey}
+              tableName={prismaWalHistorySummary.tableName}
+            />
+          ) : null}
           {isAggregationPanelOpen && aggregationRollups.length > 0 ? (
             <StreamAggregationsPanel
               aggregationRollups={aggregationRollups}

@@ -170,6 +170,23 @@ function getUploadedSegmentCount(details: StudioStreamDetails): number {
   );
 }
 
+function getTotalSegmentCount(details: StudioStreamDetails): number {
+  return details.indexStatus?.segments.totalCount ?? details.segmentCount;
+}
+
+function getReadyForUploadSegmentCount(details: StudioStreamDetails): number {
+  return Math.max(
+    0,
+    getTotalSegmentCount(details) - getUploadedSegmentCount(details),
+  );
+}
+
+function isSegmentArtifact(artifact: string): boolean {
+  const normalizedArtifact = artifact.trim().toLowerCase();
+
+  return normalizedArtifact === "segment" || normalizedArtifact === "segments";
+}
+
 function getRoutingRunObjectCount(details: StudioStreamDetails): number {
   return (
     details.storage?.objectStorage.routingIndexObjectCount ??
@@ -253,6 +270,61 @@ function getProgressWidth(coveredSegments: number, uploadedSegments: number) {
   }
 
   return `${Math.min(100, (coveredSegments / uploadedSegments) * 100)}%`;
+}
+
+function formatMegabytes(sizeBytes: bigint): string {
+  const megabyte = 1024n * 1024n;
+  const scaledHundredths = (sizeBytes * 100n + megabyte / 2n) / megabyte;
+  const whole = scaledHundredths / 100n;
+  const fractional = (scaledHundredths % 100n).toString().padStart(2, "0");
+
+  return `${whole}.${fractional} MB`;
+}
+
+function formatPercentTenths(percentTenths: bigint): string {
+  const whole = percentTenths / 10n;
+  const fractional = (percentTenths % 10n).toString();
+
+  return `${whole}.${fractional}%`;
+}
+
+function getAverageSegmentSize(details: StudioStreamDetails): string {
+  const segmentObjectCount =
+    details.storage?.objectStorage.segmentObjectCount ?? 0;
+  const segmentsBytes = details.storage?.objectStorage.segmentsBytes ?? 0n;
+
+  if (segmentObjectCount <= 0 || segmentsBytes <= 0n) {
+    return "Unavailable";
+  }
+
+  const segmentCountBigInt = BigInt(segmentObjectCount);
+  const averageSegmentBytes =
+    (segmentsBytes + segmentCountBigInt / 2n) / segmentCountBigInt;
+
+  return formatMegabytes(averageSegmentBytes);
+}
+
+function getAverageSegmentCompression(details: StudioStreamDetails): string {
+  const segmentObjectCount =
+    details.storage?.objectStorage.segmentObjectCount ?? 0;
+  const segmentsBytes = details.storage?.objectStorage.segmentsBytes ?? 0n;
+  const logicalBytes = details.totalSizeBytes;
+
+  if (segmentObjectCount <= 0 || segmentsBytes <= 0n || logicalBytes <= 0n) {
+    return "Unavailable";
+  }
+
+  const savedBytes = logicalBytes - segmentsBytes;
+
+  if (savedBytes <= 0n) {
+    return "0.0%";
+  }
+
+  const compressionPercentTenths = (savedBytes * 1000n) / logicalBytes;
+  const clampedCompressionPercentTenths =
+    compressionPercentTenths > 1000n ? 1000n : compressionPercentTenths;
+
+  return formatPercentTenths(clampedCompressionPercentTenths);
 }
 
 interface RunAcceleratorItem {
@@ -484,6 +556,7 @@ function SharedCapAnnotation(props: { value: bigint | null | undefined }) {
 function LedgerRow(props: {
   annotation?: ReactNode;
   label: string;
+  subRows?: Array<{ label: string; value: string }>;
   tooltip?: string;
   total?: boolean;
   value: string;
@@ -515,6 +588,16 @@ function LedgerRow(props: {
     >
       <div className={cn("min-w-0", props.total ? "font-medium" : undefined)}>
         {labelNode}
+        {props.subRows && props.subRows.length > 0 ? (
+          <div className="mt-1 grid gap-0.5 text-xs font-normal leading-5 text-muted-foreground">
+            {props.subRows.map((subRow) => (
+              <div key={subRow.label} className="flex items-baseline gap-1">
+                <span>{subRow.label}</span>
+                <span className="tabular-nums">{subRow.value}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
       <div className="text-right text-sm tabular-nums">
         {props.total ? null : props.value}
@@ -686,6 +769,9 @@ export function StreamDiagnosticsPopover(props: {
   const requestTotal =
     (details.objectStoreRequests?.puts ?? 0n) +
     (details.objectStoreRequests?.reads ?? 0n);
+  const readyForUploadSegmentCount = getReadyForUploadSegmentCount(details);
+  const averageSegmentSize = getAverageSegmentSize(details);
+  const averageSegmentCompression = getAverageSegmentCompression(details);
   const hasRoutingLexiconDiagnostics =
     details.indexStatus?.routingKeyLexicon?.configured === true ||
     routingLexiconBytes > 0n ||
@@ -798,6 +884,16 @@ export function StreamDiagnosticsPopover(props: {
               />
               <LedgerRow
                 label="Segment data"
+                subRows={[
+                  {
+                    label: "Average segment size",
+                    value: averageSegmentSize,
+                  },
+                  {
+                    label: "Average segment compression",
+                    value: averageSegmentCompression,
+                  },
+                ]}
                 tooltip={`${formatCount(details.storage?.objectStorage.segmentObjectCount ?? 0)} uploaded segment objects.`}
                 total
                 value={formatBytes(
@@ -1122,8 +1218,16 @@ export function StreamDiagnosticsPopover(props: {
                         key={entry.artifact}
                         className="grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem_4.5rem_4.5rem] gap-3 border-t border-border/40 px-3 py-2 text-sm first:border-t-0"
                       >
-                        <div className="truncate text-foreground">
-                          {entry.artifact}
+                        <div className="min-w-0">
+                          <div className="truncate font-normal text-muted-foreground">
+                            {entry.artifact}
+                          </div>
+                          {isSegmentArtifact(entry.artifact) ? (
+                            <div className="text-xs leading-5 text-muted-foreground">
+                              Ready for upload{" "}
+                              {formatCount(readyForUploadSegmentCount)}
+                            </div>
+                          ) : null}
                         </div>
                         <div className="text-right tabular-nums text-foreground">
                           {formatCount(entry.puts)}
