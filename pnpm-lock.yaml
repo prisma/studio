@@ -68,8 +68,8 @@ devDependencies:
     specifier: 8.57.0
     version: 8.57.0
   '@prisma/dev':
-    specifier: 0.24.1
-    version: 0.24.1(typescript@5.9.3)
+    specifier: 0.24.4
+    version: 0.24.4(typescript@5.9.3)
   '@radix-ui/react-alert-dialog':
     specifier: 1.1.15
     version: 1.1.15(@types/react-dom@19.2.3)(@types/react@19.2.14)(react-dom@19.2.4)(react@19.2.4)
@@ -1166,8 +1166,8 @@ packages:
     resolution: {integrity: sha512-YSGTiSlBAVJPzX4ONZmMotL+ozJwQjRmZweQNIq/ER0tQJKJynNkRB3kyvt37eOfsbMCXk3gnLF6J9OJ4QWftw==}
     dev: true
 
-  /@prisma/dev@0.24.1(typescript@5.9.3):
-    resolution: {integrity: sha512-ZCtJllpKXkONtFtMv6ZKnrQBkCCR+Nh4j4ES+N2FXrRL4JWGiX9+zLX31jTwFhF8I2tx02Rj8pNBt3OX9B8nDA==}
+  /@prisma/dev@0.24.4(typescript@5.9.3):
+    resolution: {integrity: sha512-u/GwsNsWxDq9Ccq6P1R3yzNJAELVIz4A+RXeR6E/JRjXTjVfwiqdIPCdlDOpO4H1+4Jvbv0I5mn0SEqz/cz8sQ==}
     dependencies:
       '@electric-sql/pglite': 0.4.1
       '@electric-sql/pglite-socket': 0.1.1(@electric-sql/pglite@0.4.1)
@@ -1175,7 +1175,7 @@ packages:
       '@hono/node-server': 1.19.11(hono@4.12.8)
       '@prisma/get-platform': 7.2.0
       '@prisma/query-plan-executor': 7.2.0
-      '@prisma/streams-local': 0.1.2
+      '@prisma/streams-local': 0.1.3
       foreground-child: 3.3.1
       get-port-please: 3.2.0
       hono: 4.12.8
@@ -1200,8 +1200,8 @@ packages:
     resolution: {integrity: sha512-EOZmNzcV8uJ0mae3DhTsiHgoNCuu1J9mULQpGCh62zN3PxPTd+qI9tJvk5jOst8WHKQNwJWR3b39t0XvfBB0WQ==}
     dev: true
 
-  /@prisma/streams-local@0.1.2:
-    resolution: {integrity: sha512-l49yTxKKF2odFxaAXTmwmkBKL3+bVQ1tFOooGifu4xkdb9NMNLxHj27XAhTylWZod8I+ISGM5erU1xcl/oBCtg==}
+  /@prisma/streams-local@0.1.3:
+    resolution: {integrity: sha512-HOxR28/DjFm/6TS/Mf51xSbx8bPtLjzQRH3j620lhugFGH6xSHYVO8yXS5JSpqX7tpLgkTWDVwUn8WQbcBUApQ==}
     engines: {bun: '>=1.3.6', node: '>=22.0.0'}
     dependencies:
       ajv: 8.18.0
