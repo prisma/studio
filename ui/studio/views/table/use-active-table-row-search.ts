@@ -16,9 +16,17 @@ export function useActiveTableRowSearch(args: UseActiveTableRowSearchArgs) {
     setSearchParam,
     supportsFullTableSearch,
   } = args;
+  const normalizedSearchTerm = searchTerm.trim();
+
   return useExpandableSearchControl({
     applySearchValue: (value) => {
-      void setSearchParam(value);
+      const normalizedValue = value.trim();
+
+      if (normalizedValue === normalizedSearchTerm) {
+        return;
+      }
+
+      void setSearchParam(normalizedValue);
       void setPageIndexParam("0");
     },
     scopeKey,
