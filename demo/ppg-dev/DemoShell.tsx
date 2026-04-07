@@ -72,10 +72,12 @@ export function DemoApp(props: {
   adapter: Adapter;
   aiEnabled: boolean;
   bootId: string;
-  seededAt: string;
+  hasDatabase: boolean;
+  seededAt?: string;
   streamsUrl?: string;
 }) {
-  const { adapter, aiEnabled, bootId, seededAt, streamsUrl } = props;
+  const { adapter, aiEnabled, bootId, hasDatabase, seededAt, streamsUrl } =
+    props;
   const llm: StudioLlm | undefined = aiEnabled
     ? async (request) => {
         const response = await fetch("/api/ai", {
@@ -142,7 +144,9 @@ export function DemoApp(props: {
       >
         <div style={{ display: "flex", gap: "12px", letterSpacing: "0.02em" }}>
           <strong>Studio + ppg demo</strong>
-          <span>seeded {new Date(seededAt).toLocaleString()}</span>
+          {seededAt ? (
+            <span>seeded {new Date(seededAt).toLocaleString()}</span>
+          ) : null}
         </div>
         <div style={{ alignItems: "center", display: "flex", gap: "10px" }}>
           <code style={{ opacity: 0.72 }}>boot: {bootId.slice(0, 8)}</code>
@@ -150,8 +154,21 @@ export function DemoApp(props: {
         </div>
       </header>
 
-      <main style={{ minHeight: 0, padding: "12px" }}>
-        <Studio adapter={adapter} llm={llm} streamsUrl={streamsUrl} />
+      <main
+        style={{
+          display: "flex",
+          minHeight: 0,
+          minWidth: 0,
+          overflow: "hidden",
+          padding: "12px",
+        }}
+      >
+        <Studio
+          adapter={adapter}
+          hasDatabase={hasDatabase}
+          llm={llm}
+          streamsUrl={streamsUrl}
+        />
       </main>
     </div>
   );

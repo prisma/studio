@@ -196,6 +196,28 @@ describe("StudioContextProvider pagination preferences", () => {
   });
 });
 
+describe("StudioContextProvider navigation preferences", () => {
+  it("persists the shared navigation width across remounts", () => {
+    const firstHarness = renderHarness();
+
+    expect(firstHarness.getLatestStudio()?.navigationWidth).toBe(192);
+
+    act(() => {
+      firstHarness.getLatestStudio()?.setNavigationWidth(320);
+    });
+
+    expect(firstHarness.getLatestStudio()?.navigationWidth).toBe(320);
+
+    firstHarness.cleanup();
+
+    const secondHarness = renderHarness();
+
+    expect(secondHarness.getLatestStudio()?.navigationWidth).toBe(320);
+
+    secondHarness.cleanup();
+  });
+});
+
 describe("StudioContextProvider streams configuration", () => {
   it("exposes the optional streams URL through Studio context", () => {
     const harness = renderHarness({

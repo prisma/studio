@@ -25,10 +25,25 @@ type ParamName = Exclude<
 >;
 type UrlValues = Partial<Record<ParamName, string>>;
 
+function getUrlParamName(name: string) {
+  if (name === "streamAggregations") {
+    return "aggregations";
+  }
+
+  return name;
+}
+
 export function createUrl(values: UrlValues) {
   const params = Object.entries(values)
     .map(([key, value]) => {
-      const name = key.endsWith("Param") ? key.slice(0, -5) : key;
+      const name = getUrlParamName(
+        key.endsWith("Param") ? key.slice(0, -5) : key,
+      );
+
+      if (name === "aggregations" && value.length === 0) {
+        return encodeURIComponent(name);
+      }
+
       return `${encodeURIComponent(name)}=${encodeURIComponent(value)}`;
     })
     .join("&");
@@ -37,9 +52,11 @@ export function createUrl(values: UrlValues) {
 
 function getDefaultParams(args: {
   adapter: Adapter;
+  hasDatabase: boolean;
+  hasStreamsServer: boolean;
   introspection: AdapterIntrospectResult;
 }) {
-  const { adapter, introspection } = args;
+  const { adapter, hasDatabase, hasStreamsServer, introspection } = args;
   const { schemas } = introspection;
   const { defaultSchema } = adapter;
 
@@ -50,7 +67,7 @@ function getDefaultParams(args: {
   const pageSize = "25";
   const search = "";
   const searchScope = "table";
-  const view = "table";
+  const view = !hasDatabase && hasStreamsServer ? "stream" : "table";
 
   return {
     schema,
@@ -93,13 +110,20 @@ function buildNavigationTableNames(introspection: AdapterIntrospectResult) {
  * implement a specialized hook instead.
  */
 function useNavigationInternal() {
-  const { adapter, navigationTableNamesCollection } = useStudio();
+  const { adapter, hasDatabase, navigationTableNamesCollection, streamsUrl } =
+    useStudio();
   const { data: introspection, isFetching } = useIntrospection();
 
   const { schemas } = introspection;
   const defaults = useMemo(
-    () => getDefaultParams({ adapter, introspection }),
-    [adapter, introspection],
+    () =>
+      getDefaultParams({
+        adapter,
+        hasDatabase,
+        hasStreamsServer: typeof streamsUrl === "string",
+        introspection,
+      }),
+    [adapter, hasDatabase, introspection, streamsUrl],
   );
 
   useEffect(() => {
@@ -158,6 +182,14 @@ function useNavigationInternal() {
     defaultValue: defaults.searchScope,
   });
   const [sortParam, setSortParam] = useQueryState("sort");
+  const [streamAggregationRangeParam, setStreamAggregationRangeParam] =
+    useQueryState("streamAggregationRange");
+  const [streamAggregationsParam, setStreamAggregationsParam] =
+    useQueryState("aggregations");
+  const [streamFollowParam, setStreamFollowParam] =
+    useQueryState("streamFollow");
+  const [streamRoutingKeyParam, setStreamRoutingKeyParam] =
+    useQueryState("streamRoutingKey");
   const [streamParam, setStreamParam] = useQueryState("stream");
   const [tableParam, setTableParam] = useQueryState("table", {
     defaultValue: defaults.table,
@@ -168,7 +200,9 @@ function useNavigationInternal() {
 
   // If URL params are stale from a previous database, fall back to current defaults.
   const resolvedSchemaParam =
-    schemaParam && schemas[schemaParam] ? schemaParam : defaults.schema;
+    hasDatabase && schemaParam && schemas[schemaParam]
+      ? schemaParam
+      : defaults.schema;
   const activeSchema = resolvedSchemaParam
     ? schemas[resolvedSchemaParam]
     : undefined;
@@ -181,6 +215,8 @@ function useNavigationInternal() {
     activeTables && resolvedTableParam
       ? activeTables[resolvedTableParam]
       : undefined;
+  const resolvedViewParam =
+    !hasDatabase && typeof streamsUrl === "string" ? "stream" : viewParam;
 
   const metadata = useMemo(
     () => ({
@@ -203,9 +239,13 @@ function useNavigationInternal() {
     searchParam,
     searchScopeParam,
     sortParam,
+    streamAggregationRangeParam,
+    streamAggregationsParam,
+    streamFollowParam,
+    streamRoutingKeyParam,
     streamParam,
     tableParam,
-    viewParam,
+    viewParam: resolvedViewParam,
     setFilterParam: setFilterParam as NuqsSetNullableValue<string>,
     setPageIndexParam: setPageIndexParam as NuqsSetNullableValue<string>,
     setPageSizeParam: setPageSizeParam as NuqsSetNullableValue<string>,
@@ -214,6 +254,13 @@ function useNavigationInternal() {
     setSearchParam: setSearchParam as NuqsSetNullableValue<string>,
     setSearchScopeParam: setSearchScopeParam as NuqsSetNullableValue<string>,
     setSortParam: setSortParam as NuqsSetNullableValue<string>,
+    setStreamAggregationRangeParam:
+      setStreamAggregationRangeParam as NuqsSetNullableValue<string>,
+    setStreamAggregationsParam:
+      setStreamAggregationsParam as NuqsSetNullableValue<string>,
+    setStreamFollowParam: setStreamFollowParam as NuqsSetNullableValue<string>,
+    setStreamRoutingKeyParam:
+      setStreamRoutingKeyParam as NuqsSetNullableValue<string>,
     setStreamParam: setStreamParam as NuqsSetNullableValue<string>,
     setTableParam: setTableParam as NuqsSetNullableValue<string>,
     setViewParam: setViewParam as NuqsSetNullableValue<string>,

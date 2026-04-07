@@ -102,6 +102,26 @@
       transform: translate3d(-3px, 0, 0) rotate(-1deg) scale(1.02);
     }
   }
+
+  @keyframes ps-stream-new-event-flash {
+    0% {
+      background-color: color-mix(in oklab, var(--primary) 10%, transparent);
+      box-shadow: inset 0 0 0 1px
+        color-mix(in oklab, var(--primary) 14%, transparent);
+      transform: translate3d(0, -1px, 0);
+    }
+    45% {
+      background-color: color-mix(in oklab, var(--primary) 7%, transparent);
+      box-shadow: inset 0 0 0 1px
+        color-mix(in oklab, var(--primary) 10%, transparent);
+      transform: translate3d(0, 0, 0);
+    }
+    100% {
+      background-color: transparent;
+      box-shadow: inset 0 0 0 1px transparent;
+      transform: translate3d(0, 0, 0);
+    }
+  }
 }
 
 @utility min-w-cell {

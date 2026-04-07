@@ -96,6 +96,11 @@ const useIntrospectionMock = vi.fn<() => IntrospectionMockValue>();
 const useActiveTableQueryMock =
   vi.fn<(props: UseActiveTableQueryProps) => ActiveTableQueryMockValue>();
 const useSelectionMock = vi.fn<() => SelectionMockValue>();
+interface StreamsMockValue {
+  streams: Array<{ name: string }>;
+}
+
+const useStreamsMock = vi.fn<() => StreamsMockValue>();
 const useTableUiStateMock = vi.fn<() => TableUiStateMockValue>();
 const useRegisterCommandPaletteActionsMock =
   vi.fn<(actions: Array<{ id: string }>) => void>();
@@ -164,10 +169,7 @@ vi.mock("../../context", () => ({
     },
     hasAiFilter: typeof studioLlm === "function",
     requestLlm: async (request: { prompt: string; task: string }) => {
-      if (
-        request.task === "table-filter" &&
-        typeof studioLlm === "function"
-      ) {
+      if (request.task === "table-filter" && typeof studioLlm === "function") {
         return await studioLlm(request as StudioLlmRequest);
       }
 
@@ -192,6 +194,10 @@ vi.mock("../../../hooks/use-active-table-query", () => ({
 
 vi.mock("../../../hooks/use-selection", () => ({
   useSelection: () => useSelectionMock(),
+}));
+
+vi.mock("../../../hooks/use-streams", () => ({
+  useStreams: () => useStreamsMock(),
 }));
 
 vi.mock("../../../hooks/use-column-pinning", () => ({
@@ -973,6 +979,9 @@ beforeEach(() => {
     rowSelectionState: {},
     setRowSelectionState: vi.fn(),
   });
+  useStreamsMock.mockReturnValue({
+    streams: [],
+  });
   useTableUiStateMock.mockReturnValue({
     tableUiState: {
       editingFilter: {
@@ -1041,6 +1050,239 @@ afterEach(() => {
 });
 
 describe("ActiveTableView filtering", () => {
+  it("only renders the WAL history button when the prisma-wal stream is available", () => {
+    const view = renderView();
+
+    expect(
+      view.container.querySelector(
+        '[aria-label="Open history for public.users"]',
+      ),
+    ).toBeNull();
+
+    view.cleanup();
+  });
+
+  it("opens table history in the prisma-wal stream when no row is selected", () => {
+    const createUrlMock = vi.fn((values: Record<string, string>) => {
+      return `#${new URLSearchParams(values).toString()}`;
+    });
+
+    useNavigationMock.mockReturnValue({
+      createUrl: createUrlMock,
+      metadata: {
+        activeTable: {
+          columns: {
+            email: createColumn({
+              datatypeName: "character varying(64)",
+              group: "string",
+              name: "email",
+            }),
+            id: createColumn({
+              datatypeName: "uuid",
+              group: "string",
+              name: "id",
+              pkPosition: 1,
+            }),
+          },
+          name: "users",
+          schema: "public",
+        },
+      },
+      searchParam: "",
+      setPageIndexParam: setPageIndexParamMock,
+      setSearchParam: setSearchParamMock,
+    });
+    useStreamsMock.mockReturnValue({
+      streams: [
+        {
+          name: "prisma-wal",
+        },
+      ],
+    });
+
+    const view = renderView();
+    const historyLink = view.container.querySelector<HTMLAnchorElement>(
+      '[aria-label="Open history for public.users"]',
+    );
+
+    expect(createUrlMock).toHaveBeenCalledWith({
+      searchParam: 'table:"public.users"',
+      streamParam: "prisma-wal",
+      viewParam: "stream",
+    });
+    expect(historyLink?.getAttribute("href")).toContain(
+      "searchParam=table%3A%22public.users%22",
+    );
+    expect(historyLink?.getAttribute("href")).toContain(
+      "streamParam=prisma-wal",
+    );
+    expect(historyLink?.getAttribute("href")).toContain("viewParam=stream");
+
+    view.cleanup();
+  });
+
+  it("opens row history in the prisma-wal stream when a single row is selected", () => {
+    const createUrlMock = vi.fn((values: Record<string, string>) => {
+      return `#${new URLSearchParams(values).toString()}`;
+    });
+
+    useNavigationMock.mockReturnValue({
+      createUrl: createUrlMock,
+      metadata: {
+        activeTable: {
+          columns: {
+            email: createColumn({
+              datatypeName: "character varying(64)",
+              group: "string",
+              name: "email",
+            }),
+            id: createColumn({
+              datatypeName: "integer",
+              group: "numeric",
+              name: "id",
+              pkPosition: 1,
+            }),
+          },
+          name: "all_data_types",
+          schema: "public",
+        },
+      },
+      searchParam: "",
+      setPageIndexParam: setPageIndexParamMock,
+      setSearchParam: setSearchParamMock,
+    });
+    useActiveTableQueryMock.mockReturnValue({
+      data: {
+        filteredRowCount: 1,
+        rows: [
+          {
+            __ps_rowid: "row-100",
+            email: "row-100@example.com",
+            id: 100,
+          },
+        ],
+      },
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    useSelectionMock.mockReturnValue({
+      deleteSelection: vi.fn(),
+      isSelecting: true,
+      rowSelectionState: {
+        "row-100": true,
+      },
+      setRowSelectionState: vi.fn(),
+    });
+    useStreamsMock.mockReturnValue({
+      streams: [
+        {
+          name: "prisma-wal",
+        },
+      ],
+    });
+
+    const view = renderView();
+    const historyLink = view.container.querySelector<HTMLAnchorElement>(
+      '[aria-label="Open history for selected public.all_data_types row"]',
+    );
+
+    expect(createUrlMock).toHaveBeenCalledWith({
+      searchParam: 'table:"public.all_data_types" AND key:"100"',
+      streamParam: "prisma-wal",
+      viewParam: "stream",
+    });
+    expect(historyLink?.getAttribute("href")).toContain(
+      "searchParam=table%3A%22public.all_data_types%22+AND+key%3A%22100%22",
+    );
+    expect(historyLink?.getAttribute("href")).toContain(
+      "streamParam=prisma-wal",
+    );
+    expect(historyLink?.getAttribute("href")).toContain("viewParam=stream");
+
+    view.cleanup();
+  });
+
+  it("falls back to table history when multiple rows are selected", () => {
+    const createUrlMock = vi.fn((values: Record<string, string>) => {
+      return `#${new URLSearchParams(values).toString()}`;
+    });
+
+    useNavigationMock.mockReturnValue({
+      createUrl: createUrlMock,
+      metadata: {
+        activeTable: {
+          columns: {
+            email: createColumn({
+              datatypeName: "character varying(64)",
+              group: "string",
+              name: "email",
+            }),
+            id: createColumn({
+              datatypeName: "integer",
+              group: "numeric",
+              name: "id",
+              pkPosition: 1,
+            }),
+          },
+          name: "users",
+          schema: "public",
+        },
+      },
+      searchParam: "",
+      setPageIndexParam: setPageIndexParamMock,
+      setSearchParam: setSearchParamMock,
+    });
+    useActiveTableQueryMock.mockReturnValue({
+      data: {
+        filteredRowCount: 2,
+        rows: [
+          {
+            __ps_rowid: "row-100",
+            email: "row-100@example.com",
+            id: 100,
+          },
+          {
+            __ps_rowid: "row-101",
+            email: "row-101@example.com",
+            id: 101,
+          },
+        ],
+      },
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    useSelectionMock.mockReturnValue({
+      deleteSelection: vi.fn(),
+      isSelecting: true,
+      rowSelectionState: {
+        "row-100": true,
+        "row-101": true,
+      },
+      setRowSelectionState: vi.fn(),
+    });
+    useStreamsMock.mockReturnValue({
+      streams: [
+        {
+          name: "prisma-wal",
+        },
+      ],
+    });
+
+    const view = renderView();
+    const historyLink = view.container.querySelector<HTMLAnchorElement>(
+      '[aria-label="Open history for public.users"]',
+    );
+
+    expect(createUrlMock).toHaveBeenCalledWith({
+      searchParam: 'table:"public.users"',
+      streamParam: "prisma-wal",
+      viewParam: "stream",
+    });
+    expect(historyLink).not.toBeNull();
+
+    view.cleanup();
+  });
+
   it("adds inferred back-relation columns at the end with filtered navigation links", async () => {
     const createUrlMock = vi.fn((values: Record<string, string>) => {
       return `#${new URLSearchParams(values).toString()}`;
@@ -2389,7 +2631,9 @@ describe("ActiveTableView filtering", () => {
         "text-destructive-foreground",
       );
       expect(dialogButtons[1]?.className).toContain("bg-secondary");
-      expect(dialogButtons[1]?.className).toContain("text-secondary-foreground");
+      expect(dialogButtons[1]?.className).toContain(
+        "text-secondary-foreground",
+      );
       expectConfirmationFocusRing(dialogButtons[0]);
       expect(document.activeElement).toBe(dialogButtons[0]);
 
@@ -2701,7 +2945,9 @@ describe("ActiveTableView filtering", () => {
       expect(dialogButtons[0]?.className).toContain("bg-primary");
       expect(dialogButtons[0]?.className).toContain("text-primary-foreground");
       expect(dialogButtons[1]?.className).toContain("bg-secondary");
-      expect(dialogButtons[1]?.className).toContain("text-secondary-foreground");
+      expect(dialogButtons[1]?.className).toContain(
+        "text-secondary-foreground",
+      );
       expectConfirmationFocusRing(dialogButtons[0]);
       expect(document.activeElement).toBe(dialogButtons[0]);
 
@@ -3338,16 +3584,14 @@ describe("ActiveTableView filtering", () => {
     await flush();
 
     expect(llmMock).toHaveBeenCalledTimes(1);
-    expect(llmMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        prompt: expect.stringContaining("Table: public.users"),
-        task: "table-filter",
-      }),
-    );
-    expect(llmMock.mock.calls[0]?.[0].prompt).toContain(
+    const llmRequest = llmMock.mock.calls[0]?.[0];
+
+    expect(llmRequest?.task).toBe("table-filter");
+    expect(llmRequest?.prompt).toContain("Table: public.users");
+    expect(llmRequest?.prompt).toContain(
       "- email: character varying(64) (group: string; supported operators: =, !=, is, is not, like, not like, ilike, not ilike)",
     );
-    expect(llmMock.mock.calls[0]?.[0].prompt).toContain(
+    expect(llmRequest?.prompt).toContain(
       "Allowed operators: =, !=, >, >=, <, <=, is, is not, like, not like, ilike, not ilike",
     );
     expect(llmMock.mock.calls[0]?.[0].prompt).toContain(

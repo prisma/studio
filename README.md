@@ -360,6 +360,24 @@ The demo:
 
 The demo database is intentionally ephemeral: it is pre-seeded when the demo starts and reset when the demo process stops.
 
+To temporarily develop against the sibling local Streams repo instead of the
+published `@prisma/streams-local` package, run:
+
+```sh
+pnpm streams:use-local
+pnpm demo:ppg
+```
+
+That script builds `../streams/dist/npm/streams-local`, builds the sibling
+`../team-expansion/dev/server` package, reinstalls dependencies with a
+repo-local `pnpm` override so Studio uses that local `@prisma/dev` package plus
+the local Streams package, and leaves `pnpm-lock.yaml` untouched. If your
+checkouts live elsewhere, point the installer at them with
+`STUDIO_LOCAL_PRISMA_DEV_PACKAGE_DIR=/absolute/path/to/@prisma/dev/package` and
+`STUDIO_LOCAL_STREAMS_REPO_DIR=/absolute/path/to/streams` or directly set
+`STUDIO_LOCAL_STREAMS_PACKAGE_DIR=/absolute/path/to/dist/npm/streams-local`.
+Revert to the published npm packages with `pnpm streams:use-npm`.
+
 ## Useful Commands
 
 - `pnpm demo:ppg` - run local Studio demo with seeded Prisma Postgres dev
@@ -376,6 +394,8 @@ The demo database is intentionally ephemeral: it is pre-seeded when the demo sta
 - `pnpm build:deploy` - build a self-contained Compute-ready demo artifact in `deploy/`
 - `pnpm build` - build distributable package with `tsup`
 - `pnpm check:exports` - validate package export map/types
+- `pnpm streams:use-local` - build and install the sibling local Streams package without touching `pnpm-lock.yaml`
+- `pnpm streams:use-npm` - reinstall the published Streams package without touching `pnpm-lock.yaml`
 
 `@prisma/dev` now emits its own PGlite runtime assets during Bun bundling, so
 plain `bun build` no longer needs `--packages external` just to keep Prisma

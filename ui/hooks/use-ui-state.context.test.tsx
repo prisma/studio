@@ -9,7 +9,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StudioLocalUiState } from "../studio/context";
 import { useUiState } from "./use-ui-state";
 
-const useOptionalStudioMock = vi.fn();
+const useOptionalStudioMock = vi.fn<
+  () =>
+    | {
+        uiLocalStateCollection: ReturnType<typeof createUiCollection>;
+      }
+    | undefined
+>();
 
 vi.mock("../studio/context", () => {
   return {
@@ -122,5 +128,52 @@ describe("useUiState with Studio context collection", () => {
     expect(updateSpy).not.toHaveBeenCalled();
     expect(deleteSpy).not.toHaveBeenCalled();
     expect(uiCollection.has(key)).toBe(false);
+  });
+
+  it("passes a cloneable plain value into object updaters", () => {
+    const key = "context-object-state";
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    let latestState:
+      | ReturnType<typeof useUiState<Record<string, Array<"avg" | "p95">>>>
+      | undefined;
+
+    function Harness() {
+      latestState = useUiState<Record<string, Array<"avg" | "p95">>>(key, {});
+      return null;
+    }
+
+    act(() => {
+      root.render(<Harness />);
+    });
+
+    expect(() => {
+      act(() => {
+        latestState?.[1]((currentValue) => currentValue);
+      });
+    }).not.toThrow();
+
+    expect(() => {
+      act(() => {
+        latestState?.[1]((currentValue) => ({
+          ...currentValue,
+          "series-1": ["avg"],
+        }));
+      });
+    }).not.toThrow();
+
+    expect(latestState?.[0]).toEqual({
+      "series-1": ["avg"],
+    });
+    expect(uiCollection.get(key)?.value).toEqual({
+      "series-1": ["avg"],
+    });
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
   });
 });

@@ -9,6 +9,22 @@ type MutationKey =
 type QueryKey =
   | [] // all
   | ["introspection"]
+  | ["stream-details", string]
+  | ["stream-routing-keys", string, "stream", string, "prefix", string]
+  | ["streams-server-details", string]
+  | [
+      "stream-aggregations",
+      string,
+      "stream",
+      string,
+      "rollup",
+      string,
+      "range",
+      string,
+    ]
+  | ["stream-search-metadata", string]
+  | ["stream-routing-key-read-metadata", string]
+  | ["stream-search-head", string, number, string, string, string]
   | ["streams", string]
   | [
       "streams",
@@ -19,9 +35,39 @@ type QueryKey =
       number,
       "visibleEventCount",
       string,
+      "routingKey",
+      string,
       "pageSize",
       number,
       "pageCount",
+      number,
+    ]
+  | [
+      "streams",
+      string,
+      "stream",
+      string,
+      "epoch",
+      number,
+      "routingKeyRead",
+      string,
+      "requestedResultCount",
+      number,
+    ]
+  | [
+      "streams",
+      string,
+      "stream",
+      string,
+      "epoch",
+      number,
+      "search",
+      string,
+      "sort",
+      string,
+      "visibleSearchResultCount",
+      string,
+      "pageSize",
       number,
     ]
   | [

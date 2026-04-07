@@ -45,6 +45,9 @@ const STUDIO_UI_STORAGE_KEY = "prisma-studio-ui-state-v1";
 const SQL_EDITOR_STATE_ID = "studio-sql-editor-state";
 const SQL_EDITOR_STORAGE_KEY = "prisma-studio-sql-editor-state-v1";
 const DEFAULT_TABLE_PAGE_SIZE = 25;
+export const DEFAULT_NAVIGATION_WIDTH = 192;
+export const MIN_NAVIGATION_WIDTH = 192;
+export const MAX_NAVIGATION_WIDTH = 520;
 const SYSTEM_THEME_MEDIA_QUERY = "(prefers-color-scheme: dark)";
 const REDUCED_MOTION_MEDIA_QUERY = "(prefers-reduced-motion: reduce)";
 
@@ -133,6 +136,7 @@ export interface StudioUiState {
   isNavigationOpen: boolean;
   isDarkMode: boolean;
   themeMode: StudioThemeMode;
+  navigationWidth: number;
   tablePageSize: number;
   isInfiniteScrollEnabled: boolean;
 }
@@ -191,9 +195,25 @@ function getDefaultStudioUiState(): StudioUiState {
     isNavigationOpen: true,
     isDarkMode: getSystemDarkMode(),
     themeMode: "system",
+    navigationWidth: DEFAULT_NAVIGATION_WIDTH,
     tablePageSize: DEFAULT_TABLE_PAGE_SIZE,
     isInfiniteScrollEnabled: false,
   };
+}
+
+function normalizeNavigationWidth(width: unknown): number {
+  if (
+    typeof width === "number" &&
+    Number.isFinite(width) &&
+    Number.isSafeInteger(Math.round(width))
+  ) {
+    return Math.min(
+      MAX_NAVIGATION_WIDTH,
+      Math.max(MIN_NAVIGATION_WIDTH, Math.round(width)),
+    );
+  }
+
+  return DEFAULT_NAVIGATION_WIDTH;
 }
 
 function normalizeTablePageSize(pageSize: unknown): number {
@@ -222,6 +242,7 @@ function normalizeStudioUiState(
     ...state,
     isDarkMode,
     themeMode,
+    navigationWidth: normalizeNavigationWidth(state?.navigationWidth),
     tablePageSize: normalizeTablePageSize(state?.tablePageSize),
     isInfiniteScrollEnabled: state?.isInfiniteScrollEnabled ?? false,
   };
@@ -232,6 +253,7 @@ function normalizeStudioUiState(
  */
 interface StudioContextValue {
   adapter: Adapter;
+  hasDatabase: boolean;
   llm?: StudioLlm;
   streamsUrl?: string;
   hasAiFilter: boolean;
@@ -244,6 +266,8 @@ interface StudioContextValue {
   isDarkMode: boolean;
   themeMode: StudioThemeMode;
   setThemeMode: (themeMode: StudioThemeMode) => void;
+  navigationWidth: number;
+  setNavigationWidth: (width: number) => void;
   tablePageSize: number;
   setTablePageSize: (pageSize: number) => void;
   isInfiniteScrollEnabled: boolean;
@@ -259,7 +283,9 @@ interface StudioContextValue {
     string | number
   >;
   getOrCreateRowsCollection<T>(key: string, factory: () => T): T;
-  getOrCreateTableQueryExecutionState: (key: string) => TableQueryExecutionState;
+  getOrCreateTableQueryExecutionState: (
+    key: string,
+  ) => TableQueryExecutionState;
 }
 
 /**
@@ -269,6 +295,7 @@ const StudioContext = createContext<StudioContextValue | undefined>(undefined);
 
 export type StudioContextProviderProps = PropsWithChildren<{
   adapter: Adapter;
+  hasDatabase?: boolean;
   llm?: StudioLlm;
   onEvent?: (event: StudioEvent) => void;
   streamsUrl?: string;
@@ -280,6 +307,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
     children,
     onEvent: emitEvent,
     adapter,
+    hasDatabase = true,
     llm,
     streamsUrl,
     theme,
@@ -503,7 +531,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
     tableQueryExecutionStateCacheRef.current.clear();
     clearRowsCollections();
     void queryClient.resetQueries({ exact: false, queryKey: [] });
-  }, [adapter, clearRowsCollections, queryClient]);
+  }, [adapter, clearRowsCollections, hasDatabase, queryClient]);
 
   // Watch for changes to the HTML element's class attribute.
   useEffect(() => {
@@ -734,6 +762,17 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
     [updateStudioUiState],
   );
 
+  const setNavigationWidth = useCallback(
+    (width: number) => {
+      const normalizedWidth = normalizeNavigationWidth(width);
+
+      updateStudioUiState((draft) => {
+        draft.navigationWidth = normalizedWidth;
+      });
+    },
+    [updateStudioUiState],
+  );
+
   const setInfiniteScrollEnabled = useCallback(
     (enabled: boolean) => {
       updateStudioUiState((draft) => {
@@ -782,6 +821,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
       <StudioContext.Provider
         value={{
           adapter,
+          hasDatabase,
           llm,
           streamsUrl,
           hasAiFilter,
@@ -794,6 +834,8 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
           isDarkMode: studioUiState.isDarkMode,
           themeMode: studioUiState.themeMode,
           setThemeMode,
+          navigationWidth: studioUiState.navigationWidth,
+          setNavigationWidth,
           tablePageSize: studioUiState.tablePageSize,
           setTablePageSize,
           isInfiniteScrollEnabled: studioUiState.isInfiniteScrollEnabled,

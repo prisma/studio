@@ -10,6 +10,9 @@ This architecture governs:
 
 - active Studio view (`table`, `schema`, `console`, `sql`, `stream`)
 - active schema/table/stream
+- active stream follow mode
+- active stream aggregation-panel visibility
+- active stream aggregation range while the aggregation panel is open
 - pagination URL state
 - sorting URL state
 - column pinning URL state
@@ -38,6 +41,9 @@ Only keys declared in [`ui/hooks/nuqs.ts`](../ui/hooks/nuqs.ts) are allowed:
 - `schema`
 - `table`
 - `stream`
+- `streamFollow`
+- `aggregations`
+- `streamAggregationRange`
 - `filter`
 - `sort`
 - `pin`
@@ -48,12 +54,15 @@ Only keys declared in [`ui/hooks/nuqs.ts`](../ui/hooks/nuqs.ts) are allowed:
 
 Notes:
 
-- `search` is row-search term state for active table view.
+- `search` is shared search term state for the active data view. In table view it drives row search, and in stream view it drives stream-event search when the selected stream advertises search capability.
 - `searchScope` is legacy URL state and is not used for table-name navigation filtering.
 - `pin` stores left-pinned data columns for the grid as a comma-separated list (for example `pin=id,bigint_col`).
 - `pin` order is authoritative and MUST be updated when users drag-reorder pinned columns.
 - `pageIndex` remains URL-backed for table navigation.
 - `pageSize` remains a supported hash key for compatibility, but table rendering now takes its authoritative rows-per-page preference from `studioUiCollection.tablePageSize` in [`Architecture/ui-state.md`](ui-state.md).
+- `streamFollow` stores the active stream follow mode (`paused`, `live`, or `tail`).
+- `aggregations` is an open-only flag for the active stream aggregation strip; when present it MUST be serialized as a bare key with no explicit value.
+- `streamAggregationRange` stores the active stream aggregation range, but MUST only be serialized while `aggregations` is present.
 
 Adding a new URL key requires updating `StateKey` in `nuqs.ts` first.
 
@@ -70,6 +79,14 @@ Adding a new URL key requires updating `StateKey` in `nuqs.ts` first.
 - `searchScope`: `"table"` (legacy default)
 - `view`: `"table"`
 - `stream`: no default; only meaningful when `view=stream`
+- `streamFollow`: no global default in `useNavigation`; the active stream view MUST resolve an absent value to `tail` and materialize that into the hash
+- `aggregations`: no global default in `useNavigation`; the active stream view MUST treat an absent flag as closed and MUST NOT materialize that closed state into the hash
+- `streamAggregationRange`: no standalone default; the active stream view MUST clear it whenever `aggregations` is absent, and MUST materialize its default range only after the aggregation panel is opened
+
+When Studio is running without a database connection but with Streams enabled:
+
+- the resolved default `view` MUST become `"stream"` instead of `"table"`
+- stale database-oriented views such as `table`, `schema`, `console`, and `sql` MUST resolve back to the stream view instead of trying to render database-only UI against a disabled database session
 
 When URL params are stale from a previous DB, invalid `schema`/`table` values MUST be resolved to valid current defaults.
 Shared table page size and infinite-scroll mode are not derived from URL defaults; they are restored through Studio UI state and then mirrored into query behavior by `usePagination`.

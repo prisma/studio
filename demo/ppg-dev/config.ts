@@ -3,7 +3,10 @@ export interface DemoConfig {
     enabled: boolean;
   };
   bootId: string;
-  seededAt: string;
+  database: {
+    enabled: boolean;
+  };
+  seededAt?: string;
   streams?: {
     url: string;
   };
@@ -46,17 +49,25 @@ export function resolveDemoAiEnabled(args: {
 export function buildDemoConfig(args: {
   aiEnabled: boolean;
   bootId: string;
-  seededAt: string;
+  databaseEnabled: boolean;
+  seededAt?: string | null;
   streamsUrl?: string;
 }): DemoConfig {
-  const { aiEnabled, bootId, seededAt, streamsUrl } = args;
+  const { aiEnabled, bootId, databaseEnabled, seededAt, streamsUrl } = args;
 
   return {
     ai: {
       enabled: aiEnabled,
     },
     bootId,
-    seededAt,
+    database: {
+      enabled: databaseEnabled,
+    },
+    ...(seededAt
+      ? {
+          seededAt,
+        }
+      : {}),
     ...(streamsUrl
       ? {
           streams: {

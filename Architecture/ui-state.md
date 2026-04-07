@@ -22,6 +22,7 @@ Studio context provides the canonical stores in [`ui/studio/context.tsx`](../ui/
 - `studioUiCollection` (`localStorageCollectionOptions`)
   - Persisted user-level UI preferences:
   - `isNavigationOpen`
+  - `navigationWidth`
   - `themeMode` (`light` | `dark` | `system`)
   - `isDarkMode` (resolved effective theme for the current render)
   - `tablePageSize`
@@ -107,6 +108,7 @@ const studioUiState =
 The following are valid examples of UI state and where they belong:
 
 - Navigation open/closed: `studioUiCollection.isNavigationOpen`
+- Navigation width: `studioUiCollection.navigationWidth`
 - Theme preference: `studioUiCollection.themeMode`
 - Effective dark-mode flag for rendering: `studioUiCollection.isDarkMode`
 - Shared table rows-per-page preference: `studioUiCollection.tablePageSize`
@@ -127,6 +129,7 @@ The following are valid examples of UI state and where they belong:
   - Prompt-history browsing MAY use local transient preview state while the
     actual persisted history list remains in the collection as the source of truth.
 - Navigation table-name search term/open state: `uiLocalStateCollection` via `useUiState`
+- Navigation stream-name search term/open state: `uiLocalStateCollection` via `useUiState`
 - Navigation table-selection grid-focus request: `uiLocalStateCollection` via `useUiState`
 - Navigation table-name source rows: `navigationTableNamesCollection`
 - Schema visualizer node positions and layout state: `uiLocalStateCollection` via `useUiState`
