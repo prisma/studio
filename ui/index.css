@@ -4,6 +4,7 @@
 
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "@prisma/eclipse/styles/globals.css";
 
 @custom-variant dark (&:is(.dark *));
 

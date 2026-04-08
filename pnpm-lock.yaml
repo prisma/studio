@@ -8,6 +8,9 @@ overrides:
   '@tanstack/query-core': 5.90.19
 
 dependencies:
+  '@prisma/eclipse':
+    specifier: link:../web/packages/eclipse
+    version: link:../web/packages/eclipse
   '@radix-ui/react-toggle':
     specifier: 1.1.10
     version: 1.1.10(@types/react-dom@19.2.3)(@types/react@19.2.14)(react-dom@19.2.4)(react@19.2.4)
