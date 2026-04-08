@@ -83,7 +83,7 @@ export function DataGridHeaderCell({ column }: { column: Column }) {
         </HeaderTooltipIcon>
       )}
       <span className="min-w-0 truncate font-medium">{name}</span>
-      <span className="min-w-0 truncate lowercase text-muted-foreground/70">
+      <span className="min-w-0 truncate lowercase text-foreground-neutral-weak">
         {datatype.affinity || datatype.name}
       </span>
     </div>

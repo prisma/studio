@@ -938,7 +938,7 @@ export function SqlView(_props: ViewProps) {
                 {visualization.state.status === "idle" &&
                 visualization.canGenerate ? (
                   <Button
-                    className="h-auto rounded-none px-0 py-0 text-xs text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground"
+                    className="h-auto rounded-none px-0 py-0 text-xs text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground-neutral"
                     data-testid="sql-result-visualization-action"
                     onClick={visualization.generateVisualization}
                     size="sm"

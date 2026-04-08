@@ -84,7 +84,7 @@ export function OperationEventEntry({ event }: OperationEventEntryProps) {
                 <button
                   type="button"
                   onClick={() => setIsQueryExpanded(!isQueryExpanded)}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground-neutral"
                   aria-expanded={isQueryExpanded}
                 >
                   {isQueryExpanded ? (
@@ -140,7 +140,7 @@ export function OperationEventEntry({ event }: OperationEventEntryProps) {
           {isError && event.payload.error && (
             <div data-response-type="error" className="flex flex-col gap-2">
               <div className="flex items-center justify-between relative">
-                <span className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                <span className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground-neutral">
                   <TriangleAlertIcon size={12} />
                   Error Details
                 </span>

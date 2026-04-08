@@ -164,7 +164,7 @@ function AppearanceCommandItem(props: {
       value={value}
       className={cn(
         "justify-between gap-3",
-        disabled ? "text-muted-foreground/55" : "text-foreground hover:bg-secondary/85",
+        disabled ? "text-muted-foreground/55" : "text-foreground-neutral hover:bg-secondary/85",
       )}
     >
       <span className="flex min-w-0 items-center gap-2.5">
@@ -577,7 +577,7 @@ function StudioCommandPalette() {
               className={cn(
                 item.disabled
                   ? "text-muted-foreground/55"
-                  : "text-foreground hover:bg-secondary/85",
+                  : "text-foreground-neutral hover:bg-secondary/85",
               )}
             >
               <span className="flex size-6 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-background text-muted-foreground transition-colors group-data-[selected=true]:border-border group-data-[selected=true]:bg-card">
@@ -652,7 +652,7 @@ function StudioCommandPalette() {
             >
               <ToggleGroupItem
                 aria-label="Light mode"
-                className="min-w-13 border-0 bg-transparent px-2.5 py-1 text-xs shadow-none hover:bg-background/80 hover:text-foreground data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm"
+                className="min-w-13 border-0 bg-transparent px-2.5 py-1 text-xs shadow-none hover:bg-background/80 hover:text-foreground-neutral data-[state=on]:bg-background data-[state=on]:text-foreground-neutral data-[state=on]:shadow-sm"
                 disabled={isSystemThemeEnabled}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -669,7 +669,7 @@ function StudioCommandPalette() {
               </ToggleGroupItem>
               <ToggleGroupItem
                 aria-label="Dark mode"
-                className="min-w-13 border-0 bg-transparent px-2.5 py-1 text-xs shadow-none hover:bg-background/80 hover:text-foreground data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm"
+                className="min-w-13 border-0 bg-transparent px-2.5 py-1 text-xs shadow-none hover:bg-background/80 hover:text-foreground-neutral data-[state=on]:bg-background data-[state=on]:text-foreground-neutral data-[state=on]:shadow-sm"
                 disabled={isSystemThemeEnabled}
                 onClick={(event) => {
                   event.stopPropagation();

@@ -217,7 +217,7 @@ const STREAM_AGGREGATION_COLUMN_CLASS_NAME =
   "w-[19rem] min-w-[19rem] max-w-[19rem] shrink-0";
 
 const INTERACTIVE_TRIGGER_CLASS_NAME =
-  "group/control inline-flex h-6 max-w-full items-center justify-start gap-1 whitespace-nowrap rounded-full border border-transparent bg-transparent px-1.5 text-xs font-medium leading-none text-muted-foreground transition-[background-color,border-color,color] duration-150 focus-visible:border-input focus-visible:bg-background/95 focus-visible:text-foreground data-[state=open]:border-input data-[state=open]:bg-background/95 data-[state=open]:text-foreground md:hover:border-input md:hover:bg-background/95 md:hover:text-foreground";
+  "group/control inline-flex h-6 max-w-full items-center justify-start gap-1 whitespace-nowrap rounded-full border border-transparent bg-transparent px-1.5 text-xs font-medium leading-none text-muted-foreground transition-[background-color,border-color,color] duration-150 focus-visible:border-input focus-visible:bg-background/95 focus-visible:text-foreground-neutral data-[state=open]:border-input data-[state=open]:bg-background/95 data-[state=open]:text-foreground-neutral md:hover:border-input md:hover:bg-background/95 md:hover:text-foreground-neutral";
 
 const INTERACTIVE_TRIGGER_ICON_CLASS_NAME =
   "size-3.5 opacity-0 transition-opacity duration-150 group-data-[state=open]/control:opacity-100 md:group-hover/control:opacity-100 md:group-focus-visible/control:opacity-100";

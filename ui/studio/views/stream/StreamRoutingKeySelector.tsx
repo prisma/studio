@@ -304,7 +304,7 @@ export function StreamRoutingKeySelector(props: {
         {props.selectedRoutingKey ? (
           <Button
             aria-label={`Clear routing key ${props.selectedRoutingKey}`}
-            className="group/clear absolute right-1 top-1/2 z-10 size-7 -translate-y-1/2 rounded-sm border-0 bg-transparent p-0 text-muted-foreground opacity-0 pointer-events-none shadow-none transition-all duration-150 ease-out group-hover/routing-key:pointer-events-auto group-hover/routing-key:opacity-100 group-focus-within/routing-key:pointer-events-auto group-focus-within/routing-key:opacity-100 hover:bg-background/80 hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100"
+            className="group/clear absolute right-1 top-1/2 z-10 size-7 -translate-y-1/2 rounded-sm border-0 bg-transparent p-0 text-muted-foreground opacity-0 pointer-events-none shadow-none transition-all duration-150 ease-out group-hover/routing-key:pointer-events-auto group-hover/routing-key:opacity-100 group-focus-within/routing-key:pointer-events-auto group-focus-within/routing-key:opacity-100 hover:bg-background/80 hover:text-foreground-neutral focus-visible:pointer-events-auto focus-visible:opacity-100"
             data-testid="stream-routing-key-clear-button"
             onClick={handleClearButtonClick}
             onMouseDown={handleClearButtonMouseDown}

@@ -102,7 +102,7 @@ const STREAM_FOLLOW_MODE_OPTIONS = [
 }>;
 
 const STREAM_FOLLOW_MODE_ITEM_CLASS_NAME =
-  "h-8 rounded-none border-0 px-2.5 shadow-none transition-colors data-[state=on]:bg-background data-[state=on]:font-semibold data-[state=on]:text-foreground data-[state=on]:shadow-sm";
+  "h-8 rounded-none border-0 px-2.5 shadow-none transition-colors data-[state=on]:bg-background data-[state=on]:font-semibold data-[state=on]:text-foreground-neutral data-[state=on]:shadow-sm";
 const PRISMA_WAL_STREAM_NAME = "prisma-wal";
 const STATE_PROTOCOL_PROFILE = "state-protocol";
 const PRISMA_WAL_HISTORY_CLAUSE_PATTERN =
@@ -1880,7 +1880,7 @@ function ActiveStreamView(props: {
                       <button
                         aria-label="Open stream diagnostics"
                         className={cn(
-                          "relative flex min-w-[14rem] items-center justify-center overflow-hidden border-r border-input bg-background px-4 text-sm font-medium text-foreground tabular-nums transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                          "relative flex min-w-[14rem] items-center justify-center overflow-hidden border-r border-input bg-background px-4 text-sm font-medium text-foreground-neutral tabular-nums transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                         )}
                         data-testid="stream-summary-panel"
                         type="button"

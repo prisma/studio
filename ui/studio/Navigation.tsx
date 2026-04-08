@@ -486,11 +486,11 @@ export function Navigation({ className }: NavigationProps) {
   );
 
   const sideBarClasses = cn(
-    "relative flex shrink-0 flex-col overflow-y-auto min-h-full h-0 text-card-foreground shadow-xs rounded-lg",
+    "relative flex shrink-0 flex-col overflow-y-auto min-h-full h-0 text-foreground-neutral shadow-xs rounded-lg",
     className,
   );
   const navigationItemClasses =
-    "py-1 font-mono text-xs text-foreground/60 hover:text-foreground transition-all cursor-pointer data-[active=true]:bg-accent data-[active=true]:foreground data-[active=true]:text-foreground";
+    "py-1 font-mono text-xs text-foreground-neutral-weak hover:text-foreground-neutral transition-all cursor-pointer data-[active=true]:bg-accent data-[active=true]:foreground data-[active=true]:text-foreground-neutral";
 
   return (
     <div
@@ -856,7 +856,7 @@ const SearchableBlock = ({
         >
           <button
             aria-label={searchAriaLabel}
-            className="flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground/60 hover:text-foreground-neutral focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={onOpenSearch}
             type="button"
           >
@@ -864,7 +864,7 @@ const SearchableBlock = ({
           </button>
           <button
             aria-label={refreshAriaLabel}
-            className="flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground/60 hover:text-foreground-neutral focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={onRefresh}
             type="button"
           >

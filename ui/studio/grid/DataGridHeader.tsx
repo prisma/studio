@@ -111,7 +111,7 @@ export function DataGridHeader<TData>(props: HeaderProps<TData>) {
               "flex h-5 w-5 items-center justify-center rounded-full transition-colors",
               isPinned
                 ? "text-foreground"
-                : "text-muted-foreground/70 hover:text-foreground",
+                : "text-foreground-neutral-weak hover:text-foreground-neutral",
             )}
           >
             <Pin size={12} />
@@ -138,7 +138,7 @@ export function DataGridHeader<TData>(props: HeaderProps<TData>) {
               isSortDisabled && "opacity-60",
               isSorted
                 ? "text-foreground"
-                : "text-muted-foreground/70 hover:text-foreground",
+                : "text-foreground-neutral-weak hover:text-foreground-neutral",
             )}
           >
             {isSortDesc ? <ArrowDown size={12} /> : <ArrowUp size={12} />}

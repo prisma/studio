@@ -141,8 +141,8 @@ describe("DataGridHeader controls", () => {
     expect(controls.className).toContain("opacity-0");
     expect(controls.className).toContain("group-hover:opacity-100");
     expect(controls.className).toContain("pointer-events-none");
-    expect(pinButton.className).toContain("text-muted-foreground/70");
-    expect(sortButton.className).toContain("text-muted-foreground/70");
+    expect(pinButton.className).toContain("text-foreground-neutral-weak");
+    expect(sortButton.className).toContain("text-foreground-neutral-weak");
     expect(sortButton.querySelector("svg")?.className).toContain(
       "lucide-arrow-up",
     );

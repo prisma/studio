@@ -58,7 +58,7 @@ export function IntrospectionStatusNotice(
           {message ? (
             <p className="mt-2 text-foreground/70">{message}</p>
           ) : null}
-          <p className="mt-2 text-foreground/60">Source: {source}</p>
+          <p className="mt-2 text-foreground-neutral-weak">Source: {source}</p>
           {queryPreview ? (
             <code
               className={cn(

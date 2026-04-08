@@ -261,7 +261,7 @@ export function DataGridPagination(props: DataGridPaginationProps) {
               >
                 <ChevronLeft data-icon="inline-start" />
               </Button>
-              <div className="flex items-center gap-2 border-r border-input px-3 font-sans text-xs font-medium text-foreground tabular-nums">
+              <div className="flex items-center gap-2 border-r border-input px-3 font-sans text-xs font-medium text-foreground-neutral tabular-nums">
                 <Input
                   aria-disabled={shouldBlockInteraction || undefined}
                   aria-label="Page number"
@@ -270,7 +270,7 @@ export function DataGridPagination(props: DataGridPaginationProps) {
                   type="text"
                   value={pageDraft}
                   className={cn(
-                    "h-9 w-auto min-w-0 rounded-none border-0 px-1 text-right font-sans text-xs text-foreground tabular-nums shadow-none focus-visible:ring-0",
+                    "h-9 w-auto min-w-0 rounded-none border-0 px-1 text-right font-sans text-xs text-foreground-neutral tabular-nums shadow-none focus-visible:ring-0",
                     (shouldBlockInteraction || shouldDisablePageControls) &&
                       "opacity-70",
                   )}

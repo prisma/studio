@@ -2621,7 +2621,7 @@ describe("ActiveTableView filtering", () => {
       );
       expect(dialog?.className).toContain("border-border");
       expect(dialog?.className).toContain("bg-card");
-      expect(dialog?.className).toContain("text-card-foreground");
+      expect(dialog?.className).toContain("text-foreground-neutral ");
       expect(dialog?.className).toContain("shadow-2xl");
       expect(dialogButtons).toHaveLength(2);
       expect(dialogButtons[0]?.textContent?.trim()).toBe("yes, discard");
@@ -2937,7 +2937,7 @@ describe("ActiveTableView filtering", () => {
       );
       expect(dialog?.className).toContain("border-border");
       expect(dialog?.className).toContain("bg-card");
-      expect(dialog?.className).toContain("text-card-foreground");
+      expect(dialog?.className).toContain("text-foreground-neutral ");
       expect(dialog?.className).toContain("shadow-2xl");
       expect(dialogButtons).toHaveLength(2);
       expect(dialogButtons[0]?.textContent?.trim()).toBe("yes, write to db");
