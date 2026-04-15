@@ -365,6 +365,15 @@ async function handleRequest(request: Request): Promise<Response> {
     return await handleStreamsProxyRequest(request, url);
   }
 
+  if (url.pathname === "/favicon.ico") {
+    return new Response(null, {
+      headers: {
+        "Cache-Control": CACHE_CONTROL_STATIC,
+      },
+      status: 204,
+    });
+  }
+
   if (!isProduction && url.pathname === "/__reload") {
     return new Response(createReloadStream(), {
       headers: {
