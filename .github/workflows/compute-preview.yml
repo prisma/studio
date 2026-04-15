@@ -1,0 +1,84 @@
+name: compute preview
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+  delete:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.event.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-preview:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+
+      - name: Setup Node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Compute artifact
+        run: pnpm build:deploy
+
+      - name: Deploy preview
+        id: deploy
+        env:
+          PRISMA_API_TOKEN: ${{ secrets.STUDIO_PREVIEW_COMPUTE_TOKEN }}
+          PREVIEW_BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
+        run: node scripts/compute-preview/compute-preview-deploy.mjs
+
+      - name: Comment preview URL on PR
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PREVIEW_BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
+          PREVIEW_PR_NUMBER: ${{ github.event.pull_request.number }}
+          PREVIEW_SERVICE_NAME: ${{ steps.deploy.outputs.preview_service_name }}
+          PREVIEW_SERVICE_URL: ${{ steps.deploy.outputs.preview_service_url }}
+          PREVIEW_VERSION_URL: ${{ steps.deploy.outputs.preview_version_url }}
+        run: node scripts/compute-preview/compute-preview-comment.mjs
+
+  destroy-preview:
+    if: github.event_name == 'delete' && github.event.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Setup Node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version-file: .node-version
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+
+      - name: Destroy preview service for deleted branch
+        env:
+          PRISMA_API_TOKEN: ${{ secrets.STUDIO_PREVIEW_COMPUTE_TOKEN }}
+          PREVIEW_BRANCH_NAME: ${{ github.event.ref }}
+        run: node scripts/compute-preview/compute-preview-destroy.mjs
