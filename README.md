@@ -400,8 +400,46 @@ Revert to the published npm packages with `pnpm streams:use-npm`.
 `@prisma/dev` now emits its own PGlite runtime assets during Bun bundling, so
 plain `bun build` no longer needs `--packages external` just to keep Prisma
 Postgres dev working. For a source-free Compute artifact, use `pnpm build:deploy`:
-that path still prebuilds the browser JS/CSS and injects those assets into the
-server bundle so the deployed demo does not need the repo checkout at runtime.
+that path prebuilds the browser JS/CSS, injects those assets into the server
+bundle, and copies Prisma Dev's runtime assets into `deploy/bundle/` with
+stable filenames so the deployed demo does not need the repo checkout at
+runtime. It also Bun-bundles the Prisma Streams local worker into `deploy/touch/`
+so Compute can keep Prisma Dev's WAL-to-stream sidecar alive in the source-free artifact.
+
+Deploy that artifact with:
+
+```sh
+bunx @prisma/compute-cli deploy --skip-build \
+  --path deploy \
+  --entrypoint bundle/server.bundle.js \
+  --http-port 8080 \
+  --env STUDIO_DEMO_PORT=8080 \
+  --service <service-id>
+```
+
+## Compute Preview Deploys
+
+This repo also maintains branch-scoped Compute previews for pull requests.
+
+- `.github/workflows/compute-preview.yml` deploys the current PR branch into the
+  dedicated `studio-preview` Compute project whenever a PR is opened,
+  reopened, or updated with new commits.
+- The preview service name is derived from the branch name through a stable
+  Compute-safe slug, so later pushes reuse the same service instead of creating
+  duplicates.
+- The workflow updates one sticky PR comment with the live preview URL after a
+  successful deploy.
+- When a Git branch is deleted, the same workflow destroys the matching preview
+  service.
+
+The workflow expects the GitHub Actions secret
+`STUDIO_PREVIEW_COMPUTE_TOKEN`, which should contain a Compute API token for the
+`studio-preview` project.
+
+For branch-deletion cleanup to happen automatically, the workflow must be
+present on the default branch. In practice that means merging the preview
+workflow to `main` once, after which later PR branches will get full automatic
+create/update/delete behavior.
 
 ## Development Workflow
 

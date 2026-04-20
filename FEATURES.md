@@ -13,8 +13,7 @@ This gives users an accurate live model of the database and keeps table navigati
 ## Deployable Prisma Postgres Demo
 
 The local `ppg-dev` demo can be packaged into a Compute-ready artifact instead of requiring the repo checkout at runtime.
-The deploy builder precompiles the browser JS/CSS, injects those assets into the bundled server, and relies on `@prisma/dev`'s Bun runtime-asset manifest so PGlite's WASM, data, and extension archives are emitted automatically beside the server bundle.
-When that bundled demo also starts its embedded local Prisma Streams runtime, Studio now relies on the published `@prisma/streams-local` package to carry its own runtime tuning defaults instead of layering a second demo-specific memory policy on top.
+The deploy builder precompiles the browser JS/CSS, injects those assets into the bundled server, copies Prisma Dev's PGlite runtime assets into the bundle with stable filenames, and bundles the Prisma Streams worker into `touch/` so the Compute artifact can boot and keep WAL-to-stream syncing alive outside the repo checkout.
 The same demo entrypoint can also run against external development infrastructure through `pnpm demo:ppg -- --database-url <postgres-url> --streams-server-url <streams-url>`, or in streams-only mode through `pnpm demo:ppg -- --streams-server-url <streams-url>`. In those modes, Studio keeps serving the local shell and `/api/streams` proxy, but skips local Prisma Dev startup, local Streams startup, WAL wiring, and local seeding so you can point the demo at an already-running backend stack.
 
 ## Streams-Only Studio Shell
@@ -26,6 +25,14 @@ In that mode the shell hides schema selection, table navigation, and database-on
 
 Studio's local development workflow can temporarily replace the published npm `@prisma/dev` package with the sibling source package from `../team-expansion/dev/server`, while also swapping its `@prisma/streams-local` dependency over to a built local Streams checkout.
 That override stays opt-in, rebuilds from the sibling repos by default, and can be reverted without rewriting the tracked lockfile, so experimental Prisma Dev and Durable Streams work can stay local to one Studio checkout.
+
+## Compute PR Preview Deploys
+
+Pull requests can publish the current branch into the dedicated `studio-preview`
+Compute project without hand-creating services for each branch.
+The preview workflow derives a stable Compute-safe service name from the branch,
+reuses that service across later pushes, posts the live URL back to the PR, and
+destroys the preview service when the branch is deleted.
 
 ## Introspection Recovery and Retry
 

@@ -68,8 +68,8 @@ devDependencies:
     specifier: 8.57.0
     version: 8.57.0
   '@prisma/dev':
-    specifier: 0.24.4
-    version: 0.24.4(typescript@5.9.3)
+    specifier: 0.24.6
+    version: 0.24.6(typescript@5.9.3)
   '@radix-ui/react-alert-dialog':
     specifier: 1.1.15
     version: 1.1.15(@types/react-dom@19.2.3)(@types/react@19.2.14)(react-dom@19.2.4)(react@19.2.4)
@@ -687,29 +687,29 @@ packages:
       tslib: 2.8.1
     dev: true
 
-  /@electric-sql/pglite-socket@0.1.1(@electric-sql/pglite@0.4.1):
-    resolution: {integrity: sha512-p2hoXw3Z3LQHwTeikdZNsFBOvXGqKY2hk51BBw+8NKND8eoH+8LFOtW9Z8CQKmTJ2qqGYu82ipqiyFZOTTXNfw==}
+  /@electric-sql/pglite-socket@0.1.3(@electric-sql/pglite@0.4.3):
+    resolution: {integrity: sha512-LAciWM0M1dCL8hlsxu2venbVZcdxema0BtDfpWYVqr+Y468UADw0pFWidhKw1M8sfJ8rdLT71tjMmnirf/IZRQ==}
     hasBin: true
     peerDependencies:
-      '@electric-sql/pglite': 0.4.1
+      '@electric-sql/pglite': 0.4.3
     dependencies:
-      '@electric-sql/pglite': 0.4.1
+      '@electric-sql/pglite': 0.4.3
     dev: true
 
-  /@electric-sql/pglite-tools@0.3.1(@electric-sql/pglite@0.4.1):
-    resolution: {integrity: sha512-C+T3oivmy9bpQvSxVqXA1UDY8cB9Eb9vZHL9zxWwEUfDixbXv4G3r2LjoTdR33LD8aomR3O9ZXEO3XEwr/cUCA==}
+  /@electric-sql/pglite-tools@0.3.3(@electric-sql/pglite@0.4.3):
+    resolution: {integrity: sha512-AlzLJTRJ8+UFgK8CmxIpyIpJ0+YaFw02IiOSdYrqxwPXdSyeIShz8aa9Tq+tYFXdPwcaMp/Fc80mQZ1dkOQ/wg==}
     peerDependencies:
-      '@electric-sql/pglite': 0.4.1
+      '@electric-sql/pglite': 0.4.3
     dependencies:
-      '@electric-sql/pglite': 0.4.1
+      '@electric-sql/pglite': 0.4.3
     dev: true
 
   /@electric-sql/pglite@0.3.15:
     resolution: {integrity: sha512-Cj++n1Mekf9ETfdc16TlDi+cDDQF0W7EcbyRHYOAeZdsAe8M/FJg18itDTSwyHfar2WIezawM9o0EKaRGVKygQ==}
     dev: true
 
-  /@electric-sql/pglite@0.4.1:
-    resolution: {integrity: sha512-mZ9NzzUSYPOCnxHH1oAHPRzoMFJHY472raDKwXl/+6oPbpdJ7g8LsCN4FSaIIfkiCKHhb3iF/Zqo3NYxaIhU7Q==}
+  /@electric-sql/pglite@0.4.3:
+    resolution: {integrity: sha512-ichuWTgtd4mOM1G4SpyGJa5trT03lWbMypDV0fUXUCXg5hiHqVAz/bZyV68NqmkLB7WcYmj1RMJVSp8HV/v/ZQ==}
     dev: true
 
   /@esbuild/aix-ppc64@0.27.3:
@@ -1166,12 +1166,12 @@ packages:
     resolution: {integrity: sha512-YSGTiSlBAVJPzX4ONZmMotL+ozJwQjRmZweQNIq/ER0tQJKJynNkRB3kyvt37eOfsbMCXk3gnLF6J9OJ4QWftw==}
     dev: true
 
-  /@prisma/dev@0.24.4(typescript@5.9.3):
-    resolution: {integrity: sha512-u/GwsNsWxDq9Ccq6P1R3yzNJAELVIz4A+RXeR6E/JRjXTjVfwiqdIPCdlDOpO4H1+4Jvbv0I5mn0SEqz/cz8sQ==}
+  /@prisma/dev@0.24.6(typescript@5.9.3):
+    resolution: {integrity: sha512-GbPGfHBszyfeq82xaAVtMqrJX1lzdJbu3ESnuQ84Vd4+/fZQTj930yvI4/et3c63MgjfKpchFzvDHYkHJJFjXQ==}
     dependencies:
-      '@electric-sql/pglite': 0.4.1
-      '@electric-sql/pglite-socket': 0.1.1(@electric-sql/pglite@0.4.1)
-      '@electric-sql/pglite-tools': 0.3.1(@electric-sql/pglite@0.4.1)
+      '@electric-sql/pglite': 0.4.3
+      '@electric-sql/pglite-socket': 0.1.3(@electric-sql/pglite@0.4.3)
+      '@electric-sql/pglite-tools': 0.3.3(@electric-sql/pglite@0.4.3)
       '@hono/node-server': 1.19.11(hono@4.12.8)
       '@prisma/get-platform': 7.2.0
       '@prisma/query-plan-executor': 7.2.0
