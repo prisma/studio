@@ -1,6 +1,6 @@
 {
   "name": "@prisma/studio-core",
-  "version": "0.27.3",
+  "version": "0.28.0",
   "description": "Modular Prisma Studio components",
   "type": "module",
   "sideEffects": false,
