@@ -2546,7 +2546,7 @@ export function DataGrid(props: DataGridProps) {
                   containerProps={{
                     "aria-label": "Table grid",
                     className:
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25 overscroll-x-contain",
                     "data-grid-scroll-container": "true",
                     style: {
                       containerType: "inline-size",
