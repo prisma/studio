@@ -155,6 +155,12 @@ In table view it surfaces context-aware actions like row search, AI filtering, i
 Table navigation stays intentionally short by showing only the first 3 tables by default and the top 3 matches while filtering. If more tables exist, the palette shows an `x more...` entry that hands off into the existing sidebar table search so users keep one consistent table-filtering UI.
 `Search rows` and `Filter with AI` work in two modes: typing the command name keeps them as focus actions for the existing toolbar inputs, while free text turns them into direct `Search rows: ...` and `Filter with AI: ...` actions that execute immediately. Keyboard selection stays active from the moment the palette opens, so arrow keys can move through results before any typing, and the list auto-scrolls the active result into view as you move into lower sections.
 
+## Request Observability
+
+The Requests view gives Studio a request-centered observability surface for inspecting dummy request data in the same shell as tables, SQL, and Console.
+Each request row shows timestamp, service, path, message, and duration with newest requests first, then expands in place to show an OpenTelemetry-style trace timeline or the log lines associated with that request.
+The trace view highlights external calls and Prisma subsystem spans, while the logs view preserves both plain string messages and structured JSON objects for detailed inspection.
+
 ## Column Controls and Metadata
 
 Columns support drag-and-drop reordering, resizing, sorting, and pinning to keep important fields anchored during wide-table review.

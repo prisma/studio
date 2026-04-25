@@ -20,7 +20,7 @@ interface NavigationMockValue {
   schemaParam: string;
   setSchemaParam: () => Promise<URLSearchParams>;
   setTableParam: () => Promise<URLSearchParams>;
-  viewParam: "table" | "schema" | "console" | "sql";
+  viewParam: "table" | "schema" | "console" | "requests" | "sql";
 }
 
 interface IntrospectionMockValue {
@@ -150,8 +150,11 @@ vi.mock("../hooks/use-ui-state", async () => {
 
 vi.mock("./context", () => ({
   useStudio: () => ({
+    hasDatabase: true,
     isDarkMode,
     isNavigationOpen,
+    navigationWidth: 192,
+    setNavigationWidth: vi.fn(),
     setThemeMode: setThemeModeMock,
     themeMode,
     toggleNavigation: toggleNavigationMock,
@@ -352,6 +355,7 @@ describe("Studio command palette", () => {
     expect(document.body.textContent).not.toContain("incidents");
     expect(document.body.textContent).toContain("Visualizer");
     expect(document.body.textContent).toContain("Console");
+    expect(document.body.textContent).toContain("Requests");
     expect(document.body.textContent).toContain("SQL");
     expect(document.body.textContent).toContain("Studio theme");
     expect(document.body.textContent).toContain("Light");

@@ -9,7 +9,7 @@ type NavigationMockValue = {
   metadata: {
     activeTable: undefined;
   };
-  viewParam: "table" | "stream";
+  viewParam: "table" | "stream" | "requests";
 };
 
 type IntrospectionMockValue = {
@@ -81,6 +81,10 @@ vi.mock("./Navigation", () => ({
 
 vi.mock("./views/console/ConsoleView", () => ({
   ConsoleView: () => <div>Console view</div>,
+}));
+
+vi.mock("./views/requests/RequestsView", () => ({
+  RequestsView: () => <div>Requests view</div>,
 }));
 
 vi.mock("./views/schema/SchemaView", () => ({
@@ -245,6 +249,46 @@ describe("Studio", () => {
     expect(
       container.querySelector('[data-testid="studio-main-pane"]')?.className,
     ).not.toContain("self-start");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("renders the requests view when navigation selects requests", () => {
+    useNavigationMock.mockReturnValue({
+      metadata: {
+        activeTable: undefined,
+      },
+      viewParam: "requests",
+    });
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <Studio
+          adapter={
+            {
+              delete: vi.fn(),
+              introspect: vi.fn(),
+              insert: vi.fn(),
+              query: vi.fn(),
+              raw: vi.fn(),
+              update: vi.fn(),
+            } as unknown as Adapter
+          }
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain("Requests view");
+    expect(container.textContent).not.toContain(
+      "Could not load schema metadata",
+    );
 
     act(() => {
       root.unmount();
