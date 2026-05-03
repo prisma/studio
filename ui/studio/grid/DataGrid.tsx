@@ -947,7 +947,7 @@ export function DataGrid(props: DataGridProps) {
       });
       const shouldEnablePreview = Boolean(
         dragDropTarget.compatibleOverId &&
-        dragDropTarget.compatibleOverId !== activeId,
+          dragDropTarget.compatibleOverId !== activeId,
       );
       setIsColumnReorderPreviewEnabled((current) =>
         current === shouldEnablePreview ? current : shouldEnablePreview,
@@ -1552,8 +1552,8 @@ export function DataGrid(props: DataGridProps) {
       const text = hasRowSelection
         ? getSelectedRowClipboardText()
         : hasCellSelection
-          ? getSelectedClipboardText()
-          : getFocusedCellClipboardText();
+        ? getSelectedClipboardText()
+        : getFocusedCellClipboardText();
 
       if (!text) {
         return;
@@ -2140,12 +2140,26 @@ export function DataGrid(props: DataGridProps) {
         return;
       }
 
-      selectSingleRowMode({ rowId, rowIndex, drag: isPrimaryButton });
+      clearNativeTextSelection();
+      clearCellSelectionState();
+
+      const nextSelection = { ...rowSelectionState };
+
+      if (nextSelection[rowId]) {
+        delete nextSelection[rowId];
+      } else {
+        nextSelection[rowId] = true;
+      }
+
+      setRowSelection(nextSelection);
+
+      rowSelectionDragRef.current = isPrimaryButton;
+      rowSelectionAnchorRef.current = rowIndex;
     },
     [
       clearCellSelectionState,
+      clearNativeTextSelection,
       rowSelectionState,
-      selectSingleRowMode,
       setRowSelection,
     ],
   );
