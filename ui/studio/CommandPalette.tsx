@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BetweenVerticalStart,
+  ChartNoAxesColumnIncreasing,
   Database,
   FileCode2,
   GalleryVerticalEnd,
@@ -164,7 +165,9 @@ function AppearanceCommandItem(props: {
       value={value}
       className={cn(
         "justify-between gap-3",
-        disabled ? "text-muted-foreground/55" : "text-foreground hover:bg-secondary/85",
+        disabled
+          ? "text-muted-foreground/55"
+          : "text-foreground hover:bg-secondary/85",
       )}
     >
       <span className="flex min-w-0 items-center gap-2.5">
@@ -334,7 +337,9 @@ export function StudioCommandPaletteProvider(props: PropsWithChildren) {
 function StudioCommandPalette() {
   const {
     isDarkMode,
+    hasDatabase,
     isNavigationOpen,
+    queryInsights,
     setThemeMode,
     themeMode,
     toggleNavigation,
@@ -508,6 +513,23 @@ function StudioCommandPalette() {
         },
         section: "views",
       },
+      ...(queryInsights && hasDatabase !== false
+        ? [
+            {
+              disabled: false,
+              icon: ChartNoAxesColumnIncreasing,
+              id: "view:query-insights",
+              keywords: ["query insights", "queries", "latency", "qps"],
+              label: "Query Insights",
+              onSelect: () => {
+                window.location.hash = createUrl({
+                  viewParam: "query-insights",
+                });
+              },
+              section: "views" as const,
+            },
+          ]
+        : []),
       {
         disabled: false,
         icon: FileCode2,
@@ -528,7 +550,7 @@ function StudioCommandPalette() {
         query,
       }),
     );
-  }, [createUrl, query]);
+  }, [createUrl, hasDatabase, query, queryInsights]);
   useEffect(() => {
     if (!isOpen) {
       setQuery("");

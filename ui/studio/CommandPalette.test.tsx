@@ -20,7 +20,7 @@ interface NavigationMockValue {
   schemaParam: string;
   setSchemaParam: () => Promise<URLSearchParams>;
   setTableParam: () => Promise<URLSearchParams>;
-  viewParam: "table" | "schema" | "console" | "sql";
+  viewParam: "console" | "query-insights" | "schema" | "sql" | "table";
 }
 
 interface IntrospectionMockValue {
@@ -36,6 +36,8 @@ const toggleNavigationMock = vi.fn();
 const setThemeModeMock = vi.fn();
 let isNavigationOpen = true;
 let isDarkMode = false;
+let hasDatabase = true;
+let queryInsightsTransport: unknown;
 let themeMode: "dark" | "light" | "system" = "system";
 const uiStateStore = new Map<string, unknown>();
 const uiStateListeners = new Map<string, Set<() => void>>();
@@ -150,8 +152,10 @@ vi.mock("../hooks/use-ui-state", async () => {
 
 vi.mock("./context", () => ({
   useStudio: () => ({
+    hasDatabase,
     isDarkMode,
     isNavigationOpen,
+    queryInsights: queryInsightsTransport,
     setThemeMode: setThemeModeMock,
     themeMode,
     toggleNavigation: toggleNavigationMock,
@@ -290,6 +294,8 @@ describe("Studio command palette", () => {
     });
     isNavigationOpen = true;
     isDarkMode = false;
+    hasDatabase = true;
+    queryInsightsTransport = undefined;
     themeMode = "system";
     setThemeModeMock.mockReset();
     toggleNavigationMock.mockReset();
@@ -303,6 +309,8 @@ describe("Studio command palette", () => {
     window.location.hash = "";
     isNavigationOpen = true;
     isDarkMode = false;
+    hasDatabase = true;
+    queryInsightsTransport = undefined;
     themeMode = "system";
     HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
     uiStateStore.clear();
@@ -352,11 +360,47 @@ describe("Studio command palette", () => {
     expect(document.body.textContent).not.toContain("incidents");
     expect(document.body.textContent).toContain("Visualizer");
     expect(document.body.textContent).toContain("Console");
+    expect(document.body.textContent).not.toContain("Query Insights");
     expect(document.body.textContent).toContain("SQL");
     expect(document.body.textContent).toContain("Studio theme");
     expect(document.body.textContent).toContain("Light");
     expect(document.body.textContent).toContain("Dark");
     expect(document.body.textContent).toContain("Match system theme");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("shows Query Insights in navigation commands only when configured", () => {
+    queryInsightsTransport = {};
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StudioCommandPaletteProvider />);
+    });
+
+    act(() => {
+      keyDown("k", { metaKey: true });
+    });
+
+    const item = getCommandItemByText("Query Insights");
+
+    expect(item).toBeDefined();
+
+    act(() => {
+      item?.dispatchEvent(
+        new MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+
+    expect(window.location.hash).toBe("#viewParam=query-insights");
 
     act(() => {
       root.unmount();

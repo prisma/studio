@@ -51,6 +51,7 @@ async function bootstrap(): Promise<void> {
       hasDatabase={config.database.enabled}
       seededAt={config.seededAt}
       aiEnabled={config.ai?.enabled === true}
+      queryInsights={config.queryInsights}
       streamsUrl={config.streams?.url}
     />,
   );

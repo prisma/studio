@@ -14,6 +14,12 @@ import { IntrospectionStatusNotice } from "./IntrospectionStatusNotice";
 import { Navigation } from "./Navigation";
 import { StudioHeader } from "./StudioHeader";
 import { ConsoleView } from "./views/console/ConsoleView";
+import { QueryInsightsView } from "./views/query-insights/QueryInsightsView";
+import type {
+  QueryInsightsAnalyzeInput,
+  QueryInsightsAnalyzeResponse,
+  QueryInsightsUiEvent,
+} from "./views/query-insights/types";
 import { SchemaView } from "./views/schema/SchemaView";
 import { SqlView } from "./views/sql/SqlView";
 import { StreamView } from "./views/stream/StreamView";
@@ -68,12 +74,23 @@ export interface StudioProps {
   hasDatabase?: boolean;
   llm?: StudioLlm;
   onEvent?: (error: StudioEvent) => void;
+  queryInsights?: StudioQueryInsights;
   streamsUrl?: string;
   /**
    * Custom theme configuration or CSS string from shadcn
    * Supports both parsed theme object and raw CSS string
    */
   theme?: CustomTheme | string;
+}
+
+export interface StudioQueryInsights {
+  aiRecommendationsEnabled: boolean;
+  analyze(
+    input: QueryInsightsAnalyzeInput,
+  ): Promise<QueryInsightsAnalyzeResponse>;
+  enableAiRecommendations(): Promise<{ ok: true }>;
+  onEvent?: (event: QueryInsightsUiEvent) => void;
+  streamUrl: string;
 }
 
 /**
@@ -85,6 +102,7 @@ export function Studio(props: StudioProps) {
     hasDatabase = true,
     llm,
     onEvent,
+    queryInsights,
     streamsUrl,
     theme,
   } = props;
@@ -100,6 +118,7 @@ export function Studio(props: StudioProps) {
       hasDatabase={hasDatabase}
       llm={llm}
       onEvent={onEvent}
+      queryInsights={queryInsights}
       streamsUrl={streamsUrl}
       theme={theme}
     >
@@ -111,6 +130,7 @@ export function Studio(props: StudioProps) {
 const views: Record<string, (props: ViewProps) => JSX.Element | null> = {
   schema: SchemaView,
   table: ActiveTableView,
+  "query-insights": QueryInsightsView,
   stream: StreamView,
   console: ConsoleView,
   sql: SqlView,

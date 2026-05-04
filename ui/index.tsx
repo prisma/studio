@@ -1,4 +1,8 @@
-export { Studio, type StudioProps } from "./studio/Studio";
+export {
+  Studio,
+  type StudioProps,
+  type StudioQueryInsights,
+} from "./studio/Studio";
 export {
   type CustomTheme,
   type ThemeVariables,

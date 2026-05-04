@@ -560,6 +560,50 @@ describe("useStreamEvents", () => {
     harness.cleanup();
   });
 
+  it("falls back to ts epoch fields for event timestamps", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify([
+          {
+            ts: 1_700_000_000_000,
+            value: {
+              id: "query-1",
+            },
+          },
+        ]),
+        {
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+      ),
+    );
+    const harness = renderHarness({
+      pageCount: 1,
+      pageSize: 1,
+      stream: {
+        createdAt: "2026-03-24T14:42:38.890Z",
+        epoch: 0,
+        expiresAt: null,
+        name: "prisma-log",
+        nextOffset: "1",
+        sealedThrough: "-1",
+        uploadedThrough: "-1",
+      },
+      visibleEventCount: 1n,
+    });
+
+    await waitFor(() => harness.getLatestState()?.events.length === 1);
+
+    expect(harness.getLatestState()?.events[0]).toEqual(
+      expect.objectContaining({
+        exactTimestamp: "2023-11-14T22:13:20.000Z",
+      }),
+    );
+
+    harness.cleanup();
+  });
+
   it("keeps the last resolved event window visible while a larger tail window is fetching", async () => {
     let resolveSecondFetch: ((response: Response) => void) | undefined;
     const fetchSpy = vi

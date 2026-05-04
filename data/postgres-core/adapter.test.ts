@@ -66,6 +66,9 @@ describe("postgres-core/adapter", () => {
               "not ilike",
             ],
             "query": {
+              "meta": {
+                "visibility": "studio-system",
+              },
               "parameters": [
                 "",
                 "nextval(%",
@@ -485,7 +488,9 @@ describe("postgres-core/adapter", () => {
       expect(error).toBeNull();
       expect(result?.rowCount).toBe(2);
       expect(result?.rows).toEqual([{ one: 1 }, { one: 2 }]);
-      expect(result?.query.sql).toBe("select 1 as one union all select 2 as one");
+      expect(result?.query.sql).toBe(
+        "select 1 as one union all select 2 as one",
+      );
     });
 
     it("returns adapter errors for invalid SQL", async () => {

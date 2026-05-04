@@ -13,12 +13,15 @@ import type {
 import type { StudioEventBase } from "../studio/Studio";
 import { useIntrospection } from "./use-introspection";
 
-const useStudioMock = vi.fn<
-  () => {
-    adapter: Adapter;
-    onEvent: (event: StudioEventBase) => void;
-  }
->();
+const { useStudioMock } = vi.hoisted(() => ({
+  useStudioMock: vi.fn<
+    () => {
+      adapter: Adapter;
+      hasDatabase: boolean;
+      onEvent: (event: StudioEventBase) => void;
+    }
+  >(),
+}));
 
 vi.mock("../studio/context", () => ({
   useStudio: useStudioMock,
@@ -116,6 +119,7 @@ function renderHarness(args: {
 
   useStudioMock.mockReturnValue({
     adapter,
+    hasDatabase: true,
     onEvent,
   });
 

@@ -21,6 +21,13 @@ The same demo entrypoint can also run against external development infrastructur
 Studio can run without a database connection when a Streams server is configured, which makes it usable as a focused event-log and stream-search tool.
 In that mode the shell hides schema selection, table navigation, and database-only views, defaults into the stream view, and keeps all Streams browsing, search, aggregation, and live/tail behavior working through the normal `/api/streams` proxy.
 
+## Query Insights
+
+Embedders can provide a Query Insights transport that adds a native Studio view at `view=query-insights`.
+The view reads query events from a `prisma-log` Prisma Streams stream while active, replays the latest stream snapshot on mount, buckets event timestamps into latency and queries-per-second charts, groups Prisma operations when metadata is available, and keeps the query table sortable, filterable by table, and bounded in memory.
+Selecting a row opens a Studio sheet with SQL, runtime stats, Prisma operation context, and structured recommendations after workspace-scoped AI consent.
+The `ppg-dev` demo appends every successful SQL execution from `/api/query` into `prisma-log` continuously through the same Streams server used by the demo, with Studio system queries annotated for downstream classification.
+
 ## Local Streams Development Override
 
 Studio's local development workflow can temporarily replace the published npm `@prisma/dev` package with the sibling source package from `../team-expansion/dev/server`, while also swapping its `@prisma/streams-local` dependency over to a built local Streams checkout.
