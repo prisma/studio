@@ -4,6 +4,7 @@ import {
   analyzeDemoQueryInsight,
   appendStudioSystemQuerySuffix,
   createQueryInsightsLogEvent,
+  getQueryInsightsQueryVisibility,
   isStudioSystemQuery,
   parseSqlTableNames,
   QUERY_INSIGHTS_LOG_STREAM_NAME,
@@ -22,6 +23,7 @@ describe("ppg-dev Query Insights helpers", () => {
       `select * from pg_catalog.pg_class ${STUDIO_SYSTEM_QUERY_SUFFIX}`,
     );
     expect(isStudioSystemQuery(tagged)).toBe(true);
+    expect(getQueryInsightsQueryVisibility(tagged)).toBe("studio-system");
     expect(
       isStudioSystemQuery({
         meta: { visibility: "user" },
@@ -43,7 +45,7 @@ describe("ppg-dev Query Insights helpers", () => {
     expect(parseSqlTableNames("select * from pg_catalog.pg_class")).toEqual([]);
   });
 
-  it("builds prisma-log query events and skips Studio system queries", () => {
+  it("builds prisma-log query events for user and Studio system queries", () => {
     const event = createQueryInsightsLogEvent({
       durationMs: 12.5,
       query: {
@@ -63,14 +65,30 @@ describe("ppg-dev Query Insights helpers", () => {
       tables: ["organizations"],
       ts: 1_700_000_000_000,
       type: "query",
+      visibility: "user",
+    });
+    const systemEvent = createQueryInsightsLogEvent({
+      durationMs: 1,
+      query: appendStudioSystemQuerySuffix({
+        meta: { visibility: "studio-system" },
+        parameters: [],
+        sql: "select * from pg_catalog.pg_class",
+      }),
+      rows: [],
+      ts: 1_700_000_000_001,
+    });
+
+    expect(systemEvent).toMatchObject({
+      sql: "select * from pg_catalog.pg_class",
+      type: "query",
+      visibility: "studio-system",
     });
     expect(
       createQueryInsightsLogEvent({
         durationMs: 1,
         query: {
-          meta: { visibility: "studio-system" },
           parameters: [],
-          sql: "select * from pg_catalog.pg_class",
+          sql: "   ",
         },
         rows: [],
       }),

@@ -2,6 +2,7 @@ import type { Query } from "../../data/query";
 import type {
   QueryInsightsAnalysisResult,
   QueryInsightsAnalyzeInput,
+  QueryInsightsQueryVisibility,
   QueryInsightsStreamQuery,
 } from "../../ui/studio/views/query-insights/types";
 
@@ -11,6 +12,7 @@ const CONSOLE_SYSTEM_QUERY_SUFFIX = "-- prisma:console";
 
 export interface QueryInsightsLogEvent extends QueryInsightsStreamQuery {
   type: "query";
+  visibility: QueryInsightsQueryVisibility;
 }
 
 function normalizeSql(sql: string): string {
@@ -30,6 +32,12 @@ export function isStudioSystemQuery(query: Query<unknown>): boolean {
     query.sql.includes(STUDIO_SYSTEM_QUERY_SUFFIX) ||
     query.sql.includes(CONSOLE_SYSTEM_QUERY_SUFFIX)
   );
+}
+
+export function getQueryInsightsQueryVisibility(
+  query: Query<unknown>,
+): QueryInsightsQueryVisibility {
+  return isStudioSystemQuery(query) ? "studio-system" : "user";
 }
 
 export function appendStudioSystemQuerySuffix<T>(query: Query<T>): Query<T> {
@@ -76,10 +84,6 @@ export function createQueryInsightsLogEvent(args: {
   rows: unknown;
   ts?: number;
 }): QueryInsightsLogEvent | null {
-  if (isStudioSystemQuery(args.query)) {
-    return null;
-  }
-
   const cleanedSql = stripKnownSystemSuffixes(args.query.sql);
   const normalizedSql = normalizeSql(cleanedSql);
 
@@ -103,6 +107,7 @@ export function createQueryInsightsLogEvent(args: {
     tables: parseSqlTableNames(cleanedSql),
     ts: args.ts ?? Date.now(),
     type: "query",
+    visibility: getQueryInsightsQueryVisibility(args.query),
   };
 }
 

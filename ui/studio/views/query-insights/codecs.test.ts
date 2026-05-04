@@ -29,6 +29,7 @@ describe("Query Insights stream codecs", () => {
           sql: "select id from users",
           tables: ["users"],
           ts: 1_700_000_000_000,
+          visibility: "user",
         },
       ]),
     );
@@ -48,6 +49,7 @@ describe("Query Insights stream codecs", () => {
         model: "User",
       },
       queryId: "query-1",
+      visibility: "user",
     });
     expect(chartTick).toEqual({
       data: {
@@ -85,6 +87,7 @@ describe("Query Insights stream codecs", () => {
           tables: ["organizations"],
           ts: 1_700_000_000_100,
           type: "query",
+          visibility: "studio-system",
         },
         {
           count: 2,
@@ -124,6 +127,7 @@ describe("Query Insights stream codecs", () => {
 
     expect(decoded.success).toBe(true);
     expect(decoded.data).toHaveLength(3);
+    expect(decoded.data?.[0]?.visibility).toBe("studio-system");
     expect(createChartTicksFromQueries(decoded.data ?? [])).toEqual([
       {
         avgDurationMs: 40 / 3,

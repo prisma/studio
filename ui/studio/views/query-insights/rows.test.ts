@@ -64,6 +64,7 @@ describe("Query Insights row helpers", () => {
       duration: 84.2,
       reads: 12,
       rowsReturned: 2,
+      visibility: undefined,
     });
   });
 

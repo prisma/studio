@@ -2,6 +2,7 @@ import {
   QUERY_INSIGHTS_CHART_BUCKET_MS,
   type QueryInsightsChartPoint,
   type QueryInsightsPrismaInfo,
+  type QueryInsightsQueryVisibility,
   type QueryInsightsStreamQuery,
 } from "./types";
 
@@ -101,6 +102,22 @@ function decodeOptionalString(value: unknown): string | null | undefined {
   return assertString(value, "optional string field");
 }
 
+function decodeOptionalVisibility(
+  value: unknown,
+): QueryInsightsQueryVisibility | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === "studio-system" || value === "user") {
+    return value;
+  }
+
+  throw new Error(
+    "Invalid Query Insights event: visibility must be studio-system or user.",
+  );
+}
+
 function decodeStreamQuery(value: unknown): QueryInsightsStreamQuery {
   if (!isRecord(value)) {
     throw new Error(
@@ -138,6 +155,7 @@ function decodeStreamQuery(value: unknown): QueryInsightsStreamQuery {
     sql,
     tables: assertStringArray(value.tables, "tables"),
     ts,
+    visibility: decodeOptionalVisibility(value.visibility),
   };
 }
 

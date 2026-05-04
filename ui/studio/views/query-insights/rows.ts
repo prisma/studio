@@ -34,6 +34,7 @@ export function toQueryInsight(
     reads: query.reads,
     rowsReturned: query.rowsReturned,
     tables: query.tables,
+    visibility: query.visibility,
   };
 }
 
@@ -73,6 +74,7 @@ function mergeQueryInsight(
     reads: existing.reads + incoming.reads,
     rowsReturned: existing.rowsReturned + incoming.rowsReturned,
     tables: Array.from(tables).sort(),
+    visibility: incoming.visibility ?? existing.visibility,
   };
 }
 

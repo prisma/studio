@@ -73,7 +73,7 @@ Selecting a row auto-pauses table updates. Closing a sheet that caused auto-paus
 
 Studio's `Query` contract includes `meta.visibility`.
 
-Postgres adapter-generated introspection, table reads, mutations, and fallback lint helper queries MUST be marked `studio-system`. Raw SQL editor executions remain user-visible. BFF hosts should append `-- prisma:studio` to system queries before forwarding them to the database so backend Query Insights implementations can filter them consistently with `-- prisma:console`.
+Postgres adapter-generated introspection, table reads, mutations, and fallback lint helper queries MUST be marked `studio-system`. Raw SQL editor executions remain user-visible. BFF hosts should append `-- prisma:studio` to system queries before forwarding them to the database so backend Query Insights implementations can classify them consistently with `-- prisma:console`. System classification MUST NOT prevent successful query executions from being appended to `prisma-log`.
 
 ## ppg-dev Demo
 
@@ -82,7 +82,7 @@ The local `ppg-dev` demo hosts the Query Insights backend itself:
 - `/api/config` advertises the Query Insights transport URLs
 - ppg-dev ensures the `prisma-log` stream exists on the configured Prisma
   Streams server at startup
-- `/api/query` appends the Studio system suffix to system queries, executes the database request, and appends each successful user-visible SQL execution to `prisma-log`
+- `/api/query` appends the Studio system suffix to system queries, executes the database request, and appends each successful SQL execution to `prisma-log` with query visibility metadata
 - the Query Insights UI reads from `/api/streams/v1/stream/prisma-log`, so it
   uses the same same-origin Streams proxy as the Stream view
 - `/api/query-insights/analyze` returns deterministic demo analysis

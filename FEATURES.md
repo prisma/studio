@@ -26,7 +26,7 @@ In that mode the shell hides schema selection, table navigation, and database-on
 Embedders can provide a Query Insights transport that adds a native Studio view at `view=query-insights`.
 The view reads query events from a `prisma-log` Prisma Streams stream while active, buckets event timestamps into latency and queries-per-second charts, groups Prisma operations when metadata is available, and keeps the query table sortable, filterable by table, and bounded in memory.
 Selecting a row opens a Studio sheet with SQL, runtime stats, Prisma operation context, and structured recommendations after workspace-scoped AI consent.
-The `ppg-dev` demo appends user-originated SQL from `/api/query` into `prisma-log` continuously through the same Streams server used by the demo, while hiding Studio system queries.
+The `ppg-dev` demo appends every successful SQL execution from `/api/query` into `prisma-log` continuously through the same Streams server used by the demo, with Studio system queries annotated for downstream classification.
 
 ## Local Streams Development Override
 

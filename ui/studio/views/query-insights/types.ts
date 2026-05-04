@@ -10,6 +10,8 @@ export interface QueryInsightsPrismaInfo {
   payload?: Record<string, unknown> | Array<Record<string, unknown>>;
 }
 
+export type QueryInsightsQueryVisibility = "studio-system" | "user";
+
 export interface QueryInsightsQuery {
   count: number;
   duration: number;
@@ -24,6 +26,7 @@ export interface QueryInsightsQuery {
   reads: number;
   rowsReturned: number;
   tables: string[];
+  visibility?: QueryInsightsQueryVisibility;
 }
 
 export interface QueryInsightsStreamQuery {
@@ -39,6 +42,7 @@ export interface QueryInsightsStreamQuery {
   sql: string;
   tables: string[];
   ts: number;
+  visibility?: QueryInsightsQueryVisibility;
 }
 
 export interface QueryInsightsChartPoint {
