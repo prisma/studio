@@ -43,9 +43,11 @@ The canonical Query Insights data source is a Prisma Streams JSON stream named
 continuously by the host while queries execute, regardless of whether the Query
 Insights view is currently open.
 
-The Studio UI reads that stream through the normal Streams HTTP surface, using
-`GET /v1/stream/prisma-log?format=json&offset=-1&live=sse`. This means the UI
-receives standard Streams SSE events:
+The Studio UI reads that stream through the normal Streams HTTP surface. On
+mount, it first performs a non-live snapshot read from the same stream URL so
+already-recorded queries populate the view. It then opens the live SSE URL from
+the returned `Stream-Next-Offset` cursor so new appends continue streaming
+without replay gaps. The live connection receives standard Streams SSE events:
 
 - `data`: a JSON array of `prisma-log` events
 - `control`: stream cursor and up-to-date metadata, currently ignored by Query
