@@ -54,6 +54,7 @@ describe("TanStack DB architecture compliance", () => {
     expect(filesWithCreateCollection).toEqual(
       [
         "ui/hooks/use-active-table-rows-collection.ts",
+        "ui/hooks/use-stream-events.ts",
         "ui/hooks/use-ui-state.ts",
         "ui/studio/context.tsx",
       ].sort(),

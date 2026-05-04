@@ -145,6 +145,26 @@ It deliberately excludes:
   - The storage breakdowns also need collapsible ledger-style accounting boxes whose headers surface the section totals when folded shut, plus faint shared-cap annotations that sit beside right-aligned byte values and one shared cap marker spanning both Routing and Exact cache rows, which is not a stock ShadCN pattern.
   - No stock ShadCN pattern covers that descriptor-driven observability layout, especially when the UI must distinguish logical bytes from physical storage signals, separate search coverage from historical run indexes, hide unconfigured routing rows, and keep the remaining cost caveats explicit instead of inventing unavailable totals.
 
+### Query Insights Live Observability View
+
+- Canonical components:
+  - [`ui/studio/views/query-insights/QueryInsightsView.tsx`](../ui/studio/views/query-insights/QueryInsightsView.tsx)
+  - [`ui/studio/views/query-insights/QueryInsightsChart.tsx`](../ui/studio/views/query-insights/QueryInsightsChart.tsx)
+- Closest standard ShadCN alternatives:
+  - `Card`
+  - `Table`
+  - `Sheet`
+- Why it stays non-standard:
+  - Query Insights needs a bounded live SSE session, chart ticks that update independently from table pause state, row grouping by Prisma operation, pause-buffer flushing highlights, and previous/next navigation inside a detail sheet.
+  - No stock ShadCN block covers that observability-specific control model, so Studio composes the surface from standard primitives while keeping the stream, chart, and row-state behavior local to this view.
+- Required internals:
+  - `Badge`
+  - `Button`
+  - `Card`
+  - `Select`
+  - `Sheet`
+  - `Table`
+
 ## Standardization Candidates
 
 These are the current high-signal places where Studio is bypassing a plausible standard ShadCN component or composition pattern.

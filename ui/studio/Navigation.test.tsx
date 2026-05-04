@@ -17,7 +17,13 @@ interface NavigationMockValue {
   setSchemaParam: () => Promise<URLSearchParams>;
   setTableParam: () => Promise<URLSearchParams>;
   streamParam: string | null;
-  viewParam: "table" | "schema" | "console" | "sql" | "stream";
+  viewParam:
+    | "console"
+    | "query-insights"
+    | "schema"
+    | "sql"
+    | "stream"
+    | "table";
 }
 
 interface IntrospectionMockValue {
@@ -57,6 +63,7 @@ interface StudioMockValue {
   hasDatabase: boolean;
   isDarkMode: boolean;
   navigationWidth: number;
+  queryInsights?: unknown;
   setNavigationWidth: (width: number) => void;
 }
 
@@ -420,6 +427,56 @@ describe("Navigation", () => {
     expect(tableLink).not.toBeUndefined();
     expect(tableLink?.getAttribute("data-sidebar")).toBe("menu-button");
     expect(tableLink?.parentElement?.tagName).toBe("NAV");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("shows Query Insights navigation only when the transport is configured", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    expect(container.textContent).not.toContain("Query Insights");
+
+    useStudioMock.mockImplementation(() => ({
+      hasDatabase: true,
+      isDarkMode,
+      navigationWidth: 192,
+      queryInsights: {},
+      setNavigationWidth: setNavigationWidthMock,
+    }));
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const link = Array.from(container.querySelectorAll("a")).find(
+      (item) => item.textContent?.trim() === "Query Insights",
+    );
+
+    expect(link).toBeDefined();
+    expect(link?.getAttribute("href")).toBe("#viewParam=query-insights");
+
+    useStudioMock.mockImplementation(() => ({
+      hasDatabase: false,
+      isDarkMode,
+      navigationWidth: 192,
+      queryInsights: {},
+      setNavigationWidth: setNavigationWidthMock,
+    }));
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    expect(container.textContent).not.toContain("Query Insights");
 
     act(() => {
       root.unmount();

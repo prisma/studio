@@ -110,8 +110,13 @@ function buildNavigationTableNames(introspection: AdapterIntrospectResult) {
  * implement a specialized hook instead.
  */
 function useNavigationInternal() {
-  const { adapter, hasDatabase, navigationTableNamesCollection, streamsUrl } =
-    useStudio();
+  const {
+    adapter,
+    hasDatabase,
+    navigationTableNamesCollection,
+    queryInsights,
+    streamsUrl,
+  } = useStudio();
   const { data: introspection, isFetching } = useIntrospection();
 
   const { schemas } = introspection;
@@ -172,6 +177,10 @@ function useNavigationInternal() {
     defaultValue: defaults.pageSize,
   });
   const [pinParam, setPinParam] = useQueryState("pin");
+  const [queryInsightsSortParam, setQueryInsightsSortParam] =
+    useQueryState("queryInsightsSort");
+  const [queryInsightsTableParam, setQueryInsightsTableParam] =
+    useQueryState("queryInsightsTable");
   const [schemaParam, setSchemaParam] = useQueryState("schema", {
     defaultValue: defaults.schema,
   });
@@ -216,7 +225,11 @@ function useNavigationInternal() {
       ? activeTables[resolvedTableParam]
       : undefined;
   const resolvedViewParam =
-    !hasDatabase && typeof streamsUrl === "string" ? "stream" : viewParam;
+    !hasDatabase && typeof streamsUrl === "string"
+      ? "stream"
+      : viewParam === "query-insights" && (!hasDatabase || !queryInsights)
+        ? defaults.view
+        : viewParam;
 
   const metadata = useMemo(
     () => ({
@@ -235,6 +248,8 @@ function useNavigationInternal() {
     pageIndexParam,
     pageSizeParam,
     pinParam,
+    queryInsightsSortParam,
+    queryInsightsTableParam,
     schemaParam,
     searchParam,
     searchScopeParam,
@@ -250,6 +265,10 @@ function useNavigationInternal() {
     setPageIndexParam: setPageIndexParam as NuqsSetNullableValue<string>,
     setPageSizeParam: setPageSizeParam as NuqsSetNullableValue<string>,
     setPinParam: setPinParam as NuqsSetNullableValue<string>,
+    setQueryInsightsSortParam:
+      setQueryInsightsSortParam as NuqsSetNullableValue<string>,
+    setQueryInsightsTableParam:
+      setQueryInsightsTableParam as NuqsSetNullableValue<string>,
     setSchemaParam: setSchemaParam as NuqsSetNullableValue<string>,
     setSearchParam: setSearchParam as NuqsSetNullableValue<string>,
     setSearchScopeParam: setSearchScopeParam as NuqsSetNullableValue<string>,
