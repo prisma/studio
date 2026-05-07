@@ -165,25 +165,27 @@ function StudioContent() {
               )}
             </AnimatePresence>
 
-            <motion.div
-              className="flex h-full min-h-0 min-w-0 flex-1 flex-col self-stretch overflow-hidden rounded-lg bg-secondary p-px"
-              data-testid="studio-main-pane"
-              transition={{ duration: 0.14 }}
-            >
-              {shouldShowStartupIntrospectionRecovery ? (
-                <StartupIntrospectionRecoveryView
-                  errorState={errorState}
-                  isRetrying={isRefetching}
-                  onRetry={() => void refetch()}
-                />
-              ) : shouldShowDatabaseUnavailableView ? (
-                <DatabaseUnavailableView
-                  hasStreamsServer={typeof streamsUrl === "string"}
-                />
-              ) : (
-                <View />
-              )}
-            </motion.div>
+            <div className="p-3 flex h-full min-h-0 min-w-0 flex-1 flex-col self-stretch overflow-hidden rounded-xl text-card-foreground">
+              <motion.div
+                className="flex h-full flex-col self-stretch overflow-hidden border border-table-border rounded-xl"
+                data-testid="studio-main-pane"
+                transition={{ duration: 0.14 }}
+              >
+                {shouldShowStartupIntrospectionRecovery ? (
+                  <StartupIntrospectionRecoveryView
+                    errorState={errorState}
+                    isRetrying={isRefetching}
+                    onRetry={() => void refetch()}
+                  />
+                ) : shouldShowDatabaseUnavailableView ? (
+                  <DatabaseUnavailableView
+                    hasStreamsServer={typeof streamsUrl === "string"}
+                  />
+                ) : (
+                  <View />
+                )}
+              </motion.div>
+            </div>
           </div>
         </div>
       </StudioCommandPaletteProvider>
