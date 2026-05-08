@@ -1849,7 +1849,7 @@ function ActiveStreamView(props: {
           </div>
 
           <div
-            className="border-t border-table-border bg-background/90 px-2 py-3 backdrop-blur-sm"
+            className="border-t rounded-b-xl border-table-border bg-background/90 px-2 py-3 backdrop-blur-sm"
             data-testid="stream-footer"
           >
             <div className="flex flex-wrap items-center justify-start gap-2">
