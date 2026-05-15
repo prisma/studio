@@ -15,7 +15,7 @@ const Table = React.forwardRef<HTMLTableElement, TableProps>(
     return (
       <div
         className={cn(
-          "relative w-full overflow-auto flex items-start h-full",
+          "relative h-full w-full min-w-0 overflow-auto",
           containerClassName,
         )}
         {...resolvedContainerProps}
