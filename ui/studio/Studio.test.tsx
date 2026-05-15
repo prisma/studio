@@ -9,7 +9,7 @@ type NavigationMockValue = {
   metadata: {
     activeTable: undefined;
   };
-  viewParam: "table" | "stream";
+  viewParam: "query-insights" | "table" | "stream";
 };
 
 type IntrospectionMockValue = {
@@ -31,6 +31,7 @@ type IntrospectionMockValue = {
 type StudioMockValue = {
   hasDatabase: boolean;
   isNavigationOpen: boolean;
+  queryInsights?: unknown;
   streamsUrl?: string;
 };
 
@@ -81,6 +82,10 @@ vi.mock("./Navigation", () => ({
 
 vi.mock("./views/console/ConsoleView", () => ({
   ConsoleView: () => <div>Console view</div>,
+}));
+
+vi.mock("./views/query-insights/QueryInsightsView", () => ({
+  QueryInsightsView: () => <div>Query Insights view</div>,
 }));
 
 vi.mock("./views/schema/SchemaView", () => ({
@@ -245,6 +250,49 @@ describe("Studio", () => {
     expect(
       container.querySelector('[data-testid="studio-main-pane"]')?.className,
     ).not.toContain("self-start");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("renders the query insights view when the transport-backed view is active", () => {
+    useStudioMock.mockReturnValue({
+      hasDatabase: true,
+      isNavigationOpen: true,
+      queryInsights: {},
+      streamsUrl: "/api/streams",
+    });
+    useNavigationMock.mockReturnValue({
+      metadata: {
+        activeTable: undefined,
+      },
+      viewParam: "query-insights",
+    });
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <Studio
+          adapter={
+            {
+              delete: vi.fn(),
+              introspect: vi.fn(),
+              insert: vi.fn(),
+              query: vi.fn(),
+              raw: vi.fn(),
+              update: vi.fn(),
+            } as unknown as Adapter
+          }
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain("Query Insights view");
 
     act(() => {
       root.unmount();

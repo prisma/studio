@@ -12,9 +12,18 @@ import {
   type StudioLlmRequest,
   type StudioLlmResponse,
 } from "../../data/llm";
+import type { Query } from "../../data/query";
 import pkg from "../../package.json" with { type: "json" };
 import { AnthropicOutputLimitError, runAnthropicLlmRequest } from "./anthropic";
 import { buildDemoConfig, resolveDemoAiEnabled } from "./config";
+import {
+  analyzeDemoQueryInsight,
+  appendQueryInsightsLogEvent,
+  appendStudioSystemQuerySuffix,
+  createQueryInsightsLogEvent,
+  ensureQueryInsightsLogStream,
+  QUERY_INSIGHTS_LOG_STREAM_NAME,
+} from "./query-insights";
 import { type DemoRuntime, startDemoRuntime } from "./runtime";
 import {
   formatDemoRuntimeUsage,
@@ -63,7 +72,7 @@ type BuiltAsset = {
   contentType: string;
 };
 
-type PostgresExecutor = DemoRuntime["postgresExecutor"];
+type PostgresExecutor = NonNullable<DemoRuntime["postgresExecutor"]>;
 
 // When the server is bundled by build-compute.ts, the virtual:prebuilt-assets
 // module is resolved at bundle time and provides the pre-built client JS, CSS,
@@ -96,6 +105,8 @@ const AI_ENABLED = resolveDemoAiEnabled({
 });
 const BOOT_ID = crypto.randomUUID();
 const STREAMS_PROXY_BASE_PATH = "/api/streams";
+const QUERY_INSIGHTS_ANALYZE_PATH = "/api/query-insights/analyze";
+const QUERY_INSIGHTS_ENABLE_AI_PATH = "/api/query-insights/enable-ai";
 const CACHE_CONTROL_STATIC = isProduction
   ? "public, max-age=31536000, immutable"
   : "no-cache, no-store, must-revalidate";
@@ -147,6 +158,7 @@ let appStyles = "";
 let builtAssets = new Map<string, BuiltAsset>();
 let assetVersion = 0;
 let assetError: string | null = null;
+let queryInsightsAiRecommendationsEnabled = false;
 
 let isBuilding = false;
 let isBuildQueued = false;
@@ -272,6 +284,10 @@ async function main(): Promise<void> {
   seededAt = runtime.seededAt;
   streamsServerUrl = runtime.streamsServerUrl;
 
+  if (streamsServerUrl && postgresExecutor) {
+    await ensureQueryInsightsLogStream({ streamsServerUrl });
+  }
+
   if (prebuiltAssets) {
     appScript = prebuiltAssets.appScript;
     appStyles = prebuiltAssets.appStyles;
@@ -344,6 +360,15 @@ async function handleRequest(request: Request): Promise<Response> {
         aiEnabled: AI_ENABLED,
         bootId: BOOT_ID,
         databaseEnabled: postgresExecutor != null,
+        queryInsights:
+          postgresExecutor != null && streamsServerUrl
+            ? {
+                aiRecommendationsEnabled: queryInsightsAiRecommendationsEnabled,
+                analyzeUrl: QUERY_INSIGHTS_ANALYZE_PATH,
+                enableAiUrl: QUERY_INSIGHTS_ENABLE_AI_PATH,
+                streamUrl: createQueryInsightsBrowserStreamUrl(),
+              }
+            : undefined,
         seededAt,
         streamsUrl: streamsServerUrl ? STREAMS_PROXY_BASE_PATH : undefined,
       }),
@@ -356,6 +381,14 @@ async function handleRequest(request: Request): Promise<Response> {
 
   if (url.pathname === "/api/ai") {
     return await handleAiRequest(request);
+  }
+
+  if (url.pathname === QUERY_INSIGHTS_ANALYZE_PATH) {
+    return await handleQueryInsightsAnalyzeRequest(request);
+  }
+
+  if (url.pathname === QUERY_INSIGHTS_ENABLE_AI_PATH) {
+    return handleQueryInsightsEnableAiRequest(request);
   }
 
   if (
@@ -426,6 +459,19 @@ async function handleRequest(request: Request): Promise<Response> {
   return new Response("Not Found", { status: 404 });
 }
 
+function createQueryInsightsBrowserStreamUrl(): string {
+  const searchParams = new URLSearchParams({
+    format: "json",
+    live: "sse",
+    offset: "-1",
+    timeout: "30s",
+  });
+
+  return `${STREAMS_PROXY_BASE_PATH}/v1/stream/${encodeURIComponent(
+    QUERY_INSIGHTS_LOG_STREAM_NAME,
+  )}?${searchParams.toString()}`;
+}
+
 async function handleBffQueryRequest(request: Request): Promise<Response> {
   if (request.method === "OPTIONS") {
     return new Response(null, {
@@ -461,7 +507,7 @@ async function handleBffQueryRequest(request: Request): Promise<Response> {
   try {
     if (payload.procedure === "query") {
       const [error, result] = await runSerializedQuery(() =>
-        executor.execute(payload.query),
+        executeBffQuery(executor, payload.query),
       );
 
       return Response.json([error ? serializeError(error) : null, result]);
@@ -475,7 +521,7 @@ async function handleBffQueryRequest(request: Request): Promise<Response> {
       }
 
       const [firstError, firstResult] = await runSerializedQuery(() =>
-        executor.execute(firstQuery),
+        executeBffQuery(executor, firstQuery),
       );
 
       if (firstError) {
@@ -483,7 +529,7 @@ async function handleBffQueryRequest(request: Request): Promise<Response> {
       }
 
       const [secondError, secondResult] = await runSerializedQuery(() =>
-        executor.execute(secondQuery),
+        executeBffQuery(executor, secondQuery),
       );
 
       if (secondError) {
@@ -514,7 +560,7 @@ async function handleBffQueryRequest(request: Request): Promise<Response> {
       > = (queries, options) => executor.executeTransaction!(queries, options);
 
       const [error, result] = await runSerializedQuery(() =>
-        executeTransaction(payload.queries),
+        executeBffTransaction(executeTransaction, payload.queries),
       );
 
       return Response.json([error ? serializeError(error) : null, result]);
@@ -542,6 +588,162 @@ async function handleBffQueryRequest(request: Request): Promise<Response> {
   } catch (error: unknown) {
     return Response.json([serializeError(error)]);
   }
+}
+
+async function executeBffQuery<T>(
+  executor: PostgresExecutor,
+  query: Query<T>,
+): ReturnType<PostgresExecutor["execute"]> {
+  const preparedQuery = appendStudioSystemQuerySuffix(query);
+  const startedAt = performance.now();
+  const result = await executor.execute(preparedQuery);
+  const durationMs = Math.max(0, performance.now() - startedAt);
+  const [error, rows] = result;
+
+  if (!error) {
+    await appendQueryInsightsLog({
+      durationMs,
+      query: preparedQuery,
+      rows,
+    });
+  }
+
+  return result;
+}
+
+async function executeBffTransaction(
+  executeTransaction: NonNullable<PostgresExecutor["executeTransaction"]>,
+  queries: readonly Query<unknown>[],
+): ReturnType<NonNullable<PostgresExecutor["executeTransaction"]>> {
+  const preparedQueries = queries.map(appendStudioSystemQuerySuffix);
+  const startedAt = performance.now();
+  const result = await executeTransaction(preparedQueries);
+  const durationMs = Math.max(0, performance.now() - startedAt);
+  const [error, results] = result;
+
+  if (!error) {
+    const perQueryDurationMs =
+      preparedQueries.length > 0 ? durationMs / preparedQueries.length : 0;
+
+    for (const [index, query] of preparedQueries.entries()) {
+      await appendQueryInsightsLog({
+        durationMs: perQueryDurationMs,
+        query,
+        rows: results[index],
+      });
+    }
+  }
+
+  return result;
+}
+
+async function appendQueryInsightsLog(args: {
+  durationMs: number;
+  query: Query<unknown>;
+  rows: unknown;
+}): Promise<void> {
+  const activeStreamsServerUrl = streamsServerUrl;
+
+  if (!activeStreamsServerUrl) {
+    return;
+  }
+
+  const event = createQueryInsightsLogEvent(args);
+
+  if (!event) {
+    return;
+  }
+
+  try {
+    await appendQueryInsightsLogEvent({
+      event,
+      streamsServerUrl: activeStreamsServerUrl,
+    });
+  } catch (error) {
+    console.warn(
+      `[demo] failed to append ${QUERY_INSIGHTS_LOG_STREAM_NAME} event: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+async function handleQueryInsightsAnalyzeRequest(
+  request: Request,
+): Promise<Response> {
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      headers: {
+        Allow: "POST,OPTIONS",
+      },
+      status: 204,
+    });
+  }
+
+  if (request.method !== "POST") {
+    return new Response("Method Not Allowed", {
+      headers: {
+        Allow: "POST,OPTIONS",
+      },
+      status: 405,
+    });
+  }
+
+  let payload: unknown;
+
+  try {
+    payload = await request.json();
+  } catch {
+    return Response.json(
+      {
+        error: "Invalid JSON payload",
+        result: null,
+      },
+      { status: 400 },
+    );
+  }
+
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    typeof (payload as { rawQuery?: unknown }).rawQuery !== "string"
+  ) {
+    return Response.json(
+      {
+        error: "Invalid request body",
+        result: null,
+      },
+      { status: 400 },
+    );
+  }
+
+  return Response.json({
+    error: null,
+    result: analyzeDemoQueryInsight(
+      payload as Parameters<typeof analyzeDemoQueryInsight>[0],
+    ),
+  });
+}
+
+function handleQueryInsightsEnableAiRequest(request: Request): Response {
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      headers: {
+        Allow: "POST,OPTIONS",
+      },
+      status: 204,
+    });
+  }
+
+  if (request.method !== "POST") {
+    return new Response("Method Not Allowed", {
+      headers: {
+        Allow: "POST,OPTIONS",
+      },
+      status: 405,
+    });
+  }
+
+  queryInsightsAiRecommendationsEnabled = true;
+  return Response.json({ ok: true });
 }
 
 async function handleAiRequest(request: Request): Promise<Response> {

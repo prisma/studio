@@ -98,6 +98,9 @@ class ImmediateValueTransformer extends OperationNodeTransformer {
 declare const queryType: unique symbol;
 export interface Query<T = Record<string, unknown>> {
   [queryType]?: T;
+  meta?: {
+    visibility?: "studio-system" | "user";
+  };
   parameters: readonly unknown[];
   sql: string;
   transformations?: Partial<Record<keyof T, "json-parse">>;
@@ -109,6 +112,19 @@ export function asQuery<T>(query: string | Query<unknown>): Query<T> {
   }
 
   return query as never;
+}
+
+export function withQueryVisibility<T>(
+  query: Query<T>,
+  visibility: NonNullable<Query["meta"]>["visibility"],
+): Query<T> {
+  return {
+    ...query,
+    meta: {
+      ...query.meta,
+      visibility,
+    },
+  };
 }
 
 export type QueryResult<T> =

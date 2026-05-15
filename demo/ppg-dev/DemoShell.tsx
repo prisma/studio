@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import type { Adapter } from "../../data/adapter";
 import type { StudioLlm, StudioLlmResponse } from "../../data/llm";
 import { isStudioLlmResponse } from "../../data/llm";
-import { Studio } from "../../ui";
+import { Studio, type StudioQueryInsights } from "../../ui";
+import type { DemoConfig } from "./config";
 
 function canUseBrowserFullscreen(): boolean {
   return (
@@ -73,11 +74,19 @@ export function DemoApp(props: {
   aiEnabled: boolean;
   bootId: string;
   hasDatabase: boolean;
+  queryInsights?: DemoConfig["queryInsights"];
   seededAt?: string;
   streamsUrl?: string;
 }) {
-  const { adapter, aiEnabled, bootId, hasDatabase, seededAt, streamsUrl } =
-    props;
+  const {
+    adapter,
+    aiEnabled,
+    bootId,
+    hasDatabase,
+    queryInsights: queryInsightsConfig,
+    seededAt,
+    streamsUrl,
+  } = props;
   const llm: StudioLlm | undefined = aiEnabled
     ? async (request) => {
         const response = await fetch("/api/ai", {
@@ -111,6 +120,48 @@ export function DemoApp(props: {
             : `AI request failed (${response.status} ${response.statusText})`,
           ok: false,
         } satisfies StudioLlmResponse;
+      }
+    : undefined;
+  const queryInsights: StudioQueryInsights | undefined = queryInsightsConfig
+    ? {
+        aiRecommendationsEnabled: queryInsightsConfig.aiRecommendationsEnabled,
+        async analyze(input) {
+          const response = await fetch(queryInsightsConfig.analyzeUrl, {
+            body: JSON.stringify(input),
+            headers: {
+              "content-type": "application/json",
+            },
+            method: "POST",
+          });
+
+          if (!response.ok) {
+            return {
+              error: `Query analysis failed (${response.status} ${response.statusText})`,
+              result: null,
+            };
+          }
+
+          return (await response.json()) as Awaited<
+            ReturnType<StudioQueryInsights["analyze"]>
+          >;
+        },
+        async enableAiRecommendations() {
+          const response = await fetch(queryInsightsConfig.enableAiUrl, {
+            method: "POST",
+          });
+
+          if (!response.ok) {
+            throw new Error(
+              `Failed enabling Query Insights AI (${response.status} ${response.statusText})`,
+            );
+          }
+
+          return (await response.json()) as { ok: true };
+        },
+        onEvent(event) {
+          console.debug("[demo] query insights event", event);
+        },
+        streamUrl: queryInsightsConfig.streamUrl,
       }
     : undefined;
 
@@ -167,6 +218,7 @@ export function DemoApp(props: {
           adapter={adapter}
           hasDatabase={hasDatabase}
           llm={llm}
+          queryInsights={queryInsights}
           streamsUrl={streamsUrl}
         />
       </main>

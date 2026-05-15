@@ -41,8 +41,13 @@ type NavigationProps = {
 export function Navigation({ className }: NavigationProps) {
   const { metadata, createUrl, streamParam, viewParam, schemaParam } =
     useNavigation();
-  const { hasDatabase, isDarkMode, navigationWidth, setNavigationWidth } =
-    useStudio();
+  const {
+    hasDatabase,
+    isDarkMode,
+    navigationWidth,
+    queryInsights,
+    setNavigationWidth,
+  } = useStudio();
   const { isFetching, activeTable } = metadata;
   const { errorState, hasResolvedIntrospection, isRefetching, refetch } =
     useIntrospection();
@@ -526,6 +531,20 @@ export function Navigation({ className }: NavigationProps) {
                 Console
               </a>
             </Navigation.Item>
+            {queryInsights && hasDatabase ? (
+              <Navigation.Item
+                asChild
+                isActive={viewParam === "query-insights"}
+                className={navigationItemClasses}
+              >
+                <a
+                  href={createUrl({ viewParam: "query-insights" })}
+                  className="w-full"
+                >
+                  Query Insights
+                </a>
+              </Navigation.Item>
+            ) : null}
             <Navigation.Item
               asChild
               isActive={viewParam === "sql"}

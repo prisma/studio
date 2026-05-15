@@ -35,7 +35,12 @@ import { createUrl, NavigationContextProvider } from "../hooks/use-navigation";
 import { CustomTheme, useTheme } from "../hooks/use-theme";
 import shortUUID from "../lib/short-uuid";
 import { NuqsHashAdapter } from "./NuqsHashAdapter";
-import { StudioEvent, StudioEventBase, StudioOperationEvent } from "./Studio";
+import {
+  StudioEvent,
+  StudioEventBase,
+  StudioOperationEvent,
+  type StudioQueryInsights,
+} from "./Studio";
 import { instrumentTanStackCollectionMutations } from "./tanstack-db-mutation-guard";
 
 declare const VERSION_INJECTED_AT_BUILD_TIME: string;
@@ -255,6 +260,7 @@ interface StudioContextValue {
   adapter: Adapter;
   hasDatabase: boolean;
   llm?: StudioLlm;
+  queryInsights?: StudioQueryInsights;
   streamsUrl?: string;
   hasAiFilter: boolean;
   hasAiSql: boolean;
@@ -298,6 +304,7 @@ export type StudioContextProviderProps = PropsWithChildren<{
   hasDatabase?: boolean;
   llm?: StudioLlm;
   onEvent?: (event: StudioEvent) => void;
+  queryInsights?: StudioQueryInsights;
   streamsUrl?: string;
   theme?: CustomTheme | string;
 }>;
@@ -309,6 +316,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
     adapter,
     hasDatabase = true,
     llm,
+    queryInsights,
     streamsUrl,
     theme,
   } = props;
@@ -823,6 +831,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
           adapter,
           hasDatabase,
           llm,
+          queryInsights,
           streamsUrl,
           hasAiFilter,
           hasAiSql,

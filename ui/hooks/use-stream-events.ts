@@ -349,6 +349,7 @@ function extractExactTimestamp(
     headers?.timestamp,
     value.timestamp,
     value.time,
+    value.ts,
     value.createdAt,
     value.created_at,
     value.occurredAt,

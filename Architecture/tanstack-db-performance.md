@@ -129,6 +129,7 @@ Any change to guard semantics MUST update tests for:
 Architecture-compliance tests MUST also cover:
 
 - allowed `createCollection(...)` boundaries in production UI code
+- stream-event row collections created through Studio context and reused by query scope
 - `cleanupOnUnmount` paths avoiding shared TanStack DB reads/writes
 - per-cell components avoiding direct global hook reads that fan out across wide grids
 - grid-wide shared context-menu usage instead of per-cell context wrappers

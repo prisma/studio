@@ -35,7 +35,7 @@ That means when `build-compute.ts` bundles `demo/ppg-dev/server.ts` with Bun:
 
 - Bun sees `@prisma/dev`'s literal Bun manifest import
 - Bun emits hashed PGlite `.wasm`, `.data`, and extension archives next to the bundled server entrypoint
-- `build-compute.ts` then copies the same runtime assets into `deploy/bundle/` with their canonical names like `pglite.wasm` and `pglite-seed.tar.gz`
+- `build-compute.ts` then copies the same runtime assets into `deploy/bundle/` with their canonical names like `pglite.wasm`, `pglite.data`, `initdb.wasm`, and extension archives
 
 That extra copy is a Studio-side workaround for the current Compute boot path:
 the deployed `@prisma/dev` runtime still resolves stable filenames relative to

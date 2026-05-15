@@ -21,6 +21,8 @@ export type StateKey =
   | "pageIndex"
   | "pageSize"
   | "pin"
+  | "queryInsightsSort"
+  | "queryInsightsTable"
   | "streamAggregationRange"
   | "streamFollow"
   | "streamRoutingKey"

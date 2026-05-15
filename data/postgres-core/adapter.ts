@@ -1,6 +1,5 @@
 import {
   type Adapter,
-  type AdapterUpdateDetails,
   type AdapterDeleteResult,
   type AdapterError,
   type AdapterInsertResult,
@@ -12,6 +11,7 @@ import {
   type AdapterSqlLintDetails,
   type AdapterSqlLintResult,
   type AdapterSqlSchemaResult,
+  type AdapterUpdateDetails,
   type AdapterUpdateManyResult,
   type AdapterUpdateResult,
   type Column,
@@ -23,7 +23,12 @@ import {
   createFullTableSearchExecutionState,
   executeQueryWithFullTableSearchGuardrails,
 } from "../full-table-search";
-import { asQuery, type Query, QueryResult } from "../query";
+import {
+  asQuery,
+  type Query,
+  QueryResult,
+  withQueryVisibility,
+} from "../query";
 import { createSqlEditorSchemaFromIntrospection } from "../sql-editor-schema";
 import type { Either } from "../type-utils";
 import { POSTGRESQL_DATA_TYPES_TO_METADATA } from "./datatype";
@@ -46,6 +51,10 @@ import {
 
 export type PostgresAdapterRequirements = AdapterRequirements;
 
+function markStudioSystemQuery<T>(query: Query<T>): Query<T> {
+  return withQueryVisibility(query, "studio-system");
+}
+
 export function createPostgresAdapter(
   requirements: PostgresAdapterRequirements,
 ): Adapter {
@@ -61,7 +70,7 @@ export function createPostgresAdapter(
     options: Parameters<NonNullable<Adapter["update"]>>[1],
   ): Promise<Either<AdapterError, AdapterUpdateManyResult>> {
     const queries = updates.map((update) =>
-      getUpdateQuery(update, otherRequirements),
+      markStudioSystemQuery(getUpdateQuery(update, otherRequirements)),
     );
 
     try {
@@ -126,17 +135,19 @@ export function createPostgresAdapter(
     try {
       const tablesQuery = getTablesQuery(otherRequirements);
       const timezoneQuery = getTimezoneQuery();
+      const systemTablesQuery = markStudioSystemQuery(tablesQuery);
+      const systemTimezoneQuery = markStudioSystemQuery(timezoneQuery);
 
       const [[tablesError, tables], [timezoneError, timezones]] =
         await Promise.all([
-          executor.execute(tablesQuery, options),
-          executor.execute(timezoneQuery, options),
+          executor.execute(systemTablesQuery, options),
+          executor.execute(systemTimezoneQuery, options),
         ]);
 
       if (tablesError) {
         return createPostgresAdapterError({
           error: tablesError,
-          query: tablesQuery,
+          query: systemTablesQuery,
         });
       }
 
@@ -146,7 +157,7 @@ export function createPostgresAdapter(
 
       return [
         null,
-        createIntrospection({ query: tablesQuery, tables, timezone }),
+        createIntrospection({ query: systemTablesQuery, tables, timezone }),
       ];
     } catch (error: unknown) {
       return createPostgresAdapterError({ error: error as Error });
@@ -173,7 +184,9 @@ export function createPostgresAdapter(
       options,
     ): Promise<Either<AdapterError, AdapterQueryResult>> {
       try {
-        const query = getSelectQuery(details, otherRequirements);
+        const query = markStudioSystemQuery(
+          getSelectQuery(details, otherRequirements),
+        );
         const [error, results] =
           await executeQueryWithFullTableSearchGuardrails({
             executor,
@@ -268,7 +281,9 @@ export function createPostgresAdapter(
       options,
     ): Promise<Either<AdapterError, AdapterInsertResult>> {
       try {
-        const query = getInsertQuery(details, otherRequirements);
+        const query = markStudioSystemQuery(
+          getInsertQuery(details, otherRequirements),
+        );
 
         const [error, rows] = await executor.execute(query, options);
 
@@ -287,7 +302,9 @@ export function createPostgresAdapter(
       options,
     ): Promise<Either<AdapterError, AdapterUpdateResult>> {
       try {
-        const query = getUpdateQuery(details, otherRequirements);
+        const query = markStudioSystemQuery(
+          getUpdateQuery(details, otherRequirements),
+        );
 
         const [error, results] = await executor.execute(query, options);
 
@@ -319,7 +336,9 @@ export function createPostgresAdapter(
       options,
     ): Promise<Either<AdapterError, AdapterDeleteResult>> {
       try {
-        const query = getDeleteQuery(details, otherRequirements);
+        const query = markStudioSystemQuery(
+          getDeleteQuery(details, otherRequirements),
+        );
 
         const [error] = await executor.execute(query, options);
 
@@ -393,7 +412,10 @@ async function lintWithExplainFallback(
       const explainQuery = asQuery<Record<string, unknown>>(
         `EXPLAIN ${statement.statement}`,
       );
-      const [error] = await executor.execute(explainQuery, options);
+      const [error] = await executor.execute(
+        markStudioSystemQuery(explainQuery),
+        options,
+      );
 
       if (!error) {
         continue;
