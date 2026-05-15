@@ -1695,9 +1695,8 @@ export function ActiveTableView(_props: ViewProps) {
                   ? `${discardWiggleAnimationKey}-${discardWiggleCount}`
                   : undefined
               }
-              variant="outline"
               className={cn(
-                "h-9 border-amber-300 bg-amber-100 px-4 font-sans text-amber-950 hover:border-amber-400 hover:bg-amber-200 motion-safe:origin-center motion-safe:will-change-transform",
+                "h-9 border border-amber-300 bg-amber-100 px-4 font-sans text-amber-950 hover:border-amber-400 hover:bg-amber-200 motion-safe:origin-center motion-safe:will-change-transform",
                 discardWiggleAnimationClassName,
               )}
               onClick={() => setDiscardDialogOpen(true)}
