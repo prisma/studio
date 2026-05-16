@@ -1259,6 +1259,23 @@ describe("SqlView", () => {
     harness.cleanup();
   });
 
+  it("keeps the SQL editor in a bounded scroll region for long scripts", () => {
+    const { adapter } = createAdapterMock();
+    const studio = createStudioMock(adapter);
+    useStudioMock.mockReturnValue(studio);
+
+    const harness = renderSqlView();
+
+    const scrollRegion = harness.container.querySelector(
+      '[data-testid="sql-editor-scroll-container"]',
+    );
+    expect(scrollRegion).toBeTruthy();
+    expect(scrollRegion?.className).toContain("min-h-0");
+    expect(scrollRegion?.className).toContain("overflow-hidden");
+
+    harness.cleanup();
+  });
+
   it("supports cancelling a running query", async () => {
     const raw: Adapter["raw"] = async (_details, options) => {
       return await new Promise((resolve) => {
