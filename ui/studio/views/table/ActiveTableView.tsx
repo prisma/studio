@@ -39,6 +39,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../../../components/ui/dropdown-menu";
+import { CheckboxTable } from "../../../components/ui/checkbox-table";
 import { TableHead } from "../../../components/ui/table";
 import { useActiveTableInsert } from "../../../hooks/use-active-table-insert";
 import { useActiveTableQuery } from "../../../hooks/use-active-table-query";
@@ -1516,15 +1517,31 @@ export function ActiveTableView(_props: ViewProps) {
       size: 35,
       minSize: 35,
       header({ table }) {
-        void table;
         return (props: Omit<CellProps, "children" | "ref">) => {
-          return <TableHead {...props} aria-label="Row selection spacer" />;
+          return (
+            <TableHead {...props} aria-label="Row selection spacer">
+              <div className="flex items-center justify-center h-full w-full">
+                <CheckboxTable
+                  checked={table.getIsAllRowsSelected()}
+                  className="pointer-events-none h-4 w-4"
+                />
+              </div>
+            </TableHead>
+          );
         };
       },
       cell({ row }) {
-        void row;
         return (props: Omit<CellProps, "children" | "ref">) => {
-          return <Cell data-select="true" {...props} />;
+          return (
+            <Cell data-select="true" {...props}>
+              <div className="flex items-center justify-center h-full w-full">
+                <CheckboxTable
+                  checked={row.getIsSelected()}
+                  className="pointer-events-none h-4 w-4"
+                />
+              </div>
+            </Cell>
+          );
         };
       },
     },

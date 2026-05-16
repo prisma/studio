@@ -24,6 +24,7 @@ import { createSqlEditorSchemaFromIntrospection } from "../../../../data/sql-edi
 import { getTopLevelSqlStatementAtCursor } from "../../../../data/sql-statements";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
+import { CheckboxTable } from "../../../components/ui/checkbox-table";
 import { TableHead, TableRow } from "../../../components/ui/table";
 import { useColumnPinning } from "../../../hooks/use-column-pinning";
 import { useIntrospection } from "../../../hooks/use-introspection";
@@ -103,15 +104,31 @@ const SQL_ROW_SELECTION_COLUMN_DEF = {
   size: 35,
   minSize: 35,
   header({ table }) {
-    void table;
     return (props: Omit<CellProps, "children" | "ref">) => {
-      return <TableHead {...props} aria-label="Row selection spacer" />;
+      return (
+        <TableHead {...props} aria-label="Row selection spacer">
+          <div className="flex items-center justify-center h-full w-full">
+            <CheckboxTable
+              checked={table.getIsAllRowsSelected()}
+              className="pointer-events-none h-4 w-4"
+            />
+          </div>
+        </TableHead>
+      );
     };
   },
   cell({ row }) {
-    void row;
     return (props: Omit<CellProps, "children" | "ref">) => {
-      return <Cell data-select="true" {...props} />;
+      return (
+        <Cell data-select="true" {...props}>
+          <div className="flex items-center justify-center h-full w-full">
+            <CheckboxTable
+              checked={row.getIsSelected()}
+              className="pointer-events-none h-4 w-4"
+            />
+          </div>
+        </Cell>
+      );
     };
   },
 } satisfies ColumnDef<Record<string, unknown>>;
