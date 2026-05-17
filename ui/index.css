@@ -213,6 +213,9 @@
   .ps {
     @import "tailwindcss/preflight.css";
   }
+  body {
+    @apply bg-black!;
+  }
 }
 
 [data-radix-popper-content-wrapper] {
