@@ -1,11 +1,13 @@
 # Compute Preview Deploys
 
-This document is normative for branch-scoped Compute preview deployments.
+This document is normative for branch-scoped and default-branch Compute preview
+deployments.
 
 ## Purpose
 
-Pull requests need a live Studio preview without manually creating and cleaning up
-Compute services for every branch.
+Pull requests need a live Studio preview without manually creating and cleaning
+up Compute services for every branch. The default branch also needs one stable
+preview that always reflects the latest merged Studio state.
 
 The preview deployment path uses the existing `pnpm build:deploy` artifact and
 publishes it into the dedicated Compute project named `studio-preview`.
@@ -14,17 +16,23 @@ publishes it into the dedicated Compute project named `studio-preview`.
 
 - A preview deploy MUST run when a pull request is opened, reopened, or updated
   with new commits.
+- A stable default-branch preview deploy MUST run when new commits are pushed to
+  `main`.
 - Preview deploys MUST only run for branches inside this repository. Forked pull
   requests MUST NOT receive the Compute token.
 - A preview service MUST be destroyed when the corresponding Git branch is
   deleted.
+- The stable `main` preview service MUST NOT be destroyed by branch-deletion
+  cleanup.
 - Because the GitHub `delete` event is evaluated from the default branch
   workflow set, this workflow MUST be merged to `main` before branch-deletion
   cleanup becomes automatic for later branches.
 
 ## Service Naming
 
-- Preview services MUST be keyed by the pull request branch name.
+- Pull request preview services MUST be keyed by the pull request branch name.
+- The stable default-branch preview service MUST be keyed by the literal
+  `main` ref name.
 - Because Compute service names need a filesystem- and URL-safe shape, the raw
   branch name MUST be normalized to a lowercase slug containing only
   alphanumeric segments separated by `-`.
@@ -49,9 +57,10 @@ publishes it into the dedicated Compute project named `studio-preview`.
 
 ## PR Feedback
 
-- Successful preview deploys MUST post the live service URL back to the pull
-  request.
+- Successful pull request preview deploys MUST post the live service URL back to
+  the pull request.
 - The PR comment MUST be sticky: later deploys for the same PR update the
   existing preview comment instead of creating duplicates.
 - The comment MUST include the original branch name plus the resolved Compute
   service name so any slug normalization stays visible.
+- Default-branch preview deploys MUST NOT post a pull request comment.

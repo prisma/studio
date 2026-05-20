@@ -419,18 +419,21 @@ bunx @prisma/compute-cli deploy --skip-build \
 
 ## Compute Preview Deploys
 
-This repo also maintains branch-scoped Compute previews for pull requests.
+This repo maintains branch-scoped Compute previews for pull requests and one
+stable Compute preview for the default branch.
 
 - `.github/workflows/compute-preview.yml` deploys the current PR branch into the
   dedicated `studio-preview` Compute project whenever a PR is opened,
   reopened, or updated with new commits.
+- The same workflow deploys the `main` branch into a reserved `main` Compute
+  service whenever commits are pushed to the default branch.
 - The preview service name is derived from the branch name through a stable
   Compute-safe slug, so later pushes reuse the same service instead of creating
   duplicates.
 - The workflow updates one sticky PR comment with the live preview URL after a
-  successful deploy.
+  successful PR deploy.
 - When a Git branch is deleted, the same workflow destroys the matching preview
-  service.
+  service. The reserved `main` preview is not part of branch-deletion cleanup.
 
 The workflow expects the GitHub Actions secret
 `STUDIO_PREVIEW_COMPUTE_TOKEN`, which should contain a Compute API token for the

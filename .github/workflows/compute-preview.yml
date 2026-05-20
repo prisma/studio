@@ -6,6 +6,9 @@ on:
       - opened
       - reopened
       - synchronize
+  push:
+    branches:
+      - main
   delete:
 
 permissions:
@@ -19,12 +22,14 @@ concurrency:
 
 jobs:
   deploy-preview:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
@@ -53,10 +58,11 @@ jobs:
         id: deploy
         env:
           PRISMA_API_TOKEN: ${{ secrets.STUDIO_PREVIEW_COMPUTE_TOKEN }}
-          PREVIEW_BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
+          PREVIEW_BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
         run: node scripts/compute-preview/compute-preview-deploy.mjs
 
       - name: Comment preview URL on PR
+        if: github.event_name == 'pull_request'
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ github.token }}
