@@ -8,7 +8,7 @@ Navigation state MUST be URL-driven and managed through `useNavigation` + Nuqs. 
 
 This architecture governs:
 
-- active Studio view (`table`, `schema`, `console`, `sql`, `stream`)
+- active Studio view (`table`, `schema`, `console`, `requests`, `sql`, `stream`)
 - active schema/table/stream
 - active stream follow mode
 - active stream aggregation-panel visibility
@@ -86,7 +86,7 @@ Adding a new URL key requires updating `StateKey` in `nuqs.ts` first.
 When Studio is running without a database connection but with Streams enabled:
 
 - the resolved default `view` MUST become `"stream"` instead of `"table"`
-- stale database-oriented views such as `table`, `schema`, `console`, and `sql` MUST resolve back to the stream view instead of trying to render database-only UI against a disabled database session
+- stale database-oriented views such as `table`, `schema`, `console`, `requests`, and `sql` MUST resolve back to the stream view instead of trying to render database-only UI against a disabled database session
 
 When URL params are stale from a previous DB, invalid `schema`/`table` values MUST be resolved to valid current defaults.
 Shared table page size and infinite-scroll mode are not derived from URL defaults; they are restored through Studio UI state and then mirrored into query behavior by `usePagination`.

@@ -136,6 +136,7 @@ The following are valid examples of UI state and where they belong:
   - Scoped by active schema plus the current visualized table set so returning to the same schema graph restores dragged positions without leaking across schemas.
   - Includes the stored ELK baseline positions and reset-layout request token used by the header action.
 - Command-palette `x more...` handoff into table browsing: the same navigation table-name search `useUiState` entry, not a second command-palette-specific table-filter store
+- Requests view expanded request id and selected request detail view: `uiLocalStateCollection` via `useUiState`
 
 If new UI state is shared across components, it MUST be assigned to one of these stores (or a new TanStack DB collection added in Studio context).
 Container-level fullscreen controls are now host-owned rather than Studio-owned, so they MUST NOT be reintroduced as implicit package-level shared UI state unless the architecture is updated first.

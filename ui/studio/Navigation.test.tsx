@@ -17,7 +17,7 @@ interface NavigationMockValue {
   setSchemaParam: () => Promise<URLSearchParams>;
   setTableParam: () => Promise<URLSearchParams>;
   streamParam: string | null;
-  viewParam: "table" | "schema" | "console" | "sql" | "stream";
+  viewParam: "table" | "schema" | "console" | "requests" | "sql" | "stream";
 }
 
 interface IntrospectionMockValue {
@@ -469,6 +469,37 @@ describe("Navigation", () => {
     ).toBeNull();
     expect(container.textContent).toContain("Streams");
     expect(container.textContent).toContain("audit-log");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("renders Requests directly under Console in the Studio menu", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const studioLinks = [
+      ...container.querySelectorAll<HTMLAnchorElement>(
+        'nav[aria-label="Studio"] a',
+      ),
+    ].map((link) => ({
+      href: link.getAttribute("href"),
+      text: link.textContent?.trim(),
+    }));
+
+    expect(studioLinks).toEqual([
+      { href: "#viewParam=schema", text: "Visualizer" },
+      { href: "#viewParam=console", text: "Console" },
+      { href: "#viewParam=requests", text: "Requests" },
+      { href: "#viewParam=sql", text: "SQL" },
+    ]);
 
     act(() => {
       root.unmount();

@@ -145,6 +145,18 @@ It deliberately excludes:
   - The storage breakdowns also need collapsible ledger-style accounting boxes whose headers surface the section totals when folded shut, plus faint shared-cap annotations that sit beside right-aligned byte values and one shared cap marker spanning both Routing and Exact cache rows, which is not a stock ShadCN pattern.
   - No stock ShadCN pattern covers that descriptor-driven observability layout, especially when the UI must distinguish logical bytes from physical storage signals, separate search coverage from historical run indexes, hide unconfigured routing rows, and keep the remaining cost caveats explicit instead of inventing unavailable totals.
 
+### Requests Trace Timeline
+
+- Canonical component:
+  - [`ui/studio/views/requests/RequestsView.tsx`](ui/studio/views/requests/RequestsView.tsx)
+- Closest standard ShadCN alternatives:
+  - `Table`
+  - `Badge`
+  - `ToggleGroup`
+- Why it stays non-standard:
+  - The Requests view needs a dense request-log row that expands in place into a span waterfall. Standard ShadCN components cover the table, badges, and view toggle, but there is no stock ShadCN timeline primitive that can display OpenTelemetry-style nested spans with proportional start offsets and durations.
+  - The custom portion is limited to the timeline grid and span bars; the surrounding list and controls remain built from ShadCN primitives.
+
 ## Standardization Candidates
 
 These are the current high-signal places where Studio is bypassing a plausible standard ShadCN component or composition pattern.

@@ -528,6 +528,15 @@ export function Navigation({ className }: NavigationProps) {
             </Navigation.Item>
             <Navigation.Item
               asChild
+              isActive={viewParam === "requests"}
+              className={navigationItemClasses}
+            >
+              <a href={createUrl({ viewParam: "requests" })} className="w-full">
+                Requests
+              </a>
+            </Navigation.Item>
+            <Navigation.Item
+              asChild
               isActive={viewParam === "sql"}
               className={navigationItemClasses}
             >

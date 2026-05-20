@@ -5,6 +5,7 @@ import {
   FileCode2,
   GalleryVerticalEnd,
   Laptop,
+  ListTree,
   Moon,
   Search,
   Sun,
@@ -164,7 +165,9 @@ function AppearanceCommandItem(props: {
       value={value}
       className={cn(
         "justify-between gap-3",
-        disabled ? "text-muted-foreground/55" : "text-foreground hover:bg-secondary/85",
+        disabled
+          ? "text-muted-foreground/55"
+          : "text-foreground hover:bg-secondary/85",
       )}
     >
       <span className="flex min-w-0 items-center gap-2.5">
@@ -505,6 +508,17 @@ function StudioCommandPalette() {
         label: "Console",
         onSelect: () => {
           window.location.hash = createUrl({ viewParam: "console" });
+        },
+        section: "views",
+      },
+      {
+        disabled: false,
+        icon: ListTree,
+        id: "view:requests",
+        keywords: ["requests", "logs", "traces", "observability"],
+        label: "Requests",
+        onSelect: () => {
+          window.location.hash = createUrl({ viewParam: "requests" });
         },
         section: "views",
       },
