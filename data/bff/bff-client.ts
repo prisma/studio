@@ -1,9 +1,16 @@
 import type { AdapterSqlLintDiagnostic } from "../adapter";
 import type { ExecuteOptions, SequenceExecutor } from "../executor";
 import type { Query, QueryResult } from "../query";
+import type {
+  StudioQueryInsights,
+  StudioQueryInsightsSnapshot,
+  StudioQueryInsightsSnapshotRequest,
+} from "../query-insights";
 import type { Either } from "../type-utils";
 
-type FetchLike = (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>;
+type FetchLike = (
+  ...args: Parameters<typeof fetch>
+) => ReturnType<typeof fetch>;
 
 const bffRequestDurationByAbortSignal = new WeakMap<AbortSignal, number>();
 
@@ -243,13 +250,23 @@ export interface StudioBFFClient extends SequenceExecutor {
     details: StudioBFFSqlLintDetails,
     options?: ExecuteOptions,
   ): Promise<Either<Error, StudioBFFSqlLintResult>>;
+
+  /**
+   * Optional Studio query-insights bridge.
+   *
+   * Implementers decide whether to pass this provider into their Studio
+   * adapter. If their BFF does not support the procedure, omit it from the
+   * adapter so Studio hides the Queries view.
+   */
+  queryInsights: StudioQueryInsights;
 }
 
 export type StudioBFFRequest =
   | StudioBFFQueryRequest
   | StudioBFFSequenceRequest
   | StudioBFFTransactionRequest
-  | StudioBFFSqlLintRequest;
+  | StudioBFFSqlLintRequest
+  | StudioBFFQueryInsightsRequest;
 
 export interface StudioBFFQueryRequest {
   customPayload?: Record<string, unknown>;
@@ -286,6 +303,11 @@ export interface StudioBFFSqlLintRequest {
   sql: string;
 }
 
+export interface StudioBFFQueryInsightsRequest extends StudioQueryInsightsSnapshotRequest {
+  customPayload?: Record<string, unknown>;
+  procedure: "query-insights";
+}
+
 /**
  * Creates a Studio BFF client. BFF stands for "Backend For Frontend" btw.
  */
@@ -295,7 +317,7 @@ export function createStudioBFFClient(
   const { customHeaders, customPayload, resultDeserializerFn, url } = props;
   const fetchFn = props.fetch || fetch;
 
-  return {
+  const client: StudioBFFClient = {
     async execute(query, options) {
       try {
         const requestStartedAt = performance.now();
@@ -468,8 +490,8 @@ export function createStudioBFFClient(
           return [deserializeError(error)];
         }
 
-        const deserializedResults = (results ?? []).map((result) =>
-          (resultDeserializerFn?.(result) || result) as never,
+        const deserializedResults = (results ?? []).map(
+          (result) => (resultDeserializerFn?.(result) || result) as never,
         );
 
         return [null, deserializedResults];
@@ -531,7 +553,56 @@ export function createStudioBFFClient(
         return [error as Error];
       }
     },
+
+    queryInsights: {
+      async getSnapshot(request, options) {
+        try {
+          const response = await fetchFn(url, {
+            body: JSON.stringify({
+              customPayload,
+              limit: request.limit,
+              procedure: "query-insights",
+              since: request.since,
+            } satisfies StudioBFFQueryInsightsRequest),
+            headers: {
+              Accept: "application/json",
+              "Content-Type": "application/json",
+              ...customHeaders,
+            },
+            method: "POST",
+            signal: options?.abortSignal,
+          });
+
+          if (!response.ok) {
+            let errorText: string;
+
+            try {
+              errorText = await response.text();
+            } catch {
+              errorText = "unknown error";
+            }
+
+            return [new Error(errorText)];
+          }
+
+          const [error, snapshot] = (await response.json()) as [
+            SerializedError,
+            StudioQueryInsightsSnapshot,
+          ];
+
+          if (error) {
+            return [deserializeError(error)];
+          }
+
+          return [null, snapshot];
+        } catch (error: unknown) {
+          return [error as Error];
+        }
+      },
+    },
   };
+
+  return client;
 }
 
 export interface SerializedError {

@@ -136,6 +136,13 @@ The visualizer now runs ELK auto-layout with component-aware spacing so disconne
 Dragged node positions persist when you leave and return to the same schema view, and a header-level `Reset layout` action re-applies the current ELK baseline when you want to discard manual placement.
 Users can pan/zoom, inspect key and nullable markers, and jump from a node directly to that table’s data view.
 
+## Query Insights
+
+Embedders can optionally provide live query snapshots through Studio's BFF bridge, and Studio shows them in a dedicated `Queries` view directly under the schema visualizer.
+The view summarizes unique queries, executions, reads, and average latency, then lets users filter by touched table, sort by operational signals, and open a detail sheet for SQL, metrics, and query metadata.
+When Studio's shared `llm` hook is available, the same detail sheet can request AI recommendations for the selected query; without that hook, the AI analysis UI is hidden.
+If an embedder does not provide query insights, Studio hides the `Queries` menu item and stale `view=queries` URLs fall back to the normal default view.
+
 ## Data Grid Browsing
 
 Table data is shown in a grid with server-backed pagination, filtered-row counts, loading feedback, and explicit empty states.
