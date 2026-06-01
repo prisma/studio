@@ -45,7 +45,8 @@ publishes it into the dedicated Compute project named `studio-preview`.
 - If the service already exists, the helper MUST deploy a new version to that
   same service.
 - Deployments MUST use the published CLI entrypoint:
-  `bunx @prisma/compute-cli@latest deploy --skip-build --path deploy --entrypoint bundle/server.bundle.js --http-port 8080 --env STUDIO_DEMO_PORT=8080`.
+-  `bunx @prisma/compute-cli@latest deploy --skip-build --path deploy --entrypoint bundle/compute-entrypoint.js --http-port 8080`.
+- The Compute artifact MUST include `bundle/compute-entrypoint.js`, which defaults `STUDIO_DEMO_PORT` to `8080` before importing `bundle/server.bundle.js`. Preview deploys MUST NOT pass runtime environment variables through the Compute CLI while its deploy API rejects the CLI's `envVars` request key.
 
 ## PR Feedback
 

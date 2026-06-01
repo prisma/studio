@@ -648,9 +648,8 @@ Deploy that artifact with:
 ```sh
 bunx @prisma/compute-cli deploy --skip-build \
   --path deploy \
-  --entrypoint bundle/server.bundle.js \
+  --entrypoint bundle/compute-entrypoint.js \
   --http-port 8080 \
-  --env STUDIO_DEMO_PORT=8080 \
   --service <service-id>
 ```
 
