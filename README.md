@@ -138,6 +138,69 @@ type StudioLlmResponse =
 
 Studio treats `output-limit-exceeded` as a first-class retry signal for SQL generation and visualization correction loops. When `sqlLint` is available, Studio validates AI-generated SQL before showing it and feeds lint diagnostics back through the same `sql-generation` transport when correction is needed. If AI-generated SQL still fails after the user manually runs it, Studio sends the failed SQL and database error back through that same transport so the model can propose corrected SQL without auto-running it. All prompting and retry behavior live in Studio itself, so host implementations should stay transport-only.
 
+### SQL Result Visualization Charts
+
+SQL result visualization uses the shared `llm` hook with `task: "sql-visualization"`. The host does not need to provide chart components, Chart.js options, callbacks, plugins, or chart-specific APIs. Studio builds the prompt from the executed SQL, database engine, full result rows, and the original AI SQL request when available; the host only forwards that prompt to the model and returns the model text.
+
+Studio validates the model response as a small Bklit chart config before rendering. The response must be strict JSON in this shape:
+
+```ts
+type SqlResultVisualizationResponse = {
+  config:
+    | {
+        type: "bar" | "horizontal-bar" | "line";
+        title?: string;
+        xKey: string;
+        series: Array<{
+          key: string;
+          label?: string;
+          color?: string;
+        }>;
+        stacked?: boolean;
+        data: Array<Record<string, string | number | boolean | null>>;
+      }
+    | {
+        type: "pie" | "doughnut";
+        title?: string;
+        labelKey: string;
+        valueKey: string;
+        data: Array<Record<string, string | number | boolean | null>>;
+      };
+};
+```
+
+Chart rules:
+
+- `bar` and `horizontal-bar` require `xKey` plus one or more numeric `series` fields.
+- `stacked: true` is supported only for `bar` and `horizontal-bar`.
+- `horizontal-bar` is preferred for ranked categorical data and long category labels.
+- `line` requires date-like `xKey` values: ISO dates, ISO datetimes, or epoch milliseconds.
+- `pie` and `doughnut` require `labelKey` and a numeric `valueKey`.
+- `data` rows must contain plain JSON primitive values only.
+
+Example stacked horizontal bar response:
+
+```json
+{
+  "config": {
+    "type": "horizontal-bar",
+    "title": "Team skills by organization",
+    "xKey": "organization",
+    "stacked": true,
+    "series": [
+      { "key": "typescript", "label": "TypeScript" },
+      { "key": "postgres", "label": "Postgres" }
+    ],
+    "data": [
+      { "organization": "Acme", "typescript": 4, "postgres": 2 },
+      { "organization": "Globex", "typescript": 1, "postgres": 5 }
+    ]
+  }
+}
+```
+
+Invalid JSON, unsupported chart types, non-primitive row values, missing keys, non-numeric series values, and non-date line x-values are rejected and fed back to the model for correction. The normative implementation details live in [`Architecture/sql-result-visualization.md`](Architecture/sql-result-visualization.md).
+
 ## Integration Checklist
 
 Studio is an embeddable React surface, not a standalone app shell. A production integration should:

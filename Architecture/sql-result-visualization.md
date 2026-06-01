@@ -65,6 +65,89 @@ This architecture governs:
 - The supported chart types MUST be constrained to the known allowlist above.
 - The implementation MUST retry up to two times when the model returns malformed JSON or an invalid chart config, and each correction prompt MUST include the latest validation error.
 
+## Chart Config Examples
+
+Vertical or horizontal bar charts use one category key and one or more numeric series keys:
+
+```json
+{
+  "config": {
+    "type": "bar",
+    "title": "Incidents by severity",
+    "xKey": "severity",
+    "series": [{ "key": "count", "label": "Incidents" }],
+    "data": [
+      { "severity": "Low", "count": 12 },
+      { "severity": "High", "count": 3 }
+    ]
+  }
+}
+```
+
+Stacked bar charts use separate numeric fields for each stack segment, not one long/tidy row per segment:
+
+```json
+{
+  "config": {
+    "type": "horizontal-bar",
+    "title": "Team skills by organization",
+    "xKey": "organization",
+    "stacked": true,
+    "series": [
+      { "key": "typescript", "label": "TypeScript" },
+      { "key": "postgres", "label": "Postgres" }
+    ],
+    "data": [
+      { "organization": "Acme", "typescript": 4, "postgres": 2 },
+      { "organization": "Globex", "typescript": 1, "postgres": 5 }
+    ]
+  }
+}
+```
+
+Line charts require date-like x-values:
+
+```json
+{
+  "config": {
+    "type": "line",
+    "title": "Rows created over time",
+    "xKey": "day",
+    "series": [{ "key": "created", "label": "Created rows" }],
+    "data": [
+      { "day": "2026-06-01", "created": 18 },
+      { "day": "2026-06-02", "created": 27 }
+    ]
+  }
+}
+```
+
+Pie-like charts use one label key and one numeric value key:
+
+```json
+{
+  "config": {
+    "type": "doughnut",
+    "title": "Feature flag states",
+    "labelKey": "state",
+    "valueKey": "count",
+    "data": [
+      { "state": "Enabled", "count": 9 },
+      { "state": "Disabled", "count": 4 }
+    ]
+  }
+}
+```
+
+## Renderer Contract
+
+- `bar` and `horizontal-bar` render through `BarChart`, `Bar`, `BarXAxis`, and `BarYAxis`.
+- `line` renders through `LineChart`, `Line`, and `XAxis`.
+- `pie` and `doughnut` render through `PieChart` and `PieSlice`.
+- All chart types use the shared Bklit `Grid` and `ChartTooltip` primitives where applicable.
+- Series colors default to Studio chart CSS variables (`--chart-1` through `--chart-5`) unless a validated series color is provided.
+- The renderer MUST ignore arbitrary chart-library options. All display behavior is derived from the validated Studio config and local component composition.
+
 ## Chart Lifecycle Contract
 
 - Chart rendering MUST use the Bklit ShadCN chart primitives checked into `ui/components/charts`.
