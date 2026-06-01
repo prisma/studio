@@ -66,4 +66,3 @@ Update design system documentation:
 - Skip proper TypeScript types or prop documentation
 - Create tokens for every single value (tokens should have semantic meaning)
 - Extract things that differ in intent (two buttons that look similar but serve different purposes should stay separate)
-

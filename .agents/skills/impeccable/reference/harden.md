@@ -121,9 +121,9 @@ border-inline-end: 1px solid; /* Not border-right */
 new Intl.DateTimeFormat('en-US').format(date); // 1/15/2024
 new Intl.DateTimeFormat('de-DE').format(date); // 15.1.2024
 
-new Intl.NumberFormat('en-US', { 
-  style: 'currency', 
-  currency: 'USD' 
+new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD'
 }).format(1234.56); // $1,234.56
 ```
 
@@ -235,7 +235,7 @@ t('items', { count }) // Handles complex plural rules
 **Constraint handling**:
 ```html
 <!-- Set clear constraints -->
-<input 
+<input
   type="text"
   maxlength="100"
   pattern="[A-Za-z0-9]+"

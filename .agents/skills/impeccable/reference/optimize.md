@@ -34,7 +34,7 @@ Create systematic improvement plan:
 - Use CDN for faster delivery
 
 ```html
-<img 
+<img
   src="hero.webp"
   srcset="hero-400.webp 400w, hero-800.webp 800w, hero-1200.webp 1200w"
   sizes="(max-width: 400px) 400px, (max-width: 800px) 800px, 1200px"
