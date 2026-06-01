@@ -38,12 +38,12 @@ This architecture governs:
 - Snapshot rows SHOULD be aggregated by a stable normalized query identity, not emitted as one row per execution.
 - Snapshot rows MUST avoid raw parameter values and other sensitive payload data. The `query` field should contain parameterized SQL or another sanitized query representation.
 - `tables` SHOULD contain qualified table names when the embedder can derive them.
-- `reads`, `rowsReturned`, `duration`, `count`, and `lastSeen` SHOULD be best-effort operational signals. Studio treats them as display and sorting data, not accounting-grade telemetry.
+- `rowsReturned`, `duration`, `count`, and `lastSeen` SHOULD be best-effort operational signals. Studio treats them as display and sorting data, not accounting-grade telemetry. `reads` is optional read-work telemetry and MUST NOT be used as a user-facing substitute for rows returned.
 - `pollingIntervalMs` MAY be returned by the provider. A value less than or equal to `0` tells Studio not to poll automatically.
 
 ## Lowest-Fidelity Provider
 
-Studio fully supports a generic SQL-only provider. A first implementation does not need Prisma ORM metadata, per-row plans, exact read counts, grouping, or AI-specific fields.
+Studio fully supports a generic SQL-only provider. A first implementation does not need Prisma ORM metadata, per-row plans, read-work estimates, grouping, or AI-specific fields.
 
 The minimum useful row is:
 
@@ -68,7 +68,7 @@ Rules for this low-fidelity mode:
 - `reads` MAY be `0` when the source cannot estimate physical or logical reads.
 - `rowsReturned` MAY be `0` when the source cannot observe returned row counts.
 - `prismaQueryInfo`, `queryId`, `groupKey`, `minDurationMs`, and `maxDurationMs` MAY be omitted.
-- AI recommendations still work without `prismaQueryInfo`; the prompt falls back to SQL, table names, and metrics.
+- AI recommendations still work without `prismaQueryInfo`; the prompt falls back to SQL, table names, and metrics. User-facing AI text SHOULD call `rowsReturned` "rows returned" and SHOULD NOT call rows returned "reads".
 
 This is the recommended starting point for local dev providers and embedder migrations. Higher-fidelity providers can add Prisma metadata, table extraction, and better counters later without changing the Studio integration.
 
@@ -121,7 +121,7 @@ The query table uses the per-query samples as follows:
 - The `Queries` view MUST render under the Studio `Visualizer` navigation item and MUST NOT be available when `Adapter.queryInsights` is absent.
 - The top-level description SHOULD explain that Studio monitors database activity and helps identify poorly performing queries.
 - The activity chart MUST show `Queries/s` and `Avg latency` summaries, share one selected range with the query table, and expose `1m`, `5m`, `15m`, and `1h` range controls.
-- The query table SHOULD include `Latency`, `Query`, `Executions`, `Rows Returned`, and `Last Seen` columns. `Rows Returned` is the user-facing label for `rowsReturned`; `reads` remains an internal and AI-prompt signal.
+- The query table SHOULD include `Latency`, `Query`, `Executions`, `Rows Returned`, and `Last Seen` columns. `Rows Returned` is the user-facing label for `rowsReturned`; `reads` remains an optional internal read-work estimate and MAY be used in AI prompts only under that wording.
 - When AI recommendations are available, the query table SHOULD add an `Analysis` column with queued, running, manual analyze, and completed severity states.
 - The table filter SHOULD use touched tables derived from the selected-window rows, not from stale cumulative provider data.
 - Sorting SHOULD operate on selected-window row values, not provider cumulative counters.
@@ -240,6 +240,7 @@ The BFF endpoint may delegate `query-insights` to a different local sidecar or s
 - Automatic analysis MUST run through one serial queue with at most one `llm` request in flight. Studio MUST stop automatic background analysis after five query groups per mounted Queries view so a large snapshot does not fan out into many host AI calls.
 - Manual analysis requests from the row action or detail sheet MAY enqueue any query group beyond that automatic cap, but they still MUST use the same serial queue and duplicate-suppression rules.
 - Prompt construction MUST use the query row Studio is rendering for the selected time window when available. It MUST NOT fetch row data or ask the provider to run SQL.
+- Prompt construction MUST preserve the same terminology as the UI: `rowsReturned` is "rows returned"; `reads` is "read work" and SHOULD be omitted when it is unknown or only duplicates `rowsReturned`.
 - AI output MUST be parsed and rendered as advisory text, optional query suggestions, and a severity level (`all-good`, `info`, or `warning`); Studio MUST NOT auto-run AI-suggested SQL.
 - The query table MAY show an `Analysis` column when `llm` is present. That column SHOULD show queued/running state, a manual analyze action, and the completed severity icon. It MUST be hidden when `llm` is absent.
 
@@ -281,4 +282,5 @@ Changes to query insights MUST include tests covering:
 - cumulative counter deltas, counter resets, and stale/equal snapshots
 - long chart gaps, short connected gaps, and isolated sample markers
 - serial automatic AI analysis with the five-query cap and manual analysis beyond that cap
+- AI prompt terminology that calls `rowsReturned` "rows returned" instead of "reads"
 - demo aggregation behavior for successful query executions

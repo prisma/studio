@@ -248,7 +248,7 @@ What the `Queries` view renders:
 - a detail sheet with the selected query SQL, touched tables, selected-window metrics, and optional AI recommendations
 - a pause/resume control for polling the injected snapshot provider
 
-The chart and table always use the same selected time range. Studio derives visible `Executions`, `Rows Returned`, reads, latency, and last-seen values from the samples it can place inside that range; it does not show cumulative provider counters as if they all happened in the visible window. The first snapshot can still show recent rows as context when their `lastSeen` timestamp is inside the selected range, but those context rows do not create live throughput values.
+The chart and table always use the same selected time range. Studio derives visible `Executions`, `Rows Returned`, latency, last-seen values, and any provider read-work estimate from the samples it can place inside that range; it does not show cumulative provider counters as if they all happened in the visible window. The first snapshot can still show recent rows as context when their `lastSeen` timestamp is inside the selected range, but those context rows do not create live throughput values.
 
 Consumer migration notes:
 
@@ -258,7 +258,7 @@ Consumer migration notes:
 - AI recommendations use the shared `llm` hook with `task: "query-insights"`. Studio does not expose a separate query-specific `analyze()` or `enableAiRecommendations()` transport. Hosts that need consent should enforce it in the `llm` implementation they pass to Studio.
 - Automatic AI analysis runs serially, with at most one `llm` request in flight, and stops after the first five automatically discovered query groups. Users can still manually analyze additional rows from the table or detail sheet.
 
-Snapshot rows should be aggregated by a stable normalized query identity. Do not send raw parameter values or sensitive payloads; use parameterized SQL or another sanitized query representation. `reads`, `rowsReturned`, `duration`, `count`, and `lastSeen` are best-effort operational signals for display and sorting, not accounting-grade telemetry. Studio derives visible chart and table metrics from deltas between cumulative snapshots inside the selected time window; it does not display cumulative provider counters as selected-window totals. A first snapshot can render recent rows as context, but live throughput is only available after Studio has two increasing snapshots to compare.
+Snapshot rows should be aggregated by a stable normalized query identity. Do not send raw parameter values or sensitive payloads; use parameterized SQL or another sanitized query representation. `rowsReturned`, `duration`, `count`, and `lastSeen` are best-effort operational signals for display and sorting, not accounting-grade telemetry. Studio labels `rowsReturned` as `Rows Returned` everywhere in the UI and AI advice. `reads` is optional provider read-work telemetry for sources that can estimate rows scanned, logical reads, physical reads, or a similar work signal; leave it at `0` when unknown. Studio derives visible chart and table metrics from deltas between cumulative snapshots inside the selected time window; it does not display cumulative provider counters as selected-window totals. A first snapshot can render recent rows as context, but live throughput is only available after Studio has two increasing snapshots to compare.
 
 The lowest-fidelity provider Studio fully supports is a generic SQL snapshot with no Prisma metadata:
 

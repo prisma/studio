@@ -96,6 +96,12 @@ describe("query insights AI helpers", () => {
 
     expect(prompt).toContain('"level":"all-good"');
     expect(prompt).toContain("level must be one of all-good, info, or warning");
+    expect(prompt).toContain(
+      'Call the rowsReturned metric "rows returned" in user-facing text.',
+    );
+    expect(prompt).toContain("- Rows returned: 3");
+    expect(prompt).toContain("- Read work estimate: 9");
+    expect(prompt).not.toContain("- Reads:");
     expect(prompt).toContain("Prisma ORM context:");
     expect(prompt).toContain('"model": "User"');
     expect(prompt).toContain("select * from users where email = $1");
@@ -109,5 +115,17 @@ describe("query insights AI helpers", () => {
     });
 
     expect(rawPrompt).not.toContain("Prisma ORM context:");
+  });
+
+  it("omits read work from the prompt when it only duplicates rows returned", () => {
+    const prompt = buildQueryInsightAnalysisPrompt({
+      ...BASE_QUERY,
+      reads: 3,
+      rowsReturned: 3,
+    });
+
+    expect(prompt).toContain("- Rows returned: 3");
+    expect(prompt).not.toContain("- Read work estimate:");
+    expect(prompt).not.toContain("- Reads:");
   });
 });

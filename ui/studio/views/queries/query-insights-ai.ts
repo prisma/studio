@@ -37,14 +37,19 @@ export function buildQueryInsightAnalysisPrompt(
     "- Include improvedSql only when a concrete SQL rewrite is useful.",
     "- Include improvedPrisma only when Prisma ORM context is present and a concrete Prisma Client rewrite is useful.",
     "- Do not mention query parameter values; they are intentionally unavailable.",
+    '- Call the rowsReturned metric "rows returned" in user-facing text. Do not call rows returned "reads".',
+    '- Treat read work as an optional provider estimate. Mention it only as "read work" when it is materially useful.',
     "",
     "Query statistics:",
     `- Executions: ${query.count}`,
     `- Average latency: ${formatNumber(query.duration)} ms`,
-    `- Reads: ${formatNumber(query.reads)}`,
     `- Rows returned: ${formatNumber(query.rowsReturned)}`,
     `- Tables: ${query.tables.length > 0 ? query.tables.join(", ") : "unknown"}`,
   ];
+
+  if (hasDistinctReadWorkEstimate(query)) {
+    lines.push(`- Read work estimate: ${formatNumber(query.reads)}`);
+  }
 
   if (query.prismaQueryInfo && !query.prismaQueryInfo.isRaw) {
     lines.push(
@@ -146,4 +151,12 @@ function normalizeAnalysisLevel(
 
 function formatNumber(value: number): string {
   return Number.isFinite(value) ? value.toFixed(0) : "unknown";
+}
+
+function hasDistinctReadWorkEstimate(query: StudioQueryInsightQuery): boolean {
+  return (
+    Number.isFinite(query.reads) &&
+    query.reads > 0 &&
+    query.reads !== query.rowsReturned
+  );
 }

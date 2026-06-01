@@ -30,7 +30,7 @@ describe("createDemoQueryInsightsStore", () => {
         duration: 18,
         lastSeen: 1_779_963_000_100,
         query: "select * from public.users where id = $1",
-        reads: 3,
+        reads: 0,
         rowsReturned: 3,
         tables: ["public.users"],
       }),

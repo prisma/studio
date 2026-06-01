@@ -55,7 +55,8 @@ export function createDemoQueryInsightsStore(args?: {
       const id = normalizeQueryId(query.sql);
       const lastSeen = now();
       const rowCount = Array.isArray(result) ? result.length : 0;
-      const reads = estimateReads(result);
+      // The demo can observe returned rows, not database read work.
+      const reads = 0;
       const existing = queriesById.get(id);
 
       if (!existing) {
@@ -126,14 +127,6 @@ function shouldRecordQuery(sql: string): boolean {
 
 function normalizeQueryId(sql: string): string {
   return sql.replace(/\s+/g, " ").trim();
-}
-
-function estimateReads(result: QueryResult<Query<unknown>>): number {
-  if (!Array.isArray(result)) {
-    return 0;
-  }
-
-  return Math.max(1, result.length);
 }
 
 function extractTablesFromSql(sql: string): string[] {
