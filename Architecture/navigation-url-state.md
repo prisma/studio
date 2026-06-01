@@ -8,7 +8,7 @@ Navigation state MUST be URL-driven and managed through `useNavigation` + Nuqs. 
 
 This architecture governs:
 
-- active Studio view (`table`, `schema`, `console`, `sql`, `stream`)
+- active Studio view (`table`, `schema`, `console`, `sql`, `stream`, `queries`)
 - active schema/table/stream
 - active stream follow mode
 - active stream aggregation-panel visibility
@@ -78,6 +78,7 @@ Adding a new URL key requires updating `StateKey` in `nuqs.ts` first.
 - `search`: `""`
 - `searchScope`: `"table"` (legacy default)
 - `view`: `"table"`
+- `queries`: no standalone default; only meaningful when the current adapter provides query insights
 - `stream`: no default; only meaningful when `view=stream`
 - `streamFollow`: no global default in `useNavigation`; the active stream view MUST resolve an absent value to `tail` and materialize that into the hash
 - `aggregations`: no global default in `useNavigation`; the active stream view MUST treat an absent flag as closed and MUST NOT materialize that closed state into the hash
@@ -86,9 +87,10 @@ Adding a new URL key requires updating `StateKey` in `nuqs.ts` first.
 When Studio is running without a database connection but with Streams enabled:
 
 - the resolved default `view` MUST become `"stream"` instead of `"table"`
-- stale database-oriented views such as `table`, `schema`, `console`, and `sql` MUST resolve back to the stream view instead of trying to render database-only UI against a disabled database session
+- stale database-oriented views such as `table`, `schema`, `console`, `sql`, and `queries` MUST resolve back to the stream view instead of trying to render database-only UI against a disabled database session
 
 When URL params are stale from a previous DB, invalid `schema`/`table` values MUST be resolved to valid current defaults.
+When URL params contain `view=queries` but the current adapter does not provide query insights, `useNavigation` MUST resolve back to the default view and the sidebar MUST hide the Queries link.
 Shared table page size and infinite-scroll mode are not derived from URL defaults; they are restored through Studio UI state and then mirrored into query behavior by `usePagination`.
 
 ## Hash Adapter Contract

@@ -2,7 +2,7 @@
 
 This document is normative for AI-assisted SQL result visualization in Studio (`view=sql`).
 
-The implementation MUST reuse the existing SQL-view AI transport, render inside the shared scrollable result grid, and generate Chart.js configs without any external chart wrappers.
+The implementation MUST reuse the existing SQL-view AI transport, render inside the shared scrollable result grid, and generate a small Studio-owned Bklit chart config instead of accepting arbitrary chart-library options.
 
 ## Scope
 
@@ -10,8 +10,8 @@ This architecture governs:
 
 - the optional AI visualization row inside SQL result rendering
 - prompt construction from the executed query plus full result rows
-- response validation for AI-generated Chart.js configs
-- Chart.js embedding and lifecycle management
+- response validation for AI-generated Bklit chart configs
+- Bklit chart composition and lifecycle management
 - visualization reset behavior across query executions
 
 ## Canonical Components
@@ -28,7 +28,7 @@ This architecture governs:
 - The idle visualization affordance MUST render on the SQL result summary row, right-aligned on the same line as the `"row(s) returned in Xms"` text.
 - The mounted chart surface MUST render above the SQL result column header row but inside the shared scrollable grid container.
 - The implementation MUST use `DataGrid.getBeforeHeaderRows(...)` for the mounted chart rather than a bespoke parallel scroll region.
-- The mounted chart surface MUST render inside a full-width white band that stays pinned to the visible scroll-container width rather than stretching with the total table width.
+- The mounted chart surface MUST render inside a full-width background band that stays pinned to the visible scroll-container width rather than stretching with the total table width.
 - The actual chart body inside that band MUST be centered and width-clamped:
   - minimum 300px
   - grow with available visible width
@@ -48,18 +48,110 @@ This architecture governs:
   - the executed SQL text under a stable `SQL:` line
   - the original AI SQL request when the result came from `Generate SQL with AI`
   - the full result row set
-- The prompt MUST explicitly request a Chart.js config and forbid external libraries.
+- The prompt MUST explicitly request a Studio Bklit chart config and forbid external libraries.
 - AI responses MUST be strict JSON and MUST NOT include markdown fences or commentary.
 - JSON-response validation and correction retries SHOULD flow through the shared SQL-view AI JSON utility rather than a visualization-specific retry loop.
 - Provider-level output-limit failures MUST surface as explicit retry issues instead of collapsing into a generic malformed-JSON error.
-- The validated response shape MUST contain a Chart.js config object suitable for `new Chart(canvas, config)`.
-- The supported chart types MUST be constrained to a known allowlist.
+- The validated response shape MUST contain a `config` object with this minimal schema:
+  - `type`: one of `bar`, `horizontal-bar`, `line`, `pie`, or `doughnut`
+  - `title`: optional short display title
+  - `data`: plain JSON objects with primitive field values only
+  - `xKey` plus `series[]` for `bar`, `horizontal-bar`, and `line` charts
+  - optional `stacked: true` for `bar` and `horizontal-bar` charts only
+  - `labelKey` plus `valueKey` for `pie` and `doughnut` charts
+- `line` charts MUST use date-like `xKey` values: ISO dates, ISO datetimes, or epoch milliseconds. Generic categorical data should use `bar`.
+- `horizontal-bar` charts SHOULD be used for ranked categorical results, top-N lists, and long category labels that would collide on a vertical x-axis.
+- Stacked `bar` and `horizontal-bar` charts MUST use one data row per category and separate numeric series fields for each stack segment. Long/tidy SQL result rows MAY be pivoted by the AI visualization response into this Studio-owned chart config.
+- The supported chart types MUST be constrained to the known allowlist above.
 - The implementation MUST retry up to two times when the model returns malformed JSON or an invalid chart config, and each correction prompt MUST include the latest validation error.
+
+## Chart Config Examples
+
+Vertical or horizontal bar charts use one category key and one or more numeric series keys:
+
+```json
+{
+  "config": {
+    "type": "bar",
+    "title": "Incidents by severity",
+    "xKey": "severity",
+    "series": [{ "key": "count", "label": "Incidents" }],
+    "data": [
+      { "severity": "Low", "count": 12 },
+      { "severity": "High", "count": 3 }
+    ]
+  }
+}
+```
+
+Stacked bar charts use separate numeric fields for each stack segment, not one long/tidy row per segment:
+
+```json
+{
+  "config": {
+    "type": "horizontal-bar",
+    "title": "Team skills by organization",
+    "xKey": "organization",
+    "stacked": true,
+    "series": [
+      { "key": "typescript", "label": "TypeScript" },
+      { "key": "postgres", "label": "Postgres" }
+    ],
+    "data": [
+      { "organization": "Acme", "typescript": 4, "postgres": 2 },
+      { "organization": "Globex", "typescript": 1, "postgres": 5 }
+    ]
+  }
+}
+```
+
+Line charts require date-like x-values:
+
+```json
+{
+  "config": {
+    "type": "line",
+    "title": "Rows created over time",
+    "xKey": "day",
+    "series": [{ "key": "created", "label": "Created rows" }],
+    "data": [
+      { "day": "2026-06-01", "created": 18 },
+      { "day": "2026-06-02", "created": 27 }
+    ]
+  }
+}
+```
+
+Pie-like charts use one label key and one numeric value key:
+
+```json
+{
+  "config": {
+    "type": "doughnut",
+    "title": "Feature flag states",
+    "labelKey": "state",
+    "valueKey": "count",
+    "data": [
+      { "state": "Enabled", "count": 9 },
+      { "state": "Disabled", "count": 4 }
+    ]
+  }
+}
+```
+
+## Renderer Contract
+
+- `bar` and `horizontal-bar` render through `BarChart`, `Bar`, `BarXAxis`, and `BarYAxis`.
+- `line` renders through `LineChart`, `Line`, and `XAxis`.
+- `pie` and `doughnut` render through `PieChart` and `PieSlice`.
+- All chart types use the shared Bklit `Grid` and `ChartTooltip` primitives where applicable.
+- Series colors default to Studio chart CSS variables (`--chart-1` through `--chart-5`) unless a validated series color is provided.
+- The renderer MUST ignore arbitrary chart-library options. All display behavior is derived from the validated Studio config and local component composition.
 
 ## Chart Lifecycle Contract
 
-- Chart rendering MUST use Chart.js directly.
-- The mounted chart instance MUST be destroyed on unmount and before replacing it with a new chart.
+- Chart rendering MUST use the Bklit ShadCN chart primitives checked into `ui/components/charts`.
+- The mounted chart MUST remain a React composition, not a canvas lifecycle object.
 - Visualization reset MUST happen when a new SQL execution starts, even if the previous result grid is still visible while the next query is in flight.
 
 ## Testing Requirements
@@ -67,8 +159,9 @@ This architecture governs:
 Changes to SQL result visualization MUST include tests covering:
 
 - prompt construction with full result rows
-- Chart.js instantiation for a few supported chart types
+- validation of supported and unsupported Bklit chart configs
 - SQL-view integration showing the summary-row `Visualize data with AI` affordance
 - automatic chart generation for AI-generated SQL results that request visualization
 - replacement of the action with a mounted chart
 - reset behavior when another query execution starts
+- validation and rendering support for stacked bar and horizontal-bar chart configs

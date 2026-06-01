@@ -5,7 +5,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Adapter, AdapterError } from "@/data";
+import type { Adapter, AdapterError, AdapterSqlLintResult } from "@/data";
 import type { StudioLlmRequest } from "@/data/llm";
 
 import { SqlView } from "./SqlView";
@@ -162,7 +162,11 @@ vi.mock("@uiw/react-codemirror", () => ({
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-function createAdapterMock(args?: { raw?: Adapter["raw"] }): {
+function createAdapterMock(args?: {
+  capabilities?: Adapter["capabilities"];
+  raw?: Adapter["raw"];
+  sqlLint?: Adapter["sqlLint"];
+}): {
   adapter: Adapter;
   rawSpy: ReturnType<typeof vi.fn<Adapter["raw"]>>;
 } {
@@ -183,12 +187,14 @@ function createAdapterMock(args?: { raw?: Adapter["raw"] }): {
 
   return {
     adapter: {
+      ...(args?.capabilities ? { capabilities: args.capabilities } : {}),
       defaultSchema: "public",
       delete: vi.fn(),
       insert: vi.fn(),
       introspect: vi.fn(),
       query: vi.fn(),
       raw: rawSpy,
+      ...(args?.sqlLint ? { sqlLint: args.sqlLint } : {}),
       update: vi.fn(),
     } as unknown as Adapter,
     rawSpy,
@@ -221,9 +227,7 @@ function createStudioMock(adapter: Adapter): {
   operationEvents: [];
   queryClient: { clear: ReturnType<typeof vi.fn> };
   requestLlm: ReturnType<
-    typeof vi.fn<
-      (request: { prompt: string; task: string }) => Promise<string>
-    >
+    typeof vi.fn<(request: { prompt: string; task: string }) => Promise<string>>
   >;
   sqlEditorStateCollection: {
     delete: ReturnType<typeof vi.fn>;
@@ -252,8 +256,12 @@ function createStudioMock(adapter: Adapter): {
     get: vi.fn((id: string) => sqlEditorRows.get(id)),
     has: vi.fn((id: string) => sqlEditorRows.has(id)),
     insert: vi.fn(
-      (item: { aiPromptHistory?: string[]; id: string; queryText?: string }) => {
-      sqlEditorRows.set(item.id, item);
+      (item: {
+        aiPromptHistory?: string[];
+        id: string;
+        queryText?: string;
+      }) => {
+        sqlEditorRows.set(item.id, item);
       },
     ),
     update: vi.fn(
@@ -283,7 +291,9 @@ function createStudioMock(adapter: Adapter): {
     get llm() {
       return llm;
     },
-    set llm(value: ((request: StudioLlmRequest) => Promise<string>) | undefined) {
+    set llm(
+      value: ((request: StudioLlmRequest) => Promise<string>) | undefined,
+    ) {
       llm = value;
     },
     getOrCreateRowsCollection: vi.fn(),
@@ -336,7 +346,12 @@ function setInputValue(element: HTMLInputElement, value: string) {
 function dispatchInputKey(
   element: HTMLInputElement,
   key: string,
-  args?: { altKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean },
+  args?: {
+    altKey?: boolean;
+    ctrlKey?: boolean;
+    metaKey?: boolean;
+    shiftKey?: boolean;
+  },
 ) {
   element.dispatchEvent(
     new KeyboardEvent("keydown", {
@@ -422,7 +437,9 @@ describe("SqlView", () => {
     }
 
     expect(
-      harness.container.querySelector('input[aria-label="Generate SQL with AI"]'),
+      harness.container.querySelector(
+        'input[aria-label="Generate SQL with AI"]',
+      ),
     ).toBeNull();
     expect(
       [...harness.container.querySelectorAll("button")].find((button) =>
@@ -441,10 +458,14 @@ describe("SqlView", () => {
     });
 
     expect(
-      harness.container.querySelector('[data-testid="sql-result-visualization-action"]'),
+      harness.container.querySelector(
+        '[data-testid="sql-result-visualization-action"]',
+      ),
     ).toBeNull();
     expect(
-      harness.container.querySelector('[data-testid="sql-result-visualization-row"]'),
+      harness.container.querySelector(
+        '[data-testid="sql-result-visualization-row"]',
+      ),
     ).toBeNull();
 
     harness.cleanup();
@@ -468,9 +489,9 @@ describe("SqlView", () => {
     const promptInput = harness.container.querySelector<HTMLInputElement>(
       'input[aria-label="Generate SQL with AI"]',
     );
-    const generateButton = [...harness.container.querySelectorAll("button")].find(
-      (button) => button.textContent?.includes("Generate SQL"),
-    );
+    const generateButton = [
+      ...harness.container.querySelectorAll("button"),
+    ].find((button) => button.textContent?.includes("Generate SQL"));
     const editor = harness.container.querySelector<HTMLTextAreaElement>(
       'textarea[aria-label="SQL editor"]',
     );
@@ -524,7 +545,9 @@ describe("SqlView", () => {
     });
 
     await waitFor(() => {
-      return harness.container.textContent?.includes("1 row(s) returned") ?? false;
+      return (
+        harness.container.textContent?.includes("1 row(s) returned") ?? false
+      );
     });
 
     expect(rawSpy).toHaveBeenCalledWith(
@@ -550,6 +573,196 @@ describe("SqlView", () => {
     harness.cleanup();
   });
 
+  it("validates and corrects generated SQL before placing it in the editor", async () => {
+    const invalidSql =
+      "select tm.skills as skill, count(*) from public.team_members tm group by skill;";
+    const correctedSql =
+      "select skill, count(*) from public.team_members tm cross join lateral unnest(tm.skills) as skill group by skill;";
+    const invalidLintResult: AdapterSqlLintResult = {
+      diagnostics: [
+        {
+          from: 7,
+          message:
+            'column "tm.skills" must appear in the GROUP BY clause or be used in an aggregate function',
+          severity: "error",
+          source: "postgres",
+          to: 16,
+        },
+      ],
+    };
+    const validLintResult: AdapterSqlLintResult = { diagnostics: [] };
+    const sqlLintMock = vi
+      .fn<NonNullable<Adapter["sqlLint"]>>()
+      .mockResolvedValueOnce([null, invalidLintResult])
+      .mockResolvedValueOnce([null, validLintResult]);
+    const { adapter, rawSpy } = createAdapterMock({
+      capabilities: {
+        sqlDialect: "postgresql",
+        sqlEditorLint: true,
+      },
+      sqlLint: sqlLintMock,
+    });
+    const studio = createStudioMock(adapter);
+    const llmMock = vi
+      .fn<(request: StudioLlmRequest) => Promise<string>>()
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          rationale: "Uses the skills column directly.",
+          sql: invalidSql,
+          shouldGenerateVisualization: true,
+        }),
+      )
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          rationale: "Unnests skills before grouping.",
+          sql: correctedSql,
+          shouldGenerateVisualization: true,
+        }),
+      );
+    studio.llm = llmMock;
+    useStudioMock.mockReturnValue(studio);
+
+    const harness = renderSqlView();
+    const promptInput = harness.container.querySelector<HTMLInputElement>(
+      'input[aria-label="Generate SQL with AI"]',
+    );
+    const generateButton = [
+      ...harness.container.querySelectorAll("button"),
+    ].find((button) => button.textContent?.includes("Generate SQL"));
+    const editor = harness.container.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="SQL editor"]',
+    );
+
+    if (!promptInput || !generateButton || !editor) {
+      throw new Error("Expected SQL generation controls and editor");
+    }
+
+    act(() => {
+      setInputValue(promptInput, "count team members by skill");
+    });
+
+    act(() => {
+      generateButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitFor(() => editor.value === correctedSql);
+
+    expect(rawSpy).not.toHaveBeenCalled();
+    expect(sqlLintMock).toHaveBeenCalledTimes(2);
+    expect(sqlLintMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ sql: invalidSql }),
+      expect.any(Object),
+    );
+    expect(sqlLintMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ sql: correctedSql }),
+      expect.any(Object),
+    );
+    expect(llmMock).toHaveBeenCalledTimes(2);
+    expect(llmMock.mock.calls[1]?.[0].prompt).toContain(
+      `Previous SQL statement: ${invalidSql}`,
+    );
+    expect(llmMock.mock.calls[1]?.[0].prompt).toContain(
+      'Database error from that SQL: column "tm.skills" must appear in the GROUP BY clause or be used in an aggregate function',
+    );
+    expect(harness.container.textContent).not.toContain(
+      "Uses the skills column directly.",
+    );
+    expect(harness.container.textContent).toContain(
+      "Unnests skills before grouping.",
+    );
+
+    harness.cleanup();
+  });
+
+  it("leaves the editor unchanged when generated SQL validation cannot be corrected", async () => {
+    const invalidSql = "select * from missing_table;";
+    const stillInvalidSql = "select id from missing_table;";
+    const invalidLintResult: AdapterSqlLintResult = {
+      diagnostics: [
+        {
+          from: 14,
+          message: 'relation "missing_table" does not exist',
+          severity: "error",
+          source: "postgres",
+          to: 27,
+        },
+      ],
+    };
+    const sqlLintMock = vi
+      .fn<NonNullable<Adapter["sqlLint"]>>()
+      .mockResolvedValueOnce([null, invalidLintResult])
+      .mockResolvedValueOnce([null, invalidLintResult]);
+    const { adapter, rawSpy } = createAdapterMock({
+      capabilities: {
+        sqlDialect: "postgresql",
+        sqlEditorLint: true,
+      },
+      sqlLint: sqlLintMock,
+    });
+    const studio = createStudioMock(adapter);
+    const llmMock = vi
+      .fn<(request: StudioLlmRequest) => Promise<string>>()
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          rationale: "Uses a missing table.",
+          sql: invalidSql,
+          shouldGenerateVisualization: false,
+        }),
+      )
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          rationale: "Still uses a missing table.",
+          sql: stillInvalidSql,
+          shouldGenerateVisualization: false,
+        }),
+      );
+    studio.llm = llmMock;
+    useStudioMock.mockReturnValue(studio);
+
+    const harness = renderSqlView();
+    const promptInput = harness.container.querySelector<HTMLInputElement>(
+      'input[aria-label="Generate SQL with AI"]',
+    );
+    const generateButton = [
+      ...harness.container.querySelectorAll("button"),
+    ].find((button) => button.textContent?.includes("Generate SQL"));
+    const editor = harness.container.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="SQL editor"]',
+    );
+
+    if (!promptInput || !generateButton || !editor) {
+      throw new Error("Expected SQL generation controls and editor");
+    }
+
+    act(() => {
+      setInputValue(promptInput, "show me the missing table");
+    });
+
+    act(() => {
+      generateButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitFor(() => {
+      return (
+        harness.container.textContent?.includes(
+          "AI-generated SQL did not pass validation",
+        ) ?? false
+      );
+    });
+
+    expect(editor.value).toBe("select * from ");
+    expect(rawSpy).not.toHaveBeenCalled();
+    expect(sqlLintMock).toHaveBeenCalledTimes(2);
+    expect(llmMock).toHaveBeenCalledTimes(2);
+    expect(harness.container.textContent).not.toContain(
+      "Still uses a missing table.",
+    );
+
+    harness.cleanup();
+  });
+
   it("auto-generates a chart after the user runs AI-generated SQL marked as graph-worthy", async () => {
     const { adapter } = createAdapterMock();
     const studio = createStudioMock(adapter);
@@ -565,19 +778,10 @@ describe("SqlView", () => {
       .mockResolvedValueOnce(
         JSON.stringify({
           config: {
-            data: {
-              datasets: [
-                {
-                  data: [1],
-                  label: "Rows",
-                },
-              ],
-              labels: ["organizations"],
-            },
-            options: {
-              responsive: false,
-            },
-            type: "bar",
+            data: [{ label: "Organizations with a very long label", rows: 1 }],
+            series: [{ key: "rows", label: "Rows" }],
+            type: "horizontal-bar",
+            xKey: "label",
           },
         }),
       );
@@ -588,9 +792,9 @@ describe("SqlView", () => {
     const promptInput = harness.container.querySelector<HTMLInputElement>(
       'input[aria-label="Generate SQL with AI"]',
     );
-    const generateButton = [...harness.container.querySelectorAll("button")].find(
-      (button) => button.textContent?.includes("Generate SQL"),
-    );
+    const generateButton = [
+      ...harness.container.querySelectorAll("button"),
+    ].find((button) => button.textContent?.includes("Generate SQL"));
 
     if (!promptInput || !generateButton) {
       throw new Error("Expected SQL generation controls");
@@ -636,7 +840,8 @@ describe("SqlView", () => {
 
     await waitFor(() => {
       return (
-        (harness.container.textContent?.includes("1 row(s) returned") ?? false) &&
+        (harness.container.textContent?.includes("1 row(s) returned") ??
+          false) &&
         harness.container.querySelector(
           '[data-testid="sql-result-visualization-chart"]',
         ) != null
@@ -647,7 +852,7 @@ describe("SqlView", () => {
     expect(llmMock).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
-        prompt: expect.stringContaining("Chart.js"),
+        prompt: expect.stringContaining("Bklit chart components"),
         task: "sql-visualization",
       }),
     );
@@ -659,14 +864,17 @@ describe("SqlView", () => {
       JSON.stringify([{ one: 1 }]),
     );
     expect(
-      harness.container.querySelector('[data-testid="sql-result-visualization-action"]'),
+      harness.container.querySelector(
+        '[data-testid="sql-result-visualization-action"]',
+      ),
     ).toBeNull();
 
     harness.cleanup();
   });
 
-  it("surfaces query errors only after the user manually runs AI-generated SQL", async () => {
+  it("feeds AI-generated SQL execution errors back into the model without auto-running the correction", async () => {
     const badSql = "select typeof(json_col) from public.organizations limit 5;";
+    const correctedSql = "select id from public.organizations limit 5;";
     const raw: Adapter["raw"] = async (details) => {
       const error = new Error(
         "function typeof(json) does not exist",
@@ -676,11 +884,20 @@ describe("SqlView", () => {
     };
     const { adapter, rawSpy } = createAdapterMock({ raw });
     const studio = createStudioMock(adapter);
-    const llmMock = vi.fn<(request: StudioLlmRequest) => Promise<string>>()
-      .mockResolvedValue(
+    const llmMock = vi
+      .fn<(request: StudioLlmRequest) => Promise<string>>()
+      .mockResolvedValueOnce(
         JSON.stringify({
           rationale: "Tried a typeof helper.",
           sql: badSql,
+          shouldGenerateVisualization: false,
+        }),
+      )
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          rationale: "Uses plain selectable columns after the database error.",
+          sql: correctedSql,
+          shouldGenerateVisualization: true,
         }),
       );
     studio.llm = llmMock;
@@ -690,9 +907,9 @@ describe("SqlView", () => {
     const promptInput = harness.container.querySelector<HTMLInputElement>(
       'input[aria-label="Generate SQL with AI"]',
     );
-    const generateButton = [...harness.container.querySelectorAll("button")].find(
-      (button) => button.textContent?.includes("Generate SQL"),
-    );
+    const generateButton = [
+      ...harness.container.querySelectorAll("button"),
+    ].find((button) => button.textContent?.includes("Generate SQL"));
     const editor = harness.container.querySelector<HTMLTextAreaElement>(
       'textarea[aria-label="SQL editor"]',
     );
@@ -727,23 +944,77 @@ describe("SqlView", () => {
       runButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    await waitFor(() => {
-      return (
-        harness.container.textContent?.includes(
-          "function typeof(json) does not exist",
-        ) ?? false
-      );
-    });
+    await waitFor(() => editor.value === correctedSql);
 
-    expect(llmMock).toHaveBeenCalledTimes(1);
+    expect(llmMock).toHaveBeenCalledTimes(2);
+    expect(llmMock.mock.calls[1]?.[0]).toMatchObject({
+      task: "sql-generation",
+    });
+    expect(llmMock.mock.calls[1]?.[0].prompt).toContain(
+      "Previous SQL statement: select typeof(json_col) from public.organizations limit 5",
+    );
+    expect(llmMock.mock.calls[1]?.[0].prompt).toContain(
+      "Database error from that SQL: function typeof(json) does not exist",
+    );
     expect(rawSpy).toHaveBeenCalledTimes(1);
     expect(rawSpy).toHaveBeenCalledWith(
       { sql: "select typeof(json_col) from public.organizations limit 5" },
       expect.any(Object),
     );
     expect(harness.container.textContent).toContain(
-      "Tried a typeof helper.",
+      "Uses plain selectable columns after the database error.",
     );
+    expect(harness.container.textContent).not.toContain("Query error:");
+
+    harness.cleanup();
+  });
+
+  it("keeps normal manual SQL execution errors inline without asking AI for a correction", async () => {
+    const raw: Adapter["raw"] = async (details) => {
+      const error = new Error(
+        "relation missing_table does not exist",
+      ) as AdapterError;
+      error.query = { parameters: [], sql: details.sql };
+      return [error];
+    };
+    const { adapter, rawSpy } = createAdapterMock({ raw });
+    const studio = createStudioMock(adapter);
+    const llmMock = vi.fn<(request: StudioLlmRequest) => Promise<string>>();
+    studio.llm = llmMock;
+    useStudioMock.mockReturnValue(studio);
+
+    const harness = renderSqlView();
+    const editor = harness.container.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="SQL editor"]',
+    );
+    const runButton = [...harness.container.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Run SQL"),
+    );
+
+    if (!editor || !runButton) {
+      throw new Error("Expected SQL editor and Run SQL button");
+    }
+
+    act(() => {
+      editor.value = "select * from missing_table";
+      mockCodeMirrorOnChange?.("select * from missing_table");
+    });
+
+    act(() => {
+      runButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitFor(() => {
+      return (
+        harness.container.textContent?.includes(
+          "relation missing_table does not exist",
+        ) ?? false
+      );
+    });
+
+    expect(llmMock).not.toHaveBeenCalled();
+    expect(rawSpy).toHaveBeenCalledTimes(1);
+    expect(harness.container.textContent).toContain("Query error:");
 
     harness.cleanup();
   });
@@ -764,9 +1035,9 @@ describe("SqlView", () => {
     const promptInput = harness.container.querySelector<HTMLInputElement>(
       'input[aria-label="Generate SQL with AI"]',
     );
-    const generateButton = [...harness.container.querySelectorAll("button")].find(
-      (button) => button.textContent?.includes("Generate SQL"),
-    );
+    const generateButton = [
+      ...harness.container.querySelectorAll("button"),
+    ].find((button) => button.textContent?.includes("Generate SQL"));
 
     if (!promptInput || !generateButton) {
       throw new Error("Expected SQL generation controls");
@@ -782,11 +1053,13 @@ describe("SqlView", () => {
 
     await waitFor(() => {
       const promptHistoryRow = (
-        studio.sqlEditorStateCollection.get as (id: string) => {
-          aiPromptHistory?: string[];
-          id: string;
-          queryText?: string;
-        } | undefined
+        studio.sqlEditorStateCollection.get as (id: string) =>
+          | {
+              aiPromptHistory?: string[];
+              id: string;
+              queryText?: string;
+            }
+          | undefined
       )("sql-editor:ai-prompt-history");
 
       return (
@@ -810,11 +1083,13 @@ describe("SqlView", () => {
 
     expect(
       (
-        studio.sqlEditorStateCollection.get as (id: string) => {
-          aiPromptHistory?: string[];
-          id: string;
-          queryText?: string;
-        } | undefined
+        studio.sqlEditorStateCollection.get as (id: string) =>
+          | {
+              aiPromptHistory?: string[];
+              id: string;
+              queryText?: string;
+            }
+          | undefined
       )("sql-editor:ai-prompt-history"),
     ).toEqual({
       aiPromptHistory: ["show me team members", "show me organizations"],
@@ -916,9 +1191,9 @@ describe("SqlView", () => {
     const promptInput = harness.container.querySelector<HTMLInputElement>(
       'input[aria-label="Generate SQL with AI"]',
     );
-    const generateButton = [...harness.container.querySelectorAll("button")].find(
-      (button) => button.textContent?.includes("Generate SQL"),
-    );
+    const generateButton = [
+      ...harness.container.querySelectorAll("button"),
+    ].find((button) => button.textContent?.includes("Generate SQL"));
 
     if (!promptInput || !generateButton) {
       throw new Error("Expected SQL generation controls");
@@ -934,8 +1209,9 @@ describe("SqlView", () => {
 
     await waitFor(() => {
       return (
-        harness.container.textContent?.includes("AI SQL generation exploded.") ??
-        false
+        harness.container.textContent?.includes(
+          "AI SQL generation exploded.",
+        ) ?? false
       );
     });
 
@@ -949,19 +1225,10 @@ describe("SqlView", () => {
       async () =>
         JSON.stringify({
           config: {
-            data: {
-              datasets: [
-                {
-                  data: [1],
-                  label: "Rows",
-                },
-              ],
-              labels: ["organizations"],
-            },
-            options: {
-              responsive: false,
-            },
+            data: [{ label: "organizations", rows: 1 }],
+            series: [{ key: "rows", label: "Rows" }],
             type: "bar",
+            xKey: "label",
           },
         }),
     );
@@ -999,7 +1266,9 @@ describe("SqlView", () => {
     }
 
     expect(
-      harness.container.querySelector('[data-testid="sql-result-visualization-row"]'),
+      harness.container.querySelector(
+        '[data-testid="sql-result-visualization-row"]',
+      ),
     ).toBeNull();
     expect(summary.textContent).toContain("1 row(s) returned in");
     expect(harness.container.textContent?.includes("AI visualization")).toBe(
@@ -1007,16 +1276,14 @@ describe("SqlView", () => {
     );
     expect(
       harness.container.textContent?.includes(
-        "Generate a Chart.js view from the current SQL result set.",
+        "Generate a Bklit chart from the current SQL result set.",
       ),
     ).toBe(false);
     expect(visualizeAction.textContent).toContain("Visualize data with AI");
     expect(visualizeAction.className.includes("border")).toBe(false);
 
     act(() => {
-      visualizeAction.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
+      visualizeAction.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
     await waitFor(() => {
@@ -1036,12 +1303,13 @@ describe("SqlView", () => {
     );
 
     expect(llmMock).toHaveBeenCalledTimes(1);
-    expect(firstVisualizationPrompt).toContain("Chart.js");
+    expect(firstVisualizationPrompt).toContain("Bklit chart components");
+    expect(firstVisualizationPrompt).toContain("horizontal-bar");
     expect(firstVisualizationPrompt).toContain("SQL: select 1 as one");
     expect(firstVisualizationPrompt).toContain(JSON.stringify([{ one: 1 }]));
     expect(visualizationBand?.className).toContain("sticky");
     expect(visualizationBand?.className).toContain("w-[100cqw]");
-    expect(visualizationBand?.className).toContain("bg-white");
+    expect(visualizationBand?.className).toContain("bg-background");
     expect(visualizationBand?.className).toContain("border-b");
     expect(chart?.className).toContain("mx-auto");
     expect(chart?.className).toContain(
@@ -1051,7 +1319,9 @@ describe("SqlView", () => {
     expect(chart?.className).toContain("max-w-[1200px]");
     expect(firstVisualizationPrompt).not.toContain("AI query request:");
     expect(
-      harness.container.querySelector('[data-testid="sql-result-visualization-action"]'),
+      harness.container.querySelector(
+        '[data-testid="sql-result-visualization-action"]',
+      ),
     ).toBeNull();
 
     harness.cleanup();
@@ -1059,7 +1329,14 @@ describe("SqlView", () => {
 
   it("resets the generated chart when another query starts running", async () => {
     const secondQueryDeferred = createDeferred<
-      [null, { query: { parameters: never[]; sql: string }; rowCount: number; rows: { one: number }[] }]
+      [
+        null,
+        {
+          query: { parameters: never[]; sql: string };
+          rowCount: number;
+          rows: { one: number }[];
+        },
+      ]
     >();
     let rawCallCount = 0;
     const raw: Adapter["raw"] = async (details) => {
@@ -1083,19 +1360,10 @@ describe("SqlView", () => {
     studio.llm = vi.fn(async () =>
       JSON.stringify({
         config: {
-          data: {
-            datasets: [
-              {
-                data: [1],
-                label: "Rows",
-              },
-            ],
-            labels: ["organizations"],
-          },
-          options: {
-            responsive: false,
-          },
-          type: "pie",
+          data: [{ label: "organizations", rows: 1 }],
+          series: [{ key: "rows", label: "Rows" }],
+          type: "bar",
+          xKey: "label",
         },
       }),
     );
@@ -1129,9 +1397,7 @@ describe("SqlView", () => {
     }
 
     act(() => {
-      visualizeAction.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
+      visualizeAction.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
     await waitFor(() => {

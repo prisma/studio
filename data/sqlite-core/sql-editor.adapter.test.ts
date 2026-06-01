@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AdapterSqlLintResult } from "../adapter";
 import type { Executor } from "../executor";
+import type { StudioQueryInsights } from "../query-insights";
 import { createSQLiteAdapter } from "./adapter";
 
 function createExecutor(args?: {
@@ -25,6 +26,18 @@ describe("sqlite-core/adapter sql-editor support", () => {
     });
 
     expect(adapter.capabilities?.sqlEditorLint).toBe(true);
+  });
+
+  it("preserves the optional query insights provider", () => {
+    const queryInsights: StudioQueryInsights = {
+      getSnapshot: vi.fn(),
+    };
+    const adapter = createSQLiteAdapter({
+      executor: createExecutor(),
+      queryInsights,
+    });
+
+    expect(adapter.queryInsights).toBe(queryInsights);
   });
 
   it("delegates sql lint to executor lintSql when available", async () => {

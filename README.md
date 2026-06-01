@@ -60,10 +60,13 @@ import { createStudioBFFClient } from "@prisma/studio-core/data/bff";
 import { createPostgresAdapter } from "@prisma/studio-core/data/postgres-core";
 import { isStudioLlmResponse } from "@prisma/studio-core/data";
 
+const bffClient = createStudioBFFClient({
+  url: "/api/query",
+});
+
 const adapter = createPostgresAdapter({
-  executor: createStudioBFFClient({
-    url: "/api/query",
-  }),
+  executor: bffClient,
+  queryInsights: bffClient.queryInsights,
 });
 
 export function EmbeddedStudio() {
@@ -101,17 +104,22 @@ export function EmbeddedStudio() {
 - `adapter` is required.
 - `llm` is optional and is the single supported AI transport hook for all Studio AI features.
 - Studio sends the fully constructed prompt plus a task label, and the host returns either `{ ok: true, text }` or `{ ok: false, code, message }`.
-- When `llm` is omitted, Studio hides AI filtering, AI SQL generation, and AI visualization affordances entirely.
+- When `llm` is omitted, Studio hides AI filtering, AI SQL generation, AI visualization, and Query Insights recommendation affordances entirely.
 - There are no per-feature AI integration props to wire separately.
+- `queryInsights` is optional. Pass it only when your BFF implements the `query-insights` procedure; otherwise omit it so Studio hides the `Queries` view.
 - Studio does not render a built-in fullscreen header button. If your host needs fullscreen behavior, render that control at the host container level, as the local demo does.
 
-Studio handles prompt construction, type-aware validation, correction retries, SQL execution retries, and conversion into the normal filter, SQL, and visualization surfaces. The host transport only needs to forward the prepared request to an LLM provider and return the typed result.
+Studio handles prompt construction, type-aware validation, pre-display SQL validation for AI-generated SQL, correction retries, database-error correction, and conversion into the normal filter, SQL, and visualization surfaces. The host transport only needs to forward the prepared request to an LLM provider and return the typed result.
 
 ## AI Contract
 
 ```ts
 type StudioLlmRequest = {
-  task: "table-filter" | "sql-generation" | "sql-visualization";
+  task:
+    | "table-filter"
+    | "sql-generation"
+    | "sql-visualization"
+    | "query-insights";
   prompt: string;
 };
 
@@ -128,7 +136,70 @@ type StudioLlmResponse =
     };
 ```
 
-Studio treats `output-limit-exceeded` as a first-class retry signal for SQL generation and visualization correction loops. All prompting and retry behavior live in Studio itself, so host implementations should stay transport-only.
+Studio treats `output-limit-exceeded` as a first-class retry signal for SQL generation and visualization correction loops. When `sqlLint` is available, Studio validates AI-generated SQL before showing it and feeds lint diagnostics back through the same `sql-generation` transport when correction is needed. If AI-generated SQL still fails after the user manually runs it, Studio sends the failed SQL and database error back through that same transport so the model can propose corrected SQL without auto-running it. All prompting and retry behavior live in Studio itself, so host implementations should stay transport-only.
+
+### SQL Result Visualization Charts
+
+SQL result visualization uses the shared `llm` hook with `task: "sql-visualization"`. The host does not need to provide chart components, Chart.js options, callbacks, plugins, or chart-specific APIs. Studio builds the prompt from the executed SQL, database engine, full result rows, and the original AI SQL request when available; the host only forwards that prompt to the model and returns the model text.
+
+Studio validates the model response as a small Bklit chart config before rendering. The response must be strict JSON in this shape:
+
+```ts
+type SqlResultVisualizationResponse = {
+  config:
+    | {
+        type: "bar" | "horizontal-bar" | "line";
+        title?: string;
+        xKey: string;
+        series: Array<{
+          key: string;
+          label?: string;
+          color?: string;
+        }>;
+        stacked?: boolean;
+        data: Array<Record<string, string | number | boolean | null>>;
+      }
+    | {
+        type: "pie" | "doughnut";
+        title?: string;
+        labelKey: string;
+        valueKey: string;
+        data: Array<Record<string, string | number | boolean | null>>;
+      };
+};
+```
+
+Chart rules:
+
+- `bar` and `horizontal-bar` require `xKey` plus one or more numeric `series` fields.
+- `stacked: true` is supported only for `bar` and `horizontal-bar`.
+- `horizontal-bar` is preferred for ranked categorical data and long category labels.
+- `line` requires date-like `xKey` values: ISO dates, ISO datetimes, or epoch milliseconds.
+- `pie` and `doughnut` require `labelKey` and a numeric `valueKey`.
+- `data` rows must contain plain JSON primitive values only.
+
+Example stacked horizontal bar response:
+
+```json
+{
+  "config": {
+    "type": "horizontal-bar",
+    "title": "Team skills by organization",
+    "xKey": "organization",
+    "stacked": true,
+    "series": [
+      { "key": "typescript", "label": "TypeScript" },
+      { "key": "postgres", "label": "Postgres" }
+    ],
+    "data": [
+      { "organization": "Acme", "typescript": 4, "postgres": 2 },
+      { "organization": "Globex", "typescript": 1, "postgres": 5 }
+    ]
+  }
+}
+```
+
+Invalid JSON, unsupported chart types, non-primitive row values, missing keys, non-numeric series values, and non-date line x-values are rejected and fed back to the model for correction. The normative implementation details live in [`Architecture/sql-result-visualization.md`](Architecture/sql-result-visualization.md).
 
 ## Integration Checklist
 
@@ -140,16 +211,86 @@ Studio is an embeddable React surface, not a standalone app shell. A production 
 - back that adapter with an authenticated executor, typically `createStudioBFFClient({ url: "/api/query" })`
 - expose a JSON BFF endpoint that accepts Studio requests and executes them against the database
 - pass any tenant or auth context through `customHeaders` and/or `customPayload`
-- optionally provide `llm` for AI-assisted filtering, SQL generation, and SQL result visualization
+- optionally provide `llm` for AI-assisted filtering, SQL generation, SQL result visualization, and Query Insights recommendations
+- optionally provide `queryInsights` on the adapter when your BFF can return live query snapshots
 - own surrounding product chrome such as routing, auth, tenancy, and fullscreen controls
 
 The simplest supported shape is: host React app -> `<Studio />` -> adapter -> `createStudioBFFClient(...)` -> host BFF route -> database executor.
+
+## Query Insights
+
+Query Insights is an optional Studio feature for embedders that can observe database traffic outside the normal Studio table and SQL views. When enabled, Studio renders a `Queries` navigation item under the schema visualizer with live query rows, throughput and latency charts, and optional AI recommendations for selected queries.
+
+To enable it:
+
+1. Implement the BFF `query-insights` procedure described below.
+2. Pass `bffClient.queryInsights` into the adapter as `queryInsights`.
+3. Optionally pass the shared `llm` hook if you want AI recommendations in query details.
+
+```ts
+const bffClient = createStudioBFFClient({
+  url: "/api/query",
+});
+
+const adapter = createPostgresAdapter({
+  executor: bffClient,
+  queryInsights: bffClient.queryInsights,
+});
+```
+
+If your BFF does not implement `query-insights`, leave `queryInsights` undefined. Studio will hide the `Queries` menu item and stale `view=queries` URLs will fall back to the normal default view.
+
+What the `Queries` view renders:
+
+- a live chart for `Queries/s` and average latency with `1m`, `5m`, `15m`, and `1h` ranges
+- a query table with `Latency`, sanitized SQL, `Executions`, `Rows Returned`, `Last Seen`, and optional `Analysis`
+- table filtering and sorting by rows returned, latency, execution count, or last-seen time
+- a detail sheet with the selected query SQL, touched tables, selected-window metrics, and optional AI recommendations
+- a pause/resume control for polling the injected snapshot provider
+
+The chart and table always use the same selected time range. Studio derives visible `Executions`, `Rows Returned`, latency, last-seen values, and any provider read-work estimate from the samples it can place inside that range; it does not show cumulative provider counters as if they all happened in the visible window. The first snapshot can still show recent rows as context when their `lastSeen` timestamp is inside the selected range, but those context rows do not create live throughput values.
+
+Consumer migration notes:
+
+- The Studio route is `#view=queries`. Do not link to `#view=query-insights`.
+- `queryInsights` is an adapter capability, not a top-level `<Studio />` prop. Pass it into `createPostgresAdapter`, `createMySQLAdapter`, or `createSQLiteAdapter` alongside the executor.
+- The packaged BFF bridge uses snapshot polling with `procedure: "query-insights"`. Studio does not require a Prisma Streams `streamUrl`; hosts with SSE, pg_stat_statements, ppg.query_stats, proxy logs, or control-plane telemetry should adapt that source into a `StudioQueryInsightsSnapshot`.
+- AI recommendations use the shared `llm` hook with `task: "query-insights"`. Studio does not expose a separate query-specific `analyze()` or `enableAiRecommendations()` transport. Hosts that need consent should enforce it in the `llm` implementation they pass to Studio.
+- Automatic AI analysis runs serially, with at most one `llm` request in flight, and stops after the first five automatically discovered query groups. Users can still manually analyze additional rows from the table or detail sheet.
+
+Snapshot rows should be aggregated by a stable normalized query identity. Do not send raw parameter values or sensitive payloads; use parameterized SQL or another sanitized query representation. `rowsReturned`, `duration`, `count`, and `lastSeen` are best-effort operational signals for display and sorting, not accounting-grade telemetry. Studio labels `rowsReturned` as `Rows Returned` everywhere in the UI and AI advice. `reads` is optional provider read-work telemetry for sources that can estimate rows scanned, logical reads, physical reads, or a similar work signal; leave it at `0` when unknown. Studio derives visible chart and table metrics from deltas between cumulative snapshots inside the selected time window; it does not display cumulative provider counters as selected-window totals. A first snapshot can render recent rows as context, but live throughput is only available after Studio has two increasing snapshots to compare.
+
+The lowest-fidelity provider Studio fully supports is a generic SQL snapshot with no Prisma metadata:
+
+```ts
+const snapshot = {
+  generatedAt: Date.now(),
+  pollingIntervalMs: 1000,
+  queries: [
+    {
+      id: hash(normalizeSql(sql)),
+      query: parameterizedOrRedactedSql,
+      tables: [],
+      count: cumulativeExecutionCount,
+      duration: cumulativeAverageDurationMs,
+      reads: 0,
+      rowsReturned: cumulativeRowsReturned,
+      lastSeen: latestObservedAtMs,
+      prismaQueryInfo: null,
+    },
+  ],
+};
+```
+
+For this minimum provider, `tables` can be empty, `reads` and `rowsReturned` can be `0` when unknown, and `prismaQueryInfo` can be `null`. The important requirements are stable `id`, sanitized `query`, cumulative counters for the provider retention window, and accurate `lastSeen`.
+
+The normative integration rules, including sqlcommenter metadata mapping, privacy requirements, counter semantics, and write/transaction guidance, live in [`Architecture/query-insights.md`](Architecture/query-insights.md).
 
 ## BFF Contract
 
 Studio's packaged adapters speak one JSON-over-HTTP contract. The host application is expected to implement a POST endpoint, usually `/api/query`, that accepts `StudioBFFRequest` payloads and returns JSON results with serialized errors.
 
-The current contract includes `procedure: "transaction"` so Studio can commit multiple staged row updates in one database transaction when the backend supports it.
+The contract includes `procedure: "transaction"` so Studio can commit multiple staged row updates in one database transaction when the backend supports it. It can also include the optional `procedure: "query-insights"` bridge for embedders that provide live query snapshots.
 
 ### Transport Rules
 
@@ -182,6 +323,35 @@ type SqlLintDiagnostic = {
   source?: string;
   to: number;
 };
+
+type StudioQueryInsightPrismaQueryInfo = {
+  action: string;
+  isRaw: boolean;
+  model?: string;
+  payload?: Record<string, unknown> | Array<Record<string, unknown>>;
+};
+
+type StudioQueryInsightQuery = {
+  count: number;
+  duration: number;
+  groupKey?: string | null;
+  id: string;
+  lastSeen: number;
+  maxDurationMs?: number | null;
+  minDurationMs?: number | null;
+  prismaQueryInfo?: StudioQueryInsightPrismaQueryInfo | null;
+  query: string;
+  queryId?: string | null;
+  reads: number;
+  rowsReturned: number;
+  tables: string[];
+};
+
+type StudioQueryInsightsSnapshot = {
+  generatedAt: number;
+  pollingIntervalMs?: number;
+  queries: StudioQueryInsightQuery[];
+};
 ```
 
 ### Request Shapes
@@ -208,6 +378,12 @@ type StudioBFFRequest =
       sql: string;
       schemaVersion?: string;
       customPayload?: Record<string, unknown>;
+    }
+  | {
+      procedure: "query-insights";
+      limit?: number;
+      since?: number;
+      customPayload?: Record<string, unknown>;
     };
 ```
 
@@ -233,6 +409,10 @@ type SqlLintResponse =
         schemaVersion?: string;
       },
     ];
+
+type QueryInsightsResponse =
+  | [SerializedError, undefined?]
+  | [null, StudioQueryInsightsSnapshot];
 ```
 
 ### Procedure Semantics
@@ -241,17 +421,23 @@ type SqlLintResponse =
 - `sequence`: execute exactly two queries in order. This is used by MySQL write flows that update first and refetch second.
 - `transaction`: execute an ordered list of queries inside one database transaction. This is the contract addition that enables atomic staged multi-row saves from the table editor.
 - `sql-lint`: return parse/plan diagnostics for the SQL editor and SQL-backed filter pills.
+- `query-insights`: return a live query snapshot for the optional `Queries` view.
 
 For `sequence`, the second query should only run if the first one succeeds. For `transaction`, the response result array must stay in the same order as `body.queries`.
 
-`sql-lint` is optional because adapters can fall back to adapter-local `EXPLAIN` strategies. `transaction` is strongly recommended because it gives staged multi-row saves atomic behavior; without it, adapters may fall back to sequential writes.
+`sql-lint` is optional because adapters can fall back to adapter-local `EXPLAIN` strategies. `query-insights` is optional because not every embedder can observe application query traffic. `transaction` is strongly recommended because it gives staged multi-row saves atomic behavior; without it, adapters may fall back to sequential writes.
 
 ## Example BFF Handler
 
-The demo server in this repo is the reference implementation. A host route can mirror it closely:
+The demo server in this repo is the reference implementation. A host route can mirror it closely. The example assumes `executor` is your database executor and `queryInsightsStore` is your optional host telemetry source:
 
 ```ts
-import { serializeError, type StudioBFFRequest } from "@prisma/studio-core/data/bff";
+import {
+  serializeError,
+  type StudioBFFRequest,
+} from "@prisma/studio-core/data/bff";
+
+const queryInsightsStore = createQueryInsightsStoreFromYourTelemetry();
 
 export async function handleStudioBff(request: Request): Promise<Response> {
   if (request.method !== "POST") {
@@ -262,6 +448,23 @@ export async function handleStudioBff(request: Request): Promise<Response> {
   }
 
   const payload = (await request.json()) as StudioBFFRequest;
+
+  if (payload.procedure === "query-insights") {
+    if (!queryInsightsStore) {
+      return new Response("Query Insights is not supported", { status: 501 });
+    }
+
+    try {
+      const snapshot = await queryInsightsStore.getSnapshot({
+        limit: payload.limit,
+        since: payload.since,
+      });
+
+      return Response.json([null, snapshot]);
+    } catch (error) {
+      return Response.json([serializeError(error)]);
+    }
+  }
 
   if (payload.procedure === "query") {
     const [error, result] = await executor.execute(payload.query);
@@ -324,7 +527,41 @@ export async function handleStudioBff(request: Request): Promise<Response> {
 - If your host app changes auth or tenant context at runtime, recreate the BFF client or adapter so new `customHeaders` and `customPayload` are used for later requests.
 - If you are embedding MySQL Studio, keep `sequence` support enabled because the adapter depends on ordered write-plus-refetch flows.
 - If you want fully atomic staged table saves, implement `transaction` on the BFF and forward it to a real database transaction on the server.
+- If you implement Query Insights, capture query events from application runtime instrumentation, a query proxy, driver hooks, or control-plane telemetry. Do not rely on Studio's own table and SQL requests as the source of production traffic.
+- Exclude Studio-generated introspection, table browsing, SQL lint, metadata, health-check, and `query-insights` snapshot requests from production Query Insights before aggregation.
 - If you omit `llm`, Studio still supports the full manual filtering UI and the standard SQL editor, just without any AI affordances.
+
+### Split Query-Insights Service
+
+The BFF endpoint that executes Studio SQL can delegate only `query-insights` to a sidecar. This is useful when direct query execution and query telemetry are owned by different local services:
+
+```ts
+if (payload.procedure === "query-insights") {
+  const queryInsightsUrl = new URL("http://127.0.0.1:5556/snapshot");
+
+  queryInsightsUrl.searchParams.set("limit", String(payload.limit ?? 500));
+
+  if (payload.since != null) {
+    queryInsightsUrl.searchParams.set("since", String(payload.since));
+  }
+
+  const response = await fetch(queryInsightsUrl, {
+    headers: {
+      authorization: request.headers.get("authorization") ?? "",
+    },
+  });
+
+  if (!response.ok) {
+    return Response.json([
+      serializeError(new Error("Query Insights sidecar failed")),
+    ]);
+  }
+
+  return Response.json([null, await response.json()]);
+}
+```
+
+The sidecar response should already be a `StudioQueryInsightsSnapshot`. Other BFF procedures can continue to use the normal database executor.
 
 ## Telemetry
 
@@ -349,7 +586,7 @@ pnpm demo:ppg
 Then open [http://localhost:4310](http://localhost:4310).
 
 To enable the demo's AI flows, copy `.env.example` to `.env` and set `ANTHROPIC_API_KEY`.
-The demo reads that key server-side and calls Anthropic Haiku 4.5 directly over HTTP through one shared `llm` hook used by table filtering, SQL generation, and SQL result visualization. Set `STUDIO_DEMO_AI_ENABLED=false` to hide all AI affordances without removing the key. `STUDIO_DEMO_AI_FILTERING_ENABLED` is still accepted as a legacy alias. `.env` and `.env.local` are gitignored.
+The demo reads that key server-side and calls Anthropic Haiku 4.5 directly over HTTP through one shared `llm` hook used by table filtering, SQL generation, SQL result visualization, and Query Insights recommendations. Set `STUDIO_DEMO_AI_ENABLED=false` to hide all AI affordances without removing the key. `STUDIO_DEMO_AI_FILTERING_ENABLED` is still accepted as a legacy alias. `.env` and `.env.local` are gitignored.
 
 The demo:
 

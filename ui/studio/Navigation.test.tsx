@@ -17,7 +17,7 @@ interface NavigationMockValue {
   setSchemaParam: () => Promise<URLSearchParams>;
   setTableParam: () => Promise<URLSearchParams>;
   streamParam: string | null;
-  viewParam: "table" | "schema" | "console" | "sql" | "stream";
+  viewParam: "table" | "schema" | "queries" | "console" | "sql" | "stream";
 }
 
 interface IntrospectionMockValue {
@@ -56,6 +56,7 @@ interface StreamsMockValue {
 interface StudioMockValue {
   hasDatabase: boolean;
   isDarkMode: boolean;
+  hasQueryInsights: boolean;
   navigationWidth: number;
   setNavigationWidth: (width: number) => void;
 }
@@ -266,6 +267,7 @@ describe("Navigation", () => {
     refetchStreamsMock.mockResolvedValue(undefined);
     useStudioMock.mockImplementation(() => ({
       hasDatabase: true,
+      hasQueryInsights: false,
       isDarkMode,
       navigationWidth: 192,
       setNavigationWidth: setNavigationWidthMock,
@@ -430,6 +432,7 @@ describe("Navigation", () => {
   it("hides schema and table navigation when the session has no database", () => {
     useStudioMock.mockImplementation(() => ({
       hasDatabase: false,
+      hasQueryInsights: false,
       isDarkMode,
       navigationWidth: 192,
       setNavigationWidth: setNavigationWidthMock,
@@ -461,6 +464,7 @@ describe("Navigation", () => {
 
     expect(container.textContent).not.toContain("Tables");
     expect(container.textContent).not.toContain("Visualizer");
+    expect(container.textContent).not.toContain("Queries");
     expect(container.textContent).not.toContain("Console");
     expect(container.textContent).not.toContain("SQL");
     expect(container.querySelector('button[aria-label="Schema"]')).toBeNull();
@@ -469,6 +473,76 @@ describe("Navigation", () => {
     ).toBeNull();
     expect(container.textContent).toContain("Streams");
     expect(container.textContent).toContain("audit-log");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("shows Queries directly under Visualizer only when query insights are configured", () => {
+    const withoutQueriesContainer = document.createElement("div");
+    document.body.appendChild(withoutQueriesContainer);
+    const withoutQueriesRoot = createRoot(withoutQueriesContainer);
+
+    act(() => {
+      withoutQueriesRoot.render(<Navigation />);
+    });
+
+    expect(withoutQueriesContainer.textContent).toContain("Visualizer");
+    expect(withoutQueriesContainer.textContent).not.toContain("Queries");
+
+    act(() => {
+      withoutQueriesRoot.unmount();
+    });
+    withoutQueriesContainer.remove();
+
+    useStudioMock.mockImplementation(() => ({
+      hasDatabase: true,
+      hasQueryInsights: true,
+      isDarkMode,
+      navigationWidth: 192,
+      setNavigationWidth: setNavigationWidthMock,
+    }));
+    useNavigationMock.mockReturnValue({
+      createUrl(values: Record<string, string>) {
+        return `#${Object.entries(values)
+          .map(([key, value]) => `${key}=${value}`)
+          .join("&")}`;
+      },
+      metadata: {
+        activeTable: { name: "organizations", schema: "public" },
+        isFetching: false,
+      },
+      schemaParam: "public",
+      setSchemaParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+      setTableParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+      streamParam: null,
+      viewParam: "queries",
+    });
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const studioLinks = Array.from(
+      container.querySelectorAll<HTMLAnchorElement>(
+        'nav[aria-label="Studio"] a',
+      ),
+    ).map((link) => link.textContent?.trim());
+
+    expect(studioLinks.slice(0, 2)).toEqual(["Visualizer", "Queries"]);
+
+    const queriesLink = Array.from(container.querySelectorAll("a")).find(
+      (link) => link.textContent?.trim() === "Queries",
+    );
+
+    expect(queriesLink?.getAttribute("href")).toBe("#viewParam=queries");
+    expect(queriesLink?.getAttribute("data-active")).toBe("true");
 
     act(() => {
       root.unmount();

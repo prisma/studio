@@ -35,14 +35,21 @@ async function bootstrap(): Promise<void> {
   }
 
   const config = (await configResponse.json()) as DemoConfig;
+  let adapter: Adapter;
 
-  const adapter: Adapter = config.database.enabled
-    ? createPostgresAdapter({
-        executor: createStudioBFFClient({
-          url: "/api/query",
-        }),
-      })
-    : createNoDatabaseAdapter();
+  if (config.database.enabled) {
+    const bffClient = createStudioBFFClient({
+      url: "/api/query",
+    });
+
+    adapter = createPostgresAdapter({
+      executor: bffClient,
+      queryInsights:
+        config.queries.enabled === true ? bffClient.queryInsights : undefined,
+    });
+  } else {
+    adapter = createNoDatabaseAdapter();
+  }
 
   root.render(
     <DemoApp

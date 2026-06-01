@@ -655,5 +655,77 @@ describe("bff/bff-client", () => {
         expect(result).toBeUndefined();
       });
     });
+
+    describe("queryInsights", () => {
+      const snapshot = {
+        generatedAt: 1_779_963_200_000,
+        pollingIntervalMs: 1000,
+        queries: [
+          {
+            count: 2,
+            duration: 12,
+            id: "select-users",
+            lastSeen: 1_779_963_199_000,
+            query: "select * from users",
+            reads: 4,
+            rowsReturned: 4,
+            tables: ["users"],
+          },
+        ],
+      };
+
+      let client: StudioBFFClient;
+      const fetchFn = vi.fn((...args: Parameters<typeof fetch>) =>
+        fetch(...args),
+      );
+
+      beforeEach(() => {
+        client = createStudioBFFClient({
+          customHeaders,
+          customPayload,
+          fetch: fetchFn,
+          url,
+        });
+      });
+
+      it("requests query-insights snapshots through the same BFF channel", async () => {
+        fetchFn.mockResolvedValueOnce(
+          new Response(JSON.stringify([null, snapshot])),
+        );
+
+        const response = await client.queryInsights.getSnapshot({
+          limit: 50,
+          since: 1_779_963_000_000,
+        });
+
+        expect(fetchFn).toHaveBeenCalledWith(url, {
+          body: expect.toSatisfy((value) => {
+            expect(JSON.parse(value as string)).toStrictEqual({
+              customPayload,
+              limit: 50,
+              procedure: "query-insights",
+              since: 1_779_963_000_000,
+            });
+
+            return true;
+          }) as string,
+          headers: expect.objectContaining(customHeaders) as object,
+          method: "POST",
+        });
+        expect(response).toStrictEqual([null, snapshot]);
+      });
+
+      it("returns an error tuple when the query-insights request fails", async () => {
+        fetchFn.mockResolvedValueOnce(
+          new Response("query insights unavailable", { status: 501 }),
+        );
+
+        const response = await client.queryInsights.getSnapshot({});
+
+        expect(response).toStrictEqual([
+          new Error("query insights unavailable"),
+        ]);
+      });
+    });
   });
 });
