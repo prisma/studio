@@ -1,6 +1,5 @@
 import {
   type Adapter,
-  type AdapterUpdateDetails,
   type AdapterDeleteResult,
   type AdapterError,
   type AdapterInsertResult,
@@ -10,6 +9,7 @@ import {
   type AdapterRequirements,
   type AdapterSqlLintResult,
   type AdapterSqlSchemaResult,
+  type AdapterUpdateDetails,
   type AdapterUpdateManyResult,
   type AdapterUpdateResult,
   type Column,
@@ -54,7 +54,7 @@ export type MySQLAdapterRequirements = Omit<AdapterRequirements, "executor"> & {
 export function createMySQLAdapter(
   requirements: MySQLAdapterRequirements,
 ): Adapter {
-  const { executor, ...otherRequirements } = requirements;
+  const { executor, queryInsights, ...otherRequirements } = requirements;
   const fullTableSearchState = createFullTableSearchExecutionState();
   let canUseExecutorLintTransport = typeof executor.lintSql === "function";
   const createMySQLAdapterError = (
@@ -152,8 +152,8 @@ export function createMySQLAdapter(
     options: Parameters<Adapter["introspect"]>[0],
   ): Promise<Either<AdapterError, AdapterIntrospectResult>> {
     try {
-      const tablesQuery = getTablesQuery(requirements);
-      const timezoneQuery = getTimezoneQuery(requirements);
+      const tablesQuery = getTablesQuery(otherRequirements);
+      const timezoneQuery = getTimezoneQuery(otherRequirements);
 
       const [[tablesError, tables], [timezoneError, timezones]] =
         await Promise.all([
@@ -182,6 +182,7 @@ export function createMySQLAdapter(
   }
 
   return {
+    queryInsights,
     capabilities: {
       fullTableSearch: true,
       sqlDialect: "mysql",

@@ -31,7 +31,12 @@ export default tseslint.config(
   },
 
   {
-    ignores: ["**/node_modules/**/*", "**/dist/**/*", "**/*.d.ts"],
+    ignores: [
+      "**/.agents/**/*",
+      "**/node_modules/**/*",
+      "**/dist/**/*",
+      "**/*.d.ts",
+    ],
   },
 
   {

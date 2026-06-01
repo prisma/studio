@@ -154,10 +154,12 @@ It deliberately excludes:
   - `Card`
   - `Sheet`
   - `Select`
+  - `ToggleGroup`
   - `Badge`
   - `Skeleton`
 - Why it stays non-standard:
-  - Query insights need a live operational table with provider-driven polling, aggregate metric cards, table filtering, sort controls, row selection, and previous/next navigation inside a detail sheet.
+  - Query insights need a live operational table with provider-driven polling, a live activity chart, table filtering, sort controls, row selection, and previous/next navigation inside a detail sheet.
+  - The activity chart is a Studio-specific SVG timeline that derives throughput and latency from snapshot deltas, supports a bounded time-window switcher, and exposes point-level hover readings. No standard ShadCN chart primitive covers that observability display.
   - The same surface conditionally embeds AI recommendations when Studio's shared `llm` hook is available, while disappearing entirely when the embedder does not provide query-insights data.
   - No stock ShadCN component models that combined observability workflow, so Studio keeps a custom composite built from standard ShadCN primitives.
 

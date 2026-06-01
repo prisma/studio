@@ -1,6 +1,5 @@
 import {
   type Adapter,
-  type AdapterUpdateDetails,
   type AdapterDeleteResult,
   type AdapterError,
   type AdapterInsertResult,
@@ -10,6 +9,7 @@ import {
   type AdapterRequirements,
   type AdapterSqlLintResult,
   type AdapterSqlSchemaResult,
+  type AdapterUpdateDetails,
   type AdapterUpdateManyResult,
   type AdapterUpdateResult,
   createAdapterError,
@@ -56,7 +56,7 @@ const filterOperators = [
 export function createSQLiteAdapter(
   requirements: SQLIteAdapterRequirements,
 ): Adapter {
-  const { executor, ...otherRequirements } = requirements;
+  const { executor, queryInsights, ...otherRequirements } = requirements;
   const fullTableSearchState = createFullTableSearchExecutionState();
   let canUseExecutorLintTransport = typeof executor.lintSql === "function";
   const createSQLiteAdapterError = (
@@ -153,6 +153,7 @@ export function createSQLiteAdapter(
 
   return {
     defaultSchema: schema,
+    queryInsights,
     capabilities: {
       fullTableSearch: true,
       sqlDialect: "sqlite",
