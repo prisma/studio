@@ -116,6 +116,19 @@ The query table uses the per-query samples as follows:
 - First-snapshot context rows show one representative execution with average per-execution counters so a fresh view can still show useful rows without pretending the whole cumulative provider history happened inside the selected window.
 - The detail sheet and AI recommendation prompt use the same selected-window query row shown in the table.
 
+## View Interaction Contract
+
+- The `Queries` view MUST render under the Studio `Visualizer` navigation item and MUST NOT be available when `Adapter.queryInsights` is absent.
+- The top-level description SHOULD explain that Studio monitors database activity and helps identify poorly performing queries.
+- The activity chart MUST show `Queries/s` and `Avg latency` summaries, share one selected range with the query table, and expose `1m`, `5m`, `15m`, and `1h` range controls.
+- The query table SHOULD include `Latency`, `Query`, `Executions`, `Rows Returned`, and `Last Seen` columns. `Rows Returned` is the user-facing label for `rowsReturned`; `reads` remains an internal and AI-prompt signal.
+- When AI recommendations are available, the query table SHOULD add an `Analysis` column with queued, running, manual analyze, and completed severity states.
+- The table filter SHOULD use touched tables derived from the selected-window rows, not from stale cumulative provider data.
+- Sorting SHOULD operate on selected-window row values, not provider cumulative counters.
+- Clicking a query row SHOULD open a detail sheet with SQL, touched tables, selected-window metrics, and optional recommendations.
+- The detail sheet SHOULD support previous/next navigation through the currently visible sorted table rows.
+- Pause/resume SHOULD stop and restart polling the provider without clearing already retained local samples.
+
 ## @prisma/sqlcommenter-query-insights Mapping
 
 When SQL includes `@prisma/sqlcommenter-query-insights` metadata, embedders SHOULD remove the `prismaQuery` tag from the displayed `query` and map it into `prismaQueryInfo`.
@@ -263,4 +276,9 @@ Changes to query insights MUST include tests covering:
 - navigation visibility and stale `view=queries` fallback
 - rendering provider snapshots in the Queries view
 - hiding AI recommendations when no `llm` hook is configured
+- chart and table metrics scoped to the selected time range
+- first-snapshot context rows that do not create fake throughput
+- cumulative counter deltas, counter resets, and stale/equal snapshots
+- long chart gaps, short connected gaps, and isolated sample markers
+- serial automatic AI analysis with the five-query cap and manual analysis beyond that cap
 - demo aggregation behavior for successful query executions

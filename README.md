@@ -240,12 +240,23 @@ const adapter = createPostgresAdapter({
 
 If your BFF does not implement `query-insights`, leave `queryInsights` undefined. Studio will hide the `Queries` menu item and stale `view=queries` URLs will fall back to the normal default view.
 
+What the `Queries` view renders:
+
+- a live chart for `Queries/s` and average latency with `1m`, `5m`, `15m`, and `1h` ranges
+- a query table with `Latency`, sanitized SQL, `Executions`, `Rows Returned`, `Last Seen`, and optional `Analysis`
+- table filtering and sorting by rows returned, latency, execution count, or last-seen time
+- a detail sheet with the selected query SQL, touched tables, selected-window metrics, and optional AI recommendations
+- a pause/resume control for polling the injected snapshot provider
+
+The chart and table always use the same selected time range. Studio derives visible `Executions`, `Rows Returned`, reads, latency, and last-seen values from the samples it can place inside that range; it does not show cumulative provider counters as if they all happened in the visible window. The first snapshot can still show recent rows as context when their `lastSeen` timestamp is inside the selected range, but those context rows do not create live throughput values.
+
 Consumer migration notes:
 
 - The Studio route is `#view=queries`. Do not link to `#view=query-insights`.
 - `queryInsights` is an adapter capability, not a top-level `<Studio />` prop. Pass it into `createPostgresAdapter`, `createMySQLAdapter`, or `createSQLiteAdapter` alongside the executor.
 - The packaged BFF bridge uses snapshot polling with `procedure: "query-insights"`. Studio does not require a Prisma Streams `streamUrl`; hosts with SSE, pg_stat_statements, ppg.query_stats, proxy logs, or control-plane telemetry should adapt that source into a `StudioQueryInsightsSnapshot`.
 - AI recommendations use the shared `llm` hook with `task: "query-insights"`. Studio does not expose a separate query-specific `analyze()` or `enableAiRecommendations()` transport. Hosts that need consent should enforce it in the `llm` implementation they pass to Studio.
+- Automatic AI analysis runs serially, with at most one `llm` request in flight, and stops after the first five automatically discovered query groups. Users can still manually analyze additional rows from the table or detail sheet.
 
 Snapshot rows should be aggregated by a stable normalized query identity. Do not send raw parameter values or sensitive payloads; use parameterized SQL or another sanitized query representation. `reads`, `rowsReturned`, `duration`, `count`, and `lastSeen` are best-effort operational signals for display and sorting, not accounting-grade telemetry. Studio derives visible chart and table metrics from deltas between cumulative snapshots inside the selected time window; it does not display cumulative provider counters as selected-window totals. A first snapshot can render recent rows as context, but live throughput is only available after Studio has two increasing snapshots to compare.
 
