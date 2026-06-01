@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bar } from "../../../components/charts/bar";
 import { BarChart } from "../../../components/charts/bar-chart";
 import { BarXAxis } from "../../../components/charts/bar-x-axis";
+import { BarYAxis } from "../../../components/charts/bar-y-axis";
 import { Grid } from "../../../components/charts/grid";
 import { Line } from "../../../components/charts/line";
 import { LineChart } from "../../../components/charts/line-chart";
@@ -204,19 +205,31 @@ function SqlResultBarChart({
   config: SqlResultVisualizationConfig;
 }) {
   const series = useResolvedSeries(config.series);
+  const isHorizontal = config.type === "horizontal-bar";
 
   return (
     <BarChart
-      aspectRatio="4 / 1"
-      barGap={0.35}
+      aspectRatio={isHorizontal ? "3 / 1" : "4 / 1"}
+      barGap={isHorizontal ? 0.3 : 0.35}
       className="h-full min-h-64"
       data={config.data}
-      margin={{ bottom: 38, left: 40, right: 24, top: 12 }}
+      margin={
+        isHorizontal
+          ? { bottom: 20, left: 112, right: 28, top: 12 }
+          : { bottom: 38, left: 40, right: 24, top: 12 }
+      }
+      orientation={isHorizontal ? "horizontal" : "vertical"}
       stacked={config.stacked === true}
       stackGap={config.stacked === true ? 1 : 0}
       xDataKey={config.xKey}
     >
-      <Grid strokeDasharray="0" vertical={false} />
+      <Grid
+        fadeHorizontal={!isHorizontal}
+        fadeVertical={isHorizontal}
+        horizontal={!isHorizontal}
+        strokeDasharray="0"
+        vertical={isHorizontal}
+      />
       {series.map((item) => (
         <Bar
           dataKey={item.key}
@@ -236,7 +249,11 @@ function SqlResultBarChart({
         }}
         showDatePill={false}
       />
-      <BarXAxis maxLabels={10} />
+      {isHorizontal ? (
+        <BarYAxis maxLabels={10} showAllLabels={false} />
+      ) : (
+        <BarXAxis maxLabels={10} />
+      )}
     </BarChart>
   );
 }

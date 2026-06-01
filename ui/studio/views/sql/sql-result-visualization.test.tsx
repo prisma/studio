@@ -25,7 +25,11 @@ describe("sql-result-visualization", () => {
     expect(prompt).toContain('"xKey":"label"');
     expect(prompt).toContain('"series":[{"key":"value","label":"Value"}]');
     expect(prompt).toContain('"stacked":false');
-    expect(prompt).toContain("For stacked bar charts");
+    expect(prompt).toContain("For stacked bar and horizontal-bar charts");
+    expect(prompt).toContain("horizontal-bar");
+    expect(prompt).toContain(
+      "Use horizontal-bar for ranked categorical results",
+    );
     expect(prompt).toContain('"label":"first"');
     expect(prompt).toContain('"label":"second"');
     expect(prompt).toContain("Database engine: PostgreSQL");
@@ -72,6 +76,18 @@ describe("sql-result-visualization", () => {
         xKey: "organization",
       }).value,
     ).toMatchObject({ stacked: true, type: "bar", xKey: "organization" });
+
+    expect(
+      validateSqlResultVisualizationConfig({
+        data: [
+          { organization: "Very Long Organization Name", members: 12 },
+          { organization: "Another Long Organization", members: 8 },
+        ],
+        series: [{ key: "members", label: "Members" }],
+        type: "horizontal-bar",
+        xKey: "organization",
+      }).value,
+    ).toMatchObject({ type: "horizontal-bar", xKey: "organization" });
 
     expect(
       validateSqlResultVisualizationConfig({
@@ -152,7 +168,7 @@ describe("sql-result-visualization", () => {
       "AI visualization response was not valid JSON",
     );
     expect(requestAiVisualization.mock.calls[2]?.[0]).toContain(
-      "Chart type must be one of: bar, doughnut, line, pie.",
+      "Chart type must be one of: bar, doughnut, horizontal-bar, line, pie.",
     );
     expect(result.didRetry).toBe(true);
     expect(result.config.type).toBe("bar");

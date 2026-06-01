@@ -778,9 +778,9 @@ describe("SqlView", () => {
       .mockResolvedValueOnce(
         JSON.stringify({
           config: {
-            data: [{ label: "organizations", rows: 1 }],
+            data: [{ label: "Organizations with a very long label", rows: 1 }],
             series: [{ key: "rows", label: "Rows" }],
-            type: "bar",
+            type: "horizontal-bar",
             xKey: "label",
           },
         }),
@@ -1304,6 +1304,7 @@ describe("SqlView", () => {
 
     expect(llmMock).toHaveBeenCalledTimes(1);
     expect(firstVisualizationPrompt).toContain("Bklit chart components");
+    expect(firstVisualizationPrompt).toContain("horizontal-bar");
     expect(firstVisualizationPrompt).toContain("SQL: select 1 as one");
     expect(firstVisualizationPrompt).toContain(JSON.stringify([{ one: 1 }]));
     expect(visualizationBand?.className).toContain("sticky");

@@ -4,7 +4,13 @@ import {
 } from "./ai-json-response";
 
 const DEFAULT_MAX_VISUALIZATION_CORRECTIONS = 2;
-const SUPPORTED_CHART_TYPES = ["bar", "doughnut", "line", "pie"] as const;
+const SUPPORTED_CHART_TYPES = [
+  "bar",
+  "doughnut",
+  "horizontal-bar",
+  "line",
+  "pie",
+] as const;
 
 export type SqlResultVisualizationChartType =
   (typeof SUPPORTED_CHART_TYPES)[number];
@@ -67,8 +73,9 @@ export function buildSqlResultVisualizationPrompt(args: {
     "Return JSON only. Do not add markdown fences or commentary.",
     'Return this exact top-level shape: {"config":{"type":"bar","title":"Optional short title","xKey":"label","series":[{"key":"value","label":"Value"}],"stacked":false,"data":[{"label":"A","value":1}]}}',
     `Supported chart types: ${SUPPORTED_CHART_TYPES.join(", ")}`,
-    "For bar charts, provide xKey and one or more series keys with numeric values.",
-    "For stacked bar charts, set stacked to true and provide one data row per category with separate numeric series fields for each segment. Use stacked bars when the user asks for bars broken down, split, or grouped by a second category.",
+    "For bar and horizontal-bar charts, provide xKey and one or more series keys with numeric values.",
+    "Use horizontal-bar for ranked categorical results, top-N lists, and category labels that are long enough to collide on a vertical x-axis.",
+    "For stacked bar and horizontal-bar charts, set stacked to true and provide one data row per category with separate numeric series fields for each segment. Use stacked bars when the user asks for bars broken down, split, or grouped by a second category.",
     "For line charts, provide xKey as an ISO date, ISO datetime, or epoch millisecond field, plus one or more series keys with numeric values.",
     "For pie and doughnut charts, provide labelKey and valueKey fields, where valueKey points to numeric values.",
     "Use compact, human-readable labels and at most 30 data points unless the result is already smaller.",
@@ -294,7 +301,7 @@ function validateCartesianChartConfig(args: {
   candidate: Partial<SqlResultVisualizationConfig>;
   data: Record<string, string | number | boolean | null>[];
   responseText?: string;
-  type: "bar" | "line";
+  type: "bar" | "horizontal-bar" | "line";
 }): {
   issues: SqlResultVisualizationIssue[];
   value: SqlResultVisualizationConfig | null;
@@ -380,7 +387,10 @@ function validateCartesianChartConfig(args: {
     value: {
       data,
       series,
-      stacked: type === "bar" ? candidate.stacked === true : undefined,
+      stacked:
+        type === "bar" || type === "horizontal-bar"
+          ? candidate.stacked === true
+          : undefined,
       title: isNonEmptyString(candidate.title) ? candidate.title : undefined,
       type,
       xKey: candidate.xKey,
