@@ -5,7 +5,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Adapter, AdapterError } from "@/data";
+import type { Adapter, AdapterError, AdapterSqlLintResult } from "@/data";
 import type { StudioLlmRequest } from "@/data/llm";
 
 import { SqlView } from "./SqlView";
@@ -162,7 +162,11 @@ vi.mock("@uiw/react-codemirror", () => ({
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-function createAdapterMock(args?: { raw?: Adapter["raw"] }): {
+function createAdapterMock(args?: {
+  capabilities?: Adapter["capabilities"];
+  raw?: Adapter["raw"];
+  sqlLint?: Adapter["sqlLint"];
+}): {
   adapter: Adapter;
   rawSpy: ReturnType<typeof vi.fn<Adapter["raw"]>>;
 } {
@@ -183,12 +187,14 @@ function createAdapterMock(args?: { raw?: Adapter["raw"] }): {
 
   return {
     adapter: {
+      ...(args?.capabilities ? { capabilities: args.capabilities } : {}),
       defaultSchema: "public",
       delete: vi.fn(),
       insert: vi.fn(),
       introspect: vi.fn(),
       query: vi.fn(),
       raw: rawSpy,
+      ...(args?.sqlLint ? { sqlLint: args.sqlLint } : {}),
       update: vi.fn(),
     } as unknown as Adapter,
     rawSpy,
@@ -567,6 +573,196 @@ describe("SqlView", () => {
     harness.cleanup();
   });
 
+  it("validates and corrects generated SQL before placing it in the editor", async () => {
+    const invalidSql =
+      "select tm.skills as skill, count(*) from public.team_members tm group by skill;";
+    const correctedSql =
+      "select skill, count(*) from public.team_members tm cross join lateral unnest(tm.skills) as skill group by skill;";
+    const invalidLintResult: AdapterSqlLintResult = {
+      diagnostics: [
+        {
+          from: 7,
+          message:
+            'column "tm.skills" must appear in the GROUP BY clause or be used in an aggregate function',
+          severity: "error",
+          source: "postgres",
+          to: 16,
+        },
+      ],
+    };
+    const validLintResult: AdapterSqlLintResult = { diagnostics: [] };
+    const sqlLintMock = vi
+      .fn<NonNullable<Adapter["sqlLint"]>>()
+      .mockResolvedValueOnce([null, invalidLintResult])
+      .mockResolvedValueOnce([null, validLintResult]);
+    const { adapter, rawSpy } = createAdapterMock({
+      capabilities: {
+        sqlDialect: "postgresql",
+        sqlEditorLint: true,
+      },
+      sqlLint: sqlLintMock,
+    });
+    const studio = createStudioMock(adapter);
+    const llmMock = vi
+      .fn<(request: StudioLlmRequest) => Promise<string>>()
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          rationale: "Uses the skills column directly.",
+          sql: invalidSql,
+          shouldGenerateVisualization: true,
+        }),
+      )
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          rationale: "Unnests skills before grouping.",
+          sql: correctedSql,
+          shouldGenerateVisualization: true,
+        }),
+      );
+    studio.llm = llmMock;
+    useStudioMock.mockReturnValue(studio);
+
+    const harness = renderSqlView();
+    const promptInput = harness.container.querySelector<HTMLInputElement>(
+      'input[aria-label="Generate SQL with AI"]',
+    );
+    const generateButton = [
+      ...harness.container.querySelectorAll("button"),
+    ].find((button) => button.textContent?.includes("Generate SQL"));
+    const editor = harness.container.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="SQL editor"]',
+    );
+
+    if (!promptInput || !generateButton || !editor) {
+      throw new Error("Expected SQL generation controls and editor");
+    }
+
+    act(() => {
+      setInputValue(promptInput, "count team members by skill");
+    });
+
+    act(() => {
+      generateButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitFor(() => editor.value === correctedSql);
+
+    expect(rawSpy).not.toHaveBeenCalled();
+    expect(sqlLintMock).toHaveBeenCalledTimes(2);
+    expect(sqlLintMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ sql: invalidSql }),
+      expect.any(Object),
+    );
+    expect(sqlLintMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ sql: correctedSql }),
+      expect.any(Object),
+    );
+    expect(llmMock).toHaveBeenCalledTimes(2);
+    expect(llmMock.mock.calls[1]?.[0].prompt).toContain(
+      `Previous SQL statement: ${invalidSql}`,
+    );
+    expect(llmMock.mock.calls[1]?.[0].prompt).toContain(
+      'Database error from that SQL: column "tm.skills" must appear in the GROUP BY clause or be used in an aggregate function',
+    );
+    expect(harness.container.textContent).not.toContain(
+      "Uses the skills column directly.",
+    );
+    expect(harness.container.textContent).toContain(
+      "Unnests skills before grouping.",
+    );
+
+    harness.cleanup();
+  });
+
+  it("leaves the editor unchanged when generated SQL validation cannot be corrected", async () => {
+    const invalidSql = "select * from missing_table;";
+    const stillInvalidSql = "select id from missing_table;";
+    const invalidLintResult: AdapterSqlLintResult = {
+      diagnostics: [
+        {
+          from: 14,
+          message: 'relation "missing_table" does not exist',
+          severity: "error",
+          source: "postgres",
+          to: 27,
+        },
+      ],
+    };
+    const sqlLintMock = vi
+      .fn<NonNullable<Adapter["sqlLint"]>>()
+      .mockResolvedValueOnce([null, invalidLintResult])
+      .mockResolvedValueOnce([null, invalidLintResult]);
+    const { adapter, rawSpy } = createAdapterMock({
+      capabilities: {
+        sqlDialect: "postgresql",
+        sqlEditorLint: true,
+      },
+      sqlLint: sqlLintMock,
+    });
+    const studio = createStudioMock(adapter);
+    const llmMock = vi
+      .fn<(request: StudioLlmRequest) => Promise<string>>()
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          rationale: "Uses a missing table.",
+          sql: invalidSql,
+          shouldGenerateVisualization: false,
+        }),
+      )
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          rationale: "Still uses a missing table.",
+          sql: stillInvalidSql,
+          shouldGenerateVisualization: false,
+        }),
+      );
+    studio.llm = llmMock;
+    useStudioMock.mockReturnValue(studio);
+
+    const harness = renderSqlView();
+    const promptInput = harness.container.querySelector<HTMLInputElement>(
+      'input[aria-label="Generate SQL with AI"]',
+    );
+    const generateButton = [
+      ...harness.container.querySelectorAll("button"),
+    ].find((button) => button.textContent?.includes("Generate SQL"));
+    const editor = harness.container.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="SQL editor"]',
+    );
+
+    if (!promptInput || !generateButton || !editor) {
+      throw new Error("Expected SQL generation controls and editor");
+    }
+
+    act(() => {
+      setInputValue(promptInput, "show me the missing table");
+    });
+
+    act(() => {
+      generateButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitFor(() => {
+      return (
+        harness.container.textContent?.includes(
+          "AI-generated SQL did not pass validation",
+        ) ?? false
+      );
+    });
+
+    expect(editor.value).toBe("select * from ");
+    expect(rawSpy).not.toHaveBeenCalled();
+    expect(sqlLintMock).toHaveBeenCalledTimes(2);
+    expect(llmMock).toHaveBeenCalledTimes(2);
+    expect(harness.container.textContent).not.toContain(
+      "Still uses a missing table.",
+    );
+
+    harness.cleanup();
+  });
+
   it("auto-generates a chart after the user runs AI-generated SQL marked as graph-worthy", async () => {
     const { adapter } = createAdapterMock();
     const studio = createStudioMock(adapter);
@@ -775,7 +971,9 @@ describe("SqlView", () => {
 
   it("keeps normal manual SQL execution errors inline without asking AI for a correction", async () => {
     const raw: Adapter["raw"] = async (details) => {
-      const error = new Error("relation missing_table does not exist") as AdapterError;
+      const error = new Error(
+        "relation missing_table does not exist",
+      ) as AdapterError;
       error.query = { parameters: [], sql: details.sql };
       return [error];
     };

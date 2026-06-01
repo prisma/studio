@@ -16,6 +16,7 @@ import type {
   Adapter,
   AdapterError,
   AdapterRawResult,
+  AdapterSqlLintDiagnostic,
   Column,
   DataTypeGroup,
 } from "../../../../data/adapter";
@@ -87,6 +88,7 @@ const SQL_VIEW_GRID_SCOPE = "sql:view:grid";
 const SQL_VIEW_TABLE_NAME = "__sql_result__";
 const SQL_VIEW_SCHEMA = "__sql_result__";
 const EMPTY_SQL_RESULT_ROWS: Record<string, unknown>[] = [];
+const MAX_AI_SQL_VALIDATION_CORRECTIONS = 1;
 const DEFAULT_PAGINATION_STATE: PaginationState = {
   pageIndex: 0,
   pageSize: 25,
@@ -583,6 +585,98 @@ export function SqlView(_props: ViewProps) {
     focusSqlEditorAtEnd(args.sql);
   }
 
+  async function resolveValidatedAiSqlGeneration(args: {
+    previousSql?: string;
+    queryErrorMessage?: string;
+    request: string;
+  }) {
+    const generationIntrospection = introspection;
+
+    if (!generationIntrospection) {
+      throw new Error(
+        "Schema metadata is still loading. Try again in a moment.",
+      );
+    }
+
+    let generation = await resolveAiSqlGeneration({
+      activeSchema: schemaParam ?? adapter.defaultSchema ?? "public",
+      requestAiSqlGeneration,
+      dialect: adapter.capabilities?.sqlDialect ?? "postgresql",
+      introspection: generationIntrospection,
+      previousSql: args.previousSql,
+      queryErrorMessage: args.queryErrorMessage,
+      request: args.request,
+    });
+
+    for (
+      let correctionCount = 0;
+      correctionCount <= MAX_AI_SQL_VALIDATION_CORRECTIONS;
+      correctionCount += 1
+    ) {
+      const validationMessage = await validateGeneratedSqlBeforeDisplay(
+        generation.sql,
+      );
+
+      if (!validationMessage) {
+        return generation;
+      }
+
+      if (correctionCount === MAX_AI_SQL_VALIDATION_CORRECTIONS) {
+        throw new Error(
+          `AI-generated SQL did not pass validation: ${validationMessage}`,
+        );
+      }
+
+      generation = await resolveAiSqlGeneration({
+        activeSchema: schemaParam ?? adapter.defaultSchema ?? "public",
+        requestAiSqlGeneration,
+        dialect: adapter.capabilities?.sqlDialect ?? "postgresql",
+        introspection: generationIntrospection,
+        previousSql: generation.sql,
+        queryErrorMessage: validationMessage,
+        request: args.request,
+      });
+    }
+
+    return generation;
+  }
+
+  async function validateGeneratedSqlBeforeDisplay(
+    sql: string,
+  ): Promise<string | null> {
+    if (
+      !adapter.capabilities?.sqlEditorLint ||
+      !adapterSupportsSqlLint(adapter)
+    ) {
+      return null;
+    }
+
+    const abortController = new AbortController();
+    const [error, result] = await adapter.sqlLint(
+      {
+        schemaVersion: sqlEditorSchema.version,
+        sql,
+      },
+      { abortSignal: abortController.signal },
+    );
+
+    if (error) {
+      throw new Error(`AI SQL validation failed: ${error.message}`);
+    }
+
+    const blockingDiagnostics = result.diagnostics.filter((diagnostic) => {
+      return diagnostic.severity === "error";
+    });
+
+    if (blockingDiagnostics.length === 0) {
+      return null;
+    }
+
+    return blockingDiagnostics
+      .map(formatSqlLintDiagnosticForAiCorrection)
+      .join("\n");
+  }
+
   async function runSqlRequest(args: {
     aiQueryRequest?: string | null;
     sql: string;
@@ -769,11 +863,7 @@ export function SqlView(_props: ViewProps) {
     setResult(null);
 
     try {
-      const generation = await resolveAiSqlGeneration({
-        activeSchema: schemaParam ?? adapter.defaultSchema ?? "public",
-        requestAiSqlGeneration,
-        dialect: adapter.capabilities?.sqlDialect ?? "postgresql",
-        introspection,
+      const generation = await resolveValidatedAiSqlGeneration({
         request: trimmedPrompt,
       });
 
@@ -812,11 +902,7 @@ export function SqlView(_props: ViewProps) {
     setAiCorrectionErrorMessage(null);
 
     try {
-      const generation = await resolveAiSqlGeneration({
-        activeSchema: schemaParam ?? adapter.defaultSchema ?? "public",
-        requestAiSqlGeneration,
-        dialect: adapter.capabilities?.sqlDialect ?? "postgresql",
-        introspection,
+      const generation = await resolveValidatedAiSqlGeneration({
         previousSql: args.failedSql,
         queryErrorMessage: args.queryErrorMessage,
         request: args.aiQueryRequest,
@@ -1219,6 +1305,13 @@ function adapterSupportsSqlLint(adapter: Adapter): adapter is Adapter & {
   sqlLint: NonNullable<Adapter["sqlLint"]>;
 } {
   return typeof adapter.sqlLint === "function";
+}
+
+function formatSqlLintDiagnosticForAiCorrection(
+  diagnostic: AdapterSqlLintDiagnostic,
+): string {
+  const code = diagnostic.code ? ` (${diagnostic.code})` : "";
+  return `${diagnostic.message}${code}`;
 }
 
 function getDatabaseEngineName(dialect: "postgresql" | "mysql" | "sqlite") {
