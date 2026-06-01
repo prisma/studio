@@ -268,11 +268,12 @@ These are the current high-signal places where Studio is bypassing a plausible s
 - Files:
   - [`ui/studio/views/sql/SqlResultVisualization.tsx`](ui/studio/views/sql/SqlResultVisualization.tsx)
   - [`ui/studio/views/sql/SqlView.tsx`](ui/studio/views/sql/SqlView.tsx)
+  - [`ui/components/charts`](ui/components/charts)
 - Current UI:
-  - Borderless Chart.js canvas injected into a `DataGrid` header row, wrapped in a custom sticky white band with centered/clamped sizing, plus a custom text-and-icon visualization trigger placed on the SQL result summary line.
+  - Bklit ShadCN chart primitives injected into a `DataGrid` header row, wrapped in a custom sticky background band with centered/clamped sizing, plus a custom text-and-icon visualization trigger placed on the SQL result summary line.
 - Plausible standard ShadCN alternative:
   - `Card`
   - `Button`
-  - No standard ShadCN chart primitive exists; the chart body must remain custom.
+  - The Bklit registry components provide the chart primitives, but the SQL result surface still needs a custom `DataGrid.getBeforeHeaderRows(...)` composition so the chart scrolls with the result grid.
 - Confidence:
   - High

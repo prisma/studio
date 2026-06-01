@@ -2,7 +2,7 @@
 
 This document is normative for AI-assisted SQL result visualization in Studio (`view=sql`).
 
-The implementation MUST reuse the existing SQL-view AI transport, render inside the shared scrollable result grid, and generate Chart.js configs without any external chart wrappers.
+The implementation MUST reuse the existing SQL-view AI transport, render inside the shared scrollable result grid, and generate a small Studio-owned Bklit chart config instead of accepting arbitrary chart-library options.
 
 ## Scope
 
@@ -10,8 +10,8 @@ This architecture governs:
 
 - the optional AI visualization row inside SQL result rendering
 - prompt construction from the executed query plus full result rows
-- response validation for AI-generated Chart.js configs
-- Chart.js embedding and lifecycle management
+- response validation for AI-generated Bklit chart configs
+- Bklit chart composition and lifecycle management
 - visualization reset behavior across query executions
 
 ## Canonical Components
@@ -28,7 +28,7 @@ This architecture governs:
 - The idle visualization affordance MUST render on the SQL result summary row, right-aligned on the same line as the `"row(s) returned in Xms"` text.
 - The mounted chart surface MUST render above the SQL result column header row but inside the shared scrollable grid container.
 - The implementation MUST use `DataGrid.getBeforeHeaderRows(...)` for the mounted chart rather than a bespoke parallel scroll region.
-- The mounted chart surface MUST render inside a full-width white band that stays pinned to the visible scroll-container width rather than stretching with the total table width.
+- The mounted chart surface MUST render inside a full-width background band that stays pinned to the visible scroll-container width rather than stretching with the total table width.
 - The actual chart body inside that band MUST be centered and width-clamped:
   - minimum 300px
   - grow with available visible width
@@ -48,18 +48,24 @@ This architecture governs:
   - the executed SQL text under a stable `SQL:` line
   - the original AI SQL request when the result came from `Generate SQL with AI`
   - the full result row set
-- The prompt MUST explicitly request a Chart.js config and forbid external libraries.
+- The prompt MUST explicitly request a Studio Bklit chart config and forbid external libraries.
 - AI responses MUST be strict JSON and MUST NOT include markdown fences or commentary.
 - JSON-response validation and correction retries SHOULD flow through the shared SQL-view AI JSON utility rather than a visualization-specific retry loop.
 - Provider-level output-limit failures MUST surface as explicit retry issues instead of collapsing into a generic malformed-JSON error.
-- The validated response shape MUST contain a Chart.js config object suitable for `new Chart(canvas, config)`.
-- The supported chart types MUST be constrained to a known allowlist.
+- The validated response shape MUST contain a `config` object with this minimal schema:
+  - `type`: one of `bar`, `line`, `pie`, or `doughnut`
+  - `title`: optional short display title
+  - `data`: plain JSON objects with primitive field values only
+  - `xKey` plus `series[]` for `bar` and `line` charts
+  - `labelKey` plus `valueKey` for `pie` and `doughnut` charts
+- `line` charts MUST use date-like `xKey` values: ISO dates, ISO datetimes, or epoch milliseconds. Generic categorical data should use `bar`.
+- The supported chart types MUST be constrained to the known allowlist above.
 - The implementation MUST retry up to two times when the model returns malformed JSON or an invalid chart config, and each correction prompt MUST include the latest validation error.
 
 ## Chart Lifecycle Contract
 
-- Chart rendering MUST use Chart.js directly.
-- The mounted chart instance MUST be destroyed on unmount and before replacing it with a new chart.
+- Chart rendering MUST use the Bklit ShadCN chart primitives checked into `ui/components/charts`.
+- The mounted chart MUST remain a React composition, not a canvas lifecycle object.
 - Visualization reset MUST happen when a new SQL execution starts, even if the previous result grid is still visible while the next query is in flight.
 
 ## Testing Requirements
@@ -67,7 +73,7 @@ This architecture governs:
 Changes to SQL result visualization MUST include tests covering:
 
 - prompt construction with full result rows
-- Chart.js instantiation for a few supported chart types
+- validation of supported and unsupported Bklit chart configs
 - SQL-view integration showing the summary-row `Visualize data with AI` affordance
 - automatic chart generation for AI-generated SQL results that request visualization
 - replacement of the action with a mounted chart

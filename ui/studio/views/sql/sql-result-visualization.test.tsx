@@ -1,23 +1,15 @@
-// @vitest-environment happy-dom
-
-import "vitest-canvas-mock";
-
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { StudioLlmError } from "@/data/llm";
 
 import {
   buildSqlResultVisualizationPrompt,
-  createSqlResultVisualizationChart,
   resolveSqlResultVisualization,
+  validateSqlResultVisualizationConfig,
 } from "./sql-result-visualization";
 
 describe("sql-result-visualization", () => {
-  afterEach(() => {
-    document.body.innerHTML = "";
-  });
-
-  it("builds a Chart.js prompt from the full SQL result set", () => {
+  it("builds a Bklit chart prompt from the full SQL result set", () => {
     const prompt = buildSqlResultVisualizationPrompt({
       aiQueryRequest: "show me number labels",
       databaseEngine: "PostgreSQL",
@@ -29,8 +21,9 @@ describe("sql-result-visualization", () => {
     });
 
     expect(prompt).toContain("Generate an appropriate chart");
-    expect(prompt).toContain("Chart.js");
-    expect(prompt).toContain("Use no external libraries.");
+    expect(prompt).toContain("Bklit chart components");
+    expect(prompt).toContain('"xKey":"label"');
+    expect(prompt).toContain('"series":[{"key":"value","label":"Value"}]');
     expect(prompt).toContain('"label":"first"');
     expect(prompt).toContain('"label":"second"');
     expect(prompt).toContain("Database engine: PostgreSQL");
@@ -49,34 +42,59 @@ describe("sql-result-visualization", () => {
     expect(prompt).not.toContain("AI query request:");
   });
 
-  it("creates working Chart.js instances for a few basic chart types", () => {
-    const chartTypes = ["bar", "line", "pie"] as const;
+  it("validates supported Bklit chart configs", () => {
+    expect(
+      validateSqlResultVisualizationConfig({
+        data: [
+          { label: "A", value: 1 },
+          { label: "B", value: 2 },
+        ],
+        series: [{ key: "value", label: "Value" }],
+        type: "bar",
+        xKey: "label",
+      }).value,
+    ).toMatchObject({ type: "bar", xKey: "label" });
 
-    for (const chartType of chartTypes) {
-      const canvas = document.createElement("canvas");
-      document.body.appendChild(canvas);
+    expect(
+      validateSqlResultVisualizationConfig({
+        data: [
+          { date: "2026-01-01", value: 1 },
+          { date: "2026-01-02", value: 2 },
+        ],
+        series: [{ key: "value", label: "Value" }],
+        type: "line",
+        xKey: "date",
+      }).value,
+    ).toMatchObject({ type: "line", xKey: "date" });
 
-      const chart = createSqlResultVisualizationChart(canvas, {
-        data: {
-          datasets: [
-            {
-              data: [1, 2, 3],
-              label: "Series",
-            },
-          ],
-          labels: ["A", "B", "C"],
-        },
-        options: {
-          responsive: false,
-        },
-        type: chartType,
-      });
+    expect(
+      validateSqlResultVisualizationConfig({
+        data: [{ label: "A", value: 1 }],
+        labelKey: "label",
+        type: "doughnut",
+        valueKey: "value",
+      }).value,
+    ).toMatchObject({ labelKey: "label", type: "doughnut", valueKey: "value" });
+  });
 
-      expect((chart.config as { type?: string }).type).toBe(chartType);
-      expect(chart.data.datasets).toHaveLength(1);
+  it("rejects configs that Bklit charts cannot render reliably", () => {
+    expect(
+      validateSqlResultVisualizationConfig({
+        data: [{ label: "A", value: 1 }],
+        series: [{ key: "value", label: "Value" }],
+        type: "scatter",
+        xKey: "label",
+      }).issues[0]?.message,
+    ).toContain("Chart type must be one of");
 
-      chart.destroy();
-    }
+    expect(
+      validateSqlResultVisualizationConfig({
+        data: [{ label: "A", value: 1 }],
+        series: [{ key: "value", label: "Value" }],
+        type: "line",
+        xKey: "label",
+      }).issues[0]?.message,
+    ).toContain("Line chart");
   });
 
   it("retries visualization generation up to two times with the latest validation error", async () => {
@@ -86,25 +104,20 @@ describe("sql-result-visualization", () => {
       .mockResolvedValueOnce(
         JSON.stringify({
           config: {
-            data: {
-              datasets: [{ data: [1], label: "Series" }],
-              labels: ["A"],
-            },
+            data: [{ label: "A", value: 1 }],
+            series: [{ key: "value", label: "Series" }],
             type: "histogram",
+            xKey: "label",
           },
         }),
       )
       .mockResolvedValueOnce(
         JSON.stringify({
           config: {
-            data: {
-              datasets: [{ data: [1], label: "Series" }],
-              labels: ["A"],
-            },
-            options: {
-              responsive: false,
-            },
+            data: [{ label: "A", value: 1 }],
+            series: [{ key: "value", label: "Series" }],
             type: "bar",
+            xKey: "label",
           },
         }),
       );
@@ -121,10 +134,11 @@ describe("sql-result-visualization", () => {
       "AI visualization response was not valid JSON",
     );
     expect(requestAiVisualization.mock.calls[2]?.[0]).toContain(
-      "Chart type must be one of: bar, bubble, doughnut, line, pie, polarArea, radar, scatter.",
+      "Chart type must be one of: bar, doughnut, line, pie.",
     );
     expect(result.didRetry).toBe(true);
     expect(result.config.type).toBe("bar");
+    expect(result.config.series?.[0]?.key).toBe("value");
   });
 
   it("retries visualization generation when the provider reports that the output token limit was reached", async () => {
@@ -140,14 +154,10 @@ describe("sql-result-visualization", () => {
       .mockResolvedValueOnce(
         JSON.stringify({
           config: {
-            data: {
-              datasets: [{ data: [1], label: "Series" }],
-              labels: ["A"],
-            },
-            options: {
-              responsive: false,
-            },
+            data: [{ label: "A", value: 1 }],
+            series: [{ key: "value", label: "Series" }],
             type: "bar",
+            xKey: "label",
           },
         }),
       );

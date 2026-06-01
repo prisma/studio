@@ -224,10 +224,10 @@ Provider output-limit failures are surfaced explicitly and can feed into the nex
 
 ## AI SQL Result Visualization
 
-When SQL query results are visible and `llm` is configured, Studio can also turn the returned rows into an in-grid Chart.js visualization.
+When SQL query results are visible and `llm` is configured, Studio can also turn the returned rows into an in-grid Bklit visualization.
 The visualization uses a minimal summary-row trigger labeled `Visualize data with AI`, right-aligned beside the query result count, and mounts the generated chart above the SQL result headers inside the shared scrollable grid without a regenerate control.
-Studio sends the executed SQL, the concrete database engine, and the full result row set to the model, and when the result came from `Generate SQL with AI` it also includes the original natural-language request for extra visualization context. The model is asked for a pure Chart.js JSON config with no external libraries, and Studio mounts the returned chart directly with Chart.js.
-Mounted charts sit inside a white in-grid band that stays tied to the visible result viewport instead of the total table width, while the chart itself stays centered and width-clamped between 300px and 1200px so wide result grids do not force giant charts.
+Studio sends the executed SQL, the concrete database engine, and the full result row set to the model, and when the result came from `Generate SQL with AI` it also includes the original natural-language request for extra visualization context. The model is asked for a strict Bklit chart config for bar, line, pie, or doughnut charts, and Studio validates that schema before rendering.
+Mounted charts sit inside an in-grid background band that stays tied to the visible result viewport instead of the total table width, while the chart itself stays centered and width-clamped between 300px and 1200px so wide result grids do not force giant charts.
 When SQL is generated through AI, the same model call also decides whether the expected result is graph-worthy; if it says yes, Studio auto-generates the chart after the user manually runs that generated SQL instead of waiting for a separate chart button click.
 If another query starts running, the visualization resets immediately so stale charts do not persist across changing result sets. Visualization generation also retries up to two times on malformed JSON, invalid chart configs, or explicit provider output-limit failures.
 

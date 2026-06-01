@@ -37,19 +37,17 @@ import { DataGridDraggableHeaderCell } from "../../grid/DataGridDraggableHeaderC
 import { DataGridHeader } from "../../grid/DataGridHeader";
 import { StudioHeader } from "../../StudioHeader";
 import type { ViewProps } from "../View";
+import { resolveAiSqlGeneration } from "./sql-ai-generation";
 import {
   getCodeMirrorDialect,
   toCodeMirrorSqlNamespace,
 } from "./sql-editor-config";
 import { createSqlEditorKeybindings } from "./sql-editor-keybindings";
-import {
-  resolveAiSqlGeneration,
-} from "./sql-ai-generation";
+import { createSqlLintSource } from "./sql-lint-source";
 import {
   SqlResultVisualizationChart,
   useSqlResultVisualization,
 } from "./SqlResultVisualization";
-import { createSqlLintSource } from "./sql-lint-source";
 
 interface SqlResultState {
   aiQueryRequest: string | null;
@@ -226,7 +224,7 @@ const SqlResultGrid = memo(function SqlResultGrid(props: SqlResultGridProps) {
                     colSpan={Math.max(table.getAllLeafColumns().length, 1)}
                   >
                     <div
-                      className="sticky left-0 box-border w-[100cqw] overflow-hidden border-b border-border bg-white px-4 pt-4 pb-5"
+                      className="sticky left-0 box-border w-[100cqw] overflow-hidden border-b border-border/70 bg-background px-4 pt-4 pb-5"
                       data-testid="sql-result-visualization-band"
                     >
                       <SqlResultVisualizationChart
@@ -356,7 +354,9 @@ export function SqlView(_props: ViewProps) {
       }
 
       setAiPromptHistory(nextHistory);
-      const existingState = sqlEditorStateCollection.get(SQL_AI_PROMPT_HISTORY_ID);
+      const existingState = sqlEditorStateCollection.get(
+        SQL_AI_PROMPT_HISTORY_ID,
+      );
 
       if (!existingState) {
         sqlEditorStateCollection.insert({
@@ -375,7 +375,7 @@ export function SqlView(_props: ViewProps) {
 
   const aiPromptHistoryPreview =
     aiPrompt.length === 0 && aiPromptHistoryPreviewIndex != null
-      ? aiPromptHistory[aiPromptHistoryPreviewIndex] ?? null
+      ? (aiPromptHistory[aiPromptHistoryPreviewIndex] ?? null)
       : null;
 
   const materializeAiPromptHistoryPreview = useCallback(() => {
@@ -527,7 +527,9 @@ export function SqlView(_props: ViewProps) {
     ];
   }, [sqlLanguageExtension, sqlLintExtensions]);
   const databaseEngine = useMemo(() => {
-    return getDatabaseEngineName(adapter.capabilities?.sqlDialect ?? "postgresql");
+    return getDatabaseEngineName(
+      adapter.capabilities?.sqlDialect ?? "postgresql",
+    );
   }, [adapter.capabilities?.sqlDialect]);
   const requestAiSqlGeneration = useCallback(
     async (prompt: string) => {
@@ -755,9 +757,7 @@ export function SqlView(_props: ViewProps) {
       focusSqlEditorAtEnd(generation.sql);
     } catch (error) {
       setAiGenerationErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "AI SQL generation failed.",
+        error instanceof Error ? error.message : "AI SQL generation failed.",
       );
     } finally {
       setIsGeneratingSql(false);
@@ -795,11 +795,7 @@ export function SqlView(_props: ViewProps) {
       size="sm"
       variant={isRunning ? "outline" : "default"}
     >
-      {isRunning ? (
-        <Square className="size-4" />
-      ) : (
-        <Play className="size-4" />
-      )}
+      {isRunning ? <Square className="size-4" /> : <Play className="size-4" />}
       {isRunning ? "Cancel" : "Run SQL"}
     </Button>
   );
@@ -1024,7 +1020,9 @@ function getPendingAiSqlExecutionContext(args: {
     };
   }
 
-  if (normalizeSqlForAiExecutionContext(pendingAiSqlExecution.sql) !== trimmedSql) {
+  if (
+    normalizeSqlForAiExecutionContext(pendingAiSqlExecution.sql) !== trimmedSql
+  ) {
     return {
       aiQueryRequest: null,
       shouldAutoGenerateVisualization: false,
@@ -1206,7 +1204,9 @@ function readPersistedSqlEditorStateRow(args: {
       return null;
     }
 
-    const draftRow = (parsedStorageState as Record<string, unknown>)[`s:${rowId}`];
+    const draftRow = (parsedStorageState as Record<string, unknown>)[
+      `s:${rowId}`
+    ];
 
     if (typeof draftRow !== "object" || draftRow == null) {
       return null;

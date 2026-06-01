@@ -221,9 +221,7 @@ function createStudioMock(adapter: Adapter): {
   operationEvents: [];
   queryClient: { clear: ReturnType<typeof vi.fn> };
   requestLlm: ReturnType<
-    typeof vi.fn<
-      (request: { prompt: string; task: string }) => Promise<string>
-    >
+    typeof vi.fn<(request: { prompt: string; task: string }) => Promise<string>>
   >;
   sqlEditorStateCollection: {
     delete: ReturnType<typeof vi.fn>;
@@ -252,8 +250,12 @@ function createStudioMock(adapter: Adapter): {
     get: vi.fn((id: string) => sqlEditorRows.get(id)),
     has: vi.fn((id: string) => sqlEditorRows.has(id)),
     insert: vi.fn(
-      (item: { aiPromptHistory?: string[]; id: string; queryText?: string }) => {
-      sqlEditorRows.set(item.id, item);
+      (item: {
+        aiPromptHistory?: string[];
+        id: string;
+        queryText?: string;
+      }) => {
+        sqlEditorRows.set(item.id, item);
       },
     ),
     update: vi.fn(
@@ -283,7 +285,9 @@ function createStudioMock(adapter: Adapter): {
     get llm() {
       return llm;
     },
-    set llm(value: ((request: StudioLlmRequest) => Promise<string>) | undefined) {
+    set llm(
+      value: ((request: StudioLlmRequest) => Promise<string>) | undefined,
+    ) {
       llm = value;
     },
     getOrCreateRowsCollection: vi.fn(),
@@ -336,7 +340,12 @@ function setInputValue(element: HTMLInputElement, value: string) {
 function dispatchInputKey(
   element: HTMLInputElement,
   key: string,
-  args?: { altKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean },
+  args?: {
+    altKey?: boolean;
+    ctrlKey?: boolean;
+    metaKey?: boolean;
+    shiftKey?: boolean;
+  },
 ) {
   element.dispatchEvent(
     new KeyboardEvent("keydown", {
@@ -422,7 +431,9 @@ describe("SqlView", () => {
     }
 
     expect(
-      harness.container.querySelector('input[aria-label="Generate SQL with AI"]'),
+      harness.container.querySelector(
+        'input[aria-label="Generate SQL with AI"]',
+      ),
     ).toBeNull();
     expect(
       [...harness.container.querySelectorAll("button")].find((button) =>
@@ -441,10 +452,14 @@ describe("SqlView", () => {
     });
 
     expect(
-      harness.container.querySelector('[data-testid="sql-result-visualization-action"]'),
+      harness.container.querySelector(
+        '[data-testid="sql-result-visualization-action"]',
+      ),
     ).toBeNull();
     expect(
-      harness.container.querySelector('[data-testid="sql-result-visualization-row"]'),
+      harness.container.querySelector(
+        '[data-testid="sql-result-visualization-row"]',
+      ),
     ).toBeNull();
 
     harness.cleanup();
@@ -468,9 +483,9 @@ describe("SqlView", () => {
     const promptInput = harness.container.querySelector<HTMLInputElement>(
       'input[aria-label="Generate SQL with AI"]',
     );
-    const generateButton = [...harness.container.querySelectorAll("button")].find(
-      (button) => button.textContent?.includes("Generate SQL"),
-    );
+    const generateButton = [
+      ...harness.container.querySelectorAll("button"),
+    ].find((button) => button.textContent?.includes("Generate SQL"));
     const editor = harness.container.querySelector<HTMLTextAreaElement>(
       'textarea[aria-label="SQL editor"]',
     );
@@ -524,7 +539,9 @@ describe("SqlView", () => {
     });
 
     await waitFor(() => {
-      return harness.container.textContent?.includes("1 row(s) returned") ?? false;
+      return (
+        harness.container.textContent?.includes("1 row(s) returned") ?? false
+      );
     });
 
     expect(rawSpy).toHaveBeenCalledWith(
@@ -565,19 +582,10 @@ describe("SqlView", () => {
       .mockResolvedValueOnce(
         JSON.stringify({
           config: {
-            data: {
-              datasets: [
-                {
-                  data: [1],
-                  label: "Rows",
-                },
-              ],
-              labels: ["organizations"],
-            },
-            options: {
-              responsive: false,
-            },
+            data: [{ label: "organizations", rows: 1 }],
+            series: [{ key: "rows", label: "Rows" }],
             type: "bar",
+            xKey: "label",
           },
         }),
       );
@@ -588,9 +596,9 @@ describe("SqlView", () => {
     const promptInput = harness.container.querySelector<HTMLInputElement>(
       'input[aria-label="Generate SQL with AI"]',
     );
-    const generateButton = [...harness.container.querySelectorAll("button")].find(
-      (button) => button.textContent?.includes("Generate SQL"),
-    );
+    const generateButton = [
+      ...harness.container.querySelectorAll("button"),
+    ].find((button) => button.textContent?.includes("Generate SQL"));
 
     if (!promptInput || !generateButton) {
       throw new Error("Expected SQL generation controls");
@@ -636,7 +644,8 @@ describe("SqlView", () => {
 
     await waitFor(() => {
       return (
-        (harness.container.textContent?.includes("1 row(s) returned") ?? false) &&
+        (harness.container.textContent?.includes("1 row(s) returned") ??
+          false) &&
         harness.container.querySelector(
           '[data-testid="sql-result-visualization-chart"]',
         ) != null
@@ -647,7 +656,7 @@ describe("SqlView", () => {
     expect(llmMock).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
-        prompt: expect.stringContaining("Chart.js"),
+        prompt: expect.stringContaining("Bklit chart components"),
         task: "sql-visualization",
       }),
     );
@@ -659,7 +668,9 @@ describe("SqlView", () => {
       JSON.stringify([{ one: 1 }]),
     );
     expect(
-      harness.container.querySelector('[data-testid="sql-result-visualization-action"]'),
+      harness.container.querySelector(
+        '[data-testid="sql-result-visualization-action"]',
+      ),
     ).toBeNull();
 
     harness.cleanup();
@@ -676,7 +687,8 @@ describe("SqlView", () => {
     };
     const { adapter, rawSpy } = createAdapterMock({ raw });
     const studio = createStudioMock(adapter);
-    const llmMock = vi.fn<(request: StudioLlmRequest) => Promise<string>>()
+    const llmMock = vi
+      .fn<(request: StudioLlmRequest) => Promise<string>>()
       .mockResolvedValue(
         JSON.stringify({
           rationale: "Tried a typeof helper.",
@@ -690,9 +702,9 @@ describe("SqlView", () => {
     const promptInput = harness.container.querySelector<HTMLInputElement>(
       'input[aria-label="Generate SQL with AI"]',
     );
-    const generateButton = [...harness.container.querySelectorAll("button")].find(
-      (button) => button.textContent?.includes("Generate SQL"),
-    );
+    const generateButton = [
+      ...harness.container.querySelectorAll("button"),
+    ].find((button) => button.textContent?.includes("Generate SQL"));
     const editor = harness.container.querySelector<HTMLTextAreaElement>(
       'textarea[aria-label="SQL editor"]',
     );
@@ -741,9 +753,7 @@ describe("SqlView", () => {
       { sql: "select typeof(json_col) from public.organizations limit 5" },
       expect.any(Object),
     );
-    expect(harness.container.textContent).toContain(
-      "Tried a typeof helper.",
-    );
+    expect(harness.container.textContent).toContain("Tried a typeof helper.");
 
     harness.cleanup();
   });
@@ -764,9 +774,9 @@ describe("SqlView", () => {
     const promptInput = harness.container.querySelector<HTMLInputElement>(
       'input[aria-label="Generate SQL with AI"]',
     );
-    const generateButton = [...harness.container.querySelectorAll("button")].find(
-      (button) => button.textContent?.includes("Generate SQL"),
-    );
+    const generateButton = [
+      ...harness.container.querySelectorAll("button"),
+    ].find((button) => button.textContent?.includes("Generate SQL"));
 
     if (!promptInput || !generateButton) {
       throw new Error("Expected SQL generation controls");
@@ -782,11 +792,13 @@ describe("SqlView", () => {
 
     await waitFor(() => {
       const promptHistoryRow = (
-        studio.sqlEditorStateCollection.get as (id: string) => {
-          aiPromptHistory?: string[];
-          id: string;
-          queryText?: string;
-        } | undefined
+        studio.sqlEditorStateCollection.get as (id: string) =>
+          | {
+              aiPromptHistory?: string[];
+              id: string;
+              queryText?: string;
+            }
+          | undefined
       )("sql-editor:ai-prompt-history");
 
       return (
@@ -810,11 +822,13 @@ describe("SqlView", () => {
 
     expect(
       (
-        studio.sqlEditorStateCollection.get as (id: string) => {
-          aiPromptHistory?: string[];
-          id: string;
-          queryText?: string;
-        } | undefined
+        studio.sqlEditorStateCollection.get as (id: string) =>
+          | {
+              aiPromptHistory?: string[];
+              id: string;
+              queryText?: string;
+            }
+          | undefined
       )("sql-editor:ai-prompt-history"),
     ).toEqual({
       aiPromptHistory: ["show me team members", "show me organizations"],
@@ -916,9 +930,9 @@ describe("SqlView", () => {
     const promptInput = harness.container.querySelector<HTMLInputElement>(
       'input[aria-label="Generate SQL with AI"]',
     );
-    const generateButton = [...harness.container.querySelectorAll("button")].find(
-      (button) => button.textContent?.includes("Generate SQL"),
-    );
+    const generateButton = [
+      ...harness.container.querySelectorAll("button"),
+    ].find((button) => button.textContent?.includes("Generate SQL"));
 
     if (!promptInput || !generateButton) {
       throw new Error("Expected SQL generation controls");
@@ -934,8 +948,9 @@ describe("SqlView", () => {
 
     await waitFor(() => {
       return (
-        harness.container.textContent?.includes("AI SQL generation exploded.") ??
-        false
+        harness.container.textContent?.includes(
+          "AI SQL generation exploded.",
+        ) ?? false
       );
     });
 
@@ -949,19 +964,10 @@ describe("SqlView", () => {
       async () =>
         JSON.stringify({
           config: {
-            data: {
-              datasets: [
-                {
-                  data: [1],
-                  label: "Rows",
-                },
-              ],
-              labels: ["organizations"],
-            },
-            options: {
-              responsive: false,
-            },
+            data: [{ label: "organizations", rows: 1 }],
+            series: [{ key: "rows", label: "Rows" }],
             type: "bar",
+            xKey: "label",
           },
         }),
     );
@@ -999,7 +1005,9 @@ describe("SqlView", () => {
     }
 
     expect(
-      harness.container.querySelector('[data-testid="sql-result-visualization-row"]'),
+      harness.container.querySelector(
+        '[data-testid="sql-result-visualization-row"]',
+      ),
     ).toBeNull();
     expect(summary.textContent).toContain("1 row(s) returned in");
     expect(harness.container.textContent?.includes("AI visualization")).toBe(
@@ -1007,16 +1015,14 @@ describe("SqlView", () => {
     );
     expect(
       harness.container.textContent?.includes(
-        "Generate a Chart.js view from the current SQL result set.",
+        "Generate a Bklit chart from the current SQL result set.",
       ),
     ).toBe(false);
     expect(visualizeAction.textContent).toContain("Visualize data with AI");
     expect(visualizeAction.className.includes("border")).toBe(false);
 
     act(() => {
-      visualizeAction.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
+      visualizeAction.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
     await waitFor(() => {
@@ -1036,12 +1042,12 @@ describe("SqlView", () => {
     );
 
     expect(llmMock).toHaveBeenCalledTimes(1);
-    expect(firstVisualizationPrompt).toContain("Chart.js");
+    expect(firstVisualizationPrompt).toContain("Bklit chart components");
     expect(firstVisualizationPrompt).toContain("SQL: select 1 as one");
     expect(firstVisualizationPrompt).toContain(JSON.stringify([{ one: 1 }]));
     expect(visualizationBand?.className).toContain("sticky");
     expect(visualizationBand?.className).toContain("w-[100cqw]");
-    expect(visualizationBand?.className).toContain("bg-white");
+    expect(visualizationBand?.className).toContain("bg-background");
     expect(visualizationBand?.className).toContain("border-b");
     expect(chart?.className).toContain("mx-auto");
     expect(chart?.className).toContain(
@@ -1051,7 +1057,9 @@ describe("SqlView", () => {
     expect(chart?.className).toContain("max-w-[1200px]");
     expect(firstVisualizationPrompt).not.toContain("AI query request:");
     expect(
-      harness.container.querySelector('[data-testid="sql-result-visualization-action"]'),
+      harness.container.querySelector(
+        '[data-testid="sql-result-visualization-action"]',
+      ),
     ).toBeNull();
 
     harness.cleanup();
@@ -1059,7 +1067,14 @@ describe("SqlView", () => {
 
   it("resets the generated chart when another query starts running", async () => {
     const secondQueryDeferred = createDeferred<
-      [null, { query: { parameters: never[]; sql: string }; rowCount: number; rows: { one: number }[] }]
+      [
+        null,
+        {
+          query: { parameters: never[]; sql: string };
+          rowCount: number;
+          rows: { one: number }[];
+        },
+      ]
     >();
     let rawCallCount = 0;
     const raw: Adapter["raw"] = async (details) => {
@@ -1083,19 +1098,10 @@ describe("SqlView", () => {
     studio.llm = vi.fn(async () =>
       JSON.stringify({
         config: {
-          data: {
-            datasets: [
-              {
-                data: [1],
-                label: "Rows",
-              },
-            ],
-            labels: ["organizations"],
-          },
-          options: {
-            responsive: false,
-          },
-          type: "pie",
+          data: [{ label: "organizations", rows: 1 }],
+          series: [{ key: "rows", label: "Rows" }],
+          type: "bar",
+          xKey: "label",
         },
       }),
     );
@@ -1129,9 +1135,7 @@ describe("SqlView", () => {
     }
 
     act(() => {
-      visualizeAction.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
+      visualizeAction.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
     await waitFor(() => {

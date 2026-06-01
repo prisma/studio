@@ -117,7 +117,9 @@ export function buildAiSqlGenerationPrompt(args: {
   const { context, now = new Date(), request } = args;
   const databaseEngine = getDatabaseEngineName(context.dialect);
   const promptTimeZone =
-    context.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
+    context.timeZone ??
+    Intl.DateTimeFormat().resolvedOptions().timeZone ??
+    "UTC";
   const tableLines = context.tables.flatMap((table) => {
     return [
       `- ${table.schema}.${table.name}`,
@@ -146,7 +148,7 @@ export function buildAiSqlGenerationPrompt(args: {
     `- Use only functions, operators, and casts supported by ${databaseEngine}.`,
     "- Use dialect-appropriate SQL syntax.",
     "- Decide whether the resulting dataset would make an interesting chart.",
-    '- Set "shouldGenerateVisualization" to true only when the expected result is meaningfully visualizable as a simple chart such as a bar, line, pie, scatter, or time-series view.',
+    '- Set "shouldGenerateVisualization" to true only when the expected result is meaningfully visualizable as a simple chart such as a bar, line, pie, doughnut, or time-series view.',
     '- Set "shouldGenerateVisualization" to false for results that are mostly free-form text, unstructured JSON, single values, or otherwise better inspected as a table.',
     ...getDialectSpecificPromptRules(context.dialect).map((rule) => {
       return `- ${rule}`;
@@ -177,9 +179,7 @@ export function buildAiSqlGenerationCorrectionPrompt(args: {
 
   return [
     buildAiSqlGenerationPrompt({ context, now, request }),
-    previousSql
-      ? `Previous SQL statement: ${previousSql}`
-      : null,
+    previousSql ? `Previous SQL statement: ${previousSql}` : null,
     queryErrorMessage
       ? `Database error from that SQL: ${queryErrorMessage}`
       : null,
@@ -221,7 +221,7 @@ export async function resolveAiSqlGeneration(
     maxTables,
   });
 
-  return requestValidatedAiSqlGeneration({
+  return await requestValidatedAiSqlGeneration({
     requestAiSqlGeneration,
     buildRetryPrompt: ({ issues, responseText }) => {
       return buildAiSqlGenerationCorrectionPrompt({
@@ -266,7 +266,9 @@ function parseAiSqlGenerationResponse(responseText: string): {
   const normalizedResponseText = normalizeAiJsonResponseText(responseText);
 
   try {
-    parsed = JSON.parse(normalizedResponseText) as ParsedAiSqlGenerationResponse;
+    parsed = JSON.parse(
+      normalizedResponseText,
+    ) as ParsedAiSqlGenerationResponse;
   } catch (error) {
     return {
       issues: [
@@ -328,7 +330,8 @@ function parseAiSqlGenerationResponse(responseText: string): {
     issues: [],
     value: {
       rationale:
-        typeof parsed.rationale === "string" && parsed.rationale.trim().length > 0
+        typeof parsed.rationale === "string" &&
+        parsed.rationale.trim().length > 0
           ? parsed.rationale.trim()
           : null,
       shouldGenerateVisualization: coerceVisualizationDecision(
@@ -422,9 +425,7 @@ function getDatabaseEngineName(dialect: SqlEditorDialect): string {
 function getDialectSpecificPromptRules(dialect: SqlEditorDialect): string[] {
   switch (dialect) {
     case "mysql":
-      return [
-        "Do not use PostgreSQL-only syntax like ILIKE or ::type casts.",
-      ];
+      return ["Do not use PostgreSQL-only syntax like ILIKE or ::type casts."];
     case "sqlite":
       return [
         "Do not use PostgreSQL schemas, PostgreSQL casts, or MySQL-only functions.",
