@@ -57,8 +57,10 @@ This architecture governs:
   - `title`: optional short display title
   - `data`: plain JSON objects with primitive field values only
   - `xKey` plus `series[]` for `bar` and `line` charts
+  - optional `stacked: true` for `bar` charts only
   - `labelKey` plus `valueKey` for `pie` and `doughnut` charts
 - `line` charts MUST use date-like `xKey` values: ISO dates, ISO datetimes, or epoch milliseconds. Generic categorical data should use `bar`.
+- Stacked bar charts MUST use one data row per category and separate numeric series fields for each stack segment. Long/tidy SQL result rows MAY be pivoted by the AI visualization response into this Studio-owned chart config.
 - The supported chart types MUST be constrained to the known allowlist above.
 - The implementation MUST retry up to two times when the model returns malformed JSON or an invalid chart config, and each correction prompt MUST include the latest validation error.
 
@@ -78,3 +80,4 @@ Changes to SQL result visualization MUST include tests covering:
 - automatic chart generation for AI-generated SQL results that request visualization
 - replacement of the action with a mounted chart
 - reset behavior when another query execution starts
+- validation and rendering support for stacked bar chart configs

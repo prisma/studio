@@ -676,8 +676,9 @@ describe("SqlView", () => {
     harness.cleanup();
   });
 
-  it("surfaces query errors only after the user manually runs AI-generated SQL", async () => {
+  it("feeds AI-generated SQL execution errors back into the model without auto-running the correction", async () => {
     const badSql = "select typeof(json_col) from public.organizations limit 5;";
+    const correctedSql = "select id from public.organizations limit 5;";
     const raw: Adapter["raw"] = async (details) => {
       const error = new Error(
         "function typeof(json) does not exist",
@@ -689,10 +690,18 @@ describe("SqlView", () => {
     const studio = createStudioMock(adapter);
     const llmMock = vi
       .fn<(request: StudioLlmRequest) => Promise<string>>()
-      .mockResolvedValue(
+      .mockResolvedValueOnce(
         JSON.stringify({
           rationale: "Tried a typeof helper.",
           sql: badSql,
+          shouldGenerateVisualization: false,
+        }),
+      )
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          rationale: "Uses plain selectable columns after the database error.",
+          sql: correctedSql,
+          shouldGenerateVisualization: true,
         }),
       );
     studio.llm = llmMock;
@@ -739,21 +748,75 @@ describe("SqlView", () => {
       runButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    await waitFor(() => {
-      return (
-        harness.container.textContent?.includes(
-          "function typeof(json) does not exist",
-        ) ?? false
-      );
-    });
+    await waitFor(() => editor.value === correctedSql);
 
-    expect(llmMock).toHaveBeenCalledTimes(1);
+    expect(llmMock).toHaveBeenCalledTimes(2);
+    expect(llmMock.mock.calls[1]?.[0]).toMatchObject({
+      task: "sql-generation",
+    });
+    expect(llmMock.mock.calls[1]?.[0].prompt).toContain(
+      "Previous SQL statement: select typeof(json_col) from public.organizations limit 5",
+    );
+    expect(llmMock.mock.calls[1]?.[0].prompt).toContain(
+      "Database error from that SQL: function typeof(json) does not exist",
+    );
     expect(rawSpy).toHaveBeenCalledTimes(1);
     expect(rawSpy).toHaveBeenCalledWith(
       { sql: "select typeof(json_col) from public.organizations limit 5" },
       expect.any(Object),
     );
-    expect(harness.container.textContent).toContain("Tried a typeof helper.");
+    expect(harness.container.textContent).toContain(
+      "Uses plain selectable columns after the database error.",
+    );
+    expect(harness.container.textContent).not.toContain("Query error:");
+
+    harness.cleanup();
+  });
+
+  it("keeps normal manual SQL execution errors inline without asking AI for a correction", async () => {
+    const raw: Adapter["raw"] = async (details) => {
+      const error = new Error("relation missing_table does not exist") as AdapterError;
+      error.query = { parameters: [], sql: details.sql };
+      return [error];
+    };
+    const { adapter, rawSpy } = createAdapterMock({ raw });
+    const studio = createStudioMock(adapter);
+    const llmMock = vi.fn<(request: StudioLlmRequest) => Promise<string>>();
+    studio.llm = llmMock;
+    useStudioMock.mockReturnValue(studio);
+
+    const harness = renderSqlView();
+    const editor = harness.container.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="SQL editor"]',
+    );
+    const runButton = [...harness.container.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Run SQL"),
+    );
+
+    if (!editor || !runButton) {
+      throw new Error("Expected SQL editor and Run SQL button");
+    }
+
+    act(() => {
+      editor.value = "select * from missing_table";
+      mockCodeMirrorOnChange?.("select * from missing_table");
+    });
+
+    act(() => {
+      runButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitFor(() => {
+      return (
+        harness.container.textContent?.includes(
+          "relation missing_table does not exist",
+        ) ?? false
+      );
+    });
+
+    expect(llmMock).not.toHaveBeenCalled();
+    expect(rawSpy).toHaveBeenCalledTimes(1);
+    expect(harness.container.textContent).toContain("Query error:");
 
     harness.cleanup();
   });

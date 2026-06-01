@@ -109,7 +109,7 @@ export function EmbeddedStudio() {
 - `queryInsights` is optional. Pass it only when your BFF implements the `query-insights` procedure; otherwise omit it so Studio hides the `Queries` view.
 - Studio does not render a built-in fullscreen header button. If your host needs fullscreen behavior, render that control at the host container level, as the local demo does.
 
-Studio handles prompt construction, type-aware validation, correction retries, SQL execution retries, and conversion into the normal filter, SQL, and visualization surfaces. The host transport only needs to forward the prepared request to an LLM provider and return the typed result.
+Studio handles prompt construction, type-aware validation, correction retries, database-error correction for AI-generated SQL, and conversion into the normal filter, SQL, and visualization surfaces. The host transport only needs to forward the prepared request to an LLM provider and return the typed result.
 
 ## AI Contract
 
@@ -136,7 +136,7 @@ type StudioLlmResponse =
     };
 ```
 
-Studio treats `output-limit-exceeded` as a first-class retry signal for SQL generation and visualization correction loops. All prompting and retry behavior live in Studio itself, so host implementations should stay transport-only.
+Studio treats `output-limit-exceeded` as a first-class retry signal for SQL generation and visualization correction loops. If AI-generated SQL fails after the user manually runs it, Studio also sends the failed SQL and database error back through the same `sql-generation` transport so the model can propose corrected SQL without auto-running it. All prompting and retry behavior live in Studio itself, so host implementations should stay transport-only.
 
 ## Integration Checklist
 

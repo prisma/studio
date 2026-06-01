@@ -212,6 +212,8 @@ function SqlResultBarChart({
       className="h-full min-h-64"
       data={config.data}
       margin={{ bottom: 38, left: 40, right: 24, top: 12 }}
+      stacked={config.stacked === true}
+      stackGap={config.stacked === true ? 1 : 0}
       xDataKey={config.xKey}
     >
       <Grid strokeDasharray="0" vertical={false} />

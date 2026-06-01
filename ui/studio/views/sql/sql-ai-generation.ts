@@ -50,6 +50,8 @@ interface ResolveAiSqlGenerationArgs {
   maxColumnsPerTable?: number;
   maxTables?: number;
   now?: Date;
+  previousSql?: string;
+  queryErrorMessage?: string;
   request: string;
 }
 
@@ -112,9 +114,17 @@ export function buildAiSqlGenerationContext(args: {
 export function buildAiSqlGenerationPrompt(args: {
   context: AiSqlGenerationContext;
   now?: Date;
+  previousSql?: string;
+  queryErrorMessage?: string;
   request: string;
 }): string {
-  const { context, now = new Date(), request } = args;
+  const {
+    context,
+    now = new Date(),
+    previousSql,
+    queryErrorMessage,
+    request,
+  } = args;
   const databaseEngine = getDatabaseEngineName(context.dialect);
   const promptTimeZone =
     context.timeZone ??
@@ -147,6 +157,9 @@ export function buildAiSqlGenerationPrompt(args: {
     "- If the query returns rows instead of a count or aggregate, include a reasonable LIMIT of 100 or less unless the user explicitly requests another limit.",
     `- Use only functions, operators, and casts supported by ${databaseEngine}.`,
     "- Use dialect-appropriate SQL syntax.",
+    previousSql || queryErrorMessage
+      ? "- Correct the previous SQL so it runs successfully while preserving the user's original intent."
+      : null,
     "- Decide whether the resulting dataset would make an interesting chart.",
     '- Set "shouldGenerateVisualization" to true only when the expected result is meaningfully visualizable as a simple chart such as a bar, line, pie, doughnut, or time-series view.',
     '- Set "shouldGenerateVisualization" to false for results that are mostly free-form text, unstructured JSON, single values, or otherwise better inspected as a table.',
@@ -155,7 +168,13 @@ export function buildAiSqlGenerationPrompt(args: {
     }),
     "- Never invent tables or columns that are not listed above.",
     `User request: ${request}`,
-  ].join("\n");
+    previousSql ? `Previous SQL statement: ${previousSql}` : null,
+    queryErrorMessage
+      ? `Database error from that SQL: ${queryErrorMessage}`
+      : null,
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
 }
 
 export function buildAiSqlGenerationCorrectionPrompt(args: {
@@ -178,11 +197,13 @@ export function buildAiSqlGenerationCorrectionPrompt(args: {
   } = args;
 
   return [
-    buildAiSqlGenerationPrompt({ context, now, request }),
-    previousSql ? `Previous SQL statement: ${previousSql}` : null,
-    queryErrorMessage
-      ? `Database error from that SQL: ${queryErrorMessage}`
-      : null,
+    buildAiSqlGenerationPrompt({
+      context,
+      now,
+      previousSql,
+      queryErrorMessage,
+      request,
+    }),
     "Your previous response was invalid.",
     `Original user request: ${request}`,
     `Previous response: ${responseText}`,
@@ -205,6 +226,8 @@ export async function resolveAiSqlGeneration(
     maxColumnsPerTable,
     maxTables,
     now,
+    previousSql,
+    queryErrorMessage,
     request,
   } = args;
   const trimmedRequest = request.trim();
@@ -228,6 +251,8 @@ export async function resolveAiSqlGeneration(
         context,
         issues,
         now,
+        previousSql,
+        queryErrorMessage,
         request: trimmedRequest,
         responseText,
       });
@@ -235,6 +260,8 @@ export async function resolveAiSqlGeneration(
     prompt: buildAiSqlGenerationPrompt({
       context,
       now,
+      previousSql,
+      queryErrorMessage,
       request: trimmedRequest,
     }),
   });

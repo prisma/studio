@@ -24,6 +24,8 @@ describe("sql-result-visualization", () => {
     expect(prompt).toContain("Bklit chart components");
     expect(prompt).toContain('"xKey":"label"');
     expect(prompt).toContain('"series":[{"key":"value","label":"Value"}]');
+    expect(prompt).toContain('"stacked":false');
+    expect(prompt).toContain("For stacked bar charts");
     expect(prompt).toContain('"label":"first"');
     expect(prompt).toContain('"label":"second"');
     expect(prompt).toContain("Database engine: PostgreSQL");
@@ -54,6 +56,22 @@ describe("sql-result-visualization", () => {
         xKey: "label",
       }).value,
     ).toMatchObject({ type: "bar", xKey: "label" });
+
+    expect(
+      validateSqlResultVisualizationConfig({
+        data: [
+          { organization: "Acme", design: 2, engineering: 3 },
+          { organization: "Zen", design: 1, engineering: 5 },
+        ],
+        series: [
+          { key: "engineering", label: "Engineering" },
+          { key: "design", label: "Design" },
+        ],
+        stacked: true,
+        type: "bar",
+        xKey: "organization",
+      }).value,
+    ).toMatchObject({ stacked: true, type: "bar", xKey: "organization" });
 
     expect(
       validateSqlResultVisualizationConfig({
