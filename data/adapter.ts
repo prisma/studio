@@ -380,6 +380,10 @@ export interface AdapterQueryResult {
 }
 
 export interface AdapterRawDetails {
+  /**
+   * Schema to use as the default namespace for unqualified identifiers.
+   */
+  schema?: string;
   sql: string;
 }
 
@@ -400,6 +404,10 @@ export interface AdapterSqlSchemaResult {
 }
 
 export interface AdapterSqlLintDetails {
+  /**
+   * Schema to use as the default namespace for unqualified identifiers.
+   */
+  schema?: string;
   schemaVersion?: string;
   sql: string;
 }

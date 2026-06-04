@@ -208,6 +208,7 @@ Matching substrings are highlighted in the grid, and timeout errors explain that
 
 The SQL view uses a full CodeMirror editor with dialect-aware syntax highlighting and schema-aware autocomplete for schemas, tables, and columns.
 Autocomplete is built from live introspection metadata, so suggestions track the current database structure without manual refresh workflows.
+The active schema selector is also used as the default SQL namespace, so unqualified queries like `select * from order_items` run and lint against the selected schema instead of always resolving through `public`.
 PostgreSQL, MySQL, and SQLite linting runs asynchronously through guarded parse/plan `EXPLAIN` paths and shows inline diagnostics while preserving the normal run/cancel query flow.
 The same lint transport also validates saved table-level SQL filter pills in the background, so Studio reuses one dialect-aware SQL validation path for both the SQL editor and advanced inline table filters.
 Keyboard execution supports `Cmd/Ctrl+Enter`, and in multi-statement scripts it runs only the top-level statement at the current cursor.

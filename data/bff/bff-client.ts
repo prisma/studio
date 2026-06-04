@@ -281,6 +281,7 @@ export interface StudioBFFQueryRequest {
   customPayload?: Record<string, unknown>;
   procedure: "query";
   query: Query<unknown>;
+  schema?: string;
 }
 
 export interface StudioBFFSequenceRequest {
@@ -296,6 +297,7 @@ export interface StudioBFFTransactionRequest {
 }
 
 export interface StudioBFFSqlLintDetails {
+  schema?: string;
   schemaVersion?: string;
   sql: string;
 }
@@ -308,6 +310,7 @@ export interface StudioBFFSqlLintResult {
 export interface StudioBFFSqlLintRequest {
   customPayload?: Record<string, unknown>;
   procedure: "sql-lint";
+  schema?: string;
   schemaVersion?: string;
   sql: string;
 }
@@ -335,6 +338,7 @@ export function createStudioBFFClient(
             customPayload,
             procedure: "query",
             query,
+            schema: options?.schema,
           } satisfies StudioBFFQueryRequest),
           headers: {
             Accept: "application/json",
@@ -516,6 +520,7 @@ export function createStudioBFFClient(
           body: JSON.stringify({
             customPayload,
             procedure: "sql-lint",
+            schema: details.schema,
             schemaVersion: details.schemaVersion,
             sql: details.sql,
           } satisfies StudioBFFSqlLintRequest),

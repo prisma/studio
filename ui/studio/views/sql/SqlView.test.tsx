@@ -12,7 +12,8 @@ import { SqlView } from "./SqlView";
 
 type StudioMock = ReturnType<typeof createStudioMock>;
 const useStudioMock = vi.fn<() => StudioMock>();
-const useNavigationMock = vi.fn();
+const useNavigationMock =
+  vi.fn<() => { schemaParam?: string | null | undefined }>();
 const setPinnedColumnIdsMock = vi.fn();
 let mockEditorCursorHead = 0;
 let mockEditorDocLength = 0;
@@ -164,6 +165,7 @@ vi.mock("@uiw/react-codemirror", () => ({
 
 function createAdapterMock(args?: {
   capabilities?: Adapter["capabilities"];
+  defaultSchema?: string;
   raw?: Adapter["raw"];
   sqlLint?: Adapter["sqlLint"];
 }): {
@@ -188,7 +190,7 @@ function createAdapterMock(args?: {
   return {
     adapter: {
       ...(args?.capabilities ? { capabilities: args.capabilities } : {}),
-      defaultSchema: "public",
+      defaultSchema: args?.defaultSchema ?? "public",
       delete: vi.fn(),
       insert: vi.fn(),
       introspect: vi.fn(),
@@ -330,16 +332,16 @@ function createStudioMock(adapter: Adapter): {
 }
 
 function setInputValue(element: HTMLInputElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(
+  const descriptor = Object.getOwnPropertyDescriptor(
     HTMLInputElement.prototype,
     "value",
-  )?.set;
+  );
 
-  if (!setter) {
+  if (!descriptor?.set) {
     throw new Error("Input value setter is unavailable");
   }
 
-  setter.call(element, value);
+  descriptor.set.call(element, value);
   element.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
@@ -471,16 +473,106 @@ describe("SqlView", () => {
     harness.cleanup();
   });
 
+  it("executes unqualified SQL against the selected schema", async () => {
+    useNavigationMock.mockReturnValue({
+      schemaParam: "test_app",
+    });
+    const { adapter, rawSpy } = createAdapterMock();
+    const studio = createStudioMock(adapter);
+    useStudioMock.mockReturnValue(studio);
+
+    const harness = renderSqlView();
+    const runButton = [...harness.container.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Run SQL"),
+    );
+
+    if (!runButton) {
+      throw new Error("SQL view run control not rendered");
+    }
+
+    act(() => {
+      mockCodeMirrorOnChange?.("select * from order_items");
+    });
+
+    act(() => {
+      runButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitFor(() => {
+      return (
+        harness.container.textContent?.includes("1 row(s) returned") ?? false
+      );
+    });
+
+    expect(rawSpy).toHaveBeenCalledWith(
+      { schema: "test_app", sql: "select * from order_items" },
+      expect.any(Object),
+    );
+
+    harness.cleanup();
+  });
+
+  it.each([
+    ["null", null],
+    ["undefined", undefined],
+  ] as const)(
+    "falls back to the adapter default schema when the navigation schema is %s",
+    async (_label, schemaParam) => {
+      useNavigationMock.mockReturnValue({
+        schemaParam,
+      });
+      const { adapter, rawSpy } = createAdapterMock({
+        defaultSchema: "tenant_default",
+      });
+      const studio = createStudioMock(adapter);
+      useStudioMock.mockReturnValue(studio);
+
+      const harness = renderSqlView();
+      const runButton = [...harness.container.querySelectorAll("button")].find(
+        (button) => button.textContent?.includes("Run SQL"),
+      );
+
+      if (!runButton) {
+        throw new Error("SQL view run control not rendered");
+      }
+
+      act(() => {
+        mockCodeMirrorOnChange?.("select * from organizations");
+      });
+
+      act(() => {
+        runButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+
+      await waitFor(() => {
+        return (
+          harness.container.textContent?.includes("1 row(s) returned") ?? false
+        );
+      });
+
+      expect(rawSpy).toHaveBeenCalledWith(
+        {
+          schema: "tenant_default",
+          sql: "select * from organizations",
+        },
+        expect.any(Object),
+      );
+
+      harness.cleanup();
+    },
+  );
+
   it("generates SQL, focuses the editor, and waits for a manual run", async () => {
     const { adapter, rawSpy } = createAdapterMock();
     const studio = createStudioMock(adapter);
-    const llmMock = vi.fn<(request: StudioLlmRequest) => Promise<string>>(
-      async () =>
+    const llmMock = vi.fn<(request: StudioLlmRequest) => Promise<string>>(() =>
+      Promise.resolve(
         JSON.stringify({
           rationale: "Matched the organizations table.",
           sql: "select * from public.organizations limit 5;",
           shouldGenerateVisualization: false,
         }),
+      ),
     );
     studio.llm = llmMock;
     useStudioMock.mockReturnValue(studio);
@@ -551,14 +643,16 @@ describe("SqlView", () => {
     });
 
     expect(rawSpy).toHaveBeenCalledWith(
-      { sql: "select * from public.organizations limit 5" },
+      { schema: "public", sql: "select * from public.organizations limit 5" },
       expect.any(Object),
     );
     expect(llmMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        prompt: expect.stringContaining('"shouldGenerateVisualization":true'),
         task: "sql-generation",
       }),
+    );
+    expect(llmMock.mock.calls[0]?.[0].prompt).toContain(
+      '"shouldGenerateVisualization":true',
     );
     const summary = harness.container.querySelector(
       '[data-testid="sql-result-summary"]',
@@ -651,12 +745,12 @@ describe("SqlView", () => {
     expect(sqlLintMock).toHaveBeenCalledTimes(2);
     expect(sqlLintMock).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ sql: invalidSql }),
+      expect.objectContaining({ schema: "public", sql: invalidSql }),
       expect.any(Object),
     );
     expect(sqlLintMock).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ sql: correctedSql }),
+      expect.objectContaining({ schema: "public", sql: correctedSql }),
       expect.any(Object),
     );
     expect(llmMock).toHaveBeenCalledTimes(2);
@@ -852,9 +946,11 @@ describe("SqlView", () => {
     expect(llmMock).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
-        prompt: expect.stringContaining("Bklit chart components"),
         task: "sql-visualization",
       }),
+    );
+    expect(llmMock.mock.calls[1]?.[0].prompt).toContain(
+      "Bklit chart components",
     );
     expect(llmMock.mock.calls[1]?.[0].prompt).toContain("SQL: select 1 as one");
     expect(llmMock.mock.calls[1]?.[0].prompt).toContain(
@@ -875,12 +971,12 @@ describe("SqlView", () => {
   it("feeds AI-generated SQL execution errors back into the model without auto-running the correction", async () => {
     const badSql = "select typeof(json_col) from public.organizations limit 5;";
     const correctedSql = "select id from public.organizations limit 5;";
-    const raw: Adapter["raw"] = async (details) => {
+    const raw: Adapter["raw"] = (details) => {
       const error = new Error(
         "function typeof(json) does not exist",
       ) as AdapterError;
       error.query = { parameters: [], sql: details.sql };
-      return [error];
+      return Promise.resolve([error]);
     };
     const { adapter, rawSpy } = createAdapterMock({ raw });
     const studio = createStudioMock(adapter);
@@ -958,7 +1054,10 @@ describe("SqlView", () => {
     );
     expect(rawSpy).toHaveBeenCalledTimes(1);
     expect(rawSpy).toHaveBeenCalledWith(
-      { sql: "select typeof(json_col) from public.organizations limit 5" },
+      {
+        schema: "public",
+        sql: "select typeof(json_col) from public.organizations limit 5",
+      },
       expect.any(Object),
     );
     expect(harness.container.textContent).toContain(
@@ -970,12 +1069,12 @@ describe("SqlView", () => {
   });
 
   it("keeps normal manual SQL execution errors inline without asking AI for a correction", async () => {
-    const raw: Adapter["raw"] = async (details) => {
+    const raw: Adapter["raw"] = (details) => {
       const error = new Error(
         "relation missing_table does not exist",
       ) as AdapterError;
       error.query = { parameters: [], sql: details.sql };
-      return [error];
+      return Promise.resolve([error]);
     };
     const { adapter, rawSpy } = createAdapterMock({ raw });
     const studio = createStudioMock(adapter);
@@ -1111,12 +1210,14 @@ describe("SqlView", () => {
   it("persists generated AI SQL prompts in the local SQL editor collection", async () => {
     const { adapter } = createAdapterMock();
     const studio = createStudioMock(adapter);
-    studio.llm = vi.fn(async () =>
-      JSON.stringify({
-        rationale: "Matched the organizations table.",
-        sql: "select * from public.organizations limit 5;",
-        shouldGenerateVisualization: false,
-      }),
+    studio.llm = vi.fn(() =>
+      Promise.resolve(
+        JSON.stringify({
+          rationale: "Matched the organizations table.",
+          sql: "select * from public.organizations limit 5;",
+          shouldGenerateVisualization: false,
+        }),
+      ),
     );
     useStudioMock.mockReturnValue(studio);
 
@@ -1188,15 +1289,17 @@ describe("SqlView", () => {
     harness.cleanup();
   });
 
-  it("cycles AI prompt history as placeholder text and materializes it on keypress or click", async () => {
+  it("cycles AI prompt history as placeholder text and materializes it on keypress or click", () => {
     const { adapter } = createAdapterMock();
     const studio = createStudioMock(adapter);
-    studio.llm = vi.fn(async () =>
-      JSON.stringify({
-        rationale: "Matched the organizations table.",
-        sql: "select * from public.organizations limit 5;",
-        shouldGenerateVisualization: false,
-      }),
+    studio.llm = vi.fn(() =>
+      Promise.resolve(
+        JSON.stringify({
+          rationale: "Matched the organizations table.",
+          sql: "select * from public.organizations limit 5;",
+          shouldGenerateVisualization: false,
+        }),
+      ),
     );
     window.localStorage.setItem(
       "prisma-studio-sql-editor-state-v1",
@@ -1271,9 +1374,9 @@ describe("SqlView", () => {
   it("renders AI SQL generation errors inline", async () => {
     const { adapter } = createAdapterMock();
     const studio = createStudioMock(adapter);
-    studio.llm = vi.fn(async () => {
-      throw new Error("AI SQL generation exploded.");
-    });
+    studio.llm = vi.fn(() =>
+      Promise.reject(new Error("AI SQL generation exploded.")),
+    );
     useStudioMock.mockReturnValue(studio);
 
     const harness = renderSqlView();
@@ -1304,14 +1407,18 @@ describe("SqlView", () => {
       );
     });
 
+    expect(harness.container.textContent).toContain(
+      "AI SQL generation exploded.",
+    );
+
     harness.cleanup();
   });
 
   it("renders an in-grid graph action and swaps it for a chart after generation", async () => {
     const { adapter } = createAdapterMock();
     const studio = createStudioMock(adapter);
-    const llmMock = vi.fn<(request: StudioLlmRequest) => Promise<string>>(
-      async () =>
+    const llmMock = vi.fn<(request: StudioLlmRequest) => Promise<string>>(() =>
+      Promise.resolve(
         JSON.stringify({
           config: {
             data: [{ label: "organizations", rows: 1 }],
@@ -1320,6 +1427,7 @@ describe("SqlView", () => {
             xKey: "label",
           },
         }),
+      ),
     );
     studio.llm = llmMock;
     useStudioMock.mockReturnValue(studio);
@@ -1446,15 +1554,17 @@ describe("SqlView", () => {
     };
     const { adapter } = createAdapterMock({ raw });
     const studio = createStudioMock(adapter);
-    studio.llm = vi.fn(async () =>
-      JSON.stringify({
-        config: {
-          data: [{ label: "organizations", rows: 1 }],
-          series: [{ key: "rows", label: "Rows" }],
-          type: "bar",
-          xKey: "label",
-        },
-      }),
+    studio.llm = vi.fn(() =>
+      Promise.resolve(
+        JSON.stringify({
+          config: {
+            data: [{ label: "organizations", rows: 1 }],
+            series: [{ key: "rows", label: "Rows" }],
+            type: "bar",
+            xKey: "label",
+          },
+        }),
+      ),
     );
     useStudioMock.mockReturnValue(studio);
 
@@ -1516,6 +1626,22 @@ describe("SqlView", () => {
       );
     });
 
+    expect(
+      [...harness.container.querySelectorAll("button")].some((button) =>
+        button.textContent?.includes("Cancel"),
+      ),
+    ).toBe(true);
+    expect(
+      harness.container.querySelector(
+        '[data-testid="sql-result-visualization-chart"]',
+      ),
+    ).toBeNull();
+    expect(
+      harness.container
+        .querySelector('[data-testid="sql-result-visualization-action"]')
+        ?.textContent?.includes("Visualize data with AI"),
+    ).toBe(true);
+
     await act(async () => {
       secondQueryDeferred.resolve([
         null,
@@ -1557,7 +1683,7 @@ describe("SqlView", () => {
     });
 
     expect(rawSpy).toHaveBeenCalledWith(
-      { sql: "select * from" },
+      { schema: "public", sql: "select * from" },
       expect.any(Object),
     );
     const [firstRawCallArgs] = rawSpy.mock.calls;
@@ -1701,7 +1827,7 @@ describe("SqlView", () => {
     await waitFor(() => rawSpy.mock.calls.length > 0);
 
     expect(rawSpy).toHaveBeenCalledWith(
-      { sql: "select 2 as two" },
+      { schema: "public", sql: "select 2 as two" },
       expect.any(Object),
     );
 

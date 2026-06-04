@@ -363,6 +363,7 @@ type StudioBFFRequest =
   | {
       procedure: "query";
       query: Query;
+      schema?: string;
       customPayload?: Record<string, unknown>;
     }
   | {
@@ -378,6 +379,7 @@ type StudioBFFRequest =
   | {
       procedure: "sql-lint";
       sql: string;
+      schema?: string;
       schemaVersion?: string;
       customPayload?: Record<string, unknown>;
     }
@@ -419,10 +421,10 @@ type QueryInsightsResponse =
 
 ### Procedure Semantics
 
-- `query`: execute one SQL statement. This is required for every Studio adapter.
+- `query`: execute one SQL statement. This is required for every Studio adapter. Requests may include `schema`; when present, use it as the default namespace for unqualified identifiers.
 - `sequence`: execute exactly two queries in order. This is used by MySQL write flows that update first and refetch second.
 - `transaction`: execute an ordered list of queries inside one database transaction. This is the contract addition that enables atomic staged multi-row saves from the table editor.
-- `sql-lint`: return parse/plan diagnostics for the SQL editor and SQL-backed filter pills.
+- `sql-lint`: return parse/plan diagnostics for the SQL editor and SQL-backed filter pills. Requests may include `schema`; diagnostics should plan unqualified identifiers against that selected schema.
 - `query-insights`: return a live query snapshot for the optional `Queries` view.
 
 For `sequence`, the second query should only run if the first one succeeds. For `transaction`, the response result array must stay in the same order as `body.queries`.
@@ -469,7 +471,9 @@ export async function handleStudioBff(request: Request): Promise<Response> {
   }
 
   if (payload.procedure === "query") {
-    const [error, result] = await executor.execute(payload.query);
+    const [error, result] = await executor.execute(payload.query, {
+      schema: payload.schema,
+    });
     return Response.json([error ? serializeError(error) : null, result]);
   }
 
@@ -513,6 +517,7 @@ export async function handleStudioBff(request: Request): Promise<Response> {
     }
 
     const [error, result] = await executor.lintSql({
+      schema: payload.schema,
       schemaVersion: payload.schemaVersion,
       sql: payload.sql,
     });

@@ -108,6 +108,44 @@ describe("postgres-core/adapter sql-editor support", () => {
     );
   });
 
+  it("delegates selected schema context to executor lintSql", async () => {
+    const lintResult: AdapterSqlLintResult = {
+      diagnostics: [],
+      schemaVersion: "schema-v1",
+    };
+    const lintSql = vi.fn().mockResolvedValue([null, lintResult]);
+    const executorWithLint = {
+      ...createExecutor(),
+      lintSql,
+    } as Executor & {
+      lintSql: typeof lintSql;
+    };
+    const adapter = createPostgresAdapter({
+      executor: executorWithLint,
+    });
+    const abortController = new AbortController();
+
+    const [error, result] = await adapter.sqlLint!(
+      {
+        schema: "test_app",
+        schemaVersion: "schema-v1",
+        sql: "select * from order_items",
+      },
+      { abortSignal: abortController.signal },
+    );
+
+    expect(error).toBeNull();
+    expect(result).toEqual(lintResult);
+    expect(lintSql).toHaveBeenCalledWith(
+      {
+        schema: "test_app",
+        schemaVersion: "schema-v1",
+        sql: "select * from order_items",
+      },
+      { abortSignal: abortController.signal },
+    );
+  });
+
   it("falls back to EXPLAIN linting when executor has no lintSql method", async () => {
     const adapter = createPostgresAdapter({
       executor: createExecutor(),

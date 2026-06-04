@@ -20,12 +20,13 @@ interface LintState {
 
 export function createSqlLintSource(args: {
   lintSql: SqlLintRunner;
+  schema?: string;
   schemaVersion?: string;
 }): {
   dispose: () => void;
   source: LintSource;
 } {
-  const { lintSql, schemaVersion } = args;
+  const { lintSql, schema, schemaVersion } = args;
   const state: LintState = {
     abortController: null,
     requestId: 0,
@@ -48,6 +49,7 @@ export function createSqlLintSource(args: {
 
     const [error, result] = await lintSql(
       {
+        schema,
         schemaVersion,
         sql,
       },

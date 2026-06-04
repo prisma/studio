@@ -541,8 +541,70 @@ describe("Navigation", () => {
       (link) => link.textContent?.trim() === "Queries",
     );
 
-    expect(queriesLink?.getAttribute("href")).toBe("#viewParam=queries");
+    expect(queriesLink?.getAttribute("href")).toBe(
+      "#schemaParam=public&viewParam=queries",
+    );
     expect(queriesLink?.getAttribute("data-active")).toBe("true");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("preserves selected schema when navigating between Studio views", () => {
+    useStudioMock.mockImplementation(() => ({
+      hasDatabase: true,
+      hasQueryInsights: true,
+      isDarkMode,
+      navigationWidth: 192,
+      setNavigationWidth: setNavigationWidthMock,
+    }));
+    useNavigationMock.mockReturnValue({
+      createUrl(values: Record<string, string>) {
+        return `#${Object.entries(values)
+          .map(([key, value]) => `${key}=${value}`)
+          .join("&")}`;
+      },
+      metadata: {
+        activeTable: { name: "order_items", schema: "test_app" },
+        isFetching: false,
+      },
+      schemaParam: "test_app",
+      setSchemaParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+      setTableParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+      streamParam: null,
+      viewParam: "sql",
+    });
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const studioLinksByText = new Map(
+      Array.from(
+        container.querySelectorAll<HTMLAnchorElement>(
+          'nav[aria-label="Studio"] a',
+        ),
+      ).map((link) => [link.textContent?.trim(), link.getAttribute("href")]),
+    );
+
+    expect(studioLinksByText.get("Visualizer")).toBe(
+      "#schemaParam=test_app&viewParam=schema",
+    );
+    expect(studioLinksByText.get("Queries")).toBe(
+      "#schemaParam=test_app&viewParam=queries",
+    );
+    expect(studioLinksByText.get("Console")).toBe(
+      "#schemaParam=test_app&viewParam=console",
+    );
+    expect(studioLinksByText.get("SQL")).toBe(
+      "#schemaParam=test_app&viewParam=sql",
+    );
 
     act(() => {
       root.unmount();

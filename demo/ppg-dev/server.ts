@@ -475,7 +475,9 @@ async function handleBffQueryRequest(request: Request): Promise<Response> {
 
     if (payload.procedure === "query") {
       const [error, result] = await runSerializedQuery(() =>
-        executeAndRecordQuery(executor, payload.query),
+        executeAndRecordQuery(executor, payload.query, {
+          schema: payload.schema,
+        }),
       );
 
       return Response.json([error ? serializeError(error) : null, result]);
@@ -568,6 +570,7 @@ async function handleBffQueryRequest(request: Request): Promise<Response> {
       const result = await runSerializedQuery(() =>
         lintPostgresSql({
           postgresClient: lintPostgresClient,
+          schema: payload.schema,
           schemaVersion: payload.schemaVersion,
           sql: payload.sql,
         }),
@@ -585,9 +588,10 @@ async function handleBffQueryRequest(request: Request): Promise<Response> {
 async function executeAndRecordQuery(
   executor: PostgresExecutor,
   query: Query<unknown>,
+  options?: { schema?: string },
 ): Promise<Awaited<ReturnType<PostgresExecutor["execute"]>>> {
   const startedAt = performance.now();
-  const result = await executor.execute(query);
+  const result = await executor.execute(query, { schema: options?.schema });
   const durationMs = Math.max(0, performance.now() - startedAt);
   const [error, rows] = result;
 
