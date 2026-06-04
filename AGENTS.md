@@ -53,10 +53,6 @@ Before implementing a change, read the relevant architecture documents from `/ar
 - Prefer standard ShadCN components and standard ShadCN composition patterns as much as possible before introducing custom UI markup or styling.
 - If a non-standard UI component or composite is necessary, clearly state that to the user and explain why a standard ShadCN component was not sufficient.
 - Document every approved non-standard UI instance in `Architecture/non-standard-ui.md` in the same change.
-- For UI polish or visual-design requests, use the `impeccable` skill when available and validate against the running `pnpm demo:ppg` UI, not just code-level reasoning.
-- Compare new screens against adjacent Studio views before finishing. Studio UI should stay quiet, dense, and work-focused: avoid heavy frames, marketing-like cards, and decorative chrome.
-- Use semantic border tokens on framed UI (`border-border`, `border-border/70`, or `border-input`). Do not use bare `border` on custom panels, metric tiles, tables, or code blocks unless a shared ShadCN component already supplies the tokenized border style.
-- Long database content, SQL, and identifiers must have stable layout constraints (`table-fixed`, `minmax(0, 1fr)`, `truncate`, or explicit scroll containers) so text cannot stretch or break the screen.
 
 ## Tests and feature documentation
 
