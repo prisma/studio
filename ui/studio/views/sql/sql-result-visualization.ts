@@ -499,12 +499,19 @@ function isNonEmptyString(value: unknown): value is string {
 
 function isDateLike(value: unknown): boolean {
   if (typeof value === "number") {
-    return Number.isFinite(value);
+    return Number.isFinite(value) && value >= 0 && value <= 4_102_444_800_000;
   }
 
   if (typeof value !== "string" || value.trim().length === 0) {
     return false;
   }
 
-  return Number.isFinite(Date.parse(value));
+  const trimmedValue = value.trim();
+  const isoDateLikePattern =
+    /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})?)?$/;
+
+  return (
+    isoDateLikePattern.test(trimmedValue) &&
+    Number.isFinite(Date.parse(trimmedValue))
+  );
 }

@@ -210,7 +210,7 @@ Sanitization requirements:
 
 ## BFF Bridge Contract
 
-`createStudioBFFClient` exposes a `queryInsights` provider that uses the same BFF endpoint as query execution.
+`createStudioBFFClient({ queryInsights: true, ... })` exposes a `queryInsights` provider that uses the same BFF endpoint as query execution. Without that flag, `bffClient.queryInsights` MUST be undefined so embedders do not accidentally render the Queries view against a BFF that does not implement the optional procedure.
 
 The bridge request body MUST include:
 

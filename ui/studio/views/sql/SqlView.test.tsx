@@ -1019,6 +1019,95 @@ describe("SqlView", () => {
     harness.cleanup();
   });
 
+  it("aborts in-flight SQL execution when the view unmounts", async () => {
+    let executionSignal: AbortSignal | undefined;
+    const pendingExecution =
+      createDeferred<Awaited<ReturnType<Adapter["raw"]>>>();
+    const raw: Adapter["raw"] = (_details, options) => {
+      executionSignal = options?.abortSignal;
+      return pendingExecution.promise;
+    };
+    const { adapter } = createAdapterMock({ raw });
+    useStudioMock.mockReturnValue(createStudioMock(adapter));
+
+    const harness = renderSqlView();
+    const runButton = [...harness.container.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Run SQL"),
+    );
+
+    if (!runButton) {
+      throw new Error("Expected Run SQL button");
+    }
+
+    act(() => {
+      runButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitFor(() => executionSignal !== undefined);
+
+    expect(executionSignal?.aborted).toBe(false);
+
+    harness.cleanup();
+
+    expect(executionSignal?.aborted).toBe(true);
+  });
+
+  it("aborts in-flight AI SQL validation when the view unmounts", async () => {
+    let validationSignal: AbortSignal | undefined;
+    const pendingValidation =
+      createDeferred<Awaited<ReturnType<NonNullable<Adapter["sqlLint"]>>>>();
+    const sqlLint: NonNullable<Adapter["sqlLint"]> = (_details, options) => {
+      validationSignal = options?.abortSignal;
+      return pendingValidation.promise;
+    };
+    const { adapter } = createAdapterMock({
+      capabilities: {
+        sqlDialect: "postgresql",
+        sqlEditorLint: true,
+      },
+      sqlLint,
+    });
+    const studio = createStudioMock(adapter);
+    studio.llm = vi.fn(() =>
+      Promise.resolve(
+        JSON.stringify({
+          rationale: "Reads organizations.",
+          sql: "select * from public.organizations",
+          shouldGenerateVisualization: false,
+        }),
+      ),
+    );
+    useStudioMock.mockReturnValue(studio);
+
+    const harness = renderSqlView();
+    const promptInput = harness.container.querySelector<HTMLInputElement>(
+      'input[aria-label="Generate SQL with AI"]',
+    );
+    const generateButton = [
+      ...harness.container.querySelectorAll("button"),
+    ].find((button) => button.textContent?.includes("Generate SQL"));
+
+    if (!promptInput || !generateButton) {
+      throw new Error("Expected SQL generation controls");
+    }
+
+    act(() => {
+      setInputValue(promptInput, "show me organizations");
+    });
+
+    act(() => {
+      generateButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitFor(() => validationSignal !== undefined);
+
+    expect(validationSignal?.aborted).toBe(false);
+
+    harness.cleanup();
+
+    expect(validationSignal?.aborted).toBe(true);
+  });
+
   it("persists generated AI SQL prompts in the local SQL editor collection", async () => {
     const { adapter } = createAdapterMock();
     const studio = createStudioMock(adapter);

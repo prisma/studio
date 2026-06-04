@@ -39,13 +39,13 @@ async function bootstrap(): Promise<void> {
 
   if (config.database.enabled) {
     const bffClient = createStudioBFFClient({
+      queryInsights: config.queries.enabled === true,
       url: "/api/query",
     });
 
     adapter = createPostgresAdapter({
       executor: bffClient,
-      queryInsights:
-        config.queries.enabled === true ? bffClient.queryInsights : undefined,
+      queryInsights: bffClient.queryInsights,
     });
   } else {
     adapter = createNoDatabaseAdapter();

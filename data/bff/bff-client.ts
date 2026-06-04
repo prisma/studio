@@ -191,6 +191,15 @@ export interface StudioBFFClientProps {
   fetch?: FetchLike;
 
   /**
+   * Enables the optional Query Insights BFF procedure.
+   *
+   * Leave this false/undefined when the BFF does not implement
+   * `procedure: "query-insights"` so embedders do not accidentally expose the
+   * Studio Queries view.
+   */
+  queryInsights?: boolean;
+
+  /**
    * Function used to deserialize the results of queries.
    *
    * By default, the results are returned as is without any additional processing.
@@ -258,7 +267,7 @@ export interface StudioBFFClient extends SequenceExecutor {
    * adapter. If their BFF does not support the procedure, omit it from the
    * adapter so Studio hides the Queries view.
    */
-  queryInsights: StudioQueryInsights;
+  queryInsights?: StudioQueryInsights;
 }
 
 export type StudioBFFRequest =
@@ -553,8 +562,10 @@ export function createStudioBFFClient(
         return [error as Error];
       }
     },
+  };
 
-    queryInsights: {
+  if (props.queryInsights === true) {
+    client.queryInsights = {
       async getSnapshot(request, options) {
         try {
           const response = await fetchFn(url, {
@@ -599,8 +610,8 @@ export function createStudioBFFClient(
           return [error as Error];
         }
       },
-    },
-  };
+    };
+  }
 
   return client;
 }

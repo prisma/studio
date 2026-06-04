@@ -103,6 +103,18 @@ describe("sql-result-visualization", () => {
 
     expect(
       validateSqlResultVisualizationConfig({
+        data: [
+          { observedAt: "2026-01-01T12:00:00Z", value: 1 },
+          { observedAt: 1_779_963_200_000, value: 2 },
+        ],
+        series: [{ key: "value", label: "Value" }],
+        type: "line",
+        xKey: "observedAt",
+      }).value,
+    ).toMatchObject({ type: "line", xKey: "observedAt" });
+
+    expect(
+      validateSqlResultVisualizationConfig({
         data: [{ label: "A", value: 1 }],
         labelKey: "label",
         type: "doughnut",
@@ -127,6 +139,24 @@ describe("sql-result-visualization", () => {
         series: [{ key: "value", label: "Value" }],
         type: "line",
         xKey: "label",
+      }).issues[0]?.message,
+    ).toContain("Line chart");
+
+    expect(
+      validateSqlResultVisualizationConfig({
+        data: [{ date: "12345", value: 1 }],
+        series: [{ key: "value", label: "Value" }],
+        type: "line",
+        xKey: "date",
+      }).issues[0]?.message,
+    ).toContain("Line chart");
+
+    expect(
+      validateSqlResultVisualizationConfig({
+        data: [{ date: "123 456", value: 1 }],
+        series: [{ key: "value", label: "Value" }],
+        type: "line",
+        xKey: "date",
       }).issues[0]?.message,
     ).toContain("Line chart");
   });

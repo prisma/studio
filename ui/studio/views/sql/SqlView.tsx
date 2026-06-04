@@ -273,8 +273,10 @@ export function SqlView(_props: ViewProps) {
     sqlEditorStateCollection,
   });
   const abortControllerRef = useRef<AbortController | null>(null);
+  const sqlValidationAbortControllerRef = useRef<AbortController | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
   const aiPromptInputRef = useRef<HTMLInputElement | null>(null);
+  const isMountedRef = useRef(true);
   const runCurrentSqlRef = useRef<() => void>(() => undefined);
   const persistedSqlDraftRef = useRef<string | null>(initialPersistedSqlDraft);
   const [editorValue, setEditorValue] = useState(() => {
@@ -434,6 +436,16 @@ export function SqlView(_props: ViewProps) {
   useEffect(() => {
     aiPromptHistoryRef.current = aiPromptHistory;
   }, [aiPromptHistory]);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+      sqlValidationAbortControllerRef.current?.abort();
+      sqlValidationAbortControllerRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (!hasUserEditedEditorValueRef.current) {
@@ -652,6 +664,7 @@ export function SqlView(_props: ViewProps) {
     }
 
     const abortController = new AbortController();
+    sqlValidationAbortControllerRef.current = abortController;
     const [error, result] = await adapter.sqlLint(
       {
         schemaVersion: sqlEditorSchema.version,
@@ -659,6 +672,14 @@ export function SqlView(_props: ViewProps) {
       },
       { abortSignal: abortController.signal },
     );
+
+    if (sqlValidationAbortControllerRef.current === abortController) {
+      sqlValidationAbortControllerRef.current = null;
+    }
+
+    if (!isMountedRef.current) {
+      return null;
+    }
 
     if (error) {
       throw new Error(`AI SQL validation failed: ${error.message}`);
@@ -704,7 +725,15 @@ export function SqlView(_props: ViewProps) {
     const durationMs =
       consumeBffRequestDurationMsForSignal(abortController.signal) ??
       Math.round(performance.now() - startedAt);
-    abortControllerRef.current = null;
+
+    if (abortControllerRef.current === abortController) {
+      abortControllerRef.current = null;
+    }
+
+    if (!isMountedRef.current) {
+      return null;
+    }
+
     setIsRunning(false);
 
     return {
@@ -867,6 +896,10 @@ export function SqlView(_props: ViewProps) {
         request: trimmedPrompt,
       });
 
+      if (!isMountedRef.current) {
+        return;
+      }
+
       applyAiSqlGenerationResult({
         aiQueryRequest: trimmedPrompt,
         rationale: generation.rationale,
@@ -874,11 +907,17 @@ export function SqlView(_props: ViewProps) {
         sql: generation.sql,
       });
     } catch (error) {
+      if (!isMountedRef.current) {
+        return;
+      }
+
       setAiGenerationErrorMessage(
         error instanceof Error ? error.message : "AI SQL generation failed.",
       );
     } finally {
-      setIsGeneratingSql(false);
+      if (isMountedRef.current) {
+        setIsGeneratingSql(false);
+      }
     }
   }
 
@@ -908,6 +947,10 @@ export function SqlView(_props: ViewProps) {
         request: args.aiQueryRequest,
       });
 
+      if (!isMountedRef.current) {
+        return;
+      }
+
       setResult(null);
       setErrorMessage(null);
       applyAiSqlGenerationResult({
@@ -917,11 +960,17 @@ export function SqlView(_props: ViewProps) {
         sql: generation.sql,
       });
     } catch (error) {
+      if (!isMountedRef.current) {
+        return;
+      }
+
       setAiCorrectionErrorMessage(
         error instanceof Error ? error.message : "AI SQL correction failed.",
       );
     } finally {
-      setIsCorrectingSql(false);
+      if (isMountedRef.current) {
+        setIsCorrectingSql(false);
+      }
     }
   }
 

@@ -684,8 +684,18 @@ describe("bff/bff-client", () => {
           customHeaders,
           customPayload,
           fetch: fetchFn,
+          queryInsights: true,
           url,
         });
+      });
+
+      it("omits queryInsights unless the optional BFF capability is enabled", () => {
+        expect(
+          createStudioBFFClient({
+            fetch: fetchFn,
+            url,
+          }).queryInsights,
+        ).toBeUndefined();
       });
 
       it("requests query-insights snapshots through the same BFF channel", async () => {
@@ -693,7 +703,7 @@ describe("bff/bff-client", () => {
           new Response(JSON.stringify([null, snapshot])),
         );
 
-        const response = await client.queryInsights.getSnapshot({
+        const response = await client.queryInsights!.getSnapshot({
           limit: 50,
           since: 1_779_963_000_000,
         });
@@ -720,7 +730,7 @@ describe("bff/bff-client", () => {
           new Response("query insights unavailable", { status: 501 }),
         );
 
-        const response = await client.queryInsights.getSnapshot({});
+        const response = await client.queryInsights!.getSnapshot({});
 
         expect(response).toStrictEqual([
           new Error("query insights unavailable"),
