@@ -12,7 +12,8 @@ import { SqlView } from "./SqlView";
 
 type StudioMock = ReturnType<typeof createStudioMock>;
 const useStudioMock = vi.fn<() => StudioMock>();
-const useNavigationMock = vi.fn<() => { schemaParam: string }>();
+const useNavigationMock =
+  vi.fn<() => { schemaParam?: string | null | undefined }>();
 const setPinnedColumnIdsMock = vi.fn();
 let mockEditorCursorHead = 0;
 let mockEditorDocLength = 0;
@@ -164,6 +165,7 @@ vi.mock("@uiw/react-codemirror", () => ({
 
 function createAdapterMock(args?: {
   capabilities?: Adapter["capabilities"];
+  defaultSchema?: string;
   raw?: Adapter["raw"];
   sqlLint?: Adapter["sqlLint"];
 }): {
@@ -188,7 +190,7 @@ function createAdapterMock(args?: {
   return {
     adapter: {
       ...(args?.capabilities ? { capabilities: args.capabilities } : {}),
-      defaultSchema: "public",
+      defaultSchema: args?.defaultSchema ?? "public",
       delete: vi.fn(),
       insert: vi.fn(),
       introspect: vi.fn(),
@@ -509,6 +511,56 @@ describe("SqlView", () => {
 
     harness.cleanup();
   });
+
+  it.each([
+    ["null", null],
+    ["undefined", undefined],
+  ] as const)(
+    "falls back to the adapter default schema when the navigation schema is %s",
+    async (_label, schemaParam) => {
+      useNavigationMock.mockReturnValue({
+        schemaParam,
+      });
+      const { adapter, rawSpy } = createAdapterMock({
+        defaultSchema: "tenant_default",
+      });
+      const studio = createStudioMock(adapter);
+      useStudioMock.mockReturnValue(studio);
+
+      const harness = renderSqlView();
+      const runButton = [...harness.container.querySelectorAll("button")].find(
+        (button) => button.textContent?.includes("Run SQL"),
+      );
+
+      if (!runButton) {
+        throw new Error("SQL view run control not rendered");
+      }
+
+      act(() => {
+        mockCodeMirrorOnChange?.("select * from organizations");
+      });
+
+      act(() => {
+        runButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+
+      await waitFor(() => {
+        return (
+          harness.container.textContent?.includes("1 row(s) returned") ?? false
+        );
+      });
+
+      expect(rawSpy).toHaveBeenCalledWith(
+        {
+          schema: "tenant_default",
+          sql: "select * from organizations",
+        },
+        expect.any(Object),
+      );
+
+      harness.cleanup();
+    },
+  );
 
   it("generates SQL, focuses the editor, and waits for a manual run", async () => {
     const { adapter, rawSpy } = createAdapterMock();
