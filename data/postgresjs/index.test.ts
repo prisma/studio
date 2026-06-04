@@ -5,7 +5,9 @@ import { createPostgresJSExecutor } from "./index";
 
 function createPostgresJsMock(args?: {
   beginImpl?: (
-    callback: (tx: { unsafe: (sql: string) => Promise<unknown> }) => unknown,
+    callback: (tx: {
+      unsafe: (sql: string, parameters?: unknown) => Promise<unknown>;
+    }) => unknown,
   ) => Promise<unknown>;
 }): {
   begin: ReturnType<typeof vi.fn>;
@@ -16,7 +18,9 @@ function createPostgresJsMock(args?: {
   const beginImpl =
     args?.beginImpl ??
     (async (
-      callback: (tx: { unsafe: (sql: string) => Promise<unknown> }) => unknown,
+      callback: (tx: {
+        unsafe: (sql: string, parameters?: unknown) => Promise<unknown>;
+      }) => unknown,
     ) => {
       await callback({
         unsafe: vi.fn().mockResolvedValue([]),
@@ -140,6 +144,46 @@ describe("postgresjs executor", () => {
     });
   });
 
+  it("executes queries with a transaction-local search path when schema is provided", async () => {
+    const result = [{ id: 1 }];
+    const txUnsafe = vi.fn((sql: string) => {
+      if (sql.startsWith("select set_config")) {
+        return Promise.resolve([]);
+      }
+
+      return Promise.resolve(result);
+    });
+    const { begin, postgresjs, unsafe } = createPostgresJsMock({
+      beginImpl: (callback) => Promise.resolve(callback({ unsafe: txUnsafe })),
+    });
+    const executor = createPostgresJSExecutor(postgresjs);
+
+    const [error, rows] = await executor.execute(
+      {
+        parameters: [],
+        sql: "select * from order_items",
+      },
+      {
+        schema: "test_app",
+      },
+    );
+
+    expect(error).toBeNull();
+    expect(rows).toEqual(result);
+    expect(begin).toHaveBeenCalledTimes(1);
+    expect(unsafe).not.toHaveBeenCalled();
+    expect(txUnsafe).toHaveBeenNthCalledWith(
+      1,
+      "select set_config('search_path', $1, true)",
+      ['"test_app", public'],
+    );
+    expect(txUnsafe).toHaveBeenNthCalledWith(
+      2,
+      "select * from order_items",
+      [],
+    );
+  });
+
   it("returns validation diagnostics without touching the database for invalid SQL", async () => {
     const { begin, postgresjs } = createPostgresJsMock();
     const executor = createPostgresJSExecutor(postgresjs);
@@ -185,6 +229,35 @@ describe("postgresjs executor", () => {
       "set local idle_in_transaction_session_timeout = '1000ms'",
     );
     expect(txUnsafe).toHaveBeenCalledWith("EXPLAIN (FORMAT JSON) select 1");
+  });
+
+  it("runs lint query with selected schema search path", async () => {
+    const txUnsafe = vi.fn().mockResolvedValue([]);
+    const { postgresjs } = createPostgresJsMock({
+      beginImpl: async (callback) => {
+        await callback({ unsafe: txUnsafe });
+      },
+    });
+    const executor = createPostgresJSExecutor(postgresjs);
+
+    if (!executor.lintSql) {
+      throw new Error("Expected postgresjs executor to expose lintSql");
+    }
+
+    const [error, result] = await executor.lintSql({
+      schema: "test_app",
+      sql: "select * from order_items;",
+    });
+
+    expect(error).toBeNull();
+    expect(result?.diagnostics).toEqual([]);
+    expect(txUnsafe).toHaveBeenCalledWith(
+      "select set_config('search_path', $1, true)",
+      ['"test_app", public'],
+    );
+    expect(txUnsafe).toHaveBeenCalledWith(
+      "EXPLAIN (FORMAT JSON) select * from order_items",
+    );
   });
 
   it("maps postgres errors to lint diagnostics", async () => {

@@ -112,6 +112,9 @@ Use two patterns only:
 - Imperative updates: `setViewParam`, `setSchemaParam`, `setTableParam`, `setStreamParam`, etc.
 
 On schema switch, code MUST also resolve and set a valid table for that schema (current behavior in `Navigation.SchemaSelector`).
+Database view links in the Studio sidebar (`schema`, `queries`, `console`, and
+`sql`) MUST preserve the active `schema` URL param so switching views does not
+silently fall back to the adapter default schema.
 
 ## Context Boundary
 

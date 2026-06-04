@@ -394,7 +394,10 @@ async function lintWithExplainFallback(
       const explainQuery = asQuery<Record<string, unknown>>(
         `EXPLAIN ${statement.statement}`,
       );
-      const [error] = await executor.execute(explainQuery, options);
+      const [error] = await executor.execute(explainQuery, {
+        ...options,
+        schema: details.schema,
+      });
 
       if (!error) {
         continue;
@@ -434,7 +437,10 @@ async function executeRawQuery(
 ): Promise<Either<AdapterError, AdapterRawResult>> {
   try {
     const query = asQuery<Record<string, unknown>>(details.sql);
-    const [error, rows] = await executor.execute(query, options);
+    const [error, rows] = await executor.execute(query, {
+      ...options,
+      schema: details.schema,
+    });
 
     if (error) {
       return createAdapterError({

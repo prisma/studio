@@ -74,6 +74,27 @@ describe("bff/bff-client", () => {
         expect(response).toStrictEqual([null, results]);
       });
 
+      it("should send selected schema context when provided", async () => {
+        fetchFn.mockResolvedValueOnce(
+          new Response(JSON.stringify([null, results])),
+        );
+
+        const response = await client.execute(query, {
+          schema: "test_app",
+        });
+        const latestFetchCall = fetchFn.mock.calls.at(-1);
+
+        expect(latestFetchCall?.[0]).toBe(url);
+        expect(JSON.parse(latestFetchCall?.[1]?.body as string)).toStrictEqual({
+          customPayload,
+          procedure: "query",
+          query,
+          schema: "test_app",
+        });
+
+        expect(response).toStrictEqual([null, results]);
+      });
+
       it("should return (not throw) an error if the request fails", async () => {
         const error = "Internal server error";
         fetchFn.mockResolvedValueOnce(new Response(error, { status: 500 }));
@@ -564,6 +585,7 @@ describe("bff/bff-client", () => {
 
     describe("lintSql", () => {
       const details = {
+        schema: "test_app",
         schemaVersion: "schema-abc123",
         sql: "select * from users",
       };
@@ -605,6 +627,7 @@ describe("bff/bff-client", () => {
             expect(JSON.parse(value as string)).toStrictEqual({
               customPayload,
               procedure: "sql-lint",
+              schema: "test_app",
               schemaVersion: "schema-abc123",
               sql: "select * from users",
             });

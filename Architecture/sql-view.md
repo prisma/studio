@@ -53,6 +53,11 @@ SQL result visualization is governed by:
 - SQL execution target is cursor-aware:
   - single-statement editor text: execute that statement
   - multi-statement editor text: execute the top-level statement containing the cursor
+- SQL execution MUST pass the active URL schema to `adapter.raw(...)` so
+  unqualified identifiers resolve against the schema selected in Studio.
+- PostgreSQL raw execution MUST apply the active schema through a
+  transaction-local `search_path` and MUST NOT leak schema changes across
+  requests or connections.
 - The grid renders all rows returned by that execution.
 - "row(s) returned in Xms" MUST report client-observed request duration from
   the SQL request transport (BFF request timing) when available; it MUST NOT
@@ -94,6 +99,7 @@ SQL result visualization is governed by:
 Changes to SQL view MUST include tests for:
 
 - query execution success and cancellation behavior
+- query execution with an active non-public schema
 - read-only grid rendering (pin control present, sorting controls disabled)
 - absence of history UI
 - absence of pagination controls in SQL result grid

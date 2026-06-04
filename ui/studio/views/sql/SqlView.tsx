@@ -481,13 +481,17 @@ export function SqlView(_props: ViewProps) {
     };
   }, [persistEditorDraft]);
 
+  const activeSqlSchema = getActiveSqlSchema({
+    adapterDefaultSchema: adapter.defaultSchema,
+    schemaParam,
+  });
   const sqlEditorSchema = useMemo(() => {
     return createSqlEditorSchemaFromIntrospection({
-      defaultSchema: adapter.defaultSchema,
+      defaultSchema: activeSqlSchema,
       dialect: adapter.capabilities?.sqlDialect ?? "postgresql",
       introspection,
     });
-  }, [adapter.capabilities?.sqlDialect, adapter.defaultSchema, introspection]);
+  }, [adapter.capabilities?.sqlDialect, activeSqlSchema, introspection]);
   const sqlEditorNamespace = useMemo(() => {
     return toCodeMirrorSqlNamespace(sqlEditorSchema.namespace);
   }, [sqlEditorSchema.namespace]);
@@ -511,9 +515,10 @@ export function SqlView(_props: ViewProps) {
 
     return createSqlLintSource({
       lintSql: (details, options) => adapter.sqlLint(details, options),
+      schema: activeSqlSchema,
       schemaVersion: sqlEditorSchema.version,
     });
-  }, [adapter, sqlEditorSchema.version]);
+  }, [activeSqlSchema, adapter, sqlEditorSchema.version]);
 
   useEffect(() => {
     return () => {
@@ -611,7 +616,7 @@ export function SqlView(_props: ViewProps) {
     }
 
     let generation = await resolveAiSqlGeneration({
-      activeSchema: schemaParam ?? adapter.defaultSchema ?? "public",
+      activeSchema: activeSqlSchema,
       requestAiSqlGeneration,
       dialect: adapter.capabilities?.sqlDialect ?? "postgresql",
       introspection: generationIntrospection,
@@ -640,7 +645,7 @@ export function SqlView(_props: ViewProps) {
       }
 
       generation = await resolveAiSqlGeneration({
-        activeSchema: schemaParam ?? adapter.defaultSchema ?? "public",
+        activeSchema: activeSqlSchema,
         requestAiSqlGeneration,
         dialect: adapter.capabilities?.sqlDialect ?? "postgresql",
         introspection: generationIntrospection,
@@ -667,6 +672,7 @@ export function SqlView(_props: ViewProps) {
     sqlValidationAbortControllerRef.current = abortController;
     const [error, result] = await adapter.sqlLint(
       {
+        schema: activeSqlSchema,
         schemaVersion: sqlEditorSchema.version,
         sql,
       },
@@ -718,7 +724,10 @@ export function SqlView(_props: ViewProps) {
     setVisualizationResetKey((currentValue) => currentValue + 1);
 
     const [error, rawResult] = await adapter.raw(
-      { sql },
+      {
+        schema: activeSqlSchema,
+        sql,
+      },
       { abortSignal: abortController.signal },
     );
 
@@ -1354,6 +1363,13 @@ function adapterSupportsSqlLint(adapter: Adapter): adapter is Adapter & {
   sqlLint: NonNullable<Adapter["sqlLint"]>;
 } {
   return typeof adapter.sqlLint === "function";
+}
+
+function getActiveSqlSchema(args: {
+  adapterDefaultSchema?: string;
+  schemaParam: string | null | undefined;
+}): string {
+  return args.schemaParam ?? args.adapterDefaultSchema ?? "public";
 }
 
 function formatSqlLintDiagnosticForAiCorrection(
