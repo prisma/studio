@@ -2,6 +2,10 @@
   "name": "@prisma/studio-core",
   "version": "0.28.0",
   "description": "Modular Prisma Studio components",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/prisma/studio"
+  },
   "type": "module",
   "sideEffects": false,
   "exports": {
