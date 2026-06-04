@@ -177,6 +177,7 @@ describe("build-compute", () => {
       expect(rootEntries.some((entry) => entry.endsWith(".data"))).toBe(false);
 
       expect(bundleEntries).toContain("server.bundle.js");
+      expect(bundleEntries).toContain("compute-entrypoint.js");
       expect(bundleEntries).toContain("initdb.wasm");
       expect(bundleEntries).toContain("pglite.data");
       expect(bundleEntries).toContain("pglite.wasm");
@@ -213,13 +214,23 @@ describe("build-compute", () => {
       expect(serverBundle).not.toContain(
         "sourceMappingURL=data:application/json;base64",
       );
+      const computeEntrypoint = await readFile(
+        join(outputDir, "bundle", "compute-entrypoint.js"),
+        "utf8",
+      );
+      expect(computeEntrypoint).toContain(
+        'process.env.STUDIO_DEMO_PORT ??= "8080";',
+      );
+      expect(computeEntrypoint).toContain(
+        'await import("./server.bundle.js");',
+      );
 
       if (!supportsBundledPrismaDevBoot(bunVersion)) {
         return;
       }
 
       const port = await getAvailablePort();
-      const serverProcess = spawn("bun", ["./bundle/server.bundle.js"], {
+      const serverProcess = spawn("bun", ["./bundle/compute-entrypoint.js"], {
         cwd: outputDir,
         env: {
           ...process.env,

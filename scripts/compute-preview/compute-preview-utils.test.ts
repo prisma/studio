@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -86,5 +89,17 @@ describe("buildPreviewCommentBody", () => {
         "Version: https://version.cdg.prisma.build",
       ].join("\n"),
     );
+  });
+});
+
+describe("compute preview deploy script", () => {
+  it("uses the compute entrypoint instead of passing rejected env vars to deploy", async () => {
+    const deployScript = await readFile(
+      join(import.meta.dirname, "compute-preview-deploy.mjs"),
+      "utf8",
+    );
+
+    expect(deployScript).toContain('"bundle/compute-entrypoint.js"');
+    expect(deployScript).not.toContain('"--env"');
   });
 });

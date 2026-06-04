@@ -136,6 +136,15 @@ The visualizer now runs ELK auto-layout with component-aware spacing so disconne
 Dragged node positions persist when you leave and return to the same schema view, and a header-level `Reset layout` action re-applies the current ELK baseline when you want to discard manual placement.
 Users can pan/zoom, inspect key and nullable markers, and jump from a node directly to that table’s data view.
 
+## Query Insights
+
+Embedders can optionally provide live query snapshots through Studio's BFF bridge, and Studio shows them in a dedicated `Queries` view directly under the schema visualizer.
+The view plots live query throughput and average latency from recent snapshot rows and successive snapshot updates, defaulting to the most recent 5 minutes with quick switches for 1 minute, 15 minutes, and 1 hour. The chart summary and query list follow the selected time window, including row execution and rows-returned counters, while historical first-snapshot rows render as latency context points instead of fake throughput spikes or cumulative totals. Live throughput points use one-second buckets at the query's observed time, live lines stay connected across short bursts, long unmeasured gaps break into separate segments, isolated samples render as points, and hovering the plot shows exact readings.
+Users can filter by touched table, sort by operational signals, and open a detail sheet for SQL, metrics, query metadata, and optional recommendations.
+The table and recommendation text label returned-row volume as `Rows Returned`; optional provider read-work estimates stay separate so rows returned are not described as reads.
+When Studio's shared `llm` hook is available, the query table adds an Analysis column that analyzes newly observed query groups in the background, one at a time, and stops automatic work after the first five groups. Rows show a running indicator, a manual Analyze action, and a completed all-good, info, or warning icon; the detail sheet uses the same analysis queue for manual recommendations. Without that hook, the AI analysis UI is hidden.
+If an embedder does not provide query insights, Studio hides the `Queries` menu item and stale `view=queries` URLs fall back to the normal default view.
+
 ## Data Grid Browsing
 
 Table data is shown in a grid with server-backed pagination, filtered-row counts, loading feedback, and explicit empty states.
@@ -211,15 +220,17 @@ Embedders can optionally provide the same async `llm` hook on `Studio`, and the 
 When configured, the SQL toolbar adds an inline prompt plus `Generate SQL` action that writes the generated statement into the editor without running it, then focuses the editor so `Cmd/Ctrl+Enter` or the existing `Run SQL` button can execute it as the next explicit step.
 The prompt context is built from live introspection metadata, including the concrete database engine, active SQL dialect, and available schema/table/column names, but it excludes row data and query results.
 AI responses must satisfy a strict JSON contract with generated SQL, a short rationale, and a yes/no visualization decision, and Studio retries once if the model returns malformed JSON.
+When SQL lint validation is available, generated SQL is validated before it is shown; invalid generated SQL is sent back to the model with the lint diagnostic so Studio can show a corrected statement instead of exposing a broken draft.
 Submitted AI requests are also stored locally in the SQL-view TanStack collection, so an empty focused prompt field can browse older requests with `ArrowUp` / `ArrowDown` as placeholder-only previews before committing one back into the input for editing.
 Provider output-limit failures are surfaced explicitly and can feed into the next JSON-correction prompt instead of showing up as a vague parse failure. The visualization decision from AI generation is also preserved so the later manual run can still auto-chart graph-worthy results.
+If AI-generated SQL fails when the user runs it, Studio sends the original request, failed SQL, and database error back to the model, then replaces the editor with a corrected query without auto-running it.
 
 ## AI SQL Result Visualization
 
-When SQL query results are visible and `llm` is configured, Studio can also turn the returned rows into an in-grid Chart.js visualization.
+When SQL query results are visible and `llm` is configured, Studio can also turn the returned rows into an in-grid Bklit visualization.
 The visualization uses a minimal summary-row trigger labeled `Visualize data with AI`, right-aligned beside the query result count, and mounts the generated chart above the SQL result headers inside the shared scrollable grid without a regenerate control.
-Studio sends the executed SQL, the concrete database engine, and the full result row set to the model, and when the result came from `Generate SQL with AI` it also includes the original natural-language request for extra visualization context. The model is asked for a pure Chart.js JSON config with no external libraries, and Studio mounts the returned chart directly with Chart.js.
-Mounted charts sit inside a white in-grid band that stays tied to the visible result viewport instead of the total table width, while the chart itself stays centered and width-clamped between 300px and 1200px so wide result grids do not force giant charts.
+Studio sends the executed SQL, the concrete database engine, and the full result row set to the model, and when the result came from `Generate SQL with AI` it also includes the original natural-language request for extra visualization context. The model is asked for a strict Studio-owned Bklit chart config for `bar`, `horizontal-bar`, `line`, `pie`, `doughnut`, or stacked `bar`/`horizontal-bar` charts; arbitrary Chart.js-style options, callbacks, plugins, and non-primitive row values are rejected before rendering.
+Mounted charts sit inside an in-grid background band that stays tied to the visible result viewport instead of the total table width, while the chart itself stays centered and width-clamped between 300px and 1200px so wide result grids do not force giant charts.
 When SQL is generated through AI, the same model call also decides whether the expected result is graph-worthy; if it says yes, Studio auto-generates the chart after the user manually runs that generated SQL instead of waiting for a separate chart button click.
 If another query starts running, the visualization resets immediately so stale charts do not persist across changing result sets. Visualization generation also retries up to two times on malformed JSON, invalid chart configs, or explicit provider output-limit failures.
 

@@ -20,6 +20,9 @@ describe("buildDemoConfig", () => {
       database: {
         enabled: true,
       },
+      queries: {
+        enabled: true,
+      },
       seededAt: "2026-03-09T10:00:00.000Z",
       streams: {
         url: "/api/streams",
@@ -45,11 +48,26 @@ describe("buildDemoConfig", () => {
       database: {
         enabled: false,
       },
+      queries: {
+        enabled: false,
+      },
       streams: {
         url: "/api/streams",
       },
     });
     expect("seededAt" in config).toBe(false);
+  });
+
+  it("allows query insights to be disabled independently from the database", () => {
+    const config = buildDemoConfig({
+      aiEnabled: false,
+      bootId: "boot-789",
+      databaseEnabled: true,
+      queryInsightsEnabled: false,
+    });
+
+    expect(config.queries.enabled).toBe(false);
+    expect(config.database.enabled).toBe(true);
   });
 });
 

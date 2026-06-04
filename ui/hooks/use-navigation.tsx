@@ -110,8 +110,13 @@ function buildNavigationTableNames(introspection: AdapterIntrospectResult) {
  * implement a specialized hook instead.
  */
 function useNavigationInternal() {
-  const { adapter, hasDatabase, navigationTableNamesCollection, streamsUrl } =
-    useStudio();
+  const {
+    adapter,
+    hasDatabase,
+    hasQueryInsights,
+    navigationTableNamesCollection,
+    streamsUrl,
+  } = useStudio();
   const { data: introspection, isFetching } = useIntrospection();
 
   const { schemas } = introspection;
@@ -216,7 +221,11 @@ function useNavigationInternal() {
       ? activeTables[resolvedTableParam]
       : undefined;
   const resolvedViewParam =
-    !hasDatabase && typeof streamsUrl === "string" ? "stream" : viewParam;
+    !hasDatabase && typeof streamsUrl === "string"
+      ? "stream"
+      : viewParam === "queries" && !hasQueryInsights
+        ? defaults.view
+        : viewParam;
 
   const metadata = useMemo(
     () => ({

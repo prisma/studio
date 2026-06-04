@@ -16,13 +16,21 @@
  * Deploy:
  *
  *   bunx @prisma/compute-cli deploy --skip-build \
- *     --path <outdir> --entrypoint bundle/server.bundle.js \
- *     --http-port 8080 --env STUDIO_DEMO_PORT=8080 \
+ *     --path <outdir> --entrypoint bundle/compute-entrypoint.js \
+ *     --http-port 8080 \
  *     --service <service-id>
  */
 
 import { existsSync } from "node:fs";
-import { cp, mkdir, readdir, rename, rm, stat } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  readdir,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { createRequire } from "node:module";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -167,6 +175,7 @@ console.log(
   `[build] Copied Prisma Dev runtime assets: ${copiedRuntimeAssets.length}`,
 );
 
+await writeComputeEntrypoint(bundleDir);
 await bundlePrismaStreamsTouchAssets(outDir);
 console.log("[build] Bundled Prisma Streams worker assets.");
 
@@ -274,4 +283,15 @@ async function bundlePrismaStreamsTouchAssets(outDir: string): Promise<void> {
     force: true,
     recursive: true,
   });
+}
+
+async function writeComputeEntrypoint(bundleDir: string): Promise<void> {
+  await writeFile(
+    join(bundleDir, "compute-entrypoint.js"),
+    [
+      'process.env.STUDIO_DEMO_PORT ??= "8080";',
+      'await import("./server.bundle.js");',
+      "",
+    ].join("\n"),
+  );
 }

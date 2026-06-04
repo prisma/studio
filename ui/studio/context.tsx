@@ -255,9 +255,12 @@ interface StudioContextValue {
   adapter: Adapter;
   hasDatabase: boolean;
   llm?: StudioLlm;
+  queryInsights?: Adapter["queryInsights"];
   streamsUrl?: string;
   hasAiFilter: boolean;
+  hasAiQueryRecommendations: boolean;
   hasAiSql: boolean;
+  hasQueryInsights: boolean;
   requestLlm: (request: StudioLlmRequest) => Promise<string>;
   onEvent: (event: StudioEventBase) => void;
   operationEvents: StudioOperationEvent[];
@@ -813,7 +816,10 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
   );
 
   const hasAiFilter = typeof llm === "function";
+  const hasAiQueryRecommendations = typeof llm === "function";
   const hasAiSql = typeof llm === "function";
+  const queryInsights = adapter.queryInsights;
+  const hasQueryInsights = typeof queryInsights?.getSnapshot === "function";
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -823,9 +829,12 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
           adapter,
           hasDatabase,
           llm,
+          queryInsights,
           streamsUrl,
           hasAiFilter,
+          hasAiQueryRecommendations,
           hasAiSql,
+          hasQueryInsights,
           requestLlm,
           onEvent,
           operationEvents,

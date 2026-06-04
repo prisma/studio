@@ -9,7 +9,7 @@ type NavigationMockValue = {
   metadata: {
     activeTable: undefined;
   };
-  viewParam: "table" | "stream";
+  viewParam: "queries" | "table" | "stream";
 };
 
 type IntrospectionMockValue = {
@@ -30,6 +30,7 @@ type IntrospectionMockValue = {
 
 type StudioMockValue = {
   hasDatabase: boolean;
+  hasQueryInsights: boolean;
   isNavigationOpen: boolean;
   streamsUrl?: string;
 };
@@ -83,6 +84,10 @@ vi.mock("./views/console/ConsoleView", () => ({
   ConsoleView: () => <div>Console view</div>,
 }));
 
+vi.mock("./views/queries/QueriesView", () => ({
+  QueriesView: () => <div>Queries view</div>,
+}));
+
 vi.mock("./views/schema/SchemaView", () => ({
   SchemaView: () => <div>Schema view</div>,
 }));
@@ -112,6 +117,7 @@ describe("Studio", () => {
     refetchMock.mockClear();
     useStudioMock.mockReturnValue({
       hasDatabase: true,
+      hasQueryInsights: false,
       isNavigationOpen: true,
       streamsUrl: "/api/streams",
     });
@@ -255,6 +261,7 @@ describe("Studio", () => {
   it("renders a database-unavailable placeholder for database views when the session has no database", () => {
     useStudioMock.mockReturnValue({
       hasDatabase: false,
+      hasQueryInsights: false,
       isNavigationOpen: true,
       streamsUrl: "/api/streams",
     });
@@ -294,6 +301,50 @@ describe("Studio", () => {
     expect(container.textContent).not.toContain(
       "Could not load schema metadata",
     );
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("renders the Queries view when query insights are configured and selected", () => {
+    useStudioMock.mockReturnValue({
+      hasDatabase: true,
+      hasQueryInsights: true,
+      isNavigationOpen: true,
+      streamsUrl: "/api/streams",
+    });
+    useNavigationMock.mockReturnValue({
+      metadata: {
+        activeTable: undefined,
+      },
+      viewParam: "queries",
+    });
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <Studio
+          adapter={
+            {
+              delete: vi.fn(),
+              introspect: vi.fn(),
+              insert: vi.fn(),
+              query: vi.fn(),
+              raw: vi.fn(),
+              update: vi.fn(),
+            } as unknown as Adapter
+          }
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain("Queries view");
+    expect(container.textContent).not.toContain("Basic view");
 
     act(() => {
       root.unmount();

@@ -56,6 +56,36 @@
 
   --animate-indeterminate: indeterminate 1.5s infinite ease-in-out;
 
+  --color-chart-label: var(--chart-label);
+
+  --color-chart-ring-background: var(--chart-ring-background);
+
+  --color-chart-marker-foreground: var(--chart-marker-foreground);
+
+  --color-chart-marker-border: var(--chart-marker-border);
+
+  --color-chart-marker-background: var(--chart-marker-background);
+
+  --color-chart-tooltip-muted: var(--chart-tooltip-muted);
+
+  --color-chart-tooltip-foreground: var(--chart-tooltip-foreground);
+
+  --color-chart-tooltip-background: var(--chart-tooltip-background);
+
+  --color-chart-grid: var(--chart-grid);
+
+  --color-chart-crosshair: var(--chart-crosshair);
+
+  --chart-line-secondary: var(--chart-line-secondary);
+
+  --chart-line-primary: var(--chart-line-primary);
+
+  --color-chart-foreground-muted: var(--chart-foreground-muted);
+
+  --color-chart-foreground: var(--chart-foreground);
+
+  --color-chart-background: var(--chart-background);
+
   @keyframes indeterminate {
     0% {
       transform: translateX(-100%);
@@ -174,6 +204,21 @@
   --studio-staged-cell-background: oklch(0.97 0.025 95 / 0.78);
   --studio-staged-cell-background-hover: oklch(0.955 0.035 95 / 0.84);
   --text-xs: 0.75rem;
+  --chart-background: oklch(1 0 0);
+  --chart-foreground: oklch(0.145 0.004 285);
+  --chart-foreground-muted: oklch(0.55 0.014 260);
+  --chart-line-primary: var(--chart-1);
+  --chart-line-secondary: var(--chart-2);
+  --chart-crosshair: oklch(0.4 0.1828 274.34);
+  --chart-grid: oklch(0.9 0 0);
+  --chart-tooltip-background: oklch(0.21 0.006 285 / 0.8);
+  --chart-tooltip-foreground: oklch(0.985 0 0);
+  --chart-tooltip-muted: oklch(0.65 0.01 260);
+  --chart-marker-background: oklch(0.97 0.005 260);
+  --chart-marker-border: oklch(0.85 0.01 260);
+  --chart-marker-foreground: oklch(0.3 0.01 260);
+  --chart-ring-background: oklch(0.9 0.005 260 / 0.25);
+  --chart-label: oklch(0.45 0.01 260);
 }
 
 .dark {
@@ -203,6 +248,16 @@
   --chart-5: oklch(0.645 0.246 16.439);
   --studio-staged-cell-background: oklch(0.58 0.042 92 / 0.18);
   --studio-staged-cell-background-hover: oklch(0.63 0.05 92 / 0.24);
+  --chart-background: oklch(0.145 0 0);
+  --chart-foreground: oklch(0.45 0 0);
+  --chart-foreground-muted: oklch(0.65 0.01 260);
+  --chart-crosshair: oklch(0.45 0 0);
+  --chart-grid: oklch(0.25 0 0);
+  --chart-marker-background: oklch(0.25 0.01 260);
+  --chart-marker-border: oklch(0.4 0.01 260);
+  --chart-marker-foreground: oklch(0.9 0 0);
+  --chart-ring-background: oklch(0.35 0.01 260 / 0.25);
+  --chart-label: oklch(0.75 0.01 260);
 }
 
 @layer base {

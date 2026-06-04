@@ -18,7 +18,7 @@ async function main() {
   const projectName = process.env.PREVIEW_PROJECT_NAME ?? PREVIEW_PROJECT_NAME;
   const deployPath = process.env.PREVIEW_DEPLOY_PATH ?? "deploy";
   const entrypoint =
-    process.env.PREVIEW_ENTRYPOINT ?? "bundle/server.bundle.js";
+    process.env.PREVIEW_ENTRYPOINT ?? "bundle/compute-entrypoint.js";
   const httpPort = process.env.PREVIEW_HTTP_PORT ?? "8080";
   const serviceName = sanitizeComputeServiceName(branchName);
 
@@ -37,8 +37,6 @@ async function main() {
     entrypoint,
     "--http-port",
     httpPort,
-    "--env",
-    `STUDIO_DEMO_PORT=${httpPort}`,
     "--service",
     service.id,
   ]);
