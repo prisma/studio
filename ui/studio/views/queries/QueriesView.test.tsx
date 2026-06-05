@@ -1347,6 +1347,10 @@ describe("QueriesView", () => {
   });
 
   it("copies the SQL text and recommendation from the query details sheet", async () => {
+    const originalClipboard = Object.getOwnPropertyDescriptor(
+      navigator,
+      "clipboard",
+    );
     const writeText = vi.fn().mockResolvedValue(undefined);
 
     Object.defineProperty(navigator, "clipboard", {
@@ -1380,69 +1384,76 @@ describe("QueriesView", () => {
     document.body.appendChild(container);
     const root = createRoot(container);
 
-    act(() => {
-      root.render(<QueriesView />);
-    });
-    await flushMicrotasks();
+    try {
+      act(() => {
+        root.render(<QueriesView />);
+      });
+      await flushMicrotasks();
 
-    const rowButton = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("select * from users"),
-    );
-
-    expect(rowButton).not.toBeUndefined();
-
-    act(() => {
-      click(rowButton!);
-    });
-
-    await vi.waitFor(() => {
-      expect(document.body.textContent).toContain(
-        "Project only the columns the UI needs.",
+      const rowButton = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent?.includes("select * from users"),
       );
-    });
 
-    const copySqlButton = document.body.querySelector(
-      '[aria-label="Copy SQL text"]',
-    );
-    const copyRecommendationButton = document.body.querySelector(
-      '[aria-label="Copy recommendation"]',
-    );
+      expect(rowButton).not.toBeUndefined();
 
-    expect(copySqlButton).not.toBeNull();
-    expect(copyRecommendationButton).not.toBeNull();
+      act(() => {
+        click(rowButton!);
+      });
 
-    await act(async () => {
-      click(copySqlButton!);
-      await Promise.resolve();
-    });
+      await vi.waitFor(() => {
+        expect(document.body.textContent).toContain(
+          "Project only the columns the UI needs.",
+        );
+      });
 
-    expect(writeText).toHaveBeenLastCalledWith("select * from users");
+      const copySqlButton = document.body.querySelector(
+        '[aria-label="Copy SQL text"]',
+      );
+      const copyRecommendationButton = document.body.querySelector(
+        '[aria-label="Copy recommendation"]',
+      );
 
-    await act(async () => {
-      click(copyRecommendationButton!);
-      await Promise.resolve();
-    });
+      expect(copySqlButton).not.toBeNull();
+      expect(copyRecommendationButton).not.toBeNull();
 
-    expect(writeText).toHaveBeenLastCalledWith(
-      [
-        "Recommendation",
-        "The query over-fetches columns.",
-        "",
-        "- Project only the columns the UI needs.",
-        "- Keep pagination count queries separate from row fetches.",
-        "",
-        "SQL",
-        "select id from users",
-        "",
-        "Prisma",
-        "await prisma.user.findMany({ select: { id: true } })",
-      ].join("\n"),
-    );
+      await act(async () => {
+        click(copySqlButton!);
+        await Promise.resolve();
+      });
 
-    act(() => {
-      root.unmount();
-    });
-    container.remove();
+      expect(writeText).toHaveBeenLastCalledWith("select * from users");
+
+      await act(async () => {
+        click(copyRecommendationButton!);
+        await Promise.resolve();
+      });
+
+      expect(writeText).toHaveBeenLastCalledWith(
+        [
+          "Recommendation",
+          "The query over-fetches columns.",
+          "",
+          "- Project only the columns the UI needs.",
+          "- Keep pagination count queries separate from row fetches.",
+          "",
+          "SQL",
+          "select id from users",
+          "",
+          "Prisma",
+          "await prisma.user.findMany({ select: { id: true } })",
+        ].join("\n"),
+      );
+    } finally {
+      act(() => {
+        root.unmount();
+      });
+      container.remove();
+      if (originalClipboard) {
+        Object.defineProperty(navigator, "clipboard", originalClipboard);
+      } else {
+        Reflect.deleteProperty(navigator, "clipboard");
+      }
+    }
   });
 
   it("runs automatic query analysis serially, stops after five groups, and allows manual analysis", async () => {
