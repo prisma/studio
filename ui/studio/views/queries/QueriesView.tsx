@@ -2,6 +2,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleCheck,
+  Copy,
   Info,
   Loader2,
   Pause,
@@ -1582,9 +1583,17 @@ function QueryDetailsSheet(props: {
                   ))}
                 </div>
 
-                <pre className="max-h-72 overflow-auto rounded-md border border-border/70 bg-muted/40 p-3 text-xs text-foreground">
-                  <code>{query.query}</code>
-                </pre>
+                <div className="flex items-start gap-2">
+                  <pre className="max-h-72 min-w-0 flex-1 overflow-auto rounded-md border border-border/70 bg-muted/40 p-3 text-xs text-foreground">
+                    <code>{query.query}</code>
+                  </pre>
+                  <CopyToClipboardButton
+                    ariaLabel="Copy SQL text"
+                    className="mt-1 shrink-0"
+                    label="Copy SQL"
+                    text={query.query}
+                  />
+                </div>
 
                 <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
                   <MetricInline label="Executions" value={query.count} />
@@ -1605,20 +1614,31 @@ function QueryDetailsSheet(props: {
                         <Sparkles data-icon="inline-start" />
                         Recommendations
                       </div>
-                      {analysis && (
-                        <QueryAnalysisStatusBadge level={analysis.level} />
-                      )}
-                      {!analysis && !isAnalysisLoading && !isAnalysisQueued && (
-                        <Button
-                          className="h-7 shadow-none"
-                          onClick={onAnalyze}
-                          size="xs"
-                          type="button"
-                          variant="outline"
-                        >
-                          {analysisError ? "Retry" : "Analyze"}
-                        </Button>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {analysis && (
+                          <>
+                            <CopyToClipboardButton
+                              ariaLabel="Copy recommendation"
+                              label="Copy recommendation"
+                              text={formatQueryAnalysisCopyText(analysis)}
+                            />
+                            <QueryAnalysisStatusBadge level={analysis.level} />
+                          </>
+                        )}
+                        {!analysis &&
+                          !isAnalysisLoading &&
+                          !isAnalysisQueued && (
+                            <Button
+                              className="h-7 shadow-none"
+                              onClick={onAnalyze}
+                              size="xs"
+                              type="button"
+                              variant="outline"
+                            >
+                              {analysisError ? "Retry" : "Analyze"}
+                            </Button>
+                          )}
+                      </div>
                     </div>
 
                     {isAnalysisLoading ? (
@@ -1649,6 +1669,74 @@ function QueryDetailsSheet(props: {
   );
 }
 
+function CopyToClipboardButton(props: {
+  ariaLabel: string;
+  className?: string;
+  label: string;
+  text: string;
+}) {
+  const { ariaLabel, className, label, text } = props;
+  const [hasCopied, setHasCopied] = useState(false);
+  const resetCopiedTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (resetCopiedTimeoutRef.current !== null) {
+        window.clearTimeout(resetCopiedTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleCopy = useCallback(() => {
+    if (typeof navigator.clipboard?.writeText !== "function") {
+      return;
+    }
+
+    void navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setHasCopied(true);
+
+        if (resetCopiedTimeoutRef.current !== null) {
+          window.clearTimeout(resetCopiedTimeoutRef.current);
+        }
+
+        resetCopiedTimeoutRef.current = window.setTimeout(() => {
+          setHasCopied(false);
+          resetCopiedTimeoutRef.current = null;
+        }, 1200);
+      })
+      .catch((error) => {
+        console.error("Failed to copy to clipboard:", error);
+      });
+  }, [text]);
+
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            aria-label={ariaLabel}
+            className={cn(
+              "size-7 border border-border/70 bg-background/85 text-muted-foreground shadow-none hover:text-foreground",
+              className,
+            )}
+            onClick={handleCopy}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            {hasCopied ? <CircleCheck /> : <Copy />}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="left">
+          {hasCopied ? "Copied" : label}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 function MetricInline(props: { label: string; value: number | string }) {
   return (
     <div className="rounded-md border border-border/70 bg-background/60 p-2">
@@ -1674,6 +1762,28 @@ function QueryAnalysisStatusBadge(props: { level: QueryInsightAnalysisLevel }) {
       {metadata.label}
     </Badge>
   );
+}
+
+function formatQueryAnalysisCopyText(analysis: QueryInsightAnalysis): string {
+  const sections = [`Recommendation\n${analysis.summary}`];
+
+  if (analysis.recommendations.length > 0) {
+    sections.push(
+      analysis.recommendations
+        .map((recommendation) => `- ${recommendation}`)
+        .join("\n"),
+    );
+  }
+
+  if (analysis.improvedSql) {
+    sections.push(`SQL\n${analysis.improvedSql}`);
+  }
+
+  if (analysis.improvedPrisma) {
+    sections.push(`Prisma\n${analysis.improvedPrisma}`);
+  }
+
+  return sections.join("\n\n");
 }
 
 function QueryAnalysis(props: { analysis: QueryInsightAnalysis }) {
