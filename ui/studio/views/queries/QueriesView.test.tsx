@@ -1346,6 +1346,116 @@ describe("QueriesView", () => {
     container.remove();
   });
 
+  it("copies the SQL text and recommendation from the query details sheet", async () => {
+    const originalClipboard = Object.getOwnPropertyDescriptor(
+      navigator,
+      "clipboard",
+    );
+    const writeText = vi.fn().mockResolvedValue(undefined);
+
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText,
+      },
+    });
+
+    useStudioMock.mockReturnValue({
+      hasAiQueryRecommendations: true,
+      queryInsights: {
+        getSnapshot,
+      },
+      requestLlm,
+    });
+    requestLlm.mockResolvedValueOnce(
+      JSON.stringify({
+        improvedPrisma: "await prisma.user.findMany({ select: { id: true } })",
+        improvedSql: "select id from users",
+        level: "info",
+        recommendations: [
+          "Project only the columns the UI needs.",
+          "Keep pagination count queries separate from row fetches.",
+        ],
+        summary: "The query over-fetches columns.",
+      }),
+    );
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    try {
+      act(() => {
+        root.render(<QueriesView />);
+      });
+      await flushMicrotasks();
+
+      const rowButton = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent?.includes("select * from users"),
+      );
+
+      expect(rowButton).not.toBeUndefined();
+
+      act(() => {
+        click(rowButton!);
+      });
+
+      await vi.waitFor(() => {
+        expect(document.body.textContent).toContain(
+          "Project only the columns the UI needs.",
+        );
+      });
+
+      const copySqlButton = document.body.querySelector(
+        '[aria-label="Copy SQL text"]',
+      );
+      const copyRecommendationButton = document.body.querySelector(
+        '[aria-label="Copy recommendation"]',
+      );
+
+      expect(copySqlButton).not.toBeNull();
+      expect(copyRecommendationButton).not.toBeNull();
+
+      await act(async () => {
+        click(copySqlButton!);
+        await Promise.resolve();
+      });
+
+      expect(writeText).toHaveBeenLastCalledWith("select * from users");
+
+      await act(async () => {
+        click(copyRecommendationButton!);
+        await Promise.resolve();
+      });
+
+      expect(writeText).toHaveBeenLastCalledWith(
+        [
+          "Recommendation",
+          "The query over-fetches columns.",
+          "",
+          "- Project only the columns the UI needs.",
+          "- Keep pagination count queries separate from row fetches.",
+          "",
+          "SQL",
+          "select id from users",
+          "",
+          "Prisma",
+          "await prisma.user.findMany({ select: { id: true } })",
+        ].join("\n"),
+      );
+    } finally {
+      act(() => {
+        root.unmount();
+      });
+      container.remove();
+      if (originalClipboard) {
+        Object.defineProperty(navigator, "clipboard", originalClipboard);
+      } else {
+        Reflect.deleteProperty(navigator, "clipboard");
+      }
+    }
+  });
+
   it("runs automatic query analysis serially, stops after five groups, and allows manual analysis", async () => {
     getSnapshot.mockResolvedValueOnce([
       null,
