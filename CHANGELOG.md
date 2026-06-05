@@ -1,5 +1,11 @@
 # @prisma/studio-core
 
+## 0.30.0
+
+### Minor Changes
+
+- 9d45420: Add Query Details copy actions
+
 ## 0.29.0
 
 ### Minor Changes
