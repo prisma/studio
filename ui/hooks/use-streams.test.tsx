@@ -119,6 +119,7 @@ describe("useStreams", () => {
             expires_at: null,
             name: "prisma-wal",
             next_offset: "0",
+            profile: "state-protocol",
             sealed_through: "0",
             uploaded_through: "0",
           },
@@ -154,6 +155,9 @@ describe("useStreams", () => {
     expect(
       harness.getLatestState()?.streams.map((stream) => stream.name),
     ).toEqual(["audit-log", "prisma-wal"]);
+    expect(
+      harness.getLatestState()?.streams.map((stream) => stream.profile),
+    ).toEqual([null, "state-protocol"]);
     expect(harness.getLatestState()?.hasStreamsServer).toBe(true);
 
     harness.cleanup();

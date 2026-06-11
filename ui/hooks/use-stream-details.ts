@@ -117,6 +117,7 @@ interface StreamDetailsApiPayload {
     next_offset: string;
     pending_bytes?: string;
     pending_rows?: string;
+    profile?: string | null;
     sealed_through: string;
     segment_count?: number;
     total_size_bytes: string;
@@ -1068,6 +1069,10 @@ function normalizeStreamDetailsPayload(
     objectStoreRequests,
     pendingBytes: parseNonNegativeBigInt(payload.stream.pending_bytes ?? "0"),
     pendingRows: parseNonNegativeBigInt(payload.stream.pending_rows ?? "0"),
+    profile:
+      parseNullableString(payload.stream.profile) ??
+      indexStatus?.profile ??
+      null,
     routingKey,
     serverConfiguredLimits: null,
     search,

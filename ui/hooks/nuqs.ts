@@ -23,6 +23,7 @@ export type StateKey =
   | "pin"
   | "streamAggregationRange"
   | "streamFollow"
+  | "streamObserve"
   | "streamRoutingKey"
   | "stream"
   | "table"

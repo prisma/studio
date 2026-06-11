@@ -11,6 +11,7 @@ interface StreamsApiItem {
   expires_at: string | null;
   name: string;
   next_offset: string;
+  profile?: string | null;
   sealed_through: string;
   uploaded_through: string;
 }
@@ -21,6 +22,7 @@ export interface StudioStream {
   expiresAt: string | null;
   name: string;
   nextOffset: string;
+  profile: string | null;
   sealedThrough: string;
   uploadedThrough: string;
 }
@@ -42,6 +44,7 @@ function isStreamsApiItem(value: unknown): value is StreamsApiItem {
     (item.expires_at === null || typeof item.expires_at === "string") &&
     typeof item.name === "string" &&
     typeof item.next_offset === "string" &&
+    (item.profile == null || typeof item.profile === "string") &&
     typeof item.sealed_through === "string" &&
     typeof item.uploaded_through === "string"
   );
@@ -117,6 +120,7 @@ export function useStreams(args?: UseStreamsArgs) {
           expiresAt: stream.expires_at,
           name: stream.name,
           nextOffset: stream.next_offset,
+          profile: stream.profile ?? null,
           sealedThrough: stream.sealed_through,
           uploadedThrough: stream.uploaded_through,
         })),

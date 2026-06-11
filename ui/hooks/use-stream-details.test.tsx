@@ -426,6 +426,7 @@ describe("useStreamDetails", () => {
       objectStoreRequests: null,
       pendingBytes: 128n,
       pendingRows: 3n,
+      profile: null,
       routingKey: null,
       serverConfiguredLimits: {
         caches: {

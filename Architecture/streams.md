@@ -16,7 +16,9 @@ This architecture governs:
 - discovering active-stream routing-key metadata
 - tracking URL-backed active-stream routing-key selection
 - discovering active-stream aggregation rollups from stream details metadata
+- detecting request-observability stream profiles
 - loading active-stream aggregate rollup windows through the Prisma Streams aggregate endpoint
+- loading request-observability correlation data through the Prisma Streams observe endpoint
 - loading active-stream filtered events through the Prisma Streams search endpoint
 - loading active-stream routing-key pages through the Prisma Streams routing-key listing endpoint
 - deep-linking from a table view into Prisma WAL stream history when `prisma-wal` is available
@@ -35,9 +37,11 @@ This architecture governs:
 - [`ui/hooks/use-stream-routing-keys.ts`](../ui/hooks/use-stream-routing-keys.ts)
 - [`ui/hooks/use-stream-aggregations.ts`](../ui/hooks/use-stream-aggregations.ts)
 - [`ui/hooks/use-stream-events.ts`](../ui/hooks/use-stream-events.ts)
+- [`ui/hooks/use-stream-observe-request.ts`](../ui/hooks/use-stream-observe-request.ts)
 - [`ui/studio/Navigation.tsx`](../ui/studio/Navigation.tsx)
 - [`ui/studio/views/table/ActiveTableView.tsx`](../ui/studio/views/table/ActiveTableView.tsx)
 - [`ui/studio/views/stream/StreamView.tsx`](../ui/studio/views/stream/StreamView.tsx)
+- [`ui/studio/views/stream/StreamObserveSheet.tsx`](../ui/studio/views/stream/StreamObserveSheet.tsx)
 - [`ui/studio/views/stream/StreamRoutingKeySelector.tsx`](../ui/studio/views/stream/StreamRoutingKeySelector.tsx)
 - [`ui/studio/views/stream/StreamAggregationsPanel.tsx`](../ui/studio/views/stream/StreamAggregationsPanel.tsx)
 - [`demo/ppg-dev/config.ts`](../demo/ppg-dev/config.ts)
@@ -54,12 +58,14 @@ This architecture governs:
 - Active-stream search-capability discovery MUST go through [`useStreamDetails`](../ui/hooks/use-stream-details.ts); feature code MUST NOT read `_details.schema.search` ad hoc from view components.
 - Active-stream routing-key discovery MUST go through [`useStreamDetails`](../ui/hooks/use-stream-details.ts); feature code MUST NOT read `_details.schema.routingKey` ad hoc from view components.
 - Active-stream aggregation-rollup discovery MUST go through [`useStreamDetails`](../ui/hooks/use-stream-details.ts); feature code MUST NOT read `_details.schema.search.rollups` ad hoc from view components.
+- Active-stream request-observability profile detection MUST go through [`useStreamDetails`](../ui/hooks/use-stream-details.ts); feature code MUST NOT infer observability support from stream names.
 - Active-stream storage, upload, and index-status diagnostics MUST go through [`useStreamDetails`](../ui/hooks/use-stream-details.ts); feature code MUST NOT add a separate `_index_status` fetch path from the stream footer or other active-stream chrome.
 - Active-stream aggregate window loading MUST go through [`useStreamAggregations`](../ui/hooks/use-stream-aggregations.ts); feature code MUST NOT `POST` stream `_aggregate` ad hoc from view components.
 - Active-stream count refresh MUST reuse [`useStreamDetails`](../ui/hooks/use-stream-details.ts); feature code MUST NOT introduce a second count or metadata polling path for the active stream page.
 - Stream event loading MUST go through [`useStreamEvents`](../ui/hooks/use-stream-events.ts); feature code MUST NOT fetch `/v1/stream/:name` ad hoc from view components.
 - Stream search loading MUST also go through [`useStreamEvents`](../ui/hooks/use-stream-events.ts); feature code MUST NOT `POST` stream `_search` ad hoc from view components.
 - Stream routing-key listing MUST go through [`useStreamRoutingKeys`](../ui/hooks/use-stream-routing-keys.ts); feature code MUST NOT fetch stream `_routing_keys` ad hoc from view components.
+- Request-observability correlation MUST go through [`useStreamObserveRequest`](../ui/hooks/use-stream-observe-request.ts); feature code MUST NOT `POST` `/v1/observe/request` ad hoc from view components.
 - When Studio discovers a `prisma-wal` stream, table view MAY expose a history affordance that deep-links into `view=stream&stream=prisma-wal`, but that jump MUST still be expressed through normal URL state and the shared stream search param rather than inventing a table-specific WAL route.
 - When the active stream is `prisma-wal`, the resolved stream profile is `state-protocol`, and the visible search term matches Studio's table-history deep-link shapes, the stream view SHOULD render a compact WAL scope banner describing the current table or row scope instead of leaving that context implicit in the raw search string alone.
 - `useStreams` MUST treat `streamsUrl` as a base URL and append the Prisma Streams list endpoint path (`/v1/streams`) itself.
@@ -99,6 +105,10 @@ For routing-key-capable streams, Studio may also use the routing-key listing end
 
 - `GET {streamsUrl}/v1/stream/{streamName}/_routing_keys?limit={n}&after={cursor}`
 
+For request observability on `evlog` and `otel-traces` streams, Studio may also use the request observe endpoint:
+
+- `POST {streamsUrl}/v1/observe/request`
+
 The response is treated as a list of stream records containing at least:
 
 - `name`
@@ -108,6 +118,7 @@ The response is treated as a list of stream records containing at least:
 - `next_offset`
 - `sealed_through`
 - `uploaded_through`
+- `profile`
 
 `useStreams` normalizes that payload into the `StudioStream` shape used by the sidebar.
 On the active stream page, Studio instead uses `_details.stream` as the authoritative summary payload for `epoch`, `next_offset`, and the footer byte total, and keeps that summary current through `_details` conditional long polling. That long-poll path must keep one stable loop alive across ETag updates instead of restarting the request on every successful `200`, so the browser does not accumulate a stream of client-side canceled `_details` fetches between real wakes.
@@ -123,6 +134,7 @@ When the active stream search term is non-empty and the stream advertises search
 Studio uses those resolved series both to render the aggregation strip and to upgrade the header aggregation toggle from raw rollup-count metadata to the real visible aggregation count once the aggregate query has loaded.
 The hook only polls those aggregate windows when the stream view is in `live` or `tail` follow mode and the selected range is relative.
 Per-series aggregation preferences such as enabled statistics and unit overrides remain in the TanStack DB-backed local UI state collection as user-authored state; aggregate fetches may read them but MUST NOT rewrite them just because a different range resolves a different set of series or statistics.
+When the active stream profile is `evlog` or `otel-traces`, expanded rows may expose a request-detail action that opens `StreamObserveSheet`. The sheet uses the URL-backed `streamObserve` lookup state and calls `useStreamObserveRequest`, which posts the active lookup plus the resolved event and trace stream names to `/v1/observe/request`. See [`Architecture/request-observability.md`](request-observability.md) for the detailed contract.
 When a table is open and the discovered stream list includes `prisma-wal`, `ActiveTableView` may construct a stream deep link using the WAL schema's exact-search aliases. The table-scoped jump must use `table:"schema.table"`, and if exactly one visible row is selected and the table has exactly one primary-key column, the row-scoped jump may refine that query to `table:"schema.table" AND key:"value"`. Composite or multi-row selections must not invent an unsupported key encoding.
 When Studio later opens that `prisma-wal` search in the stream view, the active page may recognize exactly those table-scoped and row-scoped query forms and render a small contextual banner such as `Showing wal events for public.posts` or `Showing wal events for row key 42 in public.posts`. That banner is intentionally narrow: if the search term adds any extra clauses or stops matching the known WAL history shapes, Studio must hide the banner instead of trying to summarize an arbitrary WAL query.
 
@@ -168,5 +180,8 @@ Streams changes MUST include tests for:
 - stream-view aggregation-button rendering and aggregation-panel range behavior
 - `ppg-dev` config wiring for the browser-facing Streams URL
 - `ppg-dev` proxy handling for aggregate `POST` requests
+- `ppg-dev` observability seed creation for profiled `evlog` and `otel-traces` streams
+- stream-view request-observability affordance and URL-backed sheet opening
+- `useStreamObserveRequest` request body and response normalization
 
 When the compute bundle path changes, tests MUST also verify that the packaged demo can boot and serve `/api/config` with Streams enabled.

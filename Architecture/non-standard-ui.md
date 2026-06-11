@@ -145,6 +145,22 @@ It deliberately excludes:
   - The storage breakdowns also need collapsible ledger-style accounting boxes whose headers surface the section totals when folded shut, plus faint shared-cap annotations that sit beside right-aligned byte values and one shared cap marker spanning both Routing and Exact cache rows, which is not a stock ShadCN pattern.
   - No stock ShadCN pattern covers that descriptor-driven observability layout, especially when the UI must distinguish logical bytes from physical storage signals, separate search coverage from historical run indexes, hide unconfigured routing rows, and keep the remaining cost caveats explicit instead of inventing unavailable totals.
 
+### Stream Request Observability Sheet
+
+- Canonical components:
+  - [`ui/studio/views/stream/StreamObserveSheet.tsx`](../ui/studio/views/stream/StreamObserveSheet.tsx)
+  - [`ui/hooks/use-stream-observe-request.ts`](../ui/hooks/use-stream-observe-request.ts)
+- Closest standard ShadCN alternatives:
+  - `Sheet`
+  - `ToggleGroup`
+  - `Table`
+  - `Badge`
+  - `Skeleton`
+- Why it stays non-standard:
+  - The request detail surface needs to combine a merged event/span timeline, a trace waterfall with proportional span bars, expandable raw span details, service-call edges, root-cause event fields, source stream labels, and coverage warnings in one compact sheet.
+  - ShadCN provides the surrounding primitives, but no stock component models that request-correlation workflow or the proportional waterfall rows.
+  - The section selector still uses `ToggleGroup`, the shell uses `Sheet`, and the status chips use `Badge`; only the request-specific timeline and waterfall composition remain custom.
+
 ### Queries Live Table And Detail Sheet
 
 - Canonical component:

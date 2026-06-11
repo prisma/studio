@@ -24,6 +24,11 @@ describe("startDemoRuntime", () => {
       },
     });
     const seedDatabaseMock = vi.fn(() => Promise.resolve());
+    const seedObservabilityStreamsMock = vi.fn(() => Promise.resolve());
+    const stopObservabilityTickerMock = vi.fn();
+    const startObservabilityStreamTickerMock = vi.fn(
+      () => stopObservabilityTickerMock,
+    );
     const createPostgresExecutorMock = vi.fn(() => ({
       execute: vi.fn(),
     }));
@@ -38,12 +43,20 @@ describe("startDemoRuntime", () => {
         createPostgresExecutor: createPostgresExecutorMock as never,
         createSeededTimestamp: () => "2026-03-30T10:00:00.000Z",
         seedDatabase: seedDatabaseMock,
+        seedObservabilityStreams: seedObservabilityStreamsMock,
+        startObservabilityStreamTicker: startObservabilityStreamTickerMock,
         startPrismaDevServer: startPrismaDevServerMock,
       },
     );
 
     expect(startPrismaDevServerMock).toHaveBeenCalledTimes(1);
     expect(seedDatabaseMock).toHaveBeenCalledWith("postgres://local-demo-db");
+    expect(seedObservabilityStreamsMock).toHaveBeenCalledWith({
+      streamsServerUrl: "http://127.0.0.1:51216",
+    });
+    expect(startObservabilityStreamTickerMock).toHaveBeenCalledWith({
+      streamsServerUrl: "http://127.0.0.1:51216",
+    });
     expect(runtime.mode).toBe("local");
     expect(runtime.hasDatabase).toBe(true);
     expect(runtime.databaseConnectionString).toBe("postgres://local-demo-db");
@@ -51,7 +64,13 @@ describe("startDemoRuntime", () => {
     expect(runtime.streamsServerUrl).toBe("http://127.0.0.1:51216");
     expect(runtime.prismaDevServer).not.toBeNull();
     expect(createPostgresExecutorMock).toHaveBeenCalledWith(fakePostgresClient);
-    expect(runtime.cleanupCallbacks).toHaveLength(2);
+    expect(runtime.cleanupCallbacks).toHaveLength(3);
+
+    for (const cleanupCallback of runtime.cleanupCallbacks) {
+      await cleanupCallback();
+    }
+
+    expect(stopObservabilityTickerMock).toHaveBeenCalledTimes(1);
   });
 
   it("uses external data sources without starting local Prisma Dev or seeding", async () => {

@@ -11,6 +11,7 @@ This architecture governs:
 - active Studio view (`table`, `schema`, `console`, `sql`, `stream`, `queries`)
 - active schema/table/stream
 - active stream follow mode
+- active stream request-observability sheet lookup
 - active stream aggregation-panel visibility
 - active stream aggregation range while the aggregation panel is open
 - pagination URL state
@@ -42,6 +43,7 @@ Only keys declared in [`ui/hooks/nuqs.ts`](../ui/hooks/nuqs.ts) are allowed:
 - `table`
 - `stream`
 - `streamFollow`
+- `streamObserve`
 - `aggregations`
 - `streamAggregationRange`
 - `filter`
@@ -61,6 +63,7 @@ Notes:
 - `pageIndex` remains URL-backed for table navigation.
 - `pageSize` remains a supported hash key for compatibility, but table rendering now takes its authoritative rows-per-page preference from `studioUiCollection.tablePageSize` in [`Architecture/ui-state.md`](ui-state.md).
 - `streamFollow` stores the active stream follow mode (`paused`, `live`, or `tail`).
+- `streamObserve` stores the active request-observability lookup for supported Streams profiles. Values serialize as `req:<requestId>`, `trace:<traceId>`, or `span:<spanId>`.
 - `aggregations` is an open-only flag for the active stream aggregation strip; when present it MUST be serialized as a bare key with no explicit value.
 - `streamAggregationRange` stores the active stream aggregation range, but MUST only be serialized while `aggregations` is present.
 
@@ -81,6 +84,7 @@ Adding a new URL key requires updating `StateKey` in `nuqs.ts` first.
 - `queries`: no standalone default; only meaningful when the current adapter provides query insights
 - `stream`: no default; only meaningful when `view=stream`
 - `streamFollow`: no global default in `useNavigation`; the active stream view MUST resolve an absent value to `tail` and materialize that into the hash
+- `streamObserve`: no global default in `useNavigation`; the active stream view MUST treat an absent or malformed value as a closed request-observability sheet
 - `aggregations`: no global default in `useNavigation`; the active stream view MUST treat an absent flag as closed and MUST NOT materialize that closed state into the hash
 - `streamAggregationRange`: no standalone default; the active stream view MUST clear it whenever `aggregations` is absent, and MUST materialize its default range only after the aggregation panel is opened
 
