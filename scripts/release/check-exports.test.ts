@@ -81,4 +81,33 @@ describe("packPackage", () => {
       }
     }
   });
+
+  it("creates a tarball for pnpm-managed packages", () => {
+    const directory = mkdtempSync(join(tmpdir(), "studio-release-pnpm-"));
+    tempDirectories.push(directory);
+
+    writeFileSync(
+      join(directory, "package.json"),
+      JSON.stringify(
+        {
+          files: ["index.js"],
+          name: "release-fixture-pnpm",
+          packageManager: "pnpm@8.15.9",
+          version: "7.8.9",
+        },
+        null,
+        2,
+      ),
+    );
+    writeFileSync(join(directory, "index.js"), "module.exports = 1;\n");
+
+    const tarballPath = packPackage(directory);
+
+    expect(tarballPath).toBe(join(directory, "release-fixture-pnpm-7.8.9.tgz"));
+    expect(existsSync(tarballPath)).toBe(true);
+
+    cleanupPackedTarball(tarballPath);
+
+    expect(existsSync(tarballPath)).toBe(false);
+  });
 });
