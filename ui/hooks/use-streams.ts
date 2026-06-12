@@ -11,9 +11,26 @@ interface StreamsApiItem {
   expires_at: string | null;
   name: string;
   next_offset: string;
+  observability?: StreamObservabilityApiPayload | null;
   profile?: string | null;
   sealed_through: string;
   uploaded_through: string;
+}
+
+interface StreamObservabilityApiPayload {
+  request?: {
+    events_stream?: unknown;
+    traces_stream?: unknown;
+  } | null;
+}
+
+export interface StudioStreamRequestObservability {
+  eventsStream: string;
+  tracesStream: string;
+}
+
+export interface StudioStreamObservability {
+  request: StudioStreamRequestObservability | null;
 }
 
 export interface StudioStream {
@@ -22,6 +39,7 @@ export interface StudioStream {
   expiresAt: string | null;
   name: string;
   nextOffset: string;
+  observability: StudioStreamObservability | null;
   profile: string | null;
   sealedThrough: string;
   uploadedThrough: string;
@@ -44,10 +62,48 @@ function isStreamsApiItem(value: unknown): value is StreamsApiItem {
     (item.expires_at === null || typeof item.expires_at === "string") &&
     typeof item.name === "string" &&
     typeof item.next_offset === "string" &&
+    (item.observability == null ||
+      (typeof item.observability === "object" &&
+        !Array.isArray(item.observability))) &&
     (item.profile == null || typeof item.profile === "string") &&
     typeof item.sealed_through === "string" &&
     typeof item.uploaded_through === "string"
   );
+}
+
+function parseNullableString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
+}
+
+export function normalizeStreamObservability(
+  value: unknown,
+): StudioStreamObservability | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+
+  const observability = value as StreamObservabilityApiPayload;
+  const request = observability.request;
+
+  if (typeof request !== "object" || request === null) {
+    return null;
+  }
+
+  const eventsStream = parseNullableString(request.events_stream);
+  const tracesStream = parseNullableString(request.traces_stream);
+
+  if (!eventsStream || !tracesStream) {
+    return null;
+  }
+
+  return {
+    request: {
+      eventsStream,
+      tracesStream,
+    },
+  };
 }
 
 function createStreamsListUrl(streamsUrl: string | undefined): string {
@@ -120,6 +176,7 @@ export function useStreams(args?: UseStreamsArgs) {
           expiresAt: stream.expires_at,
           name: stream.name,
           nextOffset: stream.next_offset,
+          observability: normalizeStreamObservability(stream.observability),
           profile: stream.profile ?? null,
           sealedThrough: stream.sealed_through,
           uploadedThrough: stream.uploaded_through,

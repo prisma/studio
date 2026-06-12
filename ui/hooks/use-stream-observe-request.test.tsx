@@ -292,18 +292,17 @@ describe("stream observe param serialization", () => {
 });
 
 describe("resolveObserveStreams", () => {
-  const streams = [
-    { name: "app-events", profile: "evlog" },
-    { name: "app-traces", profile: "otel-traces" },
-    { name: "prisma-wal", profile: "state-protocol" },
-  ];
-
-  it("uses the active evlog stream and discovers the trace counterpart", () => {
+  it("uses the active evlog stream and explicit trace counterpart", () => {
     expect(
       resolveObserveStreams({
         activeStreamName: "app-events",
         activeStreamProfile: "evlog",
-        streams,
+        observability: {
+          request: {
+            eventsStream: "app-events",
+            tracesStream: "app-traces",
+          },
+        },
       }),
     ).toEqual({
       eventsStream: "app-events",
@@ -311,12 +310,17 @@ describe("resolveObserveStreams", () => {
     });
   });
 
-  it("uses the active trace stream and discovers the evlog counterpart", () => {
+  it("uses the active trace stream and explicit evlog counterpart", () => {
     expect(
       resolveObserveStreams({
         activeStreamName: "app-traces",
         activeStreamProfile: "otel-traces",
-        streams,
+        observability: {
+          request: {
+            eventsStream: "app-events",
+            tracesStream: "app-traces",
+          },
+        },
       }),
     ).toEqual({
       eventsStream: "app-events",
@@ -329,7 +333,12 @@ describe("resolveObserveStreams", () => {
       resolveObserveStreams({
         activeStreamName: "prisma-wal",
         activeStreamProfile: "state-protocol",
-        streams,
+        observability: {
+          request: {
+            eventsStream: "app-events",
+            tracesStream: "app-traces",
+          },
+        },
       }),
     ).toEqual({
       eventsStream: null,
@@ -337,16 +346,34 @@ describe("resolveObserveStreams", () => {
     });
   });
 
-  it("returns a null counterpart when none is discovered", () => {
+  it("keeps only the active side when no explicit counterpart is declared", () => {
     expect(
       resolveObserveStreams({
         activeStreamName: "app-events",
         activeStreamProfile: "evlog",
-        streams: [{ name: "app-events", profile: "evlog" }],
+        observability: null,
       }),
     ).toEqual({
       eventsStream: "app-events",
       tracesStream: null,
+    });
+  });
+
+  it("does not use unrelated descriptor sides as the active stream", () => {
+    expect(
+      resolveObserveStreams({
+        activeStreamName: "app-traces",
+        activeStreamProfile: "otel-traces",
+        observability: {
+          request: {
+            eventsStream: "other-events",
+            tracesStream: "other-traces",
+          },
+        },
+      }),
+    ).toEqual({
+      eventsStream: "other-events",
+      tracesStream: "app-traces",
     });
   });
 });

@@ -119,6 +119,12 @@ describe("useStreams", () => {
             expires_at: null,
             name: "prisma-wal",
             next_offset: "0",
+            observability: {
+              request: {
+                events_stream: "app-events",
+                traces_stream: "app-traces",
+              },
+            },
             profile: "state-protocol",
             sealed_through: "0",
             uploaded_through: "0",
@@ -158,6 +164,17 @@ describe("useStreams", () => {
     expect(
       harness.getLatestState()?.streams.map((stream) => stream.profile),
     ).toEqual([null, "state-protocol"]);
+    expect(
+      harness.getLatestState()?.streams.map((stream) => stream.observability),
+    ).toEqual([
+      null,
+      {
+        request: {
+          eventsStream: "app-events",
+          tracesStream: "app-traces",
+        },
+      },
+    ]);
     expect(harness.getLatestState()?.hasStreamsServer).toBe(true);
 
     harness.cleanup();

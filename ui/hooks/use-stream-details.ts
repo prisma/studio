@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef } from "react";
 
 import { useStudio } from "../studio/context";
-import type { StudioStream } from "./use-streams";
+import { normalizeStreamObservability, type StudioStream } from "./use-streams";
 
 interface StreamDetailsApiPayload {
   index_status?: {
@@ -115,6 +115,7 @@ interface StreamDetailsApiPayload {
     last_segment_cut_at?: string | null;
     name: string;
     next_offset: string;
+    observability?: unknown;
     pending_bytes?: string;
     pending_rows?: string;
     profile?: string | null;
@@ -1067,6 +1068,7 @@ function normalizeStreamDetailsPayload(
     name: payload.stream.name,
     nextOffset: payload.stream.next_offset,
     objectStoreRequests,
+    observability: normalizeStreamObservability(payload.stream.observability),
     pendingBytes: parseNonNegativeBigInt(payload.stream.pending_bytes ?? "0"),
     pendingRows: parseNonNegativeBigInt(payload.stream.pending_rows ?? "0"),
     profile:

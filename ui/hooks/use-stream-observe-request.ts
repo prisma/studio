@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { useStudio } from "../studio/context";
-import type { StudioStream } from "./use-streams";
+import type { StudioStreamObservability } from "./use-streams";
 
 export const STREAM_PROFILE_EVLOG = "evlog";
 export const STREAM_PROFILE_OTEL_TRACES = "otel-traces";
@@ -210,32 +210,24 @@ export function isObservabilityStreamProfile(
 export function resolveObserveStreams(args: {
   activeStreamName: string;
   activeStreamProfile: string | null | undefined;
-  streams: Array<Pick<StudioStream, "name" | "profile">>;
+  observability: StudioStreamObservability | null | undefined;
 }): {
   eventsStream: string | null;
   tracesStream: string | null;
 } {
-  const { activeStreamName, activeStreamProfile, streams } = args;
-
-  const findCounterpart = (profile: string): string | null => {
-    const counterpart = streams.find(
-      (stream) =>
-        stream.profile === profile && stream.name !== activeStreamName,
-    );
-
-    return counterpart?.name ?? null;
-  };
+  const { activeStreamName, activeStreamProfile, observability } = args;
+  const requestPair = observability?.request ?? null;
 
   if (activeStreamProfile === STREAM_PROFILE_EVLOG) {
     return {
       eventsStream: activeStreamName,
-      tracesStream: findCounterpart(STREAM_PROFILE_OTEL_TRACES),
+      tracesStream: requestPair?.tracesStream ?? null,
     };
   }
 
   if (activeStreamProfile === STREAM_PROFILE_OTEL_TRACES) {
     return {
-      eventsStream: findCounterpart(STREAM_PROFILE_EVLOG),
+      eventsStream: requestPair?.eventsStream ?? null,
       tracesStream: activeStreamName,
     };
   }

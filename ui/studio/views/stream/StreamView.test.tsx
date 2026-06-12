@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { StudioStreamDetails } from "../../../hooks/use-stream-details";
+import type { StudioStream } from "../../../hooks/use-streams";
 import { StreamView } from "./StreamView";
 
 interface MockNavigationState {
@@ -177,16 +178,7 @@ const {
     (args?: { refreshIntervalMs?: number }) => {
       isError: boolean;
       isLoading: boolean;
-      streams: Array<{
-        createdAt: string;
-        epoch: number;
-        expiresAt: string | null;
-        name: string;
-        nextOffset: string;
-        profile: string | null;
-        sealedThrough: string;
-        uploadedThrough: string;
-      }>;
+      streams: StudioStream[];
     }
   >(),
 }));
@@ -517,6 +509,7 @@ function createStreamDetails(
     name: "prisma-wal",
     nextOffset: "2",
     objectStoreRequests: null,
+    observability: null,
     pendingBytes: 128n,
     pendingRows: 3n,
     profile: null,
@@ -5301,6 +5294,12 @@ describe("StreamView", () => {
         details: args?.streamName
           ? createStreamDetails({
               name: args.streamName,
+              observability: {
+                request: {
+                  eventsStream: "app-events",
+                  tracesStream: "configured-traces",
+                },
+              },
               profile: "evlog",
             })
           : null,
@@ -5316,6 +5315,7 @@ describe("StreamView", () => {
           expiresAt: null,
           name: "app-events",
           nextOffset: "2",
+          observability: null,
           profile: "evlog",
           sealedThrough: "-1",
           uploadedThrough: "-1",
@@ -5324,8 +5324,9 @@ describe("StreamView", () => {
           createdAt: "2026-03-24T14:42:38.890Z",
           epoch: 0,
           expiresAt: null,
-          name: "app-traces",
+          name: "unconfigured-traces",
           nextOffset: "6",
+          observability: null,
           profile: "otel-traces",
           sealedThrough: "-1",
           uploadedThrough: "-1",
@@ -5376,7 +5377,7 @@ describe("StreamView", () => {
         kind: "requestId",
         value: "req_2",
       },
-      tracesStream: "app-traces",
+      tracesStream: "configured-traces",
     });
     expect(
       document.querySelector('[data-testid="stream-observe-sheet"]'),

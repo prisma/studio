@@ -55,7 +55,7 @@ import {
   serializeStreamObserveParam,
   type StudioObserveLookup,
 } from "../../../hooks/use-stream-observe-request";
-import { useStreams } from "../../../hooks/use-streams";
+import type { StudioStreamObservability } from "../../../hooks/use-streams";
 import { useUiState } from "../../../hooks/use-ui-state";
 import { ExpandableSearchControl } from "../../input/ExpandableSearchControl";
 import { StudioHeader } from "../../StudioHeader";
@@ -2059,6 +2059,7 @@ function ActiveStreamView(props: {
           activeStreamName={selectedStream.name}
           activeStreamProfile={resolvedStreamProfile}
           lookup={observeLookup}
+          observability={selectedStreamDetails?.observability ?? null}
           onClose={closeObserveSheet}
         />
       ) : null}
@@ -2070,17 +2071,17 @@ function StreamObserveSheetHost(props: {
   activeStreamName: string;
   activeStreamProfile: string;
   lookup: StudioObserveLookup | null;
+  observability: StudioStreamObservability | null;
   onClose: () => void;
 }) {
-  const { streams } = useStreams();
   const observeStreams = useMemo(
     () =>
       resolveObserveStreams({
         activeStreamName: props.activeStreamName,
         activeStreamProfile: props.activeStreamProfile,
-        streams,
+        observability: props.observability,
       }),
-    [props.activeStreamName, props.activeStreamProfile, streams],
+    [props.activeStreamName, props.activeStreamProfile, props.observability],
   );
 
   return (
