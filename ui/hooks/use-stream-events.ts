@@ -13,6 +13,7 @@ import type { StudioStream } from "./use-streams";
 
 const OFFSET_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const PREVIEW_CHARACTER_LIMIT = 280;
+const STREAM_PROFILE_EVLOG = "evlog";
 export const STREAM_EVENTS_PAGE_SIZE = 50;
 
 type StreamEventCollection = Collection<StudioStreamEvent, string>;
@@ -53,7 +54,7 @@ export interface NormalizeStreamEventsArgs {
   events: unknown[];
   searchConfig?: StudioStreamSearchConfig | null;
   startExclusiveSequence: bigint;
-  stream: Pick<StudioStream, "epoch" | "name">;
+  stream: Pick<StudioStream, "epoch" | "name" | "profile">;
 }
 
 export interface UseStreamEventsArgs {
@@ -221,18 +222,134 @@ function compactText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
-function createPreview(value: unknown): string {
-  const preferredValue =
-    isRecord(value) && "value" in value && value.value !== undefined
-      ? value.value
-      : value;
-  const previewText = compactText(stringifyJson(preferredValue, 0));
-
-  if (previewText.length <= PREVIEW_CHARACTER_LIMIT) {
-    return previewText;
+function truncatePreview(value: string): string {
+  if (value.length <= PREVIEW_CHARACTER_LIMIT) {
+    return value;
   }
 
-  return `${previewText.slice(0, PREVIEW_CHARACTER_LIMIT - 1)}…`;
+  return `${value.slice(0, PREVIEW_CHARACTER_LIMIT - 1)}…`;
+}
+
+function getPreferredPreviewValue(value: unknown): unknown {
+  return isRecord(value) && "value" in value && value.value !== undefined
+    ? value.value
+    : value;
+}
+
+function parsePreviewString(value: unknown): string | null {
+  const primitive = stringifyPrimitive(value);
+  const text = primitive === null ? null : compactText(primitive);
+
+  return text && text.length > 0 ? text : null;
+}
+
+function parsePreviewNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function parsePreviewStatus(value: unknown): string | null {
+  const statusText = parsePreviewString(value);
+
+  return statusText && statusText.length > 0 ? statusText : null;
+}
+
+function shouldShowEvlogRequestMessage(args: {
+  level: string | null;
+  message: string | null;
+  status: number | null;
+}): boolean {
+  if (!args.message) {
+    return false;
+  }
+
+  if (args.status !== null && (args.status < 200 || args.status >= 400)) {
+    return true;
+  }
+
+  if (
+    args.level === "error" ||
+    args.level === "fatal" ||
+    args.level === "warn" ||
+    args.level === "warning"
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function createEvlogPreview(value: unknown): string | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const context = isRecord(value.context) ? value.context : null;
+  const method = parsePreviewString(value.method)?.toUpperCase() ?? null;
+  const path =
+    parsePreviewString(value.path) ??
+    parsePreviewString(value.route) ??
+    (context ? parsePreviewString(context.route) : null) ??
+    (context ? parsePreviewString(context.path) : null);
+  const statusText = parsePreviewStatus(value.status);
+  const status = parsePreviewNumber(value.status);
+  const message =
+    parsePreviewString(value.message) ??
+    parsePreviewString(value.why) ??
+    parsePreviewString(value.fix);
+  const level = parsePreviewString(value.level)?.toLowerCase() ?? null;
+
+  if (method && path) {
+    const shouldShowStatus =
+      statusText !== null && (status === null || status < 200 || status >= 400);
+    const shouldShowMessage = shouldShowEvlogRequestMessage({
+      level,
+      message,
+      status,
+    });
+    const preview = [method, path]
+      .concat(shouldShowStatus ? [statusText] : [])
+      .concat(shouldShowMessage && message ? [message] : [])
+      .join(" ");
+
+    return truncatePreview(preview);
+  }
+
+  if (message) {
+    const prefix =
+      statusText !== null && (status === null || status < 200 || status >= 400)
+        ? `${statusText} `
+        : "";
+
+    return truncatePreview(`${prefix}${message}`);
+  }
+
+  return null;
+}
+
+function createPreview(value: unknown, profile?: string | null): string {
+  const preferredValue = getPreferredPreviewValue(value);
+
+  if (profile === STREAM_PROFILE_EVLOG) {
+    const evlogPreview = createEvlogPreview(preferredValue);
+
+    if (evlogPreview) {
+      return evlogPreview;
+    }
+  }
+
+  const previewText = compactText(stringifyJson(preferredValue, 0));
+
+  return truncatePreview(previewText);
 }
 
 function estimateSizeBytes(value: unknown): number {
@@ -770,7 +887,7 @@ export function normalizeStreamEvents(
       indexedFields: extractIndexedFields(event),
       key: extractKey(event),
       offset,
-      preview: createPreview(event),
+      preview: createPreview(event, stream.profile),
       sequence: sequence.toString(),
       sizeBytes: estimateSizeBytes(event),
       sortOffset: offset,
@@ -782,7 +899,7 @@ export function normalizeStreamEvents(
 function normalizeStandaloneRoutingKeyEvents(args: {
   events: unknown[];
   searchConfig?: StudioStreamSearchConfig | null;
-  stream: Pick<StudioStream, "epoch" | "name">;
+  stream: Pick<StudioStream, "epoch" | "name" | "profile">;
 }): StudioStreamEvent[] {
   const { events, searchConfig, stream } = args;
 
@@ -797,7 +914,7 @@ function normalizeStandaloneRoutingKeyEvents(args: {
       indexedFields: extractIndexedFields(event),
       key: extractKey(event),
       offset,
-      preview: createPreview(event),
+      preview: createPreview(event, stream.profile),
       sequence: sequence.toString(),
       sizeBytes: estimateSizeBytes(event),
       sortOffset: offset,
@@ -809,7 +926,7 @@ function normalizeStandaloneRoutingKeyEvents(args: {
 function normalizeStreamSearchHits(args: {
   hits: StreamSearchApiHit[];
   searchConfig?: StudioStreamSearchConfig | null;
-  stream: Pick<StudioStream, "name">;
+  stream: Pick<StudioStream, "name" | "profile">;
 }): StudioStreamEvent[] {
   const { hits, searchConfig, stream } = args;
 
@@ -823,7 +940,7 @@ function normalizeStreamSearchHits(args: {
       indexedFields: extractIndexedFields(hit.source),
       key: extractKey(hit.source),
       offset: hit.offset,
-      preview: createPreview(hit.source),
+      preview: createPreview(hit.source, stream.profile),
       sequence: sequence?.toString() ?? hit.offset,
       sizeBytes: estimateSizeBytes(hit.source),
       sortOffset: hit.offset,

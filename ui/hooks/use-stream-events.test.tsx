@@ -8,6 +8,7 @@ import {
   createStreamReadUrl,
   encodeStreamOffset,
   getStreamEventsWindow,
+  normalizeStreamEvents,
   useStreamEvents,
 } from "./use-stream-events";
 import type { StudioStream } from "./use-streams";
@@ -259,6 +260,66 @@ describe("useStreamEvents", () => {
       createStreamReadUrl("/api/streams", "golden-stream-2", "-1", "repo/api"),
     ).toBe(
       "/api/streams/v1/stream/golden-stream-2?format=json&offset=-1&key=repo%2Fapi",
+    );
+  });
+
+  it("summarizes evlog request previews without showing raw JSON", () => {
+    const events = normalizeStreamEvents({
+      events: [
+        {
+          timestamp: "2026-06-12T17:05:10.935Z",
+          level: "info",
+          service: "storefront",
+          method: "GET",
+          path: "/product/acme-mug",
+          status: 200,
+          duration: 0,
+          message: "Storefront request",
+        },
+        {
+          timestamp: "2026-06-12T17:09:18.912Z",
+          level: "error",
+          service: "storefront",
+          method: "POST",
+          path: "/api/observability/simulate",
+          status: 500,
+          message: "Synthetic diagnostic: Trace fanout",
+        },
+      ],
+      startExclusiveSequence: 0n,
+      stream: {
+        epoch: 0,
+        name: "webshop-production-events",
+        profile: "evlog",
+      },
+    });
+
+    expect(events.map((event) => event.preview)).toEqual([
+      "GET /product/acme-mug",
+      "POST /api/observability/simulate 500 Synthetic diagnostic: Trace fanout",
+    ]);
+  });
+
+  it("keeps generic previews for non-evlog streams", () => {
+    const events = normalizeStreamEvents({
+      events: [
+        {
+          method: "GET",
+          path: "/product/acme-mug",
+          status: 200,
+          message: "Storefront request",
+        },
+      ],
+      startExclusiveSequence: 0n,
+      stream: {
+        epoch: 0,
+        name: "generic-json-events",
+        profile: null,
+      },
+    });
+
+    expect(events[0]?.preview).toBe(
+      '{"method":"GET","path":"/product/acme-mug","status":200,"message":"Storefront request"}',
     );
   });
 

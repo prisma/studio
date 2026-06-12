@@ -74,6 +74,7 @@ When that deep link lands on a `state-protocol` WAL stream, the stream view also
 
 Selecting a stream opens a dedicated event log view in the main pane instead of the table grid.
 The view uses TanStack DB-backed infinite scroll to load the newest events first, shows summary columns for time, key, indexed fields, preview text, and payload size, and lets users expand one event at a time to inspect the full formatted content.
+For `evlog` streams, the preview column summarizes request-shaped events as readable request lines such as `GET /product/acme-mug`, adding status and diagnostic text for failures or warning/error events while keeping the full JSON available in the expanded row.
 When a stream advertises a search schema with a primary timestamp field, the event log uses that configured timestamp for the row time column before falling back to legacy timestamp field names. This keeps schema-driven streams like GH Archive from showing `Unknown time` even when their canonical timestamp lives under a non-legacy field such as `eventTime`.
 The stream chrome now mirrors the table view more closely: the header is reserved for controls, while a fixed footer summary box shows the latest event count and total logical payload bytes in human-readable units.
 That footer count uses grouped digits like `12,345 events`, while the byte total stays compact by scaling units such as `MB` and `GB` instead of showing a raw comma-separated byte count.
