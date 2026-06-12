@@ -37,7 +37,13 @@ function readOptionValue(args: string[], name: string): string | null {
 
   const index = args.indexOf(name);
 
-  return index >= 0 ? (args[index + 1] ?? null) : null;
+  if (index < 0) {
+    return null;
+  }
+
+  const next = args[index + 1];
+
+  return next && !next.startsWith("-") ? next : null;
 }
 
 export function parseScaleSeedArgs(args: string[]): ScaleSeedOptions {

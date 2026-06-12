@@ -44,6 +44,23 @@ describe("parseScaleSeedArgs", () => {
       process.env.STUDIO_STREAMS_URL = originalStudioStreamsUrl;
     }
   });
+
+  it("does not treat a following flag as a streams URL value", () => {
+    const originalStreamsUrl = process.env.STREAMS_URL;
+    const originalStudioStreamsUrl = process.env.STUDIO_STREAMS_URL;
+
+    try {
+      delete process.env.STREAMS_URL;
+      delete process.env.STUDIO_STREAMS_URL;
+
+      expect(() =>
+        parseScaleSeedArgs(["--streams-url", "--batches", "2"]),
+      ).toThrow(/Missing --streams-url/);
+    } finally {
+      process.env.STREAMS_URL = originalStreamsUrl;
+      process.env.STUDIO_STREAMS_URL = originalStudioStreamsUrl;
+    }
+  });
 });
 
 describe("buildObservabilityScaleSeed", () => {

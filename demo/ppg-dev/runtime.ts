@@ -114,20 +114,30 @@ export async function startDemoRuntime(
   });
   cleanupCallbacks.push(() => prismaDevServer.close());
 
-  await seedDatabaseImpl(prismaDevServer.database.connectionString);
+  try {
+    await seedDatabaseImpl(prismaDevServer.database.connectionString);
 
-  const localStreamsServerUrl = prismaDevServer.experimental.streams.serverUrl;
+    const localStreamsServerUrl =
+      prismaDevServer.experimental.streams.serverUrl;
 
-  if (localStreamsServerUrl) {
-    await seedObservabilityStreamsImpl({
-      streamsServerUrl: localStreamsServerUrl,
-    });
+    if (localStreamsServerUrl) {
+      await seedObservabilityStreamsImpl({
+        streamsServerUrl: localStreamsServerUrl,
+      });
 
-    const stopObservabilityTicker = startObservabilityStreamTickerImpl({
-      streamsServerUrl: localStreamsServerUrl,
-    });
+      const stopObservabilityTicker = startObservabilityStreamTickerImpl({
+        streamsServerUrl: localStreamsServerUrl,
+      });
 
-    cleanupCallbacks.push(() => stopObservabilityTicker());
+      cleanupCallbacks.push(() => stopObservabilityTicker());
+    }
+  } catch (error) {
+    await Promise.allSettled(
+      cleanupCallbacks.map((cleanupCallback) =>
+        Promise.resolve().then(() => cleanupCallback()),
+      ),
+    );
+    throw error;
   }
 
   const postgresClient = createPostgresClient(

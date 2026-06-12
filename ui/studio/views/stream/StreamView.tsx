@@ -881,14 +881,36 @@ function ActiveStreamView(props: {
   const supportsRequestObservability = isObservabilityStreamProfile(
     resolvedStreamProfile,
   );
+  const setStreamObserveParam = props.setStreamObserveParam;
+  const selectedStreamIdentity = `${selectedStream.name}:${selectedStream.epoch}`;
+  const lastObserveStreamIdentityRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (lastObserveStreamIdentityRef.current === null) {
+      lastObserveStreamIdentityRef.current = selectedStreamIdentity;
+      return;
+    }
+
+    if (lastObserveStreamIdentityRef.current !== selectedStreamIdentity) {
+      lastObserveStreamIdentityRef.current = selectedStreamIdentity;
+      void setStreamObserveParam(null);
+    }
+  }, [selectedStreamIdentity, setStreamObserveParam]);
+
+  const isObserveLookupScopedToSelectedStream =
+    lastObserveStreamIdentityRef.current === null ||
+    lastObserveStreamIdentityRef.current === selectedStreamIdentity;
   const observeLookup = useMemo(
     () =>
-      supportsRequestObservability
+      supportsRequestObservability && isObserveLookupScopedToSelectedStream
         ? parseStreamObserveParam(props.streamObserveParam)
         : null,
-    [props.streamObserveParam, supportsRequestObservability],
+    [
+      props.streamObserveParam,
+      isObserveLookupScopedToSelectedStream,
+      supportsRequestObservability,
+    ],
   );
-  const setStreamObserveParam = props.setStreamObserveParam;
   const openObserveLookup = useCallback(
     (lookup: StudioObserveLookup) => {
       void setStreamObserveParam(serializeStreamObserveParam(lookup));
@@ -898,7 +920,6 @@ function ActiveStreamView(props: {
   const closeObserveSheet = useCallback(() => {
     void setStreamObserveParam(null);
   }, [setStreamObserveParam]);
-  const selectedStreamIdentity = `${selectedStream.name}:${selectedStream.epoch}`;
   const streamEventWindowResetKey = `${selectedStreamIdentity ?? "none"}::${selectedRoutingKey}::${effectiveSearchQuery}`;
   const [pageCount, setPageCount] = useState(1);
   const [searchVisibleResultCount, setSearchVisibleResultCount] = useState<

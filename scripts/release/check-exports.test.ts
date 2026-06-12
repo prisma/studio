@@ -67,7 +67,9 @@ describe("packPackage", () => {
     try {
       const tarballPath = packPackage(directory);
 
-      expect(tarballPath).toBe(join(directory, "release-fixture-dry-run-4.5.6.tgz"));
+      expect(tarballPath).toBe(
+        join(directory, "release-fixture-dry-run-4.5.6.tgz"),
+      );
       expect(existsSync(tarballPath)).toBe(true);
 
       cleanupPackedTarball(tarballPath);
@@ -101,13 +103,26 @@ describe("packPackage", () => {
     );
     writeFileSync(join(directory, "index.js"), "module.exports = 1;\n");
 
-    const tarballPath = packPackage(directory);
+    const previousCorepackStrict = process.env.COREPACK_ENABLE_STRICT;
+    process.env.COREPACK_ENABLE_STRICT = "1";
 
-    expect(tarballPath).toBe(join(directory, "release-fixture-pnpm-7.8.9.tgz"));
-    expect(existsSync(tarballPath)).toBe(true);
+    try {
+      const tarballPath = packPackage(directory);
 
-    cleanupPackedTarball(tarballPath);
+      expect(tarballPath).toBe(
+        join(directory, "release-fixture-pnpm-7.8.9.tgz"),
+      );
+      expect(existsSync(tarballPath)).toBe(true);
 
-    expect(existsSync(tarballPath)).toBe(false);
+      cleanupPackedTarball(tarballPath);
+
+      expect(existsSync(tarballPath)).toBe(false);
+    } finally {
+      if (previousCorepackStrict === undefined) {
+        delete process.env.COREPACK_ENABLE_STRICT;
+      } else {
+        process.env.COREPACK_ENABLE_STRICT = previousCorepackStrict;
+      }
+    }
   });
 });

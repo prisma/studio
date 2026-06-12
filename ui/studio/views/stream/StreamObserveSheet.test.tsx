@@ -231,7 +231,9 @@ function renderSheet(args: {
       root.render(
         <QueryClientProvider client={queryClient}>
           <StreamObserveSheet
-            eventsStream={args.eventsStream ?? "app-events"}
+            eventsStream={
+              args.eventsStream === undefined ? "app-events" : args.eventsStream
+            }
             lookup={lookup}
             onClose={onClose}
             tracesStream={
@@ -429,6 +431,40 @@ describe("StreamObserveSheet", () => {
       document.querySelector('[data-testid="stream-observe-sheet"]')
         ?.textContent,
     ).toContain("No otel-traces stream is available");
+
+    sheet.cleanup();
+  });
+
+  it("renders an unavailable state when no observe streams are resolved", async () => {
+    const sheet = renderSheet({
+      eventsStream: null,
+      lookup: { kind: "requestId", value: "req_8f2k" },
+      tracesStream: null,
+    });
+
+    const sheetElement = await waitForSelector(
+      '[data-testid="stream-observe-sheet"]',
+    );
+    click(
+      await waitForSelector('[data-testid="stream-observe-section-trace"]'),
+    );
+    await flush();
+
+    expect(
+      document.querySelector('[data-testid="stream-observe-waterfall"]'),
+    ).toBeNull();
+    expect(sheetElement.textContent).toContain(
+      "Request observability is unavailable",
+    );
+    expect(sheetElement.textContent).toContain(
+      "No evlog or otel-traces stream is available",
+    );
+    expect(
+      document.querySelector<HTMLButtonElement>(
+        '[data-testid="stream-observe-refresh"]',
+      )?.disabled,
+    ).toBe(true);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
 
     sheet.cleanup();
   });

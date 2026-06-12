@@ -483,6 +483,7 @@ describe("useStreamDetails", () => {
 
     await waitFor(() => harness.getLatestState()?.isSuccess === true);
 
+    expect(harness.getLatestState()?.details?.profile).toBe("evlog");
     expect(harness.getLatestState()?.details?.observability).toEqual({
       request: {
         eventsStream: "app-events",

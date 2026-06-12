@@ -35,6 +35,7 @@ This architecture governs:
 - [`ui/hooks/use-stream-events.ts`](../ui/hooks/use-stream-events.ts)
 - [`ui/hooks/use-stream-details.ts`](../ui/hooks/use-stream-details.ts)
 - [`ui/hooks/use-stream-aggregations.ts`](../ui/hooks/use-stream-aggregations.ts)
+- [`ui/hooks/use-stream-observe-request.ts`](../ui/hooks/use-stream-observe-request.ts) (`useStreamObserveRequest`)
 - [`ui/hooks/use-ui-state.ts`](../ui/hooks/use-ui-state.ts)
 - [`ui/hooks/use-navigation.tsx`](../ui/hooks/use-navigation.tsx)
 - [`ui/studio/views/stream/StreamView.tsx`](../ui/studio/views/stream/StreamView.tsx)

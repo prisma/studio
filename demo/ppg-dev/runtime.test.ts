@@ -12,8 +12,9 @@ function createFakePostgresClient() {
 describe("startDemoRuntime", () => {
   it("starts the local Prisma Dev stack by default", async () => {
     const fakePostgresClient = createFakePostgresClient();
+    const closePrismaDevServerMock = vi.fn(() => Promise.resolve());
     const startPrismaDevServerMock = vi.fn().mockResolvedValue({
-      close: vi.fn(() => Promise.resolve()),
+      close: closePrismaDevServerMock,
       database: {
         connectionString: "postgres://local-demo-db",
       },
@@ -71,6 +72,52 @@ describe("startDemoRuntime", () => {
     }
 
     expect(stopObservabilityTickerMock).toHaveBeenCalledTimes(1);
+    expect(closePrismaDevServerMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes the local Prisma Dev server when observability seeding fails", async () => {
+    const closePrismaDevServerMock = vi.fn(() => Promise.resolve());
+    const startPrismaDevServerMock = vi.fn().mockResolvedValue({
+      close: closePrismaDevServerMock,
+      database: {
+        connectionString: "postgres://local-demo-db",
+      },
+      experimental: {
+        streams: {
+          serverUrl: "http://127.0.0.1:51216",
+        },
+      },
+    });
+    const seedDatabaseMock = vi.fn(() => Promise.resolve());
+    const seedObservabilityStreamsMock = vi.fn(() =>
+      Promise.reject(new Error("seed failed")),
+    );
+    const startObservabilityStreamTickerMock = vi.fn();
+
+    await expect(
+      startDemoRuntime(
+        {
+          databaseUrl: null,
+          streamsServerUrl: null,
+        },
+        {
+          createPostgresClient: vi.fn(
+            () => createFakePostgresClient() as never,
+          ),
+          seedDatabase: seedDatabaseMock,
+          seedObservabilityStreams: seedObservabilityStreamsMock,
+          startObservabilityStreamTicker: startObservabilityStreamTickerMock,
+          startPrismaDevServer: startPrismaDevServerMock,
+        },
+      ),
+    ).rejects.toThrow("seed failed");
+
+    expect(seedDatabaseMock).toHaveBeenCalledWith("postgres://local-demo-db");
+    expect(seedObservabilityStreamsMock).toHaveBeenCalledWith({
+      streamsServerUrl: "http://127.0.0.1:51216",
+    });
+    expect(startObservabilityStreamTickerMock).not.toHaveBeenCalled();
+    expect(closePrismaDevServerMock).toHaveBeenCalledTimes(1);
   });
 
   it("uses external data sources without starting local Prisma Dev or seeding", async () => {

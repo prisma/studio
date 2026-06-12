@@ -117,6 +117,7 @@ export function StreamObserveSheet(props: StreamObserveSheetProps) {
   const { eventsStream, lookup, onClose, tracesStream } = props;
   const [section, setSection] = useState<ObserveSection>("timeline");
   const lookupIdentity = lookup ? `${lookup.kind}:${lookup.value}` : null;
+  const hasObserveSource = eventsStream !== null || tracesStream !== null;
 
   useEffect(() => {
     setSection("timeline");
@@ -216,7 +217,7 @@ export function StreamObserveSheet(props: StreamObserveSheetProps) {
                 aria-label="Refresh request details"
                 className="size-8"
                 data-testid="stream-observe-refresh"
-                disabled={isFetching}
+                disabled={isFetching || !hasObserveSource}
                 onClick={() => {
                   void refetch();
                 }}
@@ -229,7 +230,19 @@ export function StreamObserveSheet(props: StreamObserveSheetProps) {
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-              {isLoading ? (
+              {!hasObserveSource ? (
+                <div
+                  className="flex flex-col items-center gap-2 px-1 py-6 text-center text-sm text-muted-foreground"
+                  data-testid="stream-observe-unavailable"
+                >
+                  <span className="font-medium text-foreground">
+                    Request observability is unavailable
+                  </span>
+                  <span>
+                    No evlog or otel-traces stream is available for this lookup.
+                  </span>
+                </div>
+              ) : isLoading ? (
                 <ObserveLoadingState />
               ) : isError ? (
                 <div

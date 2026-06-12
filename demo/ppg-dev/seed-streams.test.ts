@@ -134,7 +134,7 @@ describe("buildObservabilityStreamSeed", () => {
     expect(snapshotSpans).toHaveLength(19);
     expect(
       snapshotSpans.some(
-        (span) => span.name === "fetch POST accelerate.prisma-data.net",
+        (span) => span.name === "postgresql client local-db:5432",
       ),
     ).toBe(true);
     expect(
@@ -164,17 +164,17 @@ describe("buildObservabilityStreamSeed", () => {
     expect(serviceNames.has("console")).toBe(true);
     expect(serviceNames.has("tenant-manager")).toBe(true);
 
-    const accelerateSpan = snapshotSpans.find(
-      (span) => span.name === "fetch POST accelerate.prisma-data.net",
+    const localDbSpan = snapshotSpans.find(
+      (span) => span.name === "postgresql client local-db:5432",
     );
-    const accelerateAttributes = accelerateSpan?.attributes as Record<
+    const localDbAttributes = localDbSpan?.attributes as Record<
       string,
       unknown
     >;
 
-    expect(accelerateAttributes["server.address"]).toBe(
-      "accelerate.prisma-data.net",
-    );
+    expect(localDbAttributes["network.protocol.name"]).toBe("tcp");
+    expect(localDbAttributes["server.address"]).toBe("local-db");
+    expect(localDbAttributes["server.port"]).toBe(5432);
   });
 
   it("is deterministic for a fixed seed and time", () => {
