@@ -9,12 +9,14 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { useStudio } from "../studio/context";
 import type { StudioStreamSearchConfig } from "./use-stream-details";
+import {
+  STREAM_PROFILE_EVLOG,
+  STREAM_PROFILE_OTEL_TRACES,
+} from "./use-stream-observe-request";
 import type { StudioStream } from "./use-streams";
 
 const OFFSET_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const PREVIEW_CHARACTER_LIMIT = 280;
-const STREAM_PROFILE_EVLOG = "evlog";
-const STREAM_PROFILE_OTEL_TRACES = "otel-traces";
 export const STREAM_EVENTS_PAGE_SIZE = 50;
 
 type StreamEventCollection = Collection<StudioStreamEvent, string>;
@@ -265,12 +267,6 @@ function readRecordValue(
   return value ? value[key] : undefined;
 }
 
-function parsePreviewStatus(value: unknown): string | null {
-  const statusText = parsePreviewString(value);
-
-  return statusText && statusText.length > 0 ? statusText : null;
-}
-
 function parseRecordString(
   value: Record<string, unknown> | null,
   key: string,
@@ -315,7 +311,7 @@ function createEvlogPreview(value: unknown): string | null {
     parsePreviewString(value.route) ??
     (context ? parsePreviewString(context.route) : null) ??
     (context ? parsePreviewString(context.path) : null);
-  const statusText = parsePreviewStatus(value.status);
+  const statusText = parsePreviewString(value.status);
   const status = parsePreviewNumber(value.status);
   const message =
     parsePreviewString(value.message) ??
