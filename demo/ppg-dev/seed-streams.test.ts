@@ -23,8 +23,8 @@ describe("buildObservabilityStreamSeed", () => {
   const seed = buildObservabilityStreamSeed({ now });
 
   it("produces correlated evlog events and otel spans", () => {
-    expect(seed.events.length).toBeGreaterThanOrEqual(8);
-    expect(seed.spans.length).toBeGreaterThanOrEqual(20);
+    expect(seed.events.length).toBeGreaterThanOrEqual(12);
+    expect(seed.spans.length).toBeGreaterThanOrEqual(55);
 
     const spanTraceIds = new Set(
       seed.spans.map((span) => span.traceId as string),
@@ -103,6 +103,78 @@ describe("buildObservabilityStreamSeed", () => {
     expect(errorEvent).toBeDefined();
     expect(typeof errorEvent?.why).toBe("string");
     expect(typeof errorEvent?.fix).toBe("string");
+  });
+
+  it("includes production-shaped nested traces", () => {
+    expect(seed.events.map((event) => event.message)).toEqual(
+      expect.arrayContaining([
+        "Inventory reservation retried",
+        "Query insights snapshot viewed",
+        "Workspace dashboard opened",
+      ]),
+    );
+
+    const snapshotEvent = seed.events.find(
+      (event) => event.message === "Query insights snapshot viewed",
+    );
+
+    expect(snapshotEvent).toMatchObject({
+      duration: 3486,
+      method: "POST",
+      path: "/api/query-insights/snapshot",
+      service: "console",
+      status: 200,
+    });
+
+    const snapshotTraceId = snapshotEvent?.traceId as string;
+    const snapshotSpans = seed.spans.filter(
+      (span) => span.traceId === snapshotTraceId,
+    );
+
+    expect(snapshotSpans).toHaveLength(19);
+    expect(
+      snapshotSpans.some(
+        (span) => span.name === "fetch POST accelerate.prisma-data.net",
+      ),
+    ).toBe(true);
+    expect(
+      snapshotSpans.some(
+        (span) => span.name === "Durable Object TENANT_MANAGER",
+      ),
+    ).toBe(true);
+
+    const rootSpan = snapshotSpans.find((span) => span.parentSpanId === null);
+
+    expect(rootSpan?.name).toBe("fetchHandler POST");
+    expect(
+      snapshotSpans.filter((span) => span.parentSpanId === rootSpan?.spanId)
+        .length,
+    ).toBeGreaterThanOrEqual(2);
+
+    const serviceNames = new Set(
+      snapshotSpans.map((span) => {
+        const resource = span.resource as {
+          attributes: Record<string, unknown>;
+        };
+
+        return resource.attributes["service.name"];
+      }),
+    );
+
+    expect(serviceNames.has("console")).toBe(true);
+    expect(serviceNames.has("tenant-manager")).toBe(true);
+
+    const accelerateSpan = snapshotSpans.find(
+      (span) => span.name === "fetch POST accelerate.prisma-data.net",
+    );
+    const accelerateAttributes = accelerateSpan?.attributes as Record<
+      string,
+      unknown
+    >;
+
+    expect(accelerateAttributes["server.address"]).toBe(
+      "accelerate.prisma-data.net",
+    );
   });
 
   it("is deterministic for a fixed seed and time", () => {

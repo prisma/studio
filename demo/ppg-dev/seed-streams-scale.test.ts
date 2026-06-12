@@ -58,9 +58,9 @@ describe("buildObservabilityScaleSeed", () => {
       seed.events.map((event) => event.requestId).filter(Boolean),
     );
 
-    expect(seed.events.length).toBe(27);
-    expect(seed.spans.length).toBe(69);
-    expect(requestIds.size).toBe(27);
+    expect(seed.events.length).toBe(36);
+    expect(seed.spans.length).toBe(168);
+    expect(requestIds.size).toBe(36);
     expect(seed.events[0]?.timestamp).toBe("2026-06-11T11:58:50.000Z");
     expect(seed.events.at(-1)?.timestamp).toBe("2026-06-11T11:24:00.000Z");
   });

@@ -97,7 +97,7 @@ If the descriptor is absent, Studio may still open the sheet for the active stre
 - `app-events` with the `evlog` profile
 - `app-traces` with the `otel-traces` profile
 
-The seed data MUST include successful requests, failed requests with root-cause fields, slow requests, event-only requests, and trace-only requests. The demo also starts a ticker that appends fresh correlated requests so `Tail` mode and request-detail refresh can be exercised locally.
+The seed data MUST include successful requests, failed requests with root-cause fields, slow requests, event-only requests, trace-only requests, and at least one deeper multi-service trace that exercises nested service calls, repeated network spans, and downstream worker/service spans. The demo also starts a ticker that appends fresh correlated requests so `Tail` mode and request-detail refresh can be exercised locally.
 
 The demo MUST create both streams with `Content-Type: application/json` before profile installation, and the installed profiles MUST declare their request-observability counterparts.
 
