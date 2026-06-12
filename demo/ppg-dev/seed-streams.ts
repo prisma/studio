@@ -518,6 +518,71 @@ async function ensureProfiledStream(args: {
   });
 }
 
+export async function ensureObservabilityStreams(args: {
+  fetchImpl?: FetchImplementation;
+  streamsServerUrl: string;
+}): Promise<void> {
+  const fetchImpl =
+    args.fetchImpl ?? (globalThis.fetch as unknown as FetchImplementation);
+  const baseUrl = args.streamsServerUrl.replace(/\/+$/, "");
+
+  await ensureProfiledStream({
+    baseUrl,
+    fetchImpl,
+    profile: {
+      kind: "evlog",
+      observability: {
+        request: {
+          tracesStream: DEMO_OBSERVABILITY_TRACES_STREAM,
+        },
+      },
+      redactKeys: ["sessiontoken"],
+    },
+    streamName: DEMO_OBSERVABILITY_EVENTS_STREAM,
+  });
+  await ensureProfiledStream({
+    baseUrl,
+    fetchImpl,
+    profile: {
+      kind: "otel-traces",
+      observability: {
+        request: {
+          eventsStream: DEMO_OBSERVABILITY_EVENTS_STREAM,
+        },
+      },
+    },
+    streamName: DEMO_OBSERVABILITY_TRACES_STREAM,
+  });
+}
+
+export async function appendObservabilitySeed(args: {
+  fetchImpl?: FetchImplementation;
+  seed: DemoObservabilitySeed;
+  streamsServerUrl: string;
+}): Promise<void> {
+  const fetchImpl =
+    args.fetchImpl ?? (globalThis.fetch as unknown as FetchImplementation);
+  const baseUrl = args.streamsServerUrl.replace(/\/+$/, "");
+
+  if (args.seed.events.length > 0) {
+    await postJson({
+      body: args.seed.events,
+      fetchImpl,
+      label: "appending evlog events",
+      url: `${baseUrl}/v1/stream/${DEMO_OBSERVABILITY_EVENTS_STREAM}`,
+    });
+  }
+
+  if (args.seed.spans.length > 0) {
+    await postJson({
+      body: args.seed.spans,
+      fetchImpl,
+      label: "appending otel spans",
+      url: `${baseUrl}/v1/stream/${DEMO_OBSERVABILITY_TRACES_STREAM}`,
+    });
+  }
+}
+
 export async function seedObservabilityStreams(args: {
   fetchImpl?: FetchImplementation;
   now?: Date;
@@ -528,30 +593,11 @@ export async function seedObservabilityStreams(args: {
   const baseUrl = args.streamsServerUrl.replace(/\/+$/, "");
   const seed = buildObservabilityStreamSeed({ now: args.now ?? new Date() });
 
-  await ensureProfiledStream({
-    baseUrl,
+  await ensureObservabilityStreams({ fetchImpl, streamsServerUrl: baseUrl });
+  await appendObservabilitySeed({
     fetchImpl,
-    profile: { kind: "evlog", redactKeys: ["sessiontoken"] },
-    streamName: DEMO_OBSERVABILITY_EVENTS_STREAM,
-  });
-  await ensureProfiledStream({
-    baseUrl,
-    fetchImpl,
-    profile: { kind: "otel-traces" },
-    streamName: DEMO_OBSERVABILITY_TRACES_STREAM,
-  });
-
-  await postJson({
-    body: seed.events,
-    fetchImpl,
-    label: "seeding evlog events",
-    url: `${baseUrl}/v1/stream/${DEMO_OBSERVABILITY_EVENTS_STREAM}`,
-  });
-  await postJson({
-    body: seed.spans,
-    fetchImpl,
-    label: "seeding otel spans",
-    url: `${baseUrl}/v1/stream/${DEMO_OBSERVABILITY_TRACES_STREAM}`,
+    seed,
+    streamsServerUrl: baseUrl,
   });
 }
 

@@ -100,9 +100,10 @@ When Streams does not expose a meaningful lag duration for a coverage or acceler
 ## Stream Request Observability
 
 When the active stream profile is `evlog` or `otel-traces`, expanded event rows can open a request details sheet from a correlated request ID, trace ID, or span ID.
+Studio uses the active stream details' explicit `observability.request` descriptor to pair event and trace streams, instead of guessing from the first opposite-profile stream.
 The sheet calls the Streams `POST /v1/observe/request` endpoint through Studio's `/api/streams` proxy, keeps the lookup in the URL hash as `streamObserve`, and renders a merged timeline, trace waterfall, primary evlog event, root-cause fields, service calls, span errors, source stream labels, and partial-result warnings from the single response.
 If only one observability stream is available, the sheet still opens and explains the missing event or trace side instead of presenting an empty result as complete.
-The local `ppg-dev` demo now seeds profiled `app-events` and `app-traces` streams with realistic successes, failures, slow requests, event-only requests, and trace-only requests, then appends fresh correlated requests on a timer so request details, Tail mode, and refresh behavior can be validated against a live local Streams server.
+The local `ppg-dev` demo now seeds paired `app-events` and `app-traces` streams with realistic successes, failures, slow requests, event-only requests, and trace-only requests, then appends fresh correlated requests on a timer so request details, Tail mode, and refresh behavior can be validated against a live local Streams server. `pnpm demo:ppg:seed-scale -- --streams-url <url>` appends deterministic scale data for local performance checks.
 
 ## Stream Search and Match Highlighting
 

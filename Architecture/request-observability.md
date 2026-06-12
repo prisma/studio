@@ -18,13 +18,17 @@ This architecture governs:
 
 - [`ui/hooks/use-stream-observe-request.ts`](../ui/hooks/use-stream-observe-request.ts)
 - [`ui/studio/views/stream/StreamObserveSheet.tsx`](../ui/studio/views/stream/StreamObserveSheet.tsx)
+- [`ui/studio/views/stream/StreamObserveTimelineSection.tsx`](../ui/studio/views/stream/StreamObserveTimelineSection.tsx)
+- [`ui/studio/views/stream/StreamObserveTraceSection.tsx`](../ui/studio/views/stream/StreamObserveTraceSection.tsx)
+- [`ui/studio/views/stream/StreamObserveEventSection.tsx`](../ui/studio/views/stream/StreamObserveEventSection.tsx)
 - [`ui/studio/views/stream/StreamView.tsx`](../ui/studio/views/stream/StreamView.tsx)
 - [`demo/ppg-dev/seed-streams.ts`](../demo/ppg-dev/seed-streams.ts)
+- [`demo/ppg-dev/seed-streams-scale.ts`](../demo/ppg-dev/seed-streams-scale.ts)
 
 ## Non-Negotiable Rules
 
 - Request observability MUST only appear for streams whose resolved profile is `evlog` or `otel-traces`.
-- Stream profile detection MUST come from Streams metadata normalized by `useStreams` and `useStreamDetails`; feature code MUST NOT infer observability support from stream names.
+- Stream profile detection and request-pair descriptors MUST come from Streams metadata normalized by `useStreams` and `useStreamDetails`; feature code MUST NOT infer observability support from stream names.
 - The active lookup MUST be URL-backed through `streamObserve` and `useNavigation`; components MUST NOT write or parse `window.location.hash` directly.
 - `streamObserve` values MUST serialize as `req:<requestId>`, `trace:<traceId>`, or `span:<spanId>`.
 - Expanded event rows MAY expose the request-detail action only when the decoded event body has a usable request ID, trace ID, or span ID for the active profile.
@@ -81,10 +85,10 @@ The sheet renders three sections from that one response:
 
 ## Pairing Model
 
-When the active stream is `evlog`, Studio uses that stream as the event stream and discovers the first available `otel-traces` stream as the trace counterpart.
-When the active stream is `otel-traces`, Studio uses that stream as the trace stream and discovers the first available `evlog` stream as the event counterpart.
+When the active stream is `evlog`, Studio uses that stream as the event stream. Its trace counterpart MUST come from `details.observability.request.tracesStream`.
+When the active stream is `otel-traces`, Studio uses that stream as the trace stream. Its event counterpart MUST come from `details.observability.request.eventsStream`.
 
-This is intentionally simple until Streams exposes an explicit pairing descriptor. UI copy must stay clear when only one side is available.
+If the descriptor is absent, Studio may still open the sheet for the active stream side and MUST explain the missing event or trace side. Studio MUST NOT choose the first stream with the opposite profile.
 
 ## Demo Contract
 
@@ -95,7 +99,9 @@ This is intentionally simple until Streams exposes an explicit pairing descripto
 
 The seed data MUST include successful requests, failed requests with root-cause fields, slow requests, event-only requests, and trace-only requests. The demo also starts a ticker that appends fresh correlated requests so `Tail` mode and request-detail refresh can be exercised locally.
 
-The demo MUST create both streams with `Content-Type: application/json` before profile installation.
+The demo MUST create both streams with `Content-Type: application/json` before profile installation, and the installed profiles MUST declare their request-observability counterparts.
+
+`pnpm demo:ppg:seed-scale -- --streams-url <url>` appends deterministic scale data to the same two streams. It MUST use the shared seed builder so local performance checks exercise the same profile shape as `pnpm demo:ppg`.
 
 ## Forbidden Patterns
 
@@ -112,8 +118,8 @@ Request observability changes MUST include tests for:
 
 - lookup param serialization and parsing
 - event-row lookup extraction for both `evlog` and `otel-traces`
-- counterpart stream resolution
+- descriptor-based counterpart stream resolution without first-profile fallback
 - `useStreamObserveRequest` request body, disabled state, failure state, and response normalization
 - sheet loading, warning, timeline, trace, event, missing-stream, and close behavior
 - stream-row affordance visibility and URL-backed sheet opening
-- demo seed shape and profiled stream creation
+- demo seed shape, profiled stream creation, and scale-seed batch generation

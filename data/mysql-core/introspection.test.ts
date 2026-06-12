@@ -14,14 +14,25 @@ import { createMySQL2Executor } from "../mysql2";
 import { asQuery, type Query } from "../query";
 import { getTablesQuery, getTimezoneQuery } from "./introspection";
 
-describe("mysql-core/introspection", () => {
+const MYSQL_TEST_URL = process.env.STUDIO_MYSQL_TEST_URL;
+const describeMysql = MYSQL_TEST_URL ? describe : describe.skip;
+
+function getMysqlTestUrl(): string {
+  if (!MYSQL_TEST_URL) {
+    throw new Error(
+      "STUDIO_MYSQL_TEST_URL is required for MySQL integration tests",
+    );
+  }
+
+  return MYSQL_TEST_URL;
+}
+
+describeMysql("mysql-core/introspection", () => {
   let executor: Executor;
   let pool: Pool;
 
   beforeAll(async () => {
-    // we connect to vitess instead of regular mysql because vitess is more restrictive.
-    // pool = createPool("mysql://root:root@localhost:3306/studio");
-    pool = createPool("mysql://root@localhost:15306/studio");
+    pool = createPool(getMysqlTestUrl());
     executor = createMySQL2Executor(pool);
 
     await pool.query(`

@@ -149,10 +149,24 @@ describe("seedObservabilityStreams", () => {
     const tracesProfileCall = calls[3];
 
     expect(JSON.parse(eventsProfileCall?.body ?? "{}")).toMatchObject({
-      profile: { kind: "evlog" },
+      profile: {
+        kind: "evlog",
+        observability: {
+          request: {
+            tracesStream: DEMO_OBSERVABILITY_TRACES_STREAM,
+          },
+        },
+      },
     });
     expect(JSON.parse(tracesProfileCall?.body ?? "{}")).toMatchObject({
-      profile: { kind: "otel-traces" },
+      profile: {
+        kind: "otel-traces",
+        observability: {
+          request: {
+            eventsStream: DEMO_OBSERVABILITY_EVENTS_STREAM,
+          },
+        },
+      },
     });
 
     const eventsAppendCall = calls[4];

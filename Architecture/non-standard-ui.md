@@ -149,6 +149,9 @@ It deliberately excludes:
 
 - Canonical components:
   - [`ui/studio/views/stream/StreamObserveSheet.tsx`](../ui/studio/views/stream/StreamObserveSheet.tsx)
+  - [`ui/studio/views/stream/StreamObserveTimelineSection.tsx`](../ui/studio/views/stream/StreamObserveTimelineSection.tsx)
+  - [`ui/studio/views/stream/StreamObserveTraceSection.tsx`](../ui/studio/views/stream/StreamObserveTraceSection.tsx)
+  - [`ui/studio/views/stream/StreamObserveEventSection.tsx`](../ui/studio/views/stream/StreamObserveEventSection.tsx)
   - [`ui/hooks/use-stream-observe-request.ts`](../ui/hooks/use-stream-observe-request.ts)
 - Closest standard ShadCN alternatives:
   - `Sheet`

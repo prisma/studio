@@ -58,7 +58,7 @@ This architecture governs:
 - Active-stream search-capability discovery MUST go through [`useStreamDetails`](../ui/hooks/use-stream-details.ts); feature code MUST NOT read `_details.schema.search` ad hoc from view components.
 - Active-stream routing-key discovery MUST go through [`useStreamDetails`](../ui/hooks/use-stream-details.ts); feature code MUST NOT read `_details.schema.routingKey` ad hoc from view components.
 - Active-stream aggregation-rollup discovery MUST go through [`useStreamDetails`](../ui/hooks/use-stream-details.ts); feature code MUST NOT read `_details.schema.search.rollups` ad hoc from view components.
-- Active-stream request-observability profile detection MUST go through [`useStreamDetails`](../ui/hooks/use-stream-details.ts); feature code MUST NOT infer observability support from stream names.
+- Active-stream request-observability profile detection and pairing descriptors MUST go through [`useStreamDetails`](../ui/hooks/use-stream-details.ts); feature code MUST NOT infer observability support from stream names or by picking another stream with the opposite profile.
 - Active-stream storage, upload, and index-status diagnostics MUST go through [`useStreamDetails`](../ui/hooks/use-stream-details.ts); feature code MUST NOT add a separate `_index_status` fetch path from the stream footer or other active-stream chrome.
 - Active-stream aggregate window loading MUST go through [`useStreamAggregations`](../ui/hooks/use-stream-aggregations.ts); feature code MUST NOT `POST` stream `_aggregate` ad hoc from view components.
 - Active-stream count refresh MUST reuse [`useStreamDetails`](../ui/hooks/use-stream-details.ts); feature code MUST NOT introduce a second count or metadata polling path for the active stream page.
@@ -119,12 +119,14 @@ The response is treated as a list of stream records containing at least:
 - `sealed_through`
 - `uploaded_through`
 - `profile`
+- `observability`
 
 `useStreams` normalizes that payload into the `StudioStream` shape used by the sidebar.
 On the active stream page, Studio instead uses `_details.stream` as the authoritative summary payload for `epoch`, `next_offset`, and the footer byte total, and keeps that summary current through `_details` conditional long polling. That long-poll path must keep one stable loop alive across ETag updates instead of restarting the request on every successful `200`, so the browser does not accumulate a stream of client-side canceled `_details` fetches between real wakes.
 If `_details.schema.search` is present, `useStreamDetails` also normalizes the advertised field bindings, aliases, default fields, and primary timestamp metadata so the stream view can render the shared search control and build correct `_search` requests without re-parsing raw schema JSON.
 If `_details.schema.routingKey` is present, `useStreamDetails` also normalizes that routing-key pointer metadata so the stream view can render a routing-key selector, preserve its selected-key state, and optionally compose that key into an exact search clause when the schema advertises a matching exact keyword field.
 If `_details.schema.search.rollups` is present, `useStreamDetails` also normalizes that rollup metadata into Studio's aggregation-rollup model, including advertised dimensions, so the view can render aggregation controls without re-parsing raw schema JSON.
+If `_details.stream.observability.request` is present, `useStreamDetails` normalizes `events_stream` and `traces_stream` into the active-stream request-observability descriptor. That descriptor is the only supported source for a counterpart stream.
 If `_details.stream` includes WAL or pending-tail metadata, `_details.storage` exposes byte/object buckets, `_details.object_store_requests` exposes node-local request accounting, and `_details.index_status` is present, `useStreamDetails` also normalizes those diagnostics into the active-stream details model so the footer diagnostics popover can describe upload coverage, object-storage composition, retained-local-storage buckets, node-local object-store request counts, and per-index/search-family progress, including the routing-key lexicon family, without inventing a second metadata request. When a stream is actively selected, `useStreamDetails` may also read `GET {streamsUrl}/v1/server/_details` to normalize server-wide configured cache limits for those diagnostics; that server-scoped descriptor must stay inside the same hook instead of introducing a second view-local fetch path.
 
 `useStreamEvents` computes the encoded `offset` for the currently requested tail window, fetches decoded JSON events from the stream read endpoint, and normalizes them into `StudioStreamEvent` rows for the main event list.
@@ -134,7 +136,7 @@ When the active stream search term is non-empty and the stream advertises search
 Studio uses those resolved series both to render the aggregation strip and to upgrade the header aggregation toggle from raw rollup-count metadata to the real visible aggregation count once the aggregate query has loaded.
 The hook only polls those aggregate windows when the stream view is in `live` or `tail` follow mode and the selected range is relative.
 Per-series aggregation preferences such as enabled statistics and unit overrides remain in the TanStack DB-backed local UI state collection as user-authored state; aggregate fetches may read them but MUST NOT rewrite them just because a different range resolves a different set of series or statistics.
-When the active stream profile is `evlog` or `otel-traces`, expanded rows may expose a request-detail action that opens `StreamObserveSheet`. The sheet uses the URL-backed `streamObserve` lookup state and calls `useStreamObserveRequest`, which posts the active lookup plus the resolved event and trace stream names to `/v1/observe/request`. See [`Architecture/request-observability.md`](request-observability.md) for the detailed contract.
+When the active stream profile is `evlog` or `otel-traces`, expanded rows may expose a request-detail action that opens `StreamObserveSheet`. The sheet uses the URL-backed `streamObserve` lookup state and calls `useStreamObserveRequest`, which posts the active lookup plus the active stream and any descriptor-resolved counterpart stream names to `/v1/observe/request`. See [`Architecture/request-observability.md`](request-observability.md) for the detailed contract.
 When a table is open and the discovered stream list includes `prisma-wal`, `ActiveTableView` may construct a stream deep link using the WAL schema's exact-search aliases. The table-scoped jump must use `table:"schema.table"`, and if exactly one visible row is selected and the table has exactly one primary-key column, the row-scoped jump may refine that query to `table:"schema.table" AND key:"value"`. Composite or multi-row selections must not invent an unsupported key encoding.
 When Studio later opens that `prisma-wal` search in the stream view, the active page may recognize exactly those table-scoped and row-scoped query forms and render a small contextual banner such as `Showing wal events for public.posts` or `Showing wal events for row key 42 in public.posts`. That banner is intentionally narrow: if the search term adds any extra clauses or stops matching the known WAL history shapes, Studio must hide the banner instead of trying to summarize an arbitrary WAL query.
 
@@ -181,6 +183,7 @@ Streams changes MUST include tests for:
 - `ppg-dev` config wiring for the browser-facing Streams URL
 - `ppg-dev` proxy handling for aggregate `POST` requests
 - `ppg-dev` observability seed creation for profiled `evlog` and `otel-traces` streams
+- `ppg-dev` scale seed command for deterministic request-observability load data
 - stream-view request-observability affordance and URL-backed sheet opening
 - `useStreamObserveRequest` request body and response normalization
 
