@@ -1,5 +1,11 @@
 # @prisma/studio-core
 
+## 0.31.0
+
+### Minor Changes
+
+- a241cd8: Add stream request observability
+
 ## 0.30.0
 
 ### Minor Changes
