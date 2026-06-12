@@ -1,5 +1,11 @@
 # @prisma/studio-core
 
+## 0.31.1
+
+### Patch Changes
+
+- e1583e5: Improve observability stream previews with concise evlog request summaries and otel span summaries.
+
 ## 0.31.0
 
 ### Minor Changes
