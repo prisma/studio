@@ -14,6 +14,7 @@ import type { StudioStream } from "./use-streams";
 const OFFSET_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const PREVIEW_CHARACTER_LIMIT = 280;
 const STREAM_PROFILE_EVLOG = "evlog";
+const STREAM_PROFILE_OTEL_TRACES = "otel-traces";
 export const STREAM_EVENTS_PAGE_SIZE = 50;
 
 type StreamEventCollection = Collection<StudioStreamEvent, string>;
@@ -257,10 +258,24 @@ function parsePreviewNumber(value: unknown): number | null {
   return null;
 }
 
+function readRecordValue(
+  value: Record<string, unknown> | null,
+  key: string,
+): unknown {
+  return value ? value[key] : undefined;
+}
+
 function parsePreviewStatus(value: unknown): string | null {
   const statusText = parsePreviewString(value);
 
   return statusText && statusText.length > 0 ? statusText : null;
+}
+
+function parseRecordString(
+  value: Record<string, unknown> | null,
+  key: string,
+): string | null {
+  return parsePreviewString(readRecordValue(value, key));
 }
 
 function shouldShowEvlogRequestMessage(args: {
@@ -336,6 +351,174 @@ function createEvlogPreview(value: unknown): string | null {
   return null;
 }
 
+function formatOtelDurationMs(durationMs: number): string | null {
+  if (!Number.isFinite(durationMs) || durationMs < 0) {
+    return null;
+  }
+
+  if (durationMs > 0 && durationMs < 1) {
+    return "<1ms";
+  }
+
+  if (durationMs < 1000) {
+    return `${Math.round(durationMs).toString()}ms`;
+  }
+
+  const seconds = durationMs / 1000;
+  const precision = seconds < 10 ? 2 : 1;
+  const formattedSeconds = seconds
+    .toFixed(precision)
+    .replace(/\.0+$/, "")
+    .replace(/(\.\d*[1-9])0+$/, "$1");
+
+  return `${formattedSeconds}s`;
+}
+
+function parseUnixNano(value: unknown): bigint | null {
+  if (typeof value === "bigint") {
+    return value;
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return BigInt(Math.trunc(value));
+  }
+
+  if (typeof value === "string" && /^\d+$/.test(value)) {
+    return BigInt(value);
+  }
+
+  return null;
+}
+
+function getOtelDurationMs(span: Record<string, unknown>): number | null {
+  const explicitDuration =
+    parsePreviewNumber(span.durationMs) ?? parsePreviewNumber(span.duration);
+
+  if (explicitDuration !== null) {
+    return explicitDuration;
+  }
+
+  const startUnixNano = parseUnixNano(span.startUnixNano);
+  const endUnixNano = parseUnixNano(span.endUnixNano);
+
+  if (startUnixNano === null || endUnixNano === null) {
+    return null;
+  }
+
+  const durationNano = endUnixNano - startUnixNano;
+
+  if (durationNano < 0n) {
+    return null;
+  }
+
+  return Number(durationNano) / 1_000_000;
+}
+
+function parseUrlPath(value: string): string | null {
+  try {
+    return new URL(value).pathname || null;
+  } catch {
+    return null;
+  }
+}
+
+function getOtelSpanDisplayName(args: {
+  attributes: Record<string, unknown> | null;
+  span: Record<string, unknown>;
+}): string | null {
+  const method =
+    parseRecordString(args.attributes, "http.request.method") ??
+    parseRecordString(args.attributes, "http.method");
+  const path =
+    parseRecordString(args.attributes, "url.path") ??
+    parseRecordString(args.attributes, "http.route") ??
+    parseRecordString(args.attributes, "http.target") ??
+    (() => {
+      const urlFull = parseRecordString(args.attributes, "url.full");
+
+      return urlFull ? parseUrlPath(urlFull) : null;
+    })();
+
+  if (method && path) {
+    return `${method.toUpperCase()} ${path}`;
+  }
+
+  return parsePreviewString(args.span.name);
+}
+
+function getOtelServiceName(span: Record<string, unknown>): string | null {
+  const resource = isRecord(span.resource) ? span.resource : null;
+  const resourceAttributes =
+    resource && isRecord(resource.attributes) ? resource.attributes : null;
+
+  return (
+    parseRecordString(resourceAttributes, "service.name") ??
+    parseRecordString(resourceAttributes, "service.namespace") ??
+    parsePreviewString(span.service)
+  );
+}
+
+function getOtelErrorMessage(span: Record<string, unknown>): string | null {
+  const status = isRecord(span.status) ? span.status : null;
+  const statusCode = parseRecordString(status, "code")?.toLowerCase() ?? null;
+  const statusMessage = parseRecordString(status, "message");
+
+  if (
+    statusCode !== null &&
+    statusCode !== "ok" &&
+    statusCode !== "unset" &&
+    statusCode !== "0"
+  ) {
+    return statusMessage ?? statusCode;
+  }
+
+  const events = Array.isArray(span.events) ? span.events : [];
+
+  for (const event of events) {
+    if (!isRecord(event)) {
+      continue;
+    }
+
+    const eventAttributes = isRecord(event.attributes)
+      ? event.attributes
+      : null;
+    const exceptionMessage = parseRecordString(
+      eventAttributes,
+      "exception.message",
+    );
+
+    if (exceptionMessage) {
+      return exceptionMessage;
+    }
+  }
+
+  return null;
+}
+
+function createOtelTracePreview(value: unknown): string | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const attributes = isRecord(value.attributes) ? value.attributes : null;
+  const name = getOtelSpanDisplayName({ attributes, span: value });
+
+  if (!name) {
+    return null;
+  }
+
+  const duration = getOtelDurationMs(value);
+  const formattedDuration =
+    duration === null ? null : formatOtelDurationMs(duration);
+  const errorMessage = getOtelErrorMessage(value);
+  const parts = [name]
+    .concat(getOtelServiceName(value) ?? [])
+    .concat(formattedDuration ?? [])
+    .concat(errorMessage ? [`error: ${errorMessage}`] : []);
+
+  return truncatePreview(parts.join(" | "));
+}
+
 function createPreview(value: unknown, profile?: string | null): string {
   const preferredValue = getPreferredPreviewValue(value);
 
@@ -344,6 +527,14 @@ function createPreview(value: unknown, profile?: string | null): string {
 
     if (evlogPreview) {
       return evlogPreview;
+    }
+  }
+
+  if (profile === STREAM_PROFILE_OTEL_TRACES) {
+    const otelPreview = createOtelTracePreview(preferredValue);
+
+    if (otelPreview) {
+      return otelPreview;
     }
   }
 

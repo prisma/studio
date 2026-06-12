@@ -253,6 +253,7 @@ Summary derivation rules:
 - indexed fields MAY be derived only from explicit indexed-field payload shapes; do not invent synthetic indexed metadata
 - preview SHOULD prefer the payload's primary content object when one exists (for example a top-level `value` field), otherwise fall back to the full decoded event
 - when the active stream profile is `evlog`, preview SHOULD render a compact request summary from request-like fields before falling back to JSON, using `METHOD path` for successful info-level web requests and adding non-success status plus warning/error message context when present
+- when the active stream profile is `otel-traces`, preview SHOULD render a compact span summary from OTEL span fields before falling back to JSON, preferring HTTP semantic attributes for request spans and including service, duration, and error status when available
 - expanded content SHOULD pretty-print structured JSON payloads
 - when stream search is active and a row is expanded, the pretty-printed expanded content SHOULD highlight matching fields and values using the same yellow search treatment used by table search
 - unfielded search clauses SHOULD highlight only the matched value text for the configured default fields, not the names of every default field that participated in matching
