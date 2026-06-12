@@ -131,8 +131,15 @@ function createStreamDetailsPayload(overrides?: {
     last_segment_cut_at: string | null;
     name: string;
     next_offset: string;
+    observability: {
+      request?: {
+        events_stream?: string;
+        traces_stream?: string;
+      };
+    } | null;
     pending_bytes: string;
     pending_rows: string;
+    profile: string | null;
     sealed_through: string;
     segment_count: number;
     total_size_bytes: string;
@@ -424,8 +431,10 @@ describe("useStreamDetails", () => {
       name: "prisma-wal",
       nextOffset: "2",
       objectStoreRequests: null,
+      observability: null,
       pendingBytes: 128n,
       pendingRows: 3n,
+      profile: null,
       routingKey: null,
       serverConfiguredLimits: {
         caches: {
@@ -447,6 +456,39 @@ describe("useStreamDetails", () => {
       uploadedSegmentCount: 0,
       uploadedThrough: "-1",
       walBytes: 256n,
+    });
+
+    harness.cleanup();
+  });
+
+  it("normalizes request observability descriptors from stream details", async () => {
+    mockStreamDetailsFetch({
+      streamDetailsPayload: createStreamDetailsPayload({
+        stream: {
+          name: "app-events",
+          observability: {
+            request: {
+              events_stream: "app-events",
+              traces_stream: "app-traces",
+            },
+          },
+          profile: "evlog",
+        },
+      }),
+    });
+    const harness = renderHarness({
+      streamName: "app-events",
+      streamsUrl: "/api/streams",
+    });
+
+    await waitFor(() => harness.getLatestState()?.isSuccess === true);
+
+    expect(harness.getLatestState()?.details?.profile).toBe("evlog");
+    expect(harness.getLatestState()?.details?.observability).toEqual({
+      request: {
+        eventsStream: "app-events",
+        tracesStream: "app-traces",
+      },
     });
 
     harness.cleanup();

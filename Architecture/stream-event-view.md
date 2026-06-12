@@ -22,6 +22,7 @@ This architecture governs:
 - URL-backed stream follow mode selection
 - URL-backed stream search term state
 - URL-backed stream routing-key selection state
+- URL-backed request-observability lookup state
 - URL-backed aggregation-panel visibility and aggregation range selection
 - batched reveal of newly arrived events
 - transient highlighting of newly revealed event rows
@@ -34,6 +35,7 @@ This architecture governs:
 - [`ui/hooks/use-stream-events.ts`](../ui/hooks/use-stream-events.ts)
 - [`ui/hooks/use-stream-details.ts`](../ui/hooks/use-stream-details.ts)
 - [`ui/hooks/use-stream-aggregations.ts`](../ui/hooks/use-stream-aggregations.ts)
+- [`ui/hooks/use-stream-observe-request.ts`](../ui/hooks/use-stream-observe-request.ts) (`useStreamObserveRequest`)
 - [`ui/hooks/use-ui-state.ts`](../ui/hooks/use-ui-state.ts)
 - [`ui/hooks/use-navigation.tsx`](../ui/hooks/use-navigation.tsx)
 - [`ui/studio/views/stream/StreamView.tsx`](../ui/studio/views/stream/StreamView.tsx)
@@ -158,6 +160,9 @@ The stream view MUST treat that latest metadata count separately from `visibleEv
 - while the suggestion panel is open, background stream refreshes MUST NOT rewrite the suggestion content underneath the user's keyboard navigation; only explicit input changes may do that
 - keyboard navigation inside the suggestion panel MUST keep exactly one suggestion visually selected at a time and MUST scroll the active row into view as the highlight moves
 - when `useStreamDetails` exposes one or more aggregation rollups, the header MUST render a sibling icon-only aggregation toggle button with an accessible label instead of a numbered text pill
+- when the active stream profile is `evlog` or `otel-traces`, an expanded event row MAY render a request-detail action if the decoded event body has a request ID, trace ID, or span ID usable by that profile
+- clicking the request-detail action MUST write the serialized lookup into `streamObserve` through `useNavigation`; it MUST NOT keep the request sheet open state only in component-local state
+- when `streamObserve` contains a valid lookup for a supported profile, the stream page MUST render the request-observability sheet and resolve counterpart streams from `useStreamDetails().details.observability`
 - the aggregation toggle open/closed state MUST be URL-backed through `useNavigation`
 - that header count SHOULD fall back to the rollup-definition count from `useStreamDetails`, but once aggregate window data has loaded it MUST prefer the resolved aggregation-series count so metrics-style rollups report their real card count
 - the list remains bounded by `visibleEventCount` until the user reveals newer events
@@ -263,6 +268,7 @@ Stream navigation chrome MUST be URL-backed through `useNavigation` with keys su
 
 - `streamFollow`
 - `streamRoutingKey`
+- `streamObserve`
 - `aggregations`
 - `streamAggregationRange`
 - `search`
@@ -287,6 +293,7 @@ The infinite-scroll `pageCount` and `visibleEventCount` are view-local transient
 - introducing stream-event URL pagination params
 - allowing more than one expanded row at a time
 - fetching aggregation rollups or aggregate windows directly inside `StreamView` without going through the dedicated hooks
+- fetching request-observability correlation directly inside `StreamView` without going through `useStreamObserveRequest`
 - deriving fake indexed fields from arbitrary payload properties
 
 ## Testing Requirements
@@ -306,6 +313,7 @@ Changes to this architecture MUST include tests for:
 - expanded-row match highlighting for stream search
 - aggregation-rollup request normalization in `useStreamAggregations`
 - stream-view aggregation toggle plus range switching, including range cleanup when the panel closes
+- stream-view request-observability affordance and URL-backed sheet state
 - infinite-scroll page growth behavior for both older history and newly revealed events
 - stream-view transient highlighting for newly revealed rows, including automatic clearance
 - stream navigation into `view=stream`

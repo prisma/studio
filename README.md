@@ -625,11 +625,15 @@ Revert to the published npm packages with `pnpm streams:use-npm`.
 ## Useful Commands
 
 - `pnpm demo:ppg` - run local Studio demo with seeded Prisma Postgres dev
+- `pnpm demo:ppg:seed-scale -- --streams-url <url>` - append deterministic request-observability scale data to a running Streams server
 - `pnpm typecheck` - run TypeScript checks
-- `pnpm lint` - run ESLint (`--fix`)
-- `pnpm test` - run default vitest suite
+- `pnpm lint` - run ESLint
+- `pnpm lint:fix` - run ESLint with automatic fixes
+- `pnpm test` - run default vitest suite with external MySQL integration and heavyweight local suites skipped unless explicitly enabled
+- `STUDIO_INCLUDE_HEAVY_LOCAL_TESTS=1 pnpm test` - include the Compute bundle boot smoke test and monolithic active-table filtering suite
 - `pnpm test:checkpoint` - run checkpoint tests
 - `pnpm test:data` - run data-layer tests
+- `pnpm test:data:mysql` - run MySQL/Vitess-backed data integration tests against `STUDIO_MYSQL_TEST_URL` or `mysql://root@localhost:15306/studio`
 - `pnpm test:demo` - run demo/server tests
 - `pnpm test:ui` - run UI tests
 - `pnpm test:e2e` - run e2e tests

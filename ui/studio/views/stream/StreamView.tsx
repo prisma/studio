@@ -1,4 +1,9 @@
-import { ChartColumn, ChevronsLeft, ChevronsRight } from "lucide-react";
+import {
+  ChartColumn,
+  ChartNoAxesGantt,
+  ChevronsLeft,
+  ChevronsRight,
+} from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -42,6 +47,15 @@ import {
   type StudioStreamEventIndexedField,
   useStreamEvents,
 } from "../../../hooks/use-stream-events";
+import {
+  getObserveLookupForStreamEvent,
+  isObservabilityStreamProfile,
+  parseStreamObserveParam,
+  resolveObserveStreams,
+  serializeStreamObserveParam,
+  type StudioObserveLookup,
+} from "../../../hooks/use-stream-observe-request";
+import type { StudioStreamObservability } from "../../../hooks/use-streams";
 import { useUiState } from "../../../hooks/use-ui-state";
 import { ExpandableSearchControl } from "../../input/ExpandableSearchControl";
 import { StudioHeader } from "../../StudioHeader";
@@ -57,6 +71,7 @@ import {
 } from "./stream-search-suggestions";
 import { StreamAggregationsPanel } from "./StreamAggregationsPanel";
 import { StreamDiagnosticsPopover } from "./StreamDiagnosticsPopover";
+import { StreamObserveSheet } from "./StreamObserveSheet";
 import { StreamRoutingKeySelector } from "./StreamRoutingKeySelector";
 import { useStreamEventSearch } from "./use-stream-event-search";
 
@@ -517,6 +532,8 @@ function StreamEventRow(props: {
   event: StudioStreamEvent;
   expandedEventId: string | null;
   isNewlyRevealed: boolean;
+  observeProfile: string | null;
+  onOpenObserveLookup: (lookup: StudioObserveLookup) => void;
   onToggle: (eventId: string) => void;
   searchConfig: StudioStreamSearchConfig | null | undefined;
   searchQuery: string;
@@ -525,11 +542,23 @@ function StreamEventRow(props: {
     event,
     expandedEventId,
     isNewlyRevealed,
+    observeProfile,
+    onOpenObserveLookup,
     onToggle,
     searchConfig,
     searchQuery,
   } = props;
   const isExpanded = expandedEventId === event.id;
+  const observe = useMemo(
+    () =>
+      isExpanded
+        ? getObserveLookupForStreamEvent({
+            body: event.body,
+            profile: observeProfile,
+          })
+        : null,
+    [event.body, isExpanded, observeProfile],
+  );
 
   return (
     <div
@@ -602,6 +631,46 @@ function StreamEventRow(props: {
 
       {isExpanded ? (
         <div className="border-t border-border bg-background px-4 py-4">
+          {observe?.lookup ? (
+            <div
+              className="mb-3 flex flex-wrap items-center gap-2"
+              data-testid="stream-event-observe-bar"
+            >
+              <Button
+                className="h-7 shadow-none"
+                data-testid="stream-event-observe-button"
+                onClick={() => {
+                  if (observe.lookup) {
+                    onOpenObserveLookup(observe.lookup);
+                  }
+                }}
+                size="xs"
+                type="button"
+                variant="outline"
+              >
+                <ChartNoAxesGantt data-icon="inline-start" />
+                Request details
+              </Button>
+              {observe.ids.requestId ? (
+                <Badge
+                  className="max-w-full truncate font-mono font-normal"
+                  title={`requestId ${observe.ids.requestId}`}
+                  variant="outline"
+                >
+                  req {observe.ids.requestId}
+                </Badge>
+              ) : null}
+              {observe.ids.traceId ? (
+                <Badge
+                  className="max-w-full truncate font-mono font-normal"
+                  title={`traceId ${observe.ids.traceId}`}
+                  variant="outline"
+                >
+                  trace {observe.ids.traceId}
+                </Badge>
+              ) : null}
+            </div>
+          ) : null}
           <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-xs leading-5 text-foreground">
             <HighlightedStreamEventJson
               searchConfig={searchConfig}
@@ -752,10 +821,14 @@ function ActiveStreamView(props: {
   setStreamFollowParam: (
     value: string | null | ((previous: string | null) => string | null),
   ) => Promise<URLSearchParams>;
+  setStreamObserveParam: (
+    value: string | null | ((previous: string | null) => string | null),
+  ) => Promise<URLSearchParams>;
   setStreamRoutingKeyParam: (
     value: string | null | ((previous: string | null) => string | null),
   ) => Promise<URLSearchParams>;
   streamAggregationRangeParam: string | null;
+  streamObserveParam: string | null;
   streamRoutingKeyParam: string | null;
 }) {
   const followMode = props.followMode;
@@ -804,7 +877,49 @@ function ActiveStreamView(props: {
     selectedStream.name,
     selectedStreamDetails?.indexStatus?.profile,
   ]);
+  const resolvedStreamProfile = selectedStreamDetails?.profile ?? null;
+  const supportsRequestObservability = isObservabilityStreamProfile(
+    resolvedStreamProfile,
+  );
+  const setStreamObserveParam = props.setStreamObserveParam;
   const selectedStreamIdentity = `${selectedStream.name}:${selectedStream.epoch}`;
+  const lastObserveStreamIdentityRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (lastObserveStreamIdentityRef.current === null) {
+      lastObserveStreamIdentityRef.current = selectedStreamIdentity;
+      return;
+    }
+
+    if (lastObserveStreamIdentityRef.current !== selectedStreamIdentity) {
+      lastObserveStreamIdentityRef.current = selectedStreamIdentity;
+      void setStreamObserveParam(null);
+    }
+  }, [selectedStreamIdentity, setStreamObserveParam]);
+
+  const isObserveLookupScopedToSelectedStream =
+    lastObserveStreamIdentityRef.current === null ||
+    lastObserveStreamIdentityRef.current === selectedStreamIdentity;
+  const observeLookup = useMemo(
+    () =>
+      supportsRequestObservability && isObserveLookupScopedToSelectedStream
+        ? parseStreamObserveParam(props.streamObserveParam)
+        : null,
+    [
+      props.streamObserveParam,
+      isObserveLookupScopedToSelectedStream,
+      supportsRequestObservability,
+    ],
+  );
+  const openObserveLookup = useCallback(
+    (lookup: StudioObserveLookup) => {
+      void setStreamObserveParam(serializeStreamObserveParam(lookup));
+    },
+    [setStreamObserveParam],
+  );
+  const closeObserveSheet = useCallback(() => {
+    void setStreamObserveParam(null);
+  }, [setStreamObserveParam]);
   const streamEventWindowResetKey = `${selectedStreamIdentity ?? "none"}::${selectedRoutingKey}::${effectiveSearchQuery}`;
   const [pageCount, setPageCount] = useState(1);
   const [searchVisibleResultCount, setSearchVisibleResultCount] = useState<
@@ -1818,6 +1933,12 @@ function ActiveStreamView(props: {
                       event={event}
                       expandedEventId={expandedEventId}
                       isNewlyRevealed={recentlyRevealedEventIdSet.has(event.id)}
+                      observeProfile={
+                        supportsRequestObservability
+                          ? resolvedStreamProfile
+                          : null
+                      }
+                      onOpenObserveLookup={openObserveLookup}
                       onToggle={(eventId) => {
                         setExpandedEventId((currentValue) =>
                           currentValue === eventId ? null : eventId,
@@ -1953,7 +2074,44 @@ function ActiveStreamView(props: {
           </div>
         </>
       </div>
+
+      {supportsRequestObservability && resolvedStreamProfile ? (
+        <StreamObserveSheetHost
+          activeStreamName={selectedStream.name}
+          activeStreamProfile={resolvedStreamProfile}
+          lookup={observeLookup}
+          observability={selectedStreamDetails?.observability ?? null}
+          onClose={closeObserveSheet}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function StreamObserveSheetHost(props: {
+  activeStreamName: string;
+  activeStreamProfile: string;
+  lookup: StudioObserveLookup | null;
+  observability: StudioStreamObservability | null;
+  onClose: () => void;
+}) {
+  const observeStreams = useMemo(
+    () =>
+      resolveObserveStreams({
+        activeStreamName: props.activeStreamName,
+        activeStreamProfile: props.activeStreamProfile,
+        observability: props.observability,
+      }),
+    [props.activeStreamName, props.activeStreamProfile, props.observability],
+  );
+
+  return (
+    <StreamObserveSheet
+      eventsStream={observeStreams.eventsStream}
+      lookup={props.lookup}
+      onClose={props.onClose}
+      tracesStream={observeStreams.tracesStream}
+    />
   );
 }
 
@@ -1964,10 +2122,12 @@ export function StreamView(_props: ViewProps) {
     setStreamAggregationRangeParam,
     setStreamAggregationsParam,
     setStreamFollowParam,
+    setStreamObserveParam,
     setStreamRoutingKeyParam,
     streamAggregationRangeParam,
     streamAggregationsParam,
     streamFollowParam,
+    streamObserveParam,
     streamRoutingKeyParam,
     streamParam,
   } = useNavigation();
@@ -2161,8 +2321,10 @@ export function StreamView(_props: ViewProps) {
       setStreamAggregationRangeParam={setStreamAggregationRangeParam}
       setStreamAggregationsParam={setStreamAggregationsParam}
       setStreamFollowParam={setStreamFollowParam}
+      setStreamObserveParam={setStreamObserveParam}
       setStreamRoutingKeyParam={setStreamRoutingKeyParam}
       streamAggregationRangeParam={streamAggregationRangeParam}
+      streamObserveParam={streamObserveParam}
       streamRoutingKeyParam={streamRoutingKeyParam}
     />
   );

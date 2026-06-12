@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { StudioStreamDetails } from "../../../hooks/use-stream-details";
+import type { StudioStream } from "../../../hooks/use-streams";
 import { StreamView } from "./StreamView";
 
 interface MockNavigationState {
@@ -10,6 +11,7 @@ interface MockNavigationState {
   streamAggregationRangeParam: string | null;
   streamAggregationsParam: string | null;
   streamFollowParam: string | null;
+  streamObserveParam: string | null;
   streamRoutingKeyParam: string | null;
   streamParam: string | null;
 }
@@ -21,6 +23,7 @@ const {
   useStreamDetailsMock,
   useStreamEventsMock,
   useStreamEventSearchMock,
+  useStreamObserveRequestMock,
   useStreamsMock,
 } = vi.hoisted(() => ({
   useNavigationMock: vi.fn<() => Partial<MockNavigationState>>(),
@@ -157,19 +160,25 @@ const {
     }
   >(),
   useStreamEventSearchMock: vi.fn(),
+  useStreamObserveRequestMock: vi.fn<
+    (args: {
+      eventsStream: string | null;
+      lookup: { kind: string; value: string } | null;
+      tracesStream: string | null;
+    }) => {
+      error: Error | null;
+      isError: boolean;
+      isFetching: boolean;
+      isLoading: boolean;
+      refetch: () => Promise<void>;
+      result: null;
+    }
+  >(),
   useStreamsMock: vi.fn<
     (args?: { refreshIntervalMs?: number }) => {
       isError: boolean;
       isLoading: boolean;
-      streams: Array<{
-        createdAt: string;
-        epoch: number;
-        expiresAt: string | null;
-        name: string;
-        nextOffset: string;
-        sealedThrough: string;
-        uploadedThrough: string;
-      }>;
+      streams: StudioStream[];
     }
   >(),
 }));
@@ -178,6 +187,10 @@ const uiStateValues = new Map<string, unknown>();
 const navigationStateValues = new Map<
   keyof MockNavigationState,
   string | null
+>();
+const navigationStateSetters = new Map<
+  keyof MockNavigationState,
+  (value: string | null) => void
 >();
 
 vi.mock("../../../hooks/use-navigation", async () => {
@@ -205,6 +218,10 @@ vi.mock("../../../hooks/use-navigation", async () => {
 
       return Promise.resolve(new URLSearchParams());
     };
+    navigationStateSetters.set(key, (nextValue) => {
+      navigationStateValues.set(key, nextValue);
+      setValue(nextValue);
+    });
 
     return [value, setSharedValue] as const;
   }
@@ -219,6 +236,8 @@ vi.mock("../../../hooks/use-navigation", async () => {
         useMockNavigationParamState("streamAggregationsParam");
       const [streamFollowParam, setStreamFollowParam] =
         useMockNavigationParamState("streamFollowParam");
+      const [streamObserveParam, setStreamObserveParam] =
+        useMockNavigationParamState("streamObserveParam");
       const [streamRoutingKeyParam, setStreamRoutingKeyParam] =
         useMockNavigationParamState("streamRoutingKeyParam");
       const [streamParam, setStreamParam] =
@@ -230,11 +249,13 @@ vi.mock("../../../hooks/use-navigation", async () => {
         setStreamAggregationRangeParam,
         setStreamAggregationsParam,
         setStreamFollowParam,
+        setStreamObserveParam,
         setStreamRoutingKeyParam,
         setStreamParam,
         streamAggregationRangeParam,
         streamAggregationsParam,
         streamFollowParam,
+        streamObserveParam,
         streamRoutingKeyParam,
         streamParam,
       };
@@ -307,6 +328,22 @@ vi.mock("../../../hooks/use-stream-aggregations", () => ({
 vi.mock("../../../hooks/use-streams", () => ({
   useStreams: (args?: { refreshIntervalMs?: number }) => useStreamsMock(args),
 }));
+
+vi.mock("../../../hooks/use-stream-observe-request", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("../../../hooks/use-stream-observe-request")
+    >();
+
+  return {
+    ...actual,
+    useStreamObserveRequest: (args: {
+      eventsStream: string | null;
+      lookup: { kind: string; value: string } | null;
+      tracesStream: string | null;
+    }) => useStreamObserveRequestMock(args),
+  };
+});
 
 vi.mock("./use-stream-event-search", () => ({
   useStreamEventSearch: useStreamEventSearchMock,
@@ -462,6 +499,19 @@ function getNavigationStateValue(key: keyof MockNavigationState) {
   return navigationStateValues.get(key) ?? null;
 }
 
+function setNavigationStateValue(
+  key: keyof MockNavigationState,
+  value: string | null,
+) {
+  const setter = navigationStateSetters.get(key);
+
+  if (!setter) {
+    throw new Error(`Navigation state setter ${key} is not mounted`);
+  }
+
+  setter(value);
+}
+
 function createStreamDetails(
   overrides?: Partial<
     NonNullable<ReturnType<typeof useStreamDetailsMock>["details"]>
@@ -480,8 +530,10 @@ function createStreamDetails(
     name: "prisma-wal",
     nextOffset: "2",
     objectStoreRequests: null,
+    observability: null,
     pendingBytes: 128n,
     pendingRows: 3n,
+    profile: null,
     routingKey: null,
     serverConfiguredLimits: null,
     search: null,
@@ -696,6 +748,7 @@ describe("StreamView", () => {
   beforeEach(() => {
     uiStateValues.clear();
     navigationStateValues.clear();
+    navigationStateSetters.clear();
     streamRoutingKeySelectorMock.mockReset();
     let currentNextOffset = 2n;
     let lastPolledNextOffset = currentNextOffset;
@@ -710,6 +763,14 @@ describe("StreamView", () => {
       isError: false,
       isLoading: false,
       streams: [],
+    });
+    useStreamObserveRequestMock.mockReturnValue({
+      error: null,
+      isError: false,
+      isFetching: false,
+      isLoading: false,
+      refetch: vi.fn(() => Promise.resolve()),
+      result: null,
     });
     useStreamDetailsMock.mockImplementation(
       (args?: { refreshIntervalMs?: number; streamName?: string | null }) => {
@@ -5234,6 +5295,280 @@ describe("StreamView", () => {
       )?.className,
     ).toContain("ps-stream-new-event-flash");
     expect(scrollContainer.scrollTop).toBe(0);
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("opens the URL-backed request observability sheet from an expanded evlog row", () => {
+    useNavigationMock.mockReturnValue({
+      searchParam: null,
+      streamAggregationRangeParam: null,
+      streamAggregationsParam: null,
+      streamFollowParam: "paused",
+      streamObserveParam: null,
+      streamParam: "app-events",
+    });
+    useStreamDetailsMock.mockImplementation(
+      (args?: { streamName?: string | null }) => ({
+        details: args?.streamName
+          ? createStreamDetails({
+              name: args.streamName,
+              observability: {
+                request: {
+                  eventsStream: "app-events",
+                  tracesStream: "configured-traces",
+                },
+              },
+              profile: "evlog",
+            })
+          : null,
+      }),
+    );
+    useStreamsMock.mockReturnValue({
+      isError: false,
+      isLoading: false,
+      streams: [
+        {
+          createdAt: "2026-03-24T14:42:38.890Z",
+          epoch: 0,
+          expiresAt: null,
+          name: "app-events",
+          nextOffset: "2",
+          observability: null,
+          profile: "evlog",
+          sealedThrough: "-1",
+          uploadedThrough: "-1",
+        },
+        {
+          createdAt: "2026-03-24T14:42:38.890Z",
+          epoch: 0,
+          expiresAt: null,
+          name: "configured-traces",
+          nextOffset: "6",
+          observability: null,
+          profile: "otel-traces",
+          sealedThrough: "-1",
+          uploadedThrough: "-1",
+        },
+      ],
+    });
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamView />);
+    });
+
+    const eventRow = container.querySelector(
+      '[data-testid="stream-event-row-2"]',
+    );
+
+    expect(eventRow).not.toBeNull();
+
+    act(() => {
+      if (eventRow) {
+        click(eventRow);
+      }
+    });
+
+    const observeButton = container.querySelector(
+      '[data-testid="stream-event-observe-button"]',
+    );
+
+    expect(observeButton).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="stream-event-observe-bar"]')
+        ?.textContent,
+    ).toContain("req_2");
+
+    act(() => {
+      if (observeButton) {
+        click(observeButton);
+      }
+    });
+
+    expect(getNavigationStateValue("streamObserveParam")).toBe("req:req_2");
+    expect(useStreamObserveRequestMock).toHaveBeenCalledWith({
+      eventsStream: "app-events",
+      lookup: {
+        kind: "requestId",
+        value: "req_2",
+      },
+      tracesStream: "configured-traces",
+    });
+    expect(
+      document.querySelector('[data-testid="stream-observe-sheet"]'),
+    ).not.toBeNull();
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("opens the request observability sheet from a URL-backed lookup on mount", () => {
+    useNavigationMock.mockReturnValue({
+      searchParam: null,
+      streamAggregationRangeParam: null,
+      streamAggregationsParam: null,
+      streamFollowParam: "paused",
+      streamObserveParam: "req:req_2",
+      streamParam: "app-events",
+    });
+    useStreamDetailsMock.mockImplementation(
+      (args?: { streamName?: string | null }) => ({
+        details: args?.streamName
+          ? createStreamDetails({
+              name: args.streamName,
+              observability: {
+                request: {
+                  eventsStream: "app-events",
+                  tracesStream: "configured-traces",
+                },
+              },
+              profile: "evlog",
+            })
+          : null,
+      }),
+    );
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamView />);
+    });
+
+    expect(getNavigationStateValue("streamObserveParam")).toBe("req:req_2");
+    expect(useStreamObserveRequestMock).toHaveBeenCalledWith({
+      eventsStream: "app-events",
+      lookup: {
+        kind: "requestId",
+        value: "req_2",
+      },
+      tracesStream: "configured-traces",
+    });
+    expect(
+      document.querySelector('[data-testid="stream-observe-sheet"]'),
+    ).not.toBeNull();
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("clears a URL-backed request observability lookup when the selected stream changes", async () => {
+    useNavigationMock.mockReturnValue({
+      searchParam: null,
+      streamAggregationRangeParam: null,
+      streamAggregationsParam: null,
+      streamFollowParam: "paused",
+      streamObserveParam: "req:req_2",
+      streamParam: "app-events",
+    });
+    useStreamDetailsMock.mockImplementation(
+      (args?: { streamName?: string | null }) => ({
+        details: args?.streamName
+          ? createStreamDetails({
+              epoch: args.streamName === "app-events" ? 0 : 1,
+              name: args.streamName,
+              observability: {
+                request: {
+                  eventsStream: args.streamName,
+                  tracesStream: "configured-traces",
+                },
+              },
+              profile: "evlog",
+            })
+          : null,
+      }),
+    );
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<StreamView />);
+      await Promise.resolve();
+    });
+
+    expect(getNavigationStateValue("streamObserveParam")).toBe("req:req_2");
+
+    useNavigationMock.mockReturnValue({
+      searchParam: null,
+      streamAggregationRangeParam: null,
+      streamAggregationsParam: null,
+      streamFollowParam: "paused",
+      streamObserveParam: "req:req_2",
+      streamParam: "audit-events",
+    });
+
+    await act(async () => {
+      setNavigationStateValue("streamParam", "audit-events");
+      await Promise.resolve();
+    });
+
+    expect(getNavigationStateValue("streamObserveParam")).toBeNull();
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("keeps the request observability affordance hidden for non-observability profiles", () => {
+    useNavigationMock.mockReturnValue({
+      searchParam: null,
+      streamAggregationRangeParam: null,
+      streamAggregationsParam: null,
+      streamFollowParam: "paused",
+      streamObserveParam: null,
+      streamParam: "prisma-wal",
+    });
+    useStreamDetailsMock.mockImplementation(
+      (args?: { streamName?: string | null }) => ({
+        details: args?.streamName
+          ? createStreamDetails({
+              name: args.streamName,
+              profile: "state-protocol",
+            })
+          : null,
+      }),
+    );
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamView />);
+    });
+
+    const eventRow = container.querySelector(
+      '[data-testid="stream-event-row-2"]',
+    );
+
+    expect(eventRow).not.toBeNull();
+
+    act(() => {
+      if (eventRow) {
+        click(eventRow);
+      }
+    });
+
+    expect(
+      container.querySelector('[data-testid="stream-event-observe-bar"]'),
+    ).toBeNull();
+    expect(useStreamsMock).not.toHaveBeenCalled();
+    expect(useStreamObserveRequestMock).not.toHaveBeenCalled();
 
     act(() => {
       root.unmount();

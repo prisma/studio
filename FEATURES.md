@@ -97,6 +97,14 @@ The same popover also splits search coverage from run accelerators, so users can
 When the Streams server also advertises node-wide cache limits through `GET /v1/server/_details`, Studio annotates the local cache rows with faint shared-cap labels such as `(512 MiB cap)` instead of pretending those limits belong to one stream. Segment and companion caches show those caps inline, while Routing and Exact caches share one centered disk-cache cap marker across both rows because they draw from the same server-side run-cache budget.
 When Streams does not expose a meaningful lag duration for a coverage or accelerator row, Studio simply omits that lag text instead of rendering distracting placeholders like `Unavailable behind`.
 
+## Stream Request Observability
+
+When the active stream profile is `evlog` or `otel-traces`, expanded event rows can open a request details sheet from a correlated request ID, trace ID, or span ID.
+Studio uses the active stream details' explicit `observability.request` descriptor to pair event and trace streams, instead of guessing from the first opposite-profile stream.
+The sheet calls the Streams `POST /v1/observe/request` endpoint through Studio's `/api/streams` proxy, keeps the lookup in the URL hash as `streamObserve`, and renders a merged timeline, trace waterfall, primary evlog event, root-cause fields, service calls, span errors, source stream labels, and partial-result warnings from the single response.
+If only one observability stream is available, the sheet still opens and explains the missing event or trace side instead of presenting an empty result as complete.
+The local `ppg-dev` demo now seeds paired `app-events` and `app-traces` streams with realistic successes, failures, slow requests, event-only requests, trace-only requests, and deeper multi-service production-style traces, then appends fresh correlated requests on a timer so request details, Tail mode, and refresh behavior can be validated against a live local Streams server. `pnpm demo:ppg:seed-scale -- --streams-url <url>` appends deterministic scale data for local performance checks.
+
 ## Stream Search and Match Highlighting
 
 When a stream advertises search capability in its `_details` descriptor, Studio reuses the same compact expandable search control used by tables instead of introducing a separate stream-only search box.
