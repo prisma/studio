@@ -12,9 +12,11 @@ import {
   type StudioLlmRequest,
   type StudioLlmResponse,
 } from "../../data/llm";
+import type { Query } from "../../data/query";
 import pkg from "../../package.json" with { type: "json" };
 import { AnthropicOutputLimitError, runAnthropicLlmRequest } from "./anthropic";
 import { buildDemoConfig, resolveDemoAiEnabled } from "./config";
+import { createDemoQueryInsightsStore } from "./query-insights";
 import { type DemoRuntime, startDemoRuntime } from "./runtime";
 import {
   formatDemoRuntimeUsage,
@@ -63,7 +65,7 @@ type BuiltAsset = {
   contentType: string;
 };
 
-type PostgresExecutor = DemoRuntime["postgresExecutor"];
+type PostgresExecutor = NonNullable<DemoRuntime["postgresExecutor"]>;
 
 // When the server is bundled by build-compute.ts, the virtual:prebuilt-assets
 // module is resolved at bundle time and provides the pre-built client JS, CSS,
@@ -153,6 +155,7 @@ let isBuildQueued = false;
 let rebuildTimer: ReturnType<typeof setTimeout> | undefined;
 const reloadClients = new Set<ReadableStreamDefaultController<string>>();
 let queryQueue = Promise.resolve();
+const queryInsightsStore = createDemoQueryInsightsStore();
 
 const cleanupCallbacks: Array<() => Promise<void> | void> = [];
 
@@ -344,6 +347,7 @@ async function handleRequest(request: Request): Promise<Response> {
         aiEnabled: AI_ENABLED,
         bootId: BOOT_ID,
         databaseEnabled: postgresExecutor != null,
+        queryInsightsEnabled: postgresExecutor != null,
         seededAt,
         streamsUrl: streamsServerUrl ? STREAMS_PROXY_BASE_PATH : undefined,
       }),
@@ -363,6 +367,15 @@ async function handleRequest(request: Request): Promise<Response> {
     url.pathname.startsWith(`${STREAMS_PROXY_BASE_PATH}/`)
   ) {
     return await handleStreamsProxyRequest(request, url);
+  }
+
+  if (url.pathname === "/favicon.ico") {
+    return new Response(null, {
+      headers: {
+        "Cache-Control": CACHE_CONTROL_STATIC,
+      },
+      status: 204,
+    });
   }
 
   if (!isProduction && url.pathname === "/__reload") {
@@ -450,9 +463,21 @@ async function handleBffQueryRequest(request: Request): Promise<Response> {
   }
 
   try {
+    if (payload.procedure === "query-insights") {
+      return Response.json([
+        null,
+        queryInsightsStore.getSnapshot({
+          limit: payload.limit,
+          since: payload.since,
+        }),
+      ]);
+    }
+
     if (payload.procedure === "query") {
       const [error, result] = await runSerializedQuery(() =>
-        executor.execute(payload.query),
+        executeAndRecordQuery(executor, payload.query, {
+          schema: payload.schema,
+        }),
       );
 
       return Response.json([error ? serializeError(error) : null, result]);
@@ -466,7 +491,7 @@ async function handleBffQueryRequest(request: Request): Promise<Response> {
       }
 
       const [firstError, firstResult] = await runSerializedQuery(() =>
-        executor.execute(firstQuery),
+        executeAndRecordQuery(executor, firstQuery),
       );
 
       if (firstError) {
@@ -474,7 +499,7 @@ async function handleBffQueryRequest(request: Request): Promise<Response> {
       }
 
       const [secondError, secondResult] = await runSerializedQuery(() =>
-        executor.execute(secondQuery),
+        executeAndRecordQuery(executor, secondQuery),
       );
 
       if (secondError) {
@@ -504,9 +529,33 @@ async function handleBffQueryRequest(request: Request): Promise<Response> {
         typeof executor.executeTransaction
       > = (queries, options) => executor.executeTransaction!(queries, options);
 
-      const [error, result] = await runSerializedQuery(() =>
-        executeTransaction(payload.queries),
-      );
+      const [error, result] = await runSerializedQuery(async () => {
+        const startedAt = performance.now();
+        const transactionResult = await executeTransaction(payload.queries);
+        const durationMs = Math.max(0, performance.now() - startedAt);
+
+        if (!transactionResult[0]) {
+          const [, results] = transactionResult;
+          const perQueryDurationMs =
+            payload.queries.length > 0
+              ? durationMs / payload.queries.length
+              : 0;
+
+          for (const [index, query] of payload.queries.entries()) {
+            const result = results[index];
+
+            if (result) {
+              queryInsightsStore.record({
+                durationMs: perQueryDurationMs,
+                query,
+                result,
+              });
+            }
+          }
+        }
+
+        return transactionResult;
+      });
 
       return Response.json([error ? serializeError(error) : null, result]);
     }
@@ -521,6 +570,7 @@ async function handleBffQueryRequest(request: Request): Promise<Response> {
       const result = await runSerializedQuery(() =>
         lintPostgresSql({
           postgresClient: lintPostgresClient,
+          schema: payload.schema,
           schemaVersion: payload.schemaVersion,
           sql: payload.sql,
         }),
@@ -533,6 +583,27 @@ async function handleBffQueryRequest(request: Request): Promise<Response> {
   } catch (error: unknown) {
     return Response.json([serializeError(error)]);
   }
+}
+
+async function executeAndRecordQuery(
+  executor: PostgresExecutor,
+  query: Query<unknown>,
+  options?: { schema?: string },
+): Promise<Awaited<ReturnType<PostgresExecutor["execute"]>>> {
+  const startedAt = performance.now();
+  const result = await executor.execute(query, { schema: options?.schema });
+  const durationMs = Math.max(0, performance.now() - startedAt);
+  const [error, rows] = result;
+
+  if (!error) {
+    queryInsightsStore.record({
+      durationMs,
+      query,
+      result: rows,
+    });
+  }
+
+  return result;
 }
 
 async function handleAiRequest(request: Request): Promise<Response> {

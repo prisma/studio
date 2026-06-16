@@ -10,6 +10,7 @@
     "cssVariables": true,
     "prefix": "ps-"
   },
+  "iconLibrary": "lucide",
   "aliases": {
     "components": "@/ui/components",
     "utils": "@/ui/lib/utils",
@@ -17,5 +18,7 @@
     "lib": "@/ui/lib",
     "hooks": "@/ui/hooks"
   },
-  "iconLibrary": "lucide"
+  "registries": {
+    "@bklit": "https://ui.bklit.com/r/{name}.json"
+  }
 }

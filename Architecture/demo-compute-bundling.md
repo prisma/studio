@@ -21,34 +21,43 @@ It is responsible for:
 1. building the browser JS from `demo/ppg-dev/client.tsx`
 2. processing `ui/index.css` through the repo PostCSS pipeline
 3. injecting those prebuilt assets into the bundled server through `virtual:prebuilt-assets`
-4. writing a self-contained output directory whose entrypoint is `bundle/server.bundle.js`
-
-It is not responsible for manually collecting Prisma Postgres dev runtime assets anymore, but it does need to carry Prisma Streams worker runtime files that Bun does not discover automatically.
+4. copying Prisma Dev runtime assets into `bundle/` with their stable filenames
+5. bundling Prisma Streams local's worker into `touch/processor_worker.js`
+6. copying the worker's vendored `hash_vendor/` files into `touch/`
+7. writing a self-contained output directory whose entrypoint is `bundle/server.bundle.js`
 
 ## Prisma Dev Runtime Assets
 
-`@prisma/dev@0.23.1` exposes a Bun runtime-asset manifest for PGlite.
+`@prisma/dev@0.24.6` exposes a Bun runtime-asset manifest for PGlite and also
+exports `copyPrismaDevRuntimeAssets()`.
 
 That means when `build-compute.ts` bundles `demo/ppg-dev/server.ts` with Bun:
 
 - Bun sees `@prisma/dev`'s literal Bun manifest import
-- Bun emits the required `pglite.wasm`, `pglite.data`, and extension `*.tar.gz` files automatically
-- those files land next to the server bundle in `deploy/bundle/`
+- Bun emits hashed PGlite `.wasm`, `.data`, and extension archives next to the bundled server entrypoint
+- `build-compute.ts` then copies the same runtime assets into `deploy/bundle/` with their canonical names like `pglite.wasm` and `pglite-seed.tar.gz`
 
-Studio no longer scans `node_modules/@electric-sql/pglite/dist` or copies those files by hand.
+That extra copy is a Studio-side workaround for the current Compute boot path:
+the deployed `@prisma/dev` runtime still resolves stable filenames relative to
+the server bundle in some startup paths, so the Compute artifact needs both the
+hashed Bun-emitted assets and the canonical names.
 
-## Prisma Streams Runtime Assets
+## Prisma Streams Worker Assets
 
-Prisma Dev can also start a local Prisma Streams server. That runtime spawns a touch interpreter worker from `@prisma/streams-local`.
+`@prisma/dev` also starts Prisma Streams local and spawns a worker from
+`../touch/processor_worker.js` relative to the bundled server entrypoint.
 
-`build-compute.ts` MUST therefore copy:
+For the Compute artifact that means:
 
-- `@prisma/streams-local/dist/touch`
-- the worker's bare runtime dependency package, `better-result`
+- the server entrypoint stays at `deploy/bundle/server.bundle.js`
+- stable PGlite assets live in `deploy/bundle/`
+- the Streams worker must live at `deploy/touch/processor_worker.js`
+- the worker's vendored hashing modules must live at `deploy/touch/hash_vendor/`
 
-into the output directory.
-
-This is an explicit exception to the "no manual runtime asset copying" rule above: Bun handles the main PGlite runtime assets automatically, but the spawned Streams worker is resolved at runtime from the packaged filesystem and must remain self-contained after deployment.
+The worker cannot be copied verbatim from `node_modules` because it still
+imports package dependencies such as `better-result` and `ajv`. `build-compute.ts`
+therefore Bun-bundles that worker into a standalone file before copying the
+vendored hash modules alongside it.
 
 ## Runtime Detection
 

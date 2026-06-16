@@ -50,6 +50,10 @@ export async function seedDatabase(connectionString: string): Promise<void> {
       `);
 
       await transaction.unsafe(`
+        create schema if not exists test_app
+      `);
+
+      await transaction.unsafe(`
         create table if not exists organizations (
           id text primary key,
           name text not null,
@@ -167,7 +171,46 @@ export async function seedDatabase(connectionString: string): Promise<void> {
       `);
 
       await transaction.unsafe(`
+        create table if not exists test_app.customers (
+          id integer primary key,
+          name text not null,
+          email text not null unique
+        )
+      `);
+
+      await transaction.unsafe(`
+        create table if not exists test_app.products (
+          id integer primary key,
+          name text not null,
+          sku text not null unique,
+          price numeric(10, 2) not null
+        )
+      `);
+
+      await transaction.unsafe(`
+        create table if not exists test_app.orders (
+          id integer primary key,
+          customer_id integer not null references test_app.customers(id) on delete cascade,
+          status text not null check (status in ('pending', 'paid', 'shipped')),
+          ordered_at timestamptz not null default now()
+        )
+      `);
+
+      await transaction.unsafe(`
+        create table if not exists test_app.order_items (
+          id integer primary key,
+          order_id integer not null references test_app.orders(id) on delete cascade,
+          product_id integer not null references test_app.products(id) on delete restrict,
+          quantity integer not null check (quantity > 0)
+        )
+      `);
+
+      await transaction.unsafe(`
         truncate table
+          test_app.order_items,
+          test_app.orders,
+          test_app.products,
+          test_app.customers,
           all_data_types,
           incidents,
           feature_flags,
@@ -199,6 +242,32 @@ export async function seedDatabase(connectionString: string): Promise<void> {
           "joined_at",
         ])}
       `;
+
+      await transaction.unsafe(`
+        insert into test_app.customers (id, name, email) values
+          (1, 'Acme Supply', 'ops@acme.example'),
+          (2, 'Northwind Labs', 'data@northwind.example')
+      `);
+
+      await transaction.unsafe(`
+        insert into test_app.products (id, name, sku, price) values
+          (1, 'Query Analyzer', 'QA-001', 149.00),
+          (2, 'Latency Monitor', 'LM-002', 89.00),
+          (3, 'Schema Mapper', 'SM-003', 59.00)
+      `);
+
+      await transaction.unsafe(`
+        insert into test_app.orders (id, customer_id, status, ordered_at) values
+          (1, 1, 'paid', now() - interval '3 days'),
+          (2, 2, 'pending', now() - interval '1 day')
+      `);
+
+      await transaction.unsafe(`
+        insert into test_app.order_items (id, order_id, product_id, quantity) values
+          (1, 1, 1, 2),
+          (2, 1, 2, 1),
+          (3, 2, 3, 4)
+      `);
 
       await transaction.unsafe(`
         insert into incidents (

@@ -39,6 +39,8 @@ These instructions apply to the `@prisma/studio-core` package.
 - `pnpm lint`
 - `pnpm test`
 - `pnpm test:data`
+- `pnpm test:data:mysql` when `STUDIO_MYSQL_TEST_URL` or local Vitess/MySQL is available
+- `STUDIO_INCLUDE_HEAVY_LOCAL_TESTS=1 pnpm test` only when intentionally exercising heavyweight local suites excluded from the default aggregate
 - `pnpm test:checkpoint`
 - `pnpm build`
 - `pnpm check:exports`

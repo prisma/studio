@@ -1,5 +1,43 @@
 # @prisma/studio-core
 
+## 0.31.2
+
+### Patch Changes
+
+- ff11835: Fix PostgreSQL text array cell edits when queries are compiled with inline values.
+
+## 0.31.1
+
+### Patch Changes
+
+- e1583e5: Improve observability stream previews with concise evlog request summaries and otel span summaries.
+
+## 0.31.0
+
+### Minor Changes
+
+- a241cd8: Add stream request observability
+
+## 0.30.0
+
+### Minor Changes
+
+- 9d45420: Add Query Details copy actions
+
+## 0.29.0
+
+### Minor Changes
+
+- f05f7b9: Fix schema-aware SQL execution, linting, and Studio navigation so SQL queries and diagnostics resolve unqualified identifiers against the selected schema instead of always relying on the adapter default schema.
+
+## 0.28.0
+
+### Minor Changes
+
+- 0e1cd4e: Expand Prisma Streams support across Studio with a dedicated stream browser, live stream aggregations, stream diagnostics, routing-key browsing, WAL history handoff from tables, and a more flexible demo/runtime setup for local and external Streams servers.
+- 15e6e11: Add an optional Studio Queries view backed by query-insights snapshots from the Studio BFF bridge.
+  Render SQL result visualizations with Studio-owned Bklit chart configs instead of Chart.js configs.
+
 ## Upcoming
 
 ### Patch Changes
@@ -14,6 +52,8 @@
 - Add optional Prisma Streams setup support, wire the `ppg-dev` demo to Prisma Dev's Streams server, and show live stream names in a new sidebar `Streams` section.
 - Add a dedicated stream event view with infinite scrolling, expandable rows, and summary columns for time, key, indexed fields, preview text, and payload size.
 - Keep stream event counts live while a stream is open, and reveal newly arrived events in 50-row batches without snapping the current list.
+- Work around the current `@prisma/dev` Compute asset-resolution gap by copying stable PGlite runtime filenames into the deploy bundle and bundling the Prisma Streams local worker, so the packaged demo can boot correctly on Compute with WAL syncing still enabled.
+- Add automatic Compute preview deploys for pull requests, so branch builds land in the `studio-preview` project, comment their live URL on the PR, and clean themselves up when the branch is deleted.
 
 ## 0.27.3
 

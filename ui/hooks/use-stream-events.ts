@@ -9,6 +9,10 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { useStudio } from "../studio/context";
 import type { StudioStreamSearchConfig } from "./use-stream-details";
+import {
+  STREAM_PROFILE_EVLOG,
+  STREAM_PROFILE_OTEL_TRACES,
+} from "./use-stream-observe-request";
 import type { StudioStream } from "./use-streams";
 
 const OFFSET_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -53,7 +57,7 @@ export interface NormalizeStreamEventsArgs {
   events: unknown[];
   searchConfig?: StudioStreamSearchConfig | null;
   startExclusiveSequence: bigint;
-  stream: Pick<StudioStream, "epoch" | "name">;
+  stream: Pick<StudioStream, "epoch" | "name" | "profile">;
 }
 
 export interface UseStreamEventsArgs {
@@ -221,18 +225,318 @@ function compactText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
-function createPreview(value: unknown): string {
-  const preferredValue =
-    isRecord(value) && "value" in value && value.value !== undefined
-      ? value.value
-      : value;
-  const previewText = compactText(stringifyJson(preferredValue, 0));
-
-  if (previewText.length <= PREVIEW_CHARACTER_LIMIT) {
-    return previewText;
+function truncatePreview(value: string): string {
+  if (value.length <= PREVIEW_CHARACTER_LIMIT) {
+    return value;
   }
 
-  return `${previewText.slice(0, PREVIEW_CHARACTER_LIMIT - 1)}…`;
+  return `${value.slice(0, PREVIEW_CHARACTER_LIMIT - 1)}…`;
+}
+
+function getPreferredPreviewValue(value: unknown): unknown {
+  return isRecord(value) && "value" in value && value.value !== undefined
+    ? value.value
+    : value;
+}
+
+function parsePreviewString(value: unknown): string | null {
+  const primitive = stringifyPrimitive(value);
+  const text = primitive === null ? null : compactText(primitive);
+
+  return text && text.length > 0 ? text : null;
+}
+
+function parsePreviewNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function readRecordValue(
+  value: Record<string, unknown> | null,
+  key: string,
+): unknown {
+  return value ? value[key] : undefined;
+}
+
+function parseRecordString(
+  value: Record<string, unknown> | null,
+  key: string,
+): string | null {
+  return parsePreviewString(readRecordValue(value, key));
+}
+
+function shouldShowEvlogRequestMessage(args: {
+  level: string | null;
+  message: string | null;
+  status: number | null;
+}): boolean {
+  if (!args.message) {
+    return false;
+  }
+
+  if (args.status !== null && (args.status < 200 || args.status >= 400)) {
+    return true;
+  }
+
+  if (
+    args.level === "error" ||
+    args.level === "fatal" ||
+    args.level === "warn" ||
+    args.level === "warning"
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function createEvlogPreview(value: unknown): string | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const context = isRecord(value.context) ? value.context : null;
+  const method = parsePreviewString(value.method)?.toUpperCase() ?? null;
+  const path =
+    parsePreviewString(value.path) ??
+    parsePreviewString(value.route) ??
+    (context ? parsePreviewString(context.route) : null) ??
+    (context ? parsePreviewString(context.path) : null);
+  const statusText = parsePreviewString(value.status);
+  const status = parsePreviewNumber(value.status);
+  const message =
+    parsePreviewString(value.message) ??
+    parsePreviewString(value.why) ??
+    parsePreviewString(value.fix);
+  const level = parsePreviewString(value.level)?.toLowerCase() ?? null;
+
+  if (method && path) {
+    const shouldShowStatus =
+      statusText !== null && (status === null || status < 200 || status >= 400);
+    const shouldShowMessage = shouldShowEvlogRequestMessage({
+      level,
+      message,
+      status,
+    });
+    const preview = [method, path]
+      .concat(shouldShowStatus ? [statusText] : [])
+      .concat(shouldShowMessage && message ? [message] : [])
+      .join(" ");
+
+    return truncatePreview(preview);
+  }
+
+  if (message) {
+    const prefix =
+      statusText !== null && (status === null || status < 200 || status >= 400)
+        ? `${statusText} `
+        : "";
+
+    return truncatePreview(`${prefix}${message}`);
+  }
+
+  return null;
+}
+
+function formatOtelDurationMs(durationMs: number): string | null {
+  if (!Number.isFinite(durationMs) || durationMs < 0) {
+    return null;
+  }
+
+  if (durationMs > 0 && durationMs < 1) {
+    return "<1ms";
+  }
+
+  if (durationMs < 1000) {
+    return `${Math.round(durationMs).toString()}ms`;
+  }
+
+  const seconds = durationMs / 1000;
+  const precision = seconds < 10 ? 2 : 1;
+  const formattedSeconds = seconds
+    .toFixed(precision)
+    .replace(/\.0+$/, "")
+    .replace(/(\.\d*[1-9])0+$/, "$1");
+
+  return `${formattedSeconds}s`;
+}
+
+function parseUnixNano(value: unknown): bigint | null {
+  if (typeof value === "bigint") {
+    return value;
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return BigInt(Math.trunc(value));
+  }
+
+  if (typeof value === "string" && /^\d+$/.test(value)) {
+    return BigInt(value);
+  }
+
+  return null;
+}
+
+function getOtelDurationMs(span: Record<string, unknown>): number | null {
+  const explicitDuration =
+    parsePreviewNumber(span.durationMs) ?? parsePreviewNumber(span.duration);
+
+  if (explicitDuration !== null) {
+    return explicitDuration;
+  }
+
+  const startUnixNano = parseUnixNano(span.startUnixNano);
+  const endUnixNano = parseUnixNano(span.endUnixNano);
+
+  if (startUnixNano === null || endUnixNano === null) {
+    return null;
+  }
+
+  const durationNano = endUnixNano - startUnixNano;
+
+  if (durationNano < 0n) {
+    return null;
+  }
+
+  return Number(durationNano) / 1_000_000;
+}
+
+function parseUrlPath(value: string): string | null {
+  try {
+    return new URL(value).pathname || null;
+  } catch {
+    return null;
+  }
+}
+
+function getOtelSpanDisplayName(args: {
+  attributes: Record<string, unknown> | null;
+  span: Record<string, unknown>;
+}): string | null {
+  const method =
+    parseRecordString(args.attributes, "http.request.method") ??
+    parseRecordString(args.attributes, "http.method");
+  const path =
+    parseRecordString(args.attributes, "url.path") ??
+    parseRecordString(args.attributes, "http.route") ??
+    parseRecordString(args.attributes, "http.target") ??
+    (() => {
+      const urlFull = parseRecordString(args.attributes, "url.full");
+
+      return urlFull ? parseUrlPath(urlFull) : null;
+    })();
+
+  if (method && path) {
+    return `${method.toUpperCase()} ${path}`;
+  }
+
+  return parsePreviewString(args.span.name);
+}
+
+function getOtelServiceName(span: Record<string, unknown>): string | null {
+  const resource = isRecord(span.resource) ? span.resource : null;
+  const resourceAttributes =
+    resource && isRecord(resource.attributes) ? resource.attributes : null;
+
+  return (
+    parseRecordString(resourceAttributes, "service.name") ??
+    parseRecordString(resourceAttributes, "service.namespace") ??
+    parsePreviewString(span.service)
+  );
+}
+
+function getOtelErrorMessage(span: Record<string, unknown>): string | null {
+  const status = isRecord(span.status) ? span.status : null;
+  const statusCode = parseRecordString(status, "code")?.toLowerCase() ?? null;
+  const statusMessage = parseRecordString(status, "message");
+
+  if (
+    statusCode !== null &&
+    statusCode !== "ok" &&
+    statusCode !== "unset" &&
+    statusCode !== "0"
+  ) {
+    return statusMessage ?? statusCode;
+  }
+
+  const events = Array.isArray(span.events) ? span.events : [];
+
+  for (const event of events) {
+    if (!isRecord(event)) {
+      continue;
+    }
+
+    const eventAttributes = isRecord(event.attributes)
+      ? event.attributes
+      : null;
+    const exceptionMessage = parseRecordString(
+      eventAttributes,
+      "exception.message",
+    );
+
+    if (exceptionMessage) {
+      return exceptionMessage;
+    }
+  }
+
+  return null;
+}
+
+function createOtelTracePreview(value: unknown): string | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const attributes = isRecord(value.attributes) ? value.attributes : null;
+  const name = getOtelSpanDisplayName({ attributes, span: value });
+
+  if (!name) {
+    return null;
+  }
+
+  const duration = getOtelDurationMs(value);
+  const formattedDuration =
+    duration === null ? null : formatOtelDurationMs(duration);
+  const errorMessage = getOtelErrorMessage(value);
+  const parts = [name]
+    .concat(getOtelServiceName(value) ?? [])
+    .concat(formattedDuration ?? [])
+    .concat(errorMessage ? [`error: ${errorMessage}`] : []);
+
+  return truncatePreview(parts.join(" | "));
+}
+
+function createPreview(value: unknown, profile?: string | null): string {
+  const preferredValue = getPreferredPreviewValue(value);
+
+  if (profile === STREAM_PROFILE_EVLOG) {
+    const evlogPreview = createEvlogPreview(preferredValue);
+
+    if (evlogPreview) {
+      return evlogPreview;
+    }
+  }
+
+  if (profile === STREAM_PROFILE_OTEL_TRACES) {
+    const otelPreview = createOtelTracePreview(preferredValue);
+
+    if (otelPreview) {
+      return otelPreview;
+    }
+  }
+
+  const previewText = compactText(stringifyJson(preferredValue, 0));
+
+  return truncatePreview(previewText);
 }
 
 function estimateSizeBytes(value: unknown): number {
@@ -770,7 +1074,7 @@ export function normalizeStreamEvents(
       indexedFields: extractIndexedFields(event),
       key: extractKey(event),
       offset,
-      preview: createPreview(event),
+      preview: createPreview(event, stream.profile),
       sequence: sequence.toString(),
       sizeBytes: estimateSizeBytes(event),
       sortOffset: offset,
@@ -782,7 +1086,7 @@ export function normalizeStreamEvents(
 function normalizeStandaloneRoutingKeyEvents(args: {
   events: unknown[];
   searchConfig?: StudioStreamSearchConfig | null;
-  stream: Pick<StudioStream, "epoch" | "name">;
+  stream: Pick<StudioStream, "epoch" | "name" | "profile">;
 }): StudioStreamEvent[] {
   const { events, searchConfig, stream } = args;
 
@@ -797,7 +1101,7 @@ function normalizeStandaloneRoutingKeyEvents(args: {
       indexedFields: extractIndexedFields(event),
       key: extractKey(event),
       offset,
-      preview: createPreview(event),
+      preview: createPreview(event, stream.profile),
       sequence: sequence.toString(),
       sizeBytes: estimateSizeBytes(event),
       sortOffset: offset,
@@ -809,7 +1113,7 @@ function normalizeStandaloneRoutingKeyEvents(args: {
 function normalizeStreamSearchHits(args: {
   hits: StreamSearchApiHit[];
   searchConfig?: StudioStreamSearchConfig | null;
-  stream: Pick<StudioStream, "name">;
+  stream: Pick<StudioStream, "name" | "profile">;
 }): StudioStreamEvent[] {
   const { hits, searchConfig, stream } = args;
 
@@ -823,7 +1127,7 @@ function normalizeStreamSearchHits(args: {
       indexedFields: extractIndexedFields(hit.source),
       key: extractKey(hit.source),
       offset: hit.offset,
-      preview: createPreview(hit.source),
+      preview: createPreview(hit.source, stream.profile),
       sequence: sequence?.toString() ?? hit.offset,
       sizeBytes: estimateSizeBytes(hit.source),
       sortOffset: hit.offset,

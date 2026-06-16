@@ -145,6 +145,43 @@ It deliberately excludes:
   - The storage breakdowns also need collapsible ledger-style accounting boxes whose headers surface the section totals when folded shut, plus faint shared-cap annotations that sit beside right-aligned byte values and one shared cap marker spanning both Routing and Exact cache rows, which is not a stock ShadCN pattern.
   - No stock ShadCN pattern covers that descriptor-driven observability layout, especially when the UI must distinguish logical bytes from physical storage signals, separate search coverage from historical run indexes, hide unconfigured routing rows, and keep the remaining cost caveats explicit instead of inventing unavailable totals.
 
+### Stream Request Observability Sheet
+
+- Canonical components:
+  - [`ui/studio/views/stream/StreamObserveSheet.tsx`](../ui/studio/views/stream/StreamObserveSheet.tsx)
+  - [`ui/studio/views/stream/StreamObserveTimelineSection.tsx`](../ui/studio/views/stream/StreamObserveTimelineSection.tsx)
+  - [`ui/studio/views/stream/StreamObserveTraceSection.tsx`](../ui/studio/views/stream/StreamObserveTraceSection.tsx)
+  - [`ui/studio/views/stream/StreamObserveEventSection.tsx`](../ui/studio/views/stream/StreamObserveEventSection.tsx)
+  - [`ui/hooks/use-stream-observe-request.ts`](../ui/hooks/use-stream-observe-request.ts)
+- Closest standard ShadCN alternatives:
+  - `Sheet`
+  - `ToggleGroup`
+  - `Table`
+  - `Badge`
+  - `Skeleton`
+- Why it stays non-standard:
+  - The request detail surface needs to combine a merged event/span timeline, a trace waterfall with proportional span bars, expandable raw span details, service-call edges, root-cause event fields, source stream labels, and coverage warnings in one compact sheet.
+  - ShadCN provides the surrounding primitives, but no stock component models that request-correlation workflow or the proportional waterfall rows.
+  - The section selector still uses `ToggleGroup`, the shell uses `Sheet`, and the status chips use `Badge`; only the request-specific timeline and waterfall composition remain custom.
+
+### Queries Live Table And Detail Sheet
+
+- Canonical component:
+  - [`ui/studio/views/queries/QueriesView.tsx`](ui/studio/views/queries/QueriesView.tsx)
+- Closest standard ShadCN alternatives:
+  - `Table`
+  - `Card`
+  - `Sheet`
+  - `Select`
+  - `ToggleGroup`
+  - `Badge`
+  - `Skeleton`
+- Why it stays non-standard:
+  - Query insights need a live operational table with provider-driven polling, a live activity chart, table filtering, sort controls, row selection, and previous/next navigation inside a detail sheet.
+  - The activity chart is a Studio-specific SVG timeline that derives throughput and latency from snapshot deltas, supports a bounded time-window switcher, and exposes point-level hover readings. No standard ShadCN chart primitive covers that observability display.
+  - The same surface conditionally embeds AI recommendations when Studio's shared `llm` hook is available, while disappearing entirely when the embedder does not provide query-insights data.
+  - No stock ShadCN component models that combined observability workflow, so Studio keeps a custom composite built from standard ShadCN primitives.
+
 ## Standardization Candidates
 
 These are the current high-signal places where Studio is bypassing a plausible standard ShadCN component or composition pattern.
@@ -250,11 +287,12 @@ These are the current high-signal places where Studio is bypassing a plausible s
 - Files:
   - [`ui/studio/views/sql/SqlResultVisualization.tsx`](ui/studio/views/sql/SqlResultVisualization.tsx)
   - [`ui/studio/views/sql/SqlView.tsx`](ui/studio/views/sql/SqlView.tsx)
+  - [`ui/components/charts`](ui/components/charts)
 - Current UI:
-  - Borderless Chart.js canvas injected into a `DataGrid` header row, wrapped in a custom sticky white band with centered/clamped sizing, plus a custom text-and-icon visualization trigger placed on the SQL result summary line.
+  - Bklit ShadCN chart primitives injected into a `DataGrid` header row, wrapped in a custom sticky background band with centered/clamped sizing, plus a custom text-and-icon visualization trigger placed on the SQL result summary line.
 - Plausible standard ShadCN alternative:
   - `Card`
   - `Button`
-  - No standard ShadCN chart primitive exists; the chart body must remain custom.
+  - The Bklit registry components provide the chart primitives, but the SQL result surface still needs a custom `DataGrid.getBeforeHeaderRows(...)` composition so the chart scrolls with the result grid.
 - Confidence:
   - High

@@ -1,7 +1,7 @@
 import { fileURLToPath, URL } from "node:url";
 
 import type { Options } from "tsup";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 import { default as tsupConfig } from "./tsup.config";
 
@@ -14,11 +14,23 @@ const resolveAlias = {
     },
   ],
 };
+const maxWorkers =
+  process.env.VITEST_MAX_WORKERS ?? (process.env.CI ? "50%" : "2");
+const includeHeavyLocalTests =
+  process.env.STUDIO_INCLUDE_HEAVY_LOCAL_TESTS === "1";
+const localTestExcludes = includeHeavyLocalTests
+  ? []
+  : [
+      "demo/ppg-dev/build-compute.test.ts",
+      "ui/studio/views/table/ActiveTableView.filtering.test.tsx",
+    ];
 
 // https://vitest.dev/guide/projects.html#test-projects
 export default defineConfig({
   resolve: resolveAlias,
   test: {
+    exclude: [...configDefaults.exclude, ...localTestExcludes],
+    maxWorkers,
     projects: [
       {
         resolve: resolveAlias,
@@ -27,6 +39,7 @@ export default defineConfig({
             TZ: "UTC",
           },
           environment: "node",
+          exclude: [...configDefaults.exclude, ...localTestExcludes],
           include: ["checkpoint/**/*.test.ts"],
           name: "checkpoint",
         },
@@ -41,6 +54,7 @@ export default defineConfig({
             TZ: "UTC",
           },
           environment: "node",
+          exclude: [...configDefaults.exclude, ...localTestExcludes],
           fileParallelism: false,
           include: ["data/**/*.test.ts"],
           name: "data",
@@ -53,6 +67,7 @@ export default defineConfig({
             TZ: "UTC",
           },
           environment: "node",
+          exclude: [...configDefaults.exclude, ...localTestExcludes],
           include: ["demo/**/*.test.ts"],
           name: "demo",
         },
@@ -64,6 +79,7 @@ export default defineConfig({
             TZ: "UTC",
           },
           environment: "node",
+          exclude: [...configDefaults.exclude, ...localTestExcludes],
           include: ["scripts/**/*.test.ts"],
           name: "release",
         },
@@ -72,6 +88,7 @@ export default defineConfig({
         resolve: resolveAlias,
         test: {
           environment: "happy-dom", // or "jsdom"
+          exclude: [...configDefaults.exclude, ...localTestExcludes],
           include: ["ui/**/*.test.{ts,tsx}"],
           name: "ui",
         },
@@ -80,6 +97,7 @@ export default defineConfig({
         resolve: resolveAlias,
         test: {
           environment: "node",
+          exclude: [...configDefaults.exclude, ...localTestExcludes],
           include: ["**/*.e2e.{ts,tsx}"],
           name: "e2e",
           //   browser: {

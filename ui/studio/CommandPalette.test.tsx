@@ -150,6 +150,8 @@ vi.mock("../hooks/use-ui-state", async () => {
 
 vi.mock("./context", () => ({
   useStudio: () => ({
+    hasDatabase: true,
+    hasQueryInsights: false,
     isDarkMode,
     isNavigationOpen,
     setThemeMode: setThemeModeMock,

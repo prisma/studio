@@ -110,8 +110,13 @@ function buildNavigationTableNames(introspection: AdapterIntrospectResult) {
  * implement a specialized hook instead.
  */
 function useNavigationInternal() {
-  const { adapter, hasDatabase, navigationTableNamesCollection, streamsUrl } =
-    useStudio();
+  const {
+    adapter,
+    hasDatabase,
+    hasQueryInsights,
+    navigationTableNamesCollection,
+    streamsUrl,
+  } = useStudio();
   const { data: introspection, isFetching } = useIntrospection();
 
   const { schemas } = introspection;
@@ -188,6 +193,8 @@ function useNavigationInternal() {
     useQueryState("aggregations");
   const [streamFollowParam, setStreamFollowParam] =
     useQueryState("streamFollow");
+  const [streamObserveParam, setStreamObserveParam] =
+    useQueryState("streamObserve");
   const [streamRoutingKeyParam, setStreamRoutingKeyParam] =
     useQueryState("streamRoutingKey");
   const [streamParam, setStreamParam] = useQueryState("stream");
@@ -216,7 +223,11 @@ function useNavigationInternal() {
       ? activeTables[resolvedTableParam]
       : undefined;
   const resolvedViewParam =
-    !hasDatabase && typeof streamsUrl === "string" ? "stream" : viewParam;
+    !hasDatabase && typeof streamsUrl === "string"
+      ? "stream"
+      : viewParam === "queries" && !hasQueryInsights
+        ? defaults.view
+        : viewParam;
 
   const metadata = useMemo(
     () => ({
@@ -242,6 +253,7 @@ function useNavigationInternal() {
     streamAggregationRangeParam,
     streamAggregationsParam,
     streamFollowParam,
+    streamObserveParam,
     streamRoutingKeyParam,
     streamParam,
     tableParam,
@@ -259,6 +271,8 @@ function useNavigationInternal() {
     setStreamAggregationsParam:
       setStreamAggregationsParam as NuqsSetNullableValue<string>,
     setStreamFollowParam: setStreamFollowParam as NuqsSetNullableValue<string>,
+    setStreamObserveParam:
+      setStreamObserveParam as NuqsSetNullableValue<string>,
     setStreamRoutingKeyParam:
       setStreamRoutingKeyParam as NuqsSetNullableValue<string>,
     setStreamParam: setStreamParam as NuqsSetNullableValue<string>,

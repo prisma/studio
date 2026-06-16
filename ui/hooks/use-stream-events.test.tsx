@@ -8,6 +8,7 @@ import {
   createStreamReadUrl,
   encodeStreamOffset,
   getStreamEventsWindow,
+  normalizeStreamEvents,
   useStreamEvents,
 } from "./use-stream-events";
 import type { StudioStream } from "./use-streams";
@@ -262,6 +263,128 @@ describe("useStreamEvents", () => {
     );
   });
 
+  it("summarizes evlog request previews without showing raw JSON", () => {
+    const events = normalizeStreamEvents({
+      events: [
+        {
+          timestamp: "2026-06-12T17:05:10.935Z",
+          level: "info",
+          service: "storefront",
+          method: "GET",
+          path: "/product/acme-mug",
+          status: 200,
+          duration: 0,
+          message: "Storefront request",
+        },
+        {
+          timestamp: "2026-06-12T17:09:18.912Z",
+          level: "error",
+          service: "storefront",
+          method: "POST",
+          path: "/api/observability/simulate",
+          status: 500,
+          message: "Synthetic diagnostic: Trace fanout",
+        },
+      ],
+      startExclusiveSequence: 0n,
+      stream: {
+        epoch: 0,
+        name: "webshop-production-events",
+        profile: "evlog",
+      },
+    });
+
+    expect(events.map((event) => event.preview)).toEqual([
+      "GET /product/acme-mug",
+      "POST /api/observability/simulate 500 Synthetic diagnostic: Trace fanout",
+    ]);
+  });
+
+  it("keeps generic previews for non-evlog streams", () => {
+    const events = normalizeStreamEvents({
+      events: [
+        {
+          method: "GET",
+          path: "/product/acme-mug",
+          status: 200,
+          message: "Storefront request",
+        },
+      ],
+      startExclusiveSequence: 0n,
+      stream: {
+        epoch: 0,
+        name: "generic-json-events",
+        profile: null,
+      },
+    });
+
+    expect(events[0]?.preview).toBe(
+      '{"method":"GET","path":"/product/acme-mug","status":200,"message":"Storefront request"}',
+    );
+  });
+
+  it("summarizes otel trace span previews without showing raw JSON", () => {
+    const events = normalizeStreamEvents({
+      events: [
+        {
+          attributes: {
+            "http.request.method": "POST",
+            "http.response.status_code": 200,
+            "url.path": "/api/query-insights/snapshot",
+          },
+          endUnixNano: "1810000003486000000",
+          kind: "server",
+          name: "fetchHandler POST",
+          resource: {
+            attributes: {
+              "service.name": "console",
+            },
+          },
+          spanId: "086e83747d0e381e",
+          startUnixNano: "1810000000000000000",
+          status: { code: "ok", message: null },
+          traceId: "5b8efff798038103d269b633813fc60c",
+        },
+        {
+          attributes: { "url.full": "https://payments.internal/charges" },
+          endUnixNano: "1810000000192000000",
+          events: [
+            {
+              attributes: {
+                "exception.message": "Card declined by issuer",
+                "exception.type": "CardDeclinedError",
+              },
+              name: "exception",
+              timeUnixNano: "1810000000190000000",
+            },
+          ],
+          kind: "client",
+          name: "POST payments /charges",
+          resource: {
+            attributes: {
+              "service.name": "payments",
+            },
+          },
+          spanId: "22dd83747d0e3822",
+          startUnixNano: "1810000000041000000",
+          status: { code: "error", message: "402 from issuer" },
+          traceId: "5b8efff798038103d269b633813fc60c",
+        },
+      ],
+      startExclusiveSequence: 0n,
+      stream: {
+        epoch: 0,
+        name: "webshop-production-traces",
+        profile: "otel-traces",
+      },
+    });
+
+    expect(events.map((event) => event.preview)).toEqual([
+      "POST /api/query-insights/snapshot | console | 3.49s",
+      "POST payments /charges | payments | 151ms | error: 402 from issuer",
+    ]);
+  });
+
   it("loads a tail window and normalizes events into newest-first rows", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
@@ -301,6 +424,8 @@ describe("useStreamEvents", () => {
         expiresAt: null,
         name: "prisma-wal",
         nextOffset: "3",
+        observability: null,
+        profile: null,
         sealedThrough: "-1",
         uploadedThrough: "-1",
       },
@@ -372,6 +497,8 @@ describe("useStreamEvents", () => {
         expiresAt: null,
         name: "golden-stream-2",
         nextOffset: "2",
+        observability: null,
+        profile: null,
         sealedThrough: "-1",
         uploadedThrough: "-1",
       },
@@ -446,6 +573,8 @@ describe("useStreamEvents", () => {
         expiresAt: null,
         name: "golden-stream-2",
         nextOffset: "200",
+        observability: null,
+        profile: null,
         sealedThrough: "-1",
         uploadedThrough: "-1",
       },
@@ -496,6 +625,8 @@ describe("useStreamEvents", () => {
         expiresAt: null,
         name: "gharchive-demo-all",
         nextOffset: "1",
+        observability: null,
+        profile: null,
         sealedThrough: "-1",
         uploadedThrough: "-1",
       },
@@ -543,6 +674,8 @@ describe("useStreamEvents", () => {
         expiresAt: null,
         name: "gharchive-demo-all",
         nextOffset: "1",
+        observability: null,
+        profile: null,
         sealedThrough: "-1",
         uploadedThrough: "-1",
       },
@@ -594,6 +727,8 @@ describe("useStreamEvents", () => {
       expiresAt: null,
       name: "prisma-wal",
       nextOffset: "100",
+      observability: null,
+      profile: null,
       sealedThrough: "-1",
       uploadedThrough: "-1",
     };
@@ -666,6 +801,8 @@ describe("useStreamEvents", () => {
         expiresAt: null,
         name: "prisma-wal",
         nextOffset: "120",
+        observability: null,
+        profile: null,
         sealedThrough: "-1",
         uploadedThrough: "-1",
       },
@@ -785,6 +922,8 @@ describe("useStreamEvents", () => {
         expiresAt: null,
         name: "prisma-wal",
         nextOffset: "5",
+        observability: null,
+        profile: null,
         sealedThrough: "-1",
         uploadedThrough: "-1",
       },
@@ -892,6 +1031,8 @@ describe("useStreamEvents", () => {
         expiresAt: null,
         name: "prisma-wal",
         nextOffset: "6",
+        observability: null,
+        profile: null,
         sealedThrough: "-1",
         uploadedThrough: "-1",
       },
@@ -943,6 +1084,8 @@ describe("useStreamEvents", () => {
         expiresAt: null,
         name: "prisma-wal",
         nextOffset: "6",
+        observability: null,
+        profile: null,
         sealedThrough: "-1",
         uploadedThrough: "-1",
       },
@@ -1014,6 +1157,8 @@ describe("useStreamEvents", () => {
       expiresAt: null,
       name: "prisma-wal",
       nextOffset: "3",
+      observability: null,
+      profile: null,
       sealedThrough: "-1",
       uploadedThrough: "-1",
     } satisfies StudioStream;

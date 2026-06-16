@@ -74,6 +74,27 @@ describe("bff/bff-client", () => {
         expect(response).toStrictEqual([null, results]);
       });
 
+      it("should send selected schema context when provided", async () => {
+        fetchFn.mockResolvedValueOnce(
+          new Response(JSON.stringify([null, results])),
+        );
+
+        const response = await client.execute(query, {
+          schema: "test_app",
+        });
+        const latestFetchCall = fetchFn.mock.calls.at(-1);
+
+        expect(latestFetchCall?.[0]).toBe(url);
+        expect(JSON.parse(latestFetchCall?.[1]?.body as string)).toStrictEqual({
+          customPayload,
+          procedure: "query",
+          query,
+          schema: "test_app",
+        });
+
+        expect(response).toStrictEqual([null, results]);
+      });
+
       it("should return (not throw) an error if the request fails", async () => {
         const error = "Internal server error";
         fetchFn.mockResolvedValueOnce(new Response(error, { status: 500 }));
@@ -564,6 +585,7 @@ describe("bff/bff-client", () => {
 
     describe("lintSql", () => {
       const details = {
+        schema: "test_app",
         schemaVersion: "schema-abc123",
         sql: "select * from users",
       };
@@ -605,6 +627,7 @@ describe("bff/bff-client", () => {
             expect(JSON.parse(value as string)).toStrictEqual({
               customPayload,
               procedure: "sql-lint",
+              schema: "test_app",
               schemaVersion: "schema-abc123",
               sql: "select * from users",
             });
@@ -653,6 +676,88 @@ describe("bff/bff-client", () => {
         expect(error).toHaveProperty("name", "AbortError");
         expect(error).toHaveProperty("message", "This operation was aborted");
         expect(result).toBeUndefined();
+      });
+    });
+
+    describe("queryInsights", () => {
+      const snapshot = {
+        generatedAt: 1_779_963_200_000,
+        pollingIntervalMs: 1000,
+        queries: [
+          {
+            count: 2,
+            duration: 12,
+            id: "select-users",
+            lastSeen: 1_779_963_199_000,
+            query: "select * from users",
+            reads: 4,
+            rowsReturned: 4,
+            tables: ["users"],
+          },
+        ],
+      };
+
+      let client: StudioBFFClient;
+      const fetchFn = vi.fn((...args: Parameters<typeof fetch>) =>
+        fetch(...args),
+      );
+
+      beforeEach(() => {
+        client = createStudioBFFClient({
+          customHeaders,
+          customPayload,
+          fetch: fetchFn,
+          queryInsights: true,
+          url,
+        });
+      });
+
+      it("omits queryInsights unless the optional BFF capability is enabled", () => {
+        expect(
+          createStudioBFFClient({
+            fetch: fetchFn,
+            url,
+          }).queryInsights,
+        ).toBeUndefined();
+      });
+
+      it("requests query-insights snapshots through the same BFF channel", async () => {
+        fetchFn.mockResolvedValueOnce(
+          new Response(JSON.stringify([null, snapshot])),
+        );
+
+        const response = await client.queryInsights!.getSnapshot({
+          limit: 50,
+          since: 1_779_963_000_000,
+        });
+
+        expect(fetchFn).toHaveBeenCalledWith(url, {
+          body: expect.toSatisfy((value) => {
+            expect(JSON.parse(value as string)).toStrictEqual({
+              customPayload,
+              limit: 50,
+              procedure: "query-insights",
+              since: 1_779_963_000_000,
+            });
+
+            return true;
+          }) as string,
+          headers: expect.objectContaining(customHeaders) as object,
+          method: "POST",
+        });
+        expect(response).toStrictEqual([null, snapshot]);
+      });
+
+      it("returns an error tuple when the query-insights request fails", async () => {
+        fetchFn.mockResolvedValueOnce(
+          new Response("query insights unavailable", { status: 501 }),
+        );
+
+        const response = await client.queryInsights!.getSnapshot({});
+
+        expect(response).toStrictEqual([
+          new Error("query insights unavailable"),
+        ]);
       });
     });
   });
