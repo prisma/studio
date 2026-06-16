@@ -1264,6 +1264,42 @@ describe("postgres-core/dml", () => {
       expect(persisted.rows).toEqual([{ arr_col: "{tag1,tag2,tag3}" }]);
     });
 
+    it("supports PostgreSQL text array inserts when parameters are inlined", async () => {
+      const table = createSearchTypesTable();
+      const query = getInsertQuery(
+        {
+          rows: [
+            {
+              arr_col: ["tag1", "tag2", "tag3"],
+              id: "row_insert_inline_arr",
+            },
+          ],
+          table,
+        },
+        { noParameters: true },
+      );
+
+      expect(query).toMatchInlineSnapshot(`
+        {
+          "parameters": [],
+          "sql": "insert into "public"."search_types" ("id", "arr_col") values ('row_insert_inline_arr', cast(array['tag1', 'tag2', 'tag3'] as text[])) returning "id", "str_col", "dt_col", "bool_col", "enum_col", "time_col", "raw_col", "num_col", "json_col", "arr_col", cast(floor(extract(epoch from now()) * 1000) as text) as "__ps_inserted_at__"",
+          "transformations": undefined,
+        }
+      `);
+
+      const [error] = await executor.execute(query);
+
+      expect(error).toBeNull();
+
+      const persisted = await pglite.query<{ arr_col: string }>(`
+        select "arr_col"::text as "arr_col"
+        from "public"."search_types"
+        where "id" = 'row_insert_inline_arr'
+      `);
+
+      expect(persisted.rows).toEqual([{ arr_col: "{tag1,tag2,tag3}" }]);
+    });
+
     it("casts PostgreSQL enum arrays with the array suffix outside the quoted user-defined type name", async () => {
       const table = createEnumArrayUsersTable();
       const query = getUpdateQuery({
