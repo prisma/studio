@@ -264,6 +264,7 @@ Exports can copy directly to the clipboard or save to disk, include column heade
 
 Editable cells open popover editors with datatype-specific controls for raw text, numeric, boolean, enum, JSON/array, date, and time values.
 Save/cancel keyboard behavior is standardized, and null/default/empty semantics are handled explicitly per input type.
+Native PostgreSQL arrays can be edited from JSON-style array values and are written back with explicit array casts when inline SQL literals are required.
 PostgreSQL user-defined enum arrays also persist through that same staged-edit flow, with schema-qualified casts emitted in a form PostgreSQL accepts for `enum[]` writes.
 
 ## Staged Multi-Cell Editing
