@@ -181,6 +181,7 @@ describe("filter syntax validation", () => {
     ["role", "=", "admin"],
     ["role", "ilike", "%adm%"],
     ["id", "=", "4f9d4af6-3ce2-4f3d-b4e6-cf8d0f510d4a"],
+    ["id", "=", "019d6991-4380-76ba-b4eb-35c36b72d7f2"],
     ["attachment", "!=", "0xDEADBEEF"],
     ["enabled", "=", "true"],
     ["score", ">", "12.5"],
