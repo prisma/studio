@@ -1,5 +1,11 @@
 # @prisma/studio-core
 
+## 0.31.2
+
+### Patch Changes
+
+- ff11835: Fix PostgreSQL text array cell edits when queries are compiled with inline values.
+
 ## 0.31.1
 
 ### Patch Changes
