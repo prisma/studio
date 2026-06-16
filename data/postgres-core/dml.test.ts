@@ -1232,6 +1232,38 @@ describe("postgres-core/dml", () => {
       ]);
     });
 
+    it("supports PostgreSQL text array updates when parameters are inlined", async () => {
+      const table = createSearchTypesTable();
+      const query = getUpdateQuery(
+        {
+          changes: { arr_col: ["tag1", "tag2", "tag3"] },
+          row: { id: "row_tr" },
+          table,
+        },
+        { noParameters: true },
+      );
+
+      expect(query).toMatchInlineSnapshot(`
+        {
+          "parameters": [],
+          "sql": "update "public"."search_types" set "arr_col" = cast(array['tag1', 'tag2', 'tag3'] as text[]) where "id" = 'row_tr' returning "id", "str_col", "dt_col", "bool_col", "enum_col", "time_col", "raw_col", "num_col", "json_col", "arr_col", cast(floor(extract(epoch from now()) * 1000) as text) as "__ps_updated_at__"",
+          "transformations": undefined,
+        }
+      `);
+
+      const [error] = await executor.execute(query);
+
+      expect(error).toBeNull();
+
+      const persisted = await pglite.query<{ arr_col: string }>(`
+        select "arr_col"::text as "arr_col"
+        from "public"."search_types"
+        where "id" = 'row_tr'
+      `);
+
+      expect(persisted.rows).toEqual([{ arr_col: "{tag1,tag2,tag3}" }]);
+    });
+
     it("casts PostgreSQL enum arrays with the array suffix outside the quoted user-defined type name", async () => {
       const table = createEnumArrayUsersTable();
       const query = getUpdateQuery({

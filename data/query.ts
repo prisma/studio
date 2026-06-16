@@ -278,6 +278,7 @@ function tupleFrom(items: unknown[]): Expression<any> {
 export interface ApplyWriteTransformationsProps<C extends "insert" | "update"> {
   columns: Table["columns"];
   context: C;
+  noParameters?: boolean;
   values: C extends "update"
     ? Record<string, unknown>
     : Record<string, unknown> | Record<string, unknown>[];
@@ -300,6 +301,7 @@ export function applyTransformations<C extends "insert" | "update">(
 interface TransformValuesProps {
   columns: Table["columns"];
   context: "insert" | "update";
+  noParameters?: boolean;
   supportsDefaultKeyword: boolean;
   values: Record<string, unknown>;
 }
@@ -331,7 +333,10 @@ function transformValues(
   return valueEntries.reduce(
     (obj, [key, value]) => ({
       ...obj,
-      [key]: transformValue(value, columns[key]!, supportsDefaultKeyword),
+      [key]: transformValue(value, columns[key]!, {
+        inlineArrayValues: props.noParameters === true,
+        supportsDefaultKeyword,
+      }),
     }),
     requiredColumns.reduce((defaults, column) => {
       const { datatype, fkColumn, name } = column;
@@ -371,9 +376,13 @@ function transformValues(
 function transformValue(
   value: unknown,
   column: Column,
-  supportsDefaultKeyword = true,
+  options: {
+    inlineArrayValues?: boolean;
+    supportsDefaultKeyword?: boolean;
+  } = {},
 ): Expression<any> {
   const { datatype, defaultValue, nullable } = column;
+  const { inlineArrayValues = false, supportsDefaultKeyword = true } = options;
 
   const eb = expressionBuilder();
 
@@ -385,11 +394,35 @@ function transformValue(
     return supportsDefaultKeyword ? sql`default` : eb.lit(null);
   }
 
+  if (inlineArrayValues && datatype.isArray && Array.isArray(value)) {
+    return eb.cast(
+      getArrayValueExpression(value),
+      getArrayTypeCastTarget(datatype),
+    );
+  }
+
   if (!datatype.isNative) {
     return eb.cast(eb.val(value), getUserDefinedTypeCastTarget(datatype));
   }
 
   return eb.val(value);
+}
+
+function getArrayValueExpression(value: unknown[]): Expression<any> {
+  return sql`array[${sql.join(
+    value.map((item) =>
+      Array.isArray(item) ? getArrayValueExpression(item) : sql`${item}`,
+    ),
+    sql`, `,
+  )}]`;
+}
+
+function getArrayTypeCastTarget(datatype: DataType): Expression<any> {
+  if (!datatype.isNative) {
+    return getUserDefinedTypeCastTarget(datatype);
+  }
+
+  return sql.raw(datatype.name);
 }
 
 function getUserDefinedTypeCastTarget(datatype: DataType): Expression<any> {
