@@ -21,6 +21,18 @@ The same demo entrypoint can also run against external development infrastructur
 Studio can run without a database connection when a Streams server is configured, which makes it usable as a focused event-log and stream-search tool.
 In that mode the shell hides schema selection, table navigation, and database-only views, defaults into the stream view, and keeps all Streams browsing, search, aggregation, and live/tail behavior working through the normal `/api/streams` proxy.
 
+## Prisma Workflow Operations
+
+Studio can optionally connect to a Prisma Workflow provider and show a dedicated `Workflows` section in the sidebar.
+The workflow view presents the deployed workflow graph, node-level execution state, recent runs, approval gates, ingest events, dead letters, learning metrics, and provider warnings in one operator-focused surface.
+The graph canvas keeps node labels, status chips, attempt counts, and durations inside compact fixed cards so long generated workflow names remain scannable while preserving the pan and zoom topology view.
+The Runs tab keeps the selected run timeline and JSON payload inspectors in a fixed split pane with independent scroll regions, so event history, run state, frame diffs, inputs, outputs, and errors stay readable without squeezing the bottom detail area.
+The same details pane includes a compact run map that reuses the workflow canvas coordinates to show how far the selected run progressed, which node is current, the recorded input and output payload summaries for each step, and the next possible nodes from the current position.
+Embedders enable it with a top-level `workflows` provider rather than adding workflow behavior to the database adapter, and Studio can run workflows-only with `hasDatabase={false}` for Prisma Compute workflow apps that do not need table browsing.
+The URL hash preserves `view=workflows`, the selected workflow id, tab, run id, and canvas frame so links can land directly on a workflow, a failing run, or a specific operational tab.
+The local `ppg-dev` demo includes a mocked Stripe dispute workflow with HubSpot, Shopify, Zendesk, Stripe, Slack, approval, evidence submission, learning, and dead-letter steps so the Studio visuals can be tested end-to-end without external providers.
+The normal `pnpm demo:ppg` seed also writes the dispute workflow into the ephemeral `@prisma/dev` database using `_prisma_workflows` runtime tables plus `dispute_cases` and `approved_dispute_responses`, so table browsing and the Workflows view demonstrate the same scenario.
+
 ## Local Streams Development Override
 
 Studio's local development workflow can temporarily replace the published npm `@prisma/dev` package with the sibling source package from `../team-expansion/dev/server`, while also swapping its `@prisma/streams-local` dependency over to a built local Streams checkout.

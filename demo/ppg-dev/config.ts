@@ -13,6 +13,9 @@ export interface DemoConfig {
   streams?: {
     url: string;
   };
+  workflows?: {
+    url: string;
+  };
 }
 
 const TRUE_ENV_VALUES = new Set(["1", "true", "yes", "on"]);
@@ -56,6 +59,7 @@ export function buildDemoConfig(args: {
   queryInsightsEnabled?: boolean;
   seededAt?: string | null;
   streamsUrl?: string;
+  workflowsUrl?: string;
 }): DemoConfig {
   const {
     aiEnabled,
@@ -64,6 +68,7 @@ export function buildDemoConfig(args: {
     queryInsightsEnabled = databaseEnabled,
     seededAt,
     streamsUrl,
+    workflowsUrl,
   } = args;
 
   return {
@@ -86,6 +91,13 @@ export function buildDemoConfig(args: {
       ? {
           streams: {
             url: streamsUrl,
+          },
+        }
+      : {}),
+    ...(workflowsUrl
+      ? {
+          workflows: {
+            url: workflowsUrl,
           },
         }
       : {}),

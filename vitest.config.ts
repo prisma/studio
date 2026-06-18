@@ -91,6 +91,7 @@ export default defineConfig({
           exclude: [...configDefaults.exclude, ...localTestExcludes],
           include: ["ui/**/*.test.{ts,tsx}"],
           name: "ui",
+          setupFiles: ["./ui/vitest.setup.ts"],
         },
       },
       {

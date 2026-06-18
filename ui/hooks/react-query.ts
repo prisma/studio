@@ -25,6 +25,7 @@ type QueryKey =
   | ["stream-search-metadata", string]
   | ["stream-routing-key-read-metadata", string]
   | ["stream-search-head", string, number, string, string, string]
+  | ["workflows"]
   | [
       "stream-observe-request",
       string,

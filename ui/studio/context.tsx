@@ -27,6 +27,7 @@ import {
   StudioLlmError,
   type StudioLlmRequest,
 } from "@/data/llm";
+import type { WorkflowStudioProvider } from "@/data/workflows";
 
 import { check } from "../../checkpoint";
 import { Toaster } from "../components/ui/sonner";
@@ -257,9 +258,11 @@ interface StudioContextValue {
   llm?: StudioLlm;
   queryInsights?: Adapter["queryInsights"];
   streamsUrl?: string;
+  workflows?: WorkflowStudioProvider;
   hasAiFilter: boolean;
   hasAiQueryRecommendations: boolean;
   hasAiSql: boolean;
+  hasWorkflows: boolean;
   hasQueryInsights: boolean;
   requestLlm: (request: StudioLlmRequest) => Promise<string>;
   onEvent: (event: StudioEventBase) => void;
@@ -303,6 +306,7 @@ export type StudioContextProviderProps = PropsWithChildren<{
   onEvent?: (event: StudioEvent) => void;
   streamsUrl?: string;
   theme?: CustomTheme | string;
+  workflows?: WorkflowStudioProvider;
 }>;
 
 export function StudioContextProvider(props: StudioContextProviderProps) {
@@ -314,6 +318,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
     llm,
     streamsUrl,
     theme,
+    workflows,
   } = props;
 
   const queryClientRef = useRef(new QueryClient());
@@ -820,6 +825,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
   const hasAiSql = typeof llm === "function";
   const queryInsights = adapter.queryInsights;
   const hasQueryInsights = typeof queryInsights?.getSnapshot === "function";
+  const hasWorkflows = typeof workflows?.getSnapshot === "function";
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -831,9 +837,11 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
           llm,
           queryInsights,
           streamsUrl,
+          workflows,
           hasAiFilter,
           hasAiQueryRecommendations,
           hasAiSql,
+          hasWorkflows,
           hasQueryInsights,
           requestLlm,
           onEvent,

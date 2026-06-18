@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import type { Adapter } from "../../data/adapter";
 import { createStudioBFFClient } from "../../data/bff";
 import { createPostgresAdapter } from "../../data/postgres-core";
+import { createWorkflowStudioClient } from "../../data/workflows";
 import type { DemoConfig } from "./config";
 import { DemoApp } from "./DemoShell";
 import { createNoDatabaseAdapter } from "./no-database-adapter";
@@ -59,6 +60,11 @@ async function bootstrap(): Promise<void> {
       seededAt={config.seededAt}
       aiEnabled={config.ai?.enabled === true}
       streamsUrl={config.streams?.url}
+      workflows={
+        config.workflows?.url
+          ? createWorkflowStudioClient({ baseUrl: config.workflows.url })
+          : undefined
+      }
     />,
   );
 }

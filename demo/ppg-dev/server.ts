@@ -28,6 +28,7 @@ import {
   addDemoStartupFailureHint,
   ensurePortAvailable,
 } from "./startup-diagnostics";
+import { handleDemoWorkflowRequest } from "./workflows-fixture";
 
 declare const Bun: {
   build(options: {
@@ -98,6 +99,7 @@ const AI_ENABLED = resolveDemoAiEnabled({
 });
 const BOOT_ID = crypto.randomUUID();
 const STREAMS_PROXY_BASE_PATH = "/api/streams";
+const WORKFLOWS_BASE_PATH = "/api/prisma-workflows";
 const CACHE_CONTROL_STATIC = isProduction
   ? "public, max-age=31536000, immutable"
   : "no-cache, no-store, must-revalidate";
@@ -350,6 +352,7 @@ async function handleRequest(request: Request): Promise<Response> {
         queryInsightsEnabled: postgresExecutor != null,
         seededAt,
         streamsUrl: streamsServerUrl ? STREAMS_PROXY_BASE_PATH : undefined,
+        workflowsUrl: WORKFLOWS_BASE_PATH,
       }),
     );
   }
@@ -360,6 +363,16 @@ async function handleRequest(request: Request): Promise<Response> {
 
   if (url.pathname === "/api/ai") {
     return await handleAiRequest(request);
+  }
+
+  if (
+    url.pathname === WORKFLOWS_BASE_PATH ||
+    url.pathname.startsWith(`${WORKFLOWS_BASE_PATH}/`)
+  ) {
+    return await handleDemoWorkflowRequest(request, WORKFLOWS_BASE_PATH, {
+      postgresClient,
+      runSerializedQuery,
+    });
   }
 
   if (

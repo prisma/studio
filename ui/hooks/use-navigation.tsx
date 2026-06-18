@@ -54,9 +54,16 @@ function getDefaultParams(args: {
   adapter: Adapter;
   hasDatabase: boolean;
   hasStreamsServer: boolean;
+  hasWorkflows: boolean;
   introspection: AdapterIntrospectResult;
 }) {
-  const { adapter, hasDatabase, hasStreamsServer, introspection } = args;
+  const {
+    adapter,
+    hasDatabase,
+    hasStreamsServer,
+    hasWorkflows,
+    introspection,
+  } = args;
   const { schemas } = introspection;
   const { defaultSchema } = adapter;
 
@@ -67,7 +74,12 @@ function getDefaultParams(args: {
   const pageSize = "25";
   const search = "";
   const searchScope = "table";
-  const view = !hasDatabase && hasStreamsServer ? "stream" : "table";
+  const view =
+    !hasDatabase && hasStreamsServer
+      ? "stream"
+      : !hasDatabase && hasWorkflows
+        ? "workflows"
+        : "table";
 
   return {
     schema,
@@ -114,6 +126,7 @@ function useNavigationInternal() {
     adapter,
     hasDatabase,
     hasQueryInsights,
+    hasWorkflows,
     navigationTableNamesCollection,
     streamsUrl,
   } = useStudio();
@@ -126,9 +139,10 @@ function useNavigationInternal() {
         adapter,
         hasDatabase,
         hasStreamsServer: typeof streamsUrl === "string",
+        hasWorkflows,
         introspection,
       }),
-    [adapter, hasDatabase, introspection, streamsUrl],
+    [adapter, hasDatabase, hasWorkflows, introspection, streamsUrl],
   );
 
   useEffect(() => {
@@ -204,6 +218,11 @@ function useNavigationInternal() {
   const [viewParam, setViewParam] = useQueryState("view", {
     defaultValue: defaults.view,
   });
+  const [workflowFrameParam, setWorkflowFrameParam] =
+    useQueryState("workflowFrame");
+  const [workflowParam, setWorkflowParam] = useQueryState("workflow");
+  const [workflowRunParam, setWorkflowRunParam] = useQueryState("workflowRun");
+  const [workflowTabParam, setWorkflowTabParam] = useQueryState("workflowTab");
 
   // If URL params are stale from a previous database, fall back to current defaults.
   const resolvedSchemaParam =
@@ -222,12 +241,17 @@ function useNavigationInternal() {
     activeTables && resolvedTableParam
       ? activeTables[resolvedTableParam]
       : undefined;
+  const hasStreamsServer = typeof streamsUrl === "string";
   const resolvedViewParam =
-    !hasDatabase && typeof streamsUrl === "string"
-      ? "stream"
-      : viewParam === "queries" && !hasQueryInsights
+    viewParam === "queries" && !hasQueryInsights
+      ? defaults.view
+      : viewParam === "stream" && !hasStreamsServer
         ? defaults.view
-        : viewParam;
+        : viewParam === "workflows" && !hasWorkflows
+          ? defaults.view
+          : !hasDatabase && viewParam !== "stream" && viewParam !== "workflows"
+            ? defaults.view
+            : viewParam;
 
   const metadata = useMemo(
     () => ({
@@ -258,6 +282,10 @@ function useNavigationInternal() {
     streamParam,
     tableParam,
     viewParam: resolvedViewParam,
+    workflowFrameParam,
+    workflowParam,
+    workflowRunParam,
+    workflowTabParam,
     setFilterParam: setFilterParam as NuqsSetNullableValue<string>,
     setPageIndexParam: setPageIndexParam as NuqsSetNullableValue<string>,
     setPageSizeParam: setPageSizeParam as NuqsSetNullableValue<string>,
@@ -278,6 +306,11 @@ function useNavigationInternal() {
     setStreamParam: setStreamParam as NuqsSetNullableValue<string>,
     setTableParam: setTableParam as NuqsSetNullableValue<string>,
     setViewParam: setViewParam as NuqsSetNullableValue<string>,
+    setWorkflowFrameParam:
+      setWorkflowFrameParam as NuqsSetNullableValue<string>,
+    setWorkflowParam: setWorkflowParam as NuqsSetNullableValue<string>,
+    setWorkflowRunParam: setWorkflowRunParam as NuqsSetNullableValue<string>,
+    setWorkflowTabParam: setWorkflowTabParam as NuqsSetNullableValue<string>,
   };
 }
 

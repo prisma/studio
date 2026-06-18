@@ -1,5 +1,5 @@
 import { Slot } from "@radix-ui/react-slot";
-import { RefreshCw, Search, Table2, Waves } from "lucide-react";
+import { RefreshCw, Search, Table2, Waves, Workflow } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import PrismaLogo from "../../assets/prisma.svg";
@@ -18,6 +18,7 @@ import { useNavigation } from "../hooks/use-navigation";
 import { useNavigationTableList } from "../hooks/use-navigation-table-list";
 import { useStreams } from "../hooks/use-streams";
 import { useUiState } from "../hooks/use-ui-state";
+import { useWorkflows } from "../hooks/use-workflows";
 import { cn } from "../lib/utils";
 import {
   MAX_NAVIGATION_WIDTH,
@@ -32,6 +33,8 @@ import {
   TABLE_SEARCH_UI_STATE_KEY,
   type TableGridFocusRequestUiState,
   type TableSearchUiState,
+  WORKFLOW_SEARCH_UI_STATE_KEY,
+  type WorkflowSearchUiState,
 } from "./navigation-ui-state";
 
 type NavigationProps = {
@@ -39,8 +42,14 @@ type NavigationProps = {
 } & React.HTMLAttributes<HTMLDivElement>;
 
 export function Navigation({ className }: NavigationProps) {
-  const { metadata, createUrl, streamParam, viewParam, schemaParam } =
-    useNavigation();
+  const {
+    metadata,
+    createUrl,
+    streamParam,
+    viewParam,
+    schemaParam,
+    workflowParam,
+  } = useNavigation();
   const {
     hasDatabase,
     hasQueryInsights,
@@ -61,6 +70,11 @@ export function Navigation({ className }: NavigationProps) {
       isOpen: false,
       term: "",
     });
+  const [workflowSearchUiState, setWorkflowSearchUiState] =
+    useUiState<WorkflowSearchUiState>(WORKFLOW_SEARCH_UI_STATE_KEY, {
+      isOpen: false,
+      term: "",
+    });
   const [, setTableGridFocusRequest] = useUiState<TableGridFocusRequestUiState>(
     TABLE_GRID_FOCUS_REQUEST_UI_STATE_KEY,
     {
@@ -70,12 +84,14 @@ export function Navigation({ className }: NavigationProps) {
   );
   const [highlightedTableIndex, setHighlightedTableIndex] = useState(-1);
   const [highlightedStreamIndex, setHighlightedStreamIndex] = useState(-1);
+  const [highlightedWorkflowIndex, setHighlightedWorkflowIndex] = useState(-1);
   const [draftNavigationWidth, setDraftNavigationWidth] = useState<
     number | null
   >(null);
   const [isNavigationResizing, setIsNavigationResizing] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const streamSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const workflowSearchInputRef = useRef<HTMLInputElement | null>(null);
   const navigationResizeStateRef = useRef<{
     lastClientX: number;
     startWidth: number;
@@ -106,6 +122,13 @@ export function Navigation({ className }: NavigationProps) {
     refetch: refetchStreams,
     streams,
   } = useStreams();
+  const {
+    data: workflowModel,
+    hasWorkflows,
+    isError: hasWorkflowError,
+    isLoading: isWorkflowsLoading,
+    refetch: refetchWorkflows,
+  } = useWorkflows();
   const filteredStreams = useMemo(() => {
     const term = streamSearchUiState.term.trim().toLowerCase();
 
@@ -120,6 +143,25 @@ export function Navigation({ className }: NavigationProps) {
     [filteredStreams],
   );
   const isStreamSearchActive = streamSearchUiState.term.trim().length > 0;
+  const filteredWorkflows = useMemo(() => {
+    const term = workflowSearchUiState.term.trim().toLowerCase();
+
+    if (term.length === 0) {
+      return workflowModel.workflows;
+    }
+
+    return workflowModel.workflows.filter((workflow) => {
+      return (
+        workflow.name.toLowerCase().includes(term) ||
+        workflow.slug.toLowerCase().includes(term)
+      );
+    });
+  }, [workflowModel.workflows, workflowSearchUiState.term]);
+  const workflowListKey = useMemo(
+    () => filteredWorkflows.map((workflow) => workflow.id).join("|"),
+    [filteredWorkflows],
+  );
+  const isWorkflowSearchActive = workflowSearchUiState.term.trim().length > 0;
 
   const clampNavigationWidth = useCallback((width: number) => {
     const viewportMaxWidth =
@@ -153,6 +195,15 @@ export function Navigation({ className }: NavigationProps) {
     streamSearchInputRef.current?.focus();
     streamSearchInputRef.current?.select();
   }, [streamSearchUiState.isOpen]);
+
+  useEffect(() => {
+    if (!workflowSearchUiState.isOpen) {
+      return;
+    }
+
+    workflowSearchInputRef.current?.focus();
+    workflowSearchInputRef.current?.select();
+  }, [workflowSearchUiState.isOpen]);
 
   useEffect(() => {
     if (!tableSearchUiState.isOpen) {
@@ -194,6 +245,33 @@ export function Navigation({ className }: NavigationProps) {
       activeIndex >= 0 ? activeIndex : streamNames.length > 0 ? 0 : -1,
     );
   }, [streamListKey, streamParam, streamSearchUiState.isOpen, viewParam]);
+
+  useEffect(() => {
+    if (!workflowSearchUiState.isOpen) {
+      setHighlightedWorkflowIndex(-1);
+      return;
+    }
+
+    const workflowIds =
+      workflowListKey.length > 0 ? workflowListKey.split("|") : [];
+    const activeIndex =
+      viewParam === "workflows" && workflowParam
+        ? filteredWorkflows.findIndex(
+            (workflow) =>
+              workflow.id === workflowParam || workflow.slug === workflowParam,
+          )
+        : -1;
+
+    setHighlightedWorkflowIndex(
+      activeIndex >= 0 ? activeIndex : workflowIds.length > 0 ? 0 : -1,
+    );
+  }, [
+    filteredWorkflows,
+    viewParam,
+    workflowListKey,
+    workflowParam,
+    workflowSearchUiState.isOpen,
+  ]);
 
   useEffect(() => {
     if (
@@ -304,6 +382,28 @@ export function Navigation({ className }: NavigationProps) {
     }));
   }
 
+  function openWorkflowSearch() {
+    setWorkflowSearchUiState((previous) => ({
+      ...previous,
+      isOpen: true,
+    }));
+  }
+
+  function closeWorkflowSearch() {
+    workflowSearchInputRef.current?.blur();
+    setWorkflowSearchUiState({
+      isOpen: false,
+      term: "",
+    });
+  }
+
+  function setWorkflowSearchTerm(term: string) {
+    setWorkflowSearchUiState((previous) => ({
+      ...previous,
+      term,
+    }));
+  }
+
   function navigateToTable(args: { schema: string; table: string }) {
     window.location.hash = createUrl({
       schemaParam: args.schema,
@@ -335,6 +435,18 @@ export function Navigation({ className }: NavigationProps) {
   function selectStream(name: string) {
     closeStreamSearch();
     navigateToStream(name);
+  }
+
+  function navigateToWorkflow(workflowId: string) {
+    window.location.hash = createUrl({
+      viewParam: "workflows",
+      workflowParam: workflowId,
+    });
+  }
+
+  function selectWorkflow(workflowId: string) {
+    closeWorkflowSearch();
+    navigateToWorkflow(workflowId);
   }
 
   function handleTableSearchKeyDown(
@@ -435,6 +547,55 @@ export function Navigation({ className }: NavigationProps) {
       }
 
       selectStream(selectedStream.name);
+    }
+  }
+
+  function handleWorkflowSearchKeyDown(
+    event: React.KeyboardEvent<HTMLInputElement>,
+  ) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeWorkflowSearch();
+      return;
+    }
+
+    if (filteredWorkflows.length === 0) {
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setHighlightedWorkflowIndex((current) => {
+        if (current < 0) {
+          return 0;
+        }
+
+        return Math.min(current + 1, filteredWorkflows.length - 1);
+      });
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setHighlightedWorkflowIndex((current) => {
+        if (current < 0) {
+          return filteredWorkflows.length - 1;
+        }
+
+        return Math.max(current - 1, 0);
+      });
+      return;
+    }
+
+    if (event.key === "Enter" && highlightedWorkflowIndex >= 0) {
+      event.preventDefault();
+      const selectedWorkflow = filteredWorkflows[highlightedWorkflowIndex];
+
+      if (!selectedWorkflow) {
+        return;
+      }
+
+      selectWorkflow(selectedWorkflow.slug || selectedWorkflow.id);
     }
   }
 
@@ -790,6 +951,101 @@ export function Navigation({ className }: NavigationProps) {
         </Navigation.SearchableBlock>
       )}
 
+      {hasWorkflows && (
+        <Navigation.SearchableBlock
+          blockKey="workflows"
+          icon={Workflow}
+          isSearchOpen={workflowSearchUiState.isOpen}
+          onCloseSearch={closeWorkflowSearch}
+          onOpenSearch={openWorkflowSearch}
+          onRefresh={() => void refetchWorkflows()}
+          onSearchKeyDown={handleWorkflowSearchKeyDown}
+          refreshAriaLabel="Refresh workflows"
+          searchAriaLabel="Search workflows"
+          searchInputRef={workflowSearchInputRef}
+          searchPlaceholder="Search workflows..."
+          searchTerm={workflowSearchUiState.term}
+          setSearchTerm={setWorkflowSearchTerm}
+          title="Workflows"
+        >
+          {isWorkflowsLoading ? (
+            Array(2)
+              .fill(null)
+              .map((_, index) => (
+                <Navigation.Item key={index} wrapChildrenInSpan={false}>
+                  <Skeleton className="h-3 w-full" />
+                </Navigation.Item>
+              ))
+          ) : hasWorkflowError ? (
+            <Navigation.Item>Workflows unavailable</Navigation.Item>
+          ) : filteredWorkflows.length > 0 ? (
+            filteredWorkflows.map((workflow, index) => {
+              const workflowNavigationId = workflow.slug || workflow.id;
+              const isHighlighted =
+                workflowSearchUiState.isOpen &&
+                index === highlightedWorkflowIndex;
+              const isCurrentWorkflow =
+                viewParam === "workflows" &&
+                (workflowParam === workflow.id ||
+                  workflowParam === workflow.slug ||
+                  (!workflowParam && index === 0));
+
+              return (
+                <Navigation.Item
+                  key={workflow.id}
+                  asChild
+                  className={navigationItemClasses}
+                  data-search-highlighted={isHighlighted ? "true" : "false"}
+                  isActive={
+                    workflowSearchUiState.isOpen
+                      ? isHighlighted
+                      : isCurrentWorkflow
+                  }
+                  onMouseEnter={() => {
+                    if (!workflowSearchUiState.isOpen) {
+                      return;
+                    }
+
+                    setHighlightedWorkflowIndex(index);
+                  }}
+                  wrapChildrenInSpan={false}
+                >
+                  <a
+                    href={createUrl({
+                      viewParam: "workflows",
+                      workflowParam: workflowNavigationId,
+                    })}
+                    className="w-full truncate"
+                    onClick={(event) => {
+                      if (
+                        event.button !== 0 ||
+                        event.altKey ||
+                        event.ctrlKey ||
+                        event.metaKey ||
+                        event.shiftKey
+                      ) {
+                        return;
+                      }
+
+                      event.preventDefault();
+                      selectWorkflow(workflowNavigationId);
+                    }}
+                  >
+                    {workflow.name}
+                  </a>
+                </Navigation.Item>
+              );
+            })
+          ) : (
+            <Navigation.Item>
+              {isWorkflowSearchActive
+                ? "No matching workflows"
+                : "No workflows found"}
+            </Navigation.Item>
+          )}
+        </Navigation.SearchableBlock>
+      )}
+
       <button
         aria-label="Resize navigation"
         className={cn(
@@ -850,7 +1106,7 @@ const SearchableBlock = ({
   title,
   ...props
 }: React.HTMLAttributes<HTMLDivElement> & {
-  blockKey: "streams" | "tables";
+  blockKey: "streams" | "tables" | "workflows";
   icon: React.ComponentType<{
     className?: string;
     size?: number;

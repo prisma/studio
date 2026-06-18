@@ -32,6 +32,10 @@ export type StateKey =
   | "test"
   | "filter"
   | "view"
+  | "workflow"
+  | "workflowFrame"
+  | "workflowRun"
+  | "workflowTab"
   | "search"
   | "searchScope";
 

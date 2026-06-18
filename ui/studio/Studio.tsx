@@ -1,7 +1,14 @@
 import { AnimatePresence, motion } from "motion/react";
 import { JSX } from "react";
 
-import type { Adapter, AdapterError, Query } from "../../data";
+import type {
+  Adapter,
+  AdapterError,
+  AdapterIntrospectResult,
+  Query,
+  WorkflowStudioProvider,
+} from "../../data";
+import { AdapterError as AdapterErrorValue } from "../../data/adapter";
 import type { StudioLlm } from "../../data/llm";
 import type { IntrospectionErrorState } from "../hooks/use-introspection";
 import { useIntrospection } from "../hooks/use-introspection";
@@ -20,6 +27,7 @@ import { SqlView } from "./views/sql/SqlView";
 import { StreamView } from "./views/stream/StreamView";
 import { ActiveTableView } from "./views/table/ActiveTableView";
 import { BasicView, ViewProps } from "./views/View";
+import { WorkflowView } from "./views/workflows/WorkflowView";
 
 export type StudioLaunchedEventBase = {
   name: "studio_launched";
@@ -65,7 +73,7 @@ export type StudioEvent = StudioEventBase & {
 };
 
 export interface StudioProps {
-  adapter: Adapter;
+  adapter?: Adapter;
   hasDatabase?: boolean;
   llm?: StudioLlm;
   onEvent?: (error: StudioEvent) => void;
@@ -75,6 +83,7 @@ export interface StudioProps {
    * Supports both parsed theme object and raw CSS string
    */
   theme?: CustomTheme | string;
+  workflows?: WorkflowStudioProvider;
 }
 
 /**
@@ -88,21 +97,25 @@ export function Studio(props: StudioProps) {
     onEvent,
     streamsUrl,
     theme,
+    workflows,
   } = props;
 
-  if (!adapter) {
+  if (hasDatabase && !adapter) {
     console.error("No adapter provided to Studio component");
     return <div>Error: No adapter provided</div>;
   }
 
+  const resolvedAdapter = adapter ?? createNoDatabaseStudioAdapter();
+
   return (
     <StudioContextProvider
-      adapter={adapter}
+      adapter={resolvedAdapter}
       hasDatabase={hasDatabase}
       llm={llm}
       onEvent={onEvent}
       streamsUrl={streamsUrl}
       theme={theme}
+      workflows={workflows}
     >
       <StudioContent />
     </StudioContextProvider>
@@ -116,6 +129,7 @@ const views: Record<string, (props: ViewProps) => JSX.Element | null> = {
   stream: StreamView,
   console: ConsoleView,
   sql: SqlView,
+  workflows: WorkflowView,
   default: BasicView,
 };
 
@@ -140,7 +154,7 @@ function StudioContent() {
     errorState != null &&
     !hasResolvedIntrospection;
   const shouldShowDatabaseUnavailableView =
-    !hasDatabase && viewParam !== "stream";
+    !hasDatabase && viewParam !== "stream" && viewParam !== "workflows";
 
   return (
     <div
@@ -191,6 +205,56 @@ function StudioContent() {
       </StudioCommandPaletteProvider>
     </div>
   );
+}
+
+function createNoDatabaseStudioAdapter(): Adapter {
+  return {
+    capabilities: {
+      fullTableSearch: false,
+      sqlDialect: "postgresql",
+      sqlEditorAutocomplete: false,
+      sqlEditorLint: false,
+    },
+    defaultSchema: "db",
+    delete() {
+      return Promise.resolve(createNoDatabaseAdapterError());
+    },
+    insert() {
+      return Promise.resolve(createNoDatabaseAdapterError());
+    },
+    introspect() {
+      return Promise.resolve([null, createNoDatabaseIntrospectionResult()]);
+    },
+    query() {
+      return Promise.resolve(createNoDatabaseAdapterError());
+    },
+    raw() {
+      return Promise.resolve(createNoDatabaseAdapterError());
+    },
+    update() {
+      return Promise.resolve(createNoDatabaseAdapterError());
+    },
+  };
+}
+
+function createNoDatabaseIntrospectionResult(): AdapterIntrospectResult {
+  return {
+    filterOperators: [],
+    query: { parameters: [], sql: "" },
+    schemas: {
+      db: {
+        name: "db",
+        tables: {},
+      },
+    },
+    timezone: "UTC",
+  };
+}
+
+function createNoDatabaseAdapterError(): [AdapterError] {
+  const error = new AdapterErrorValue("Studio was started without a database.");
+  error.adapterSource = "none";
+  return [error];
 }
 
 function DatabaseUnavailableView(props: { hasStreamsServer: boolean }) {

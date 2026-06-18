@@ -36,6 +36,7 @@ const toggleNavigationMock = vi.fn();
 const setThemeModeMock = vi.fn();
 let isNavigationOpen = true;
 let isDarkMode = false;
+let hasWorkflows = false;
 let themeMode: "dark" | "light" | "system" = "system";
 const uiStateStore = new Map<string, unknown>();
 const uiStateListeners = new Map<string, Set<() => void>>();
@@ -102,6 +103,20 @@ vi.mock("../hooks/use-streams", () => ({
   }),
 }));
 
+vi.mock("../hooks/use-workflows", () => ({
+  useWorkflows: () => ({
+    data: {
+      kind: "prisma-workflow-studio-model",
+      version: 1,
+      warnings: [],
+      workflows: [],
+    },
+    hasWorkflows: false,
+    isError: false,
+    isLoading: false,
+  }),
+}));
+
 vi.mock("../hooks/use-ui-state", async () => {
   const React = await vi.importActual<typeof import("react")>("react");
 
@@ -152,6 +167,7 @@ vi.mock("./context", () => ({
   useStudio: () => ({
     hasDatabase: true,
     hasQueryInsights: false,
+    hasWorkflows,
     isDarkMode,
     isNavigationOpen,
     setThemeMode: setThemeModeMock,
@@ -292,6 +308,7 @@ describe("Studio command palette", () => {
     });
     isNavigationOpen = true;
     isDarkMode = false;
+    hasWorkflows = false;
     themeMode = "system";
     setThemeModeMock.mockReset();
     toggleNavigationMock.mockReset();
@@ -305,6 +322,7 @@ describe("Studio command palette", () => {
     window.location.hash = "";
     isNavigationOpen = true;
     isDarkMode = false;
+    hasWorkflows = false;
     themeMode = "system";
     HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
     uiStateStore.clear();
@@ -944,6 +962,32 @@ describe("Studio command palette", () => {
       root.unmount();
     });
     studioRoot.remove();
+  });
+
+  it("shows the Workflows view command when workflow support is configured", () => {
+    hasWorkflows = true;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <StudioCommandPaletteProvider>
+          <TestActionRegistration actions={[]} />
+        </StudioCommandPaletteProvider>,
+      );
+    });
+
+    act(() => {
+      keyDown("k", { ctrlKey: true });
+    });
+
+    expect(getCommandItemByText("Workflows")).not.toBeUndefined();
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
   });
 
   it("treats command-name prefixes as focus actions and free text as direct search/filter payloads", () => {

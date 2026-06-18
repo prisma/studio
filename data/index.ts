@@ -14,3 +14,4 @@ export type * from "./query-insights";
 export * from "./sql-editor-schema";
 export * from "./sql-statements";
 export type * from "./type-utils";
+export * from "./workflows";

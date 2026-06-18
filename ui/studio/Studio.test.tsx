@@ -3,13 +3,14 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Adapter } from "../../data/adapter";
+import type { WorkflowStudioProvider } from "../../data/workflows";
 import { Studio } from "./Studio";
 
 type NavigationMockValue = {
   metadata: {
     activeTable: undefined;
   };
-  viewParam: "queries" | "table" | "stream";
+  viewParam: "queries" | "stream" | "table" | "workflows";
 };
 
 type IntrospectionMockValue = {
@@ -98,6 +99,10 @@ vi.mock("./views/sql/SqlView", () => ({
 
 vi.mock("./views/stream/StreamView", () => ({
   StreamView: () => <div>Stream view</div>,
+}));
+
+vi.mock("./views/workflows/WorkflowView", () => ({
+  WorkflowView: () => <div>Workflow view</div>,
 }));
 
 vi.mock("./views/table/ActiveTableView", () => ({
@@ -298,6 +303,45 @@ describe("Studio", () => {
       "This Studio session was started without a database URL.",
     );
     expect(container.textContent).not.toContain("Active table view");
+    expect(container.textContent).not.toContain(
+      "Could not load schema metadata",
+    );
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("renders the workflow view without requiring a database adapter", () => {
+    const workflows = {
+      capabilities: {},
+      getSnapshot: vi.fn(),
+    } satisfies WorkflowStudioProvider;
+    useStudioMock.mockReturnValue({
+      hasDatabase: false,
+      hasQueryInsights: false,
+      isNavigationOpen: true,
+    });
+    useNavigationMock.mockReturnValue({
+      metadata: {
+        activeTable: undefined,
+      },
+      viewParam: "workflows",
+    });
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Studio hasDatabase={false} workflows={workflows} />);
+    });
+
+    expect(container.textContent).toContain("Workflow view");
+    expect(container.textContent).not.toContain(
+      "This Studio session was started without a database URL.",
+    );
     expect(container.textContent).not.toContain(
       "Could not load schema metadata",
     );

@@ -182,6 +182,22 @@ It deliberately excludes:
   - The same surface conditionally embeds AI recommendations when Studio's shared `llm` hook is available, while disappearing entirely when the embedder does not provide query-insights data.
   - No stock ShadCN component models that combined observability workflow, so Studio keeps a custom composite built from standard ShadCN primitives.
 
+### Workflow Graph Canvas
+
+- Canonical components:
+  - [`ui/studio/views/workflows/WorkflowCanvas.tsx`](ui/studio/views/workflows/WorkflowCanvas.tsx)
+  - [`ui/studio/views/workflows/WorkflowView.tsx`](ui/studio/views/workflows/WorkflowView.tsx)
+- Closest standard ShadCN alternatives:
+  - `Card`
+  - `Badge`
+  - `Tabs`
+  - `Table`
+  - `Dialog`
+- Why it stays non-standard:
+  - Workflow operations need a pan/zoom topology view with connected trigger, action, approval, persistence, learning, and notification nodes. A table or static card layout cannot represent branch flow, retry paths, dead-letter sources, and node-level execution state in the same scan.
+  - React Flow is already the appropriate local primitive for graph-style Studio views, and the Workflow canvas keeps graph interaction inside that primitive while using standard ShadCN components for surrounding tabs, action buttons, dialogs, tables, alerts, and badges.
+  - The canvas is operator-focused rather than an authoring builder: it inspects deployed workflow state, run progress, approvals, and failure context without introducing custom drag-to-build workflow authoring controls.
+
 ## Standardization Candidates
 
 These are the current high-signal places where Studio is bypassing a plausible standard ShadCN component or composition pattern.

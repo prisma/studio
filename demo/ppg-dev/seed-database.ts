@@ -1,5 +1,7 @@
 import postgres from "postgres";
 
+import { buildDemoWorkflowSeedData } from "./workflow-demo-data";
+
 type OrganizationSeedRow = {
   created_at: Date;
   id: string;
@@ -24,6 +26,7 @@ export async function seedDatabase(connectionString: string): Promise<void> {
   const sql = postgres(connectionString, { max: 1 });
   const organizations = buildSeedOrganizations();
   const teamMembers = buildSeedTeamMembers(organizations);
+  const workflowSeed = buildDemoWorkflowSeedData();
 
   try {
     await sql.begin(async (transaction) => {
@@ -171,6 +174,259 @@ export async function seedDatabase(connectionString: string): Promise<void> {
       `);
 
       await transaction.unsafe(`
+        create schema if not exists "_prisma_workflows";
+
+        create table if not exists "_prisma_workflows"."WorkflowDefinition" (
+          id text primary key,
+          name text not null,
+          slug text not null unique,
+          created_at timestamptz not null default now(),
+          updated_at timestamptz not null default now()
+        );
+
+        create table if not exists "_prisma_workflows"."WorkflowVersion" (
+          id text primary key,
+          workflow_id text not null references "_prisma_workflows"."WorkflowDefinition"(id),
+          version integer not null,
+          status text not null,
+          source_hash text not null,
+          compiled_graph jsonb not null,
+          visual_graph jsonb not null,
+          created_at timestamptz not null default now(),
+          unique (workflow_id, version)
+        );
+
+        create table if not exists "_prisma_workflows"."WorkflowIngestEvent" (
+          id text primary key,
+          source text not null,
+          connector_account_id text,
+          external_id text not null,
+          event_type text not null,
+          dedupe_key text not null unique,
+          occurred_at timestamptz,
+          received_at timestamptz not null default now(),
+          headers jsonb,
+          raw_payload jsonb not null,
+          normalized_payload jsonb,
+          signature_verified boolean not null default false,
+          status text not null default 'received',
+          error text
+        );
+
+        create index if not exists "WorkflowIngestEvent_source_event_received_idx"
+          on "_prisma_workflows"."WorkflowIngestEvent"(source, event_type, received_at);
+
+        create table if not exists "_prisma_workflows"."WorkflowRun" (
+          id text primary key,
+          workflow_id text not null references "_prisma_workflows"."WorkflowDefinition"(id),
+          version_id text not null references "_prisma_workflows"."WorkflowVersion"(id),
+          ingest_event_id text references "_prisma_workflows"."WorkflowIngestEvent"(id),
+          status text not null,
+          current_step text,
+          input jsonb not null,
+          output jsonb,
+          state jsonb,
+          error jsonb,
+          started_at timestamptz,
+          completed_at timestamptz,
+          created_at timestamptz not null default now(),
+          updated_at timestamptz not null default now()
+        );
+
+        create index if not exists "WorkflowRun_workflow_status_created_idx"
+          on "_prisma_workflows"."WorkflowRun"(workflow_id, status, created_at);
+
+        create table if not exists "_prisma_workflows"."WorkflowStepRun" (
+          id text primary key,
+          run_id text not null references "_prisma_workflows"."WorkflowRun"(id),
+          node_id text not null,
+          step_name text not null,
+          attempt integer not null,
+          status text not null,
+          input jsonb,
+          output jsonb,
+          error jsonb,
+          started_at timestamptz,
+          completed_at timestamptz,
+          created_at timestamptz not null default now(),
+          unique (run_id, node_id, attempt)
+        );
+
+        create table if not exists "_prisma_workflows"."WorkflowTimelineEvent" (
+          id text primary key,
+          run_id text not null references "_prisma_workflows"."WorkflowRun"(id),
+          sequence integer not null,
+          type text not null,
+          node_id text,
+          payload jsonb,
+          created_at timestamptz not null default now(),
+          unique (run_id, sequence)
+        );
+
+        create table if not exists "_prisma_workflows"."WorkflowStateSnapshot" (
+          id text primary key,
+          run_id text not null references "_prisma_workflows"."WorkflowRun"(id),
+          sequence integer not null,
+          node_id text,
+          state jsonb not null,
+          diff jsonb,
+          created_at timestamptz not null default now(),
+          unique (run_id, sequence)
+        );
+
+        create table if not exists "_prisma_workflows"."WorkflowTriggerMatch" (
+          id text primary key,
+          ingest_event_id text not null references "_prisma_workflows"."WorkflowIngestEvent"(id),
+          workflow_id text not null references "_prisma_workflows"."WorkflowDefinition"(id),
+          version_id text not null references "_prisma_workflows"."WorkflowVersion"(id),
+          created_at timestamptz not null default now(),
+          unique (ingest_event_id, workflow_id, version_id)
+        );
+
+        create table if not exists "_prisma_workflows"."WorkflowLease" (
+          id text primary key,
+          resource_type text not null,
+          resource_id text not null,
+          worker_id text not null,
+          locked_until timestamptz not null,
+          heartbeat_at timestamptz not null default now(),
+          unique (resource_type, resource_id)
+        );
+
+        create table if not exists "_prisma_workflows"."WorkflowTimer" (
+          id text primary key,
+          run_id text not null references "_prisma_workflows"."WorkflowRun"(id),
+          node_id text not null,
+          resume_at timestamptz not null,
+          status text not null,
+          payload jsonb,
+          created_at timestamptz not null default now()
+        );
+
+        alter table "_prisma_workflows"."WorkflowTimer"
+          add column if not exists payload jsonb;
+
+        create index if not exists "WorkflowTimer_status_resume_idx"
+          on "_prisma_workflows"."WorkflowTimer"(status, resume_at);
+
+        create table if not exists "_prisma_workflows"."WorkflowApproval" (
+          id text primary key,
+          run_id text not null references "_prisma_workflows"."WorkflowRun"(id),
+          node_id text not null,
+          approval_name text not null,
+          status text not null,
+          requested_at timestamptz not null default now(),
+          resolved_at timestamptz,
+          resolved_by text,
+          decision jsonb,
+          reason text,
+          assignees jsonb not null default '[]'::jsonb,
+          expires_at timestamptz,
+          payload jsonb
+        );
+
+        alter table "_prisma_workflows"."WorkflowApproval"
+          add column if not exists payload jsonb;
+
+        create index if not exists "WorkflowApproval_status_requested_idx"
+          on "_prisma_workflows"."WorkflowApproval"(status, requested_at);
+
+        create table if not exists "_prisma_workflows"."WorkflowOutbox" (
+          id text primary key,
+          run_id text not null references "_prisma_workflows"."WorkflowRun"(id),
+          node_id text not null,
+          idempotency_key text,
+          destination text not null,
+          payload jsonb not null,
+          status text not null,
+          attempt integer not null default 1,
+          available_at timestamptz,
+          error jsonb,
+          created_at timestamptz not null default now(),
+          dispatched_at timestamptz
+        );
+
+        create index if not exists "WorkflowOutbox_status_created_idx"
+          on "_prisma_workflows"."WorkflowOutbox"(status, available_at, created_at);
+
+        create unique index if not exists "WorkflowOutbox_destination_idempotency_unique"
+          on "_prisma_workflows"."WorkflowOutbox"(destination, idempotency_key)
+          where idempotency_key is not null;
+
+        create table if not exists "_prisma_workflows"."WorkflowDeadLetter" (
+          id text primary key,
+          kind text not null,
+          resource_id text not null,
+          reason text not null,
+          payload jsonb,
+          created_at timestamptz not null default now(),
+          resolved_at timestamptz
+        );
+
+        create table if not exists "_prisma_workflows"."WorkflowConnectorAccount" (
+          id text primary key,
+          connector text not null,
+          label text not null,
+          metadata jsonb,
+          created_at timestamptz not null default now()
+        );
+
+        create table if not exists "_prisma_workflows"."WorkflowConnectorCursor" (
+          id text primary key,
+          connector text not null,
+          cursor_key text not null,
+          cursor_value text,
+          updated_at timestamptz not null default now(),
+          unique (connector, cursor_key)
+        );
+
+        create table if not exists "_prisma_workflows"."WorkflowCanvasLayout" (
+          id text primary key,
+          workflow_id text not null references "_prisma_workflows"."WorkflowDefinition"(id),
+          version_id text not null references "_prisma_workflows"."WorkflowVersion"(id),
+          layout jsonb not null,
+          updated_at timestamptz not null default now()
+        );
+
+        create table if not exists "_prisma_workflows"."WorkflowArtifact" (
+          id text primary key,
+          run_id text references "_prisma_workflows"."WorkflowRun"(id),
+          kind text not null,
+          uri text,
+          payload jsonb,
+          created_at timestamptz not null default now()
+        );
+      `);
+
+      await transaction.unsafe(`
+        create table if not exists dispute_cases (
+          id text primary key,
+          stripe_dispute_id text not null unique,
+          amount_cents integer not null,
+          customer_email text not null,
+          status text not null,
+          provider_context jsonb not null default '{}'::jsonb,
+          draft_response text,
+          approved_response text,
+          evidence_id text,
+          created_at timestamptz not null default now(),
+          updated_at timestamptz not null default now()
+        )
+      `);
+
+      await transaction.unsafe(`
+        create table if not exists approved_dispute_responses (
+          id text primary key,
+          dispute_reason text not null,
+          amount_cents integer not null,
+          response text not null,
+          confidence double precision not null,
+          approved_by text not null,
+          created_at timestamptz not null default now()
+        )
+      `);
+
+      await transaction.unsafe(`
         create table if not exists test_app.customers (
           id integer primary key,
           name text not null,
@@ -207,6 +463,14 @@ export async function seedDatabase(connectionString: string): Promise<void> {
 
       await transaction.unsafe(`
         truncate table
+          "_prisma_workflows"."WorkflowDefinition",
+          "_prisma_workflows"."WorkflowIngestEvent",
+          "_prisma_workflows"."WorkflowLease",
+          "_prisma_workflows"."WorkflowConnectorAccount",
+          "_prisma_workflows"."WorkflowConnectorCursor",
+          "_prisma_workflows"."WorkflowDeadLetter",
+          approved_dispute_responses,
+          dispute_cases,
           test_app.order_items,
           test_app.orders,
           test_app.products,
@@ -337,6 +601,183 @@ export async function seedDatabase(connectionString: string): Promise<void> {
             now() - interval '8 hours'
           )
       `);
+
+      await tx`
+        insert into dispute_cases ${tx(workflowSeed.disputeCaseRows, [
+          "id",
+          "stripe_dispute_id",
+          "amount_cents",
+          "customer_email",
+          "status",
+          "provider_context",
+          "draft_response",
+          "approved_response",
+          "evidence_id",
+          "created_at",
+          "updated_at",
+        ])}
+      `;
+
+      await tx`
+        insert into "_prisma_workflows"."WorkflowDefinition" ${tx(
+          workflowSeed.definitionRows,
+          ["id", "name", "slug", "created_at", "updated_at"],
+        )}
+      `;
+
+      await tx`
+        insert into "_prisma_workflows"."WorkflowVersion" ${tx(
+          workflowSeed.versionRows,
+          [
+            "id",
+            "workflow_id",
+            "version",
+            "status",
+            "source_hash",
+            "compiled_graph",
+            "visual_graph",
+            "created_at",
+          ],
+        )}
+      `;
+
+      await tx`
+        insert into "_prisma_workflows"."WorkflowIngestEvent" ${tx(
+          workflowSeed.ingestEventRows,
+          [
+            "id",
+            "source",
+            "connector_account_id",
+            "external_id",
+            "event_type",
+            "dedupe_key",
+            "occurred_at",
+            "received_at",
+            "headers",
+            "raw_payload",
+            "normalized_payload",
+            "signature_verified",
+            "status",
+          ],
+        )}
+      `;
+
+      await tx`
+        insert into "_prisma_workflows"."WorkflowTriggerMatch" ${tx(
+          workflowSeed.triggerMatchRows,
+          ["id", "ingest_event_id", "workflow_id", "version_id", "created_at"],
+        )}
+      `;
+
+      await tx`
+        insert into "_prisma_workflows"."WorkflowRun" ${tx(
+          workflowSeed.runRows,
+          [
+            "id",
+            "workflow_id",
+            "version_id",
+            "ingest_event_id",
+            "status",
+            "current_step",
+            "input",
+            "output",
+            "state",
+            "error",
+            "started_at",
+            "completed_at",
+            "created_at",
+            "updated_at",
+          ],
+        )}
+      `;
+
+      await tx`
+        insert into "_prisma_workflows"."WorkflowStepRun" ${tx(
+          workflowSeed.stepRunRows,
+          [
+            "id",
+            "run_id",
+            "node_id",
+            "step_name",
+            "attempt",
+            "status",
+            "input",
+            "output",
+            "error",
+            "started_at",
+            "completed_at",
+            "created_at",
+          ],
+        )}
+      `;
+
+      await tx`
+        insert into "_prisma_workflows"."WorkflowTimelineEvent" ${tx(
+          workflowSeed.timelineRows,
+          [
+            "id",
+            "run_id",
+            "sequence",
+            "type",
+            "node_id",
+            "payload",
+            "created_at",
+          ],
+        )}
+      `;
+
+      await tx`
+        insert into "_prisma_workflows"."WorkflowStateSnapshot" ${tx(
+          workflowSeed.snapshotRows,
+          [
+            "id",
+            "run_id",
+            "sequence",
+            "node_id",
+            "state",
+            "diff",
+            "created_at",
+          ],
+        )}
+      `;
+
+      await tx`
+        insert into "_prisma_workflows"."WorkflowApproval" ${tx(
+          workflowSeed.approvalRows,
+          [
+            "id",
+            "run_id",
+            "node_id",
+            "approval_name",
+            "status",
+            "requested_at",
+            "assignees",
+            "expires_at",
+            "payload",
+          ],
+        )}
+      `;
+
+      await tx`
+        insert into "_prisma_workflows"."WorkflowConnectorAccount" ${tx(
+          workflowSeed.connectorAccountRows,
+          ["id", "connector", "label", "metadata", "created_at"],
+        )}
+      `;
+
+      await tx`
+        insert into "_prisma_workflows"."WorkflowConnectorCursor" ${tx(
+          workflowSeed.connectorCursorRows,
+          ["id", "connector", "cursor_key", "cursor_value", "updated_at"],
+        )}
+      `;
+
+      await tx`
+        insert into "_prisma_workflows"."WorkflowCanvasLayout" ${tx(
+          workflowSeed.canvasLayoutRows,
+          ["id", "workflow_id", "version_id", "layout", "updated_at"],
+        )}
+      `;
 
       await transaction.unsafe(`
         insert into all_data_types (

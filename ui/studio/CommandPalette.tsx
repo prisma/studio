@@ -8,6 +8,7 @@ import {
   Moon,
   Search,
   Sun,
+  Workflow,
 } from "lucide-react";
 import {
   createContext,
@@ -164,7 +165,9 @@ function AppearanceCommandItem(props: {
       value={value}
       className={cn(
         "justify-between gap-3",
-        disabled ? "text-muted-foreground/55" : "text-foreground hover:bg-secondary/85",
+        disabled
+          ? "text-muted-foreground/55"
+          : "text-foreground hover:bg-secondary/85",
       )}
     >
       <span className="flex min-w-0 items-center gap-2.5">
@@ -333,6 +336,8 @@ export function StudioCommandPaletteProvider(props: PropsWithChildren) {
 
 function StudioCommandPalette() {
   const {
+    hasDatabase,
+    hasWorkflows,
     isDarkMode,
     isNavigationOpen,
     setThemeMode,
@@ -430,10 +435,14 @@ function StudioCommandPalette() {
     toggleNavigation,
   ]);
   const tableItems = useMemo(() => {
+    if (!hasDatabase) {
+      return [];
+    }
+
     return moreTablesItem
       ? [...visibleTableItems, moreTablesItem]
       : visibleTableItems;
-  }, [moreTablesItem, visibleTableItems]);
+  }, [hasDatabase, moreTablesItem, visibleTableItems]);
   const explicitThemeMode = themeMode === "system" ? "" : themeMode;
   const isSystemThemeEnabled = themeMode === "system";
   const showSystemThemeControl = matchesCommandSearch({
@@ -485,41 +494,59 @@ function StudioCommandPalette() {
     setThemeMode(isDarkMode ? "light" : "dark");
   }, [isDarkMode, setThemeMode]);
   const viewItems = useMemo(() => {
-    const items: CommandPaletteItem[] = [
-      {
+    const items: CommandPaletteItem[] = [];
+
+    if (hasDatabase) {
+      items.push(
+        {
+          disabled: false,
+          icon: GalleryVerticalEnd,
+          id: "view:schema",
+          keywords: ["visualizer", "schema", "diagram"],
+          label: "Visualizer",
+          onSelect: () => {
+            window.location.hash = createUrl({ viewParam: "schema" });
+          },
+          section: "views",
+        },
+        {
+          disabled: false,
+          icon: BetweenVerticalStart,
+          id: "view:console",
+          keywords: ["console", "events", "operations"],
+          label: "Console",
+          onSelect: () => {
+            window.location.hash = createUrl({ viewParam: "console" });
+          },
+          section: "views",
+        },
+        {
+          disabled: false,
+          icon: FileCode2,
+          id: "view:sql",
+          keywords: ["sql", "query", "editor"],
+          label: "SQL",
+          onSelect: () => {
+            window.location.hash = createUrl({ viewParam: "sql" });
+          },
+          section: "views",
+        },
+      );
+    }
+
+    if (hasWorkflows) {
+      items.push({
         disabled: false,
-        icon: GalleryVerticalEnd,
-        id: "view:schema",
-        keywords: ["visualizer", "schema", "diagram"],
-        label: "Visualizer",
+        icon: Workflow,
+        id: "view:workflows",
+        keywords: ["workflow", "automation", "runs", "approvals"],
+        label: "Workflows",
         onSelect: () => {
-          window.location.hash = createUrl({ viewParam: "schema" });
+          window.location.hash = createUrl({ viewParam: "workflows" });
         },
         section: "views",
-      },
-      {
-        disabled: false,
-        icon: BetweenVerticalStart,
-        id: "view:console",
-        keywords: ["console", "events", "operations"],
-        label: "Console",
-        onSelect: () => {
-          window.location.hash = createUrl({ viewParam: "console" });
-        },
-        section: "views",
-      },
-      {
-        disabled: false,
-        icon: FileCode2,
-        id: "view:sql",
-        keywords: ["sql", "query", "editor"],
-        label: "SQL",
-        onSelect: () => {
-          window.location.hash = createUrl({ viewParam: "sql" });
-        },
-        section: "views",
-      },
-    ];
+      });
+    }
 
     return items.filter((item) =>
       matchesCommandSearch({
@@ -528,7 +555,7 @@ function StudioCommandPalette() {
         query,
       }),
     );
-  }, [createUrl, query]);
+  }, [createUrl, hasDatabase, hasWorkflows, query]);
   useEffect(() => {
     if (!isOpen) {
       setQuery("");

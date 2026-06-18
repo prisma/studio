@@ -58,7 +58,10 @@ import {
 import "@prisma/studio-core/ui/index.css";
 import { createStudioBFFClient } from "@prisma/studio-core/data/bff";
 import { createPostgresAdapter } from "@prisma/studio-core/data/postgres-core";
-import { isStudioLlmResponse } from "@prisma/studio-core/data";
+import {
+  createWorkflowStudioClient,
+  isStudioLlmResponse,
+} from "@prisma/studio-core/data";
 
 const bffClient = createStudioBFFClient({
   queryInsights: true,
@@ -70,13 +73,16 @@ const adapter = createPostgresAdapter({
   queryInsights: bffClient.queryInsights,
 });
 
+const workflows = createWorkflowStudioClient({
+  baseUrl: "/api/prisma-workflows",
+});
+
 export function EmbeddedStudio() {
   return (
     <Studio
       adapter={adapter}
-      llm={async (
-        request: StudioLlmRequest,
-      ): Promise<StudioLlmResponse> => {
+      workflows={workflows}
+      llm={async (request: StudioLlmRequest): Promise<StudioLlmResponse> => {
         const response = await fetch("/api/ai", {
           body: JSON.stringify(request),
           headers: { "content-type": "application/json" },
@@ -103,6 +109,7 @@ export function EmbeddedStudio() {
 ```
 
 - `adapter` is required.
+- `workflows` is optional and enables the Prisma Workflow operations view when the host exposes a Workflow Studio endpoint.
 - `llm` is optional and is the single supported AI transport hook for all Studio AI features.
 - Studio sends the fully constructed prompt plus a task label, and the host returns either `{ ok: true, text }` or `{ ok: false, code, message }`.
 - When `llm` is omitted, Studio hides AI filtering, AI SQL generation, AI visualization, and Query Insights recommendation affordances entirely.
@@ -111,6 +118,48 @@ export function EmbeddedStudio() {
 - Studio does not render a built-in fullscreen header button. If your host needs fullscreen behavior, render that control at the host container level, as the local demo does.
 
 Studio handles prompt construction, type-aware validation, pre-display SQL validation for AI-generated SQL, correction retries, database-error correction, and conversion into the normal filter, SQL, and visualization surfaces. The host transport only needs to forward the prepared request to an LLM provider and return the typed result.
+
+## Prisma Workflow Support
+
+Studio can also embed a Prisma Workflow operations surface. It is designed for the Workflow app that Prisma Compute deploys from natural-language automation descriptions: operators can inspect the generated workflow graph, monitor runs, review approval gates, inspect inbound events, replay failed runs, and act on dead letters without leaving Studio.
+
+The Workflow surface is deliberately separate from the database adapter. A host enables it with a `WorkflowStudioProvider`, either by pointing Studio at a live endpoint or by passing a static snapshot for demos and fixtures:
+
+```tsx
+import { Studio } from "@prisma/studio-core/ui";
+import {
+  createStaticWorkflowStudioProvider,
+  createWorkflowStudioClient,
+  type WorkflowStudioModel,
+} from "@prisma/studio-core/data";
+
+const liveWorkflows = createWorkflowStudioClient({
+  baseUrl: "/api/prisma-workflows",
+});
+
+const staticWorkflows = createStaticWorkflowStudioProvider({
+  staticModel: workflowFixture satisfies WorkflowStudioModel,
+});
+
+export function WorkflowOnlyStudio() {
+  return <Studio hasDatabase={false} workflows={liveWorkflows} />;
+}
+```
+
+The live endpoint contract is small and JSON-only:
+
+```http
+GET  /studio
+GET  /inspect/:runId
+POST /run
+POST /replay/:runId
+POST /approve/:approvalId
+POST /reject/:approvalId
+```
+
+`GET /studio` returns the normalized Workflow Studio model: workflow metadata, nodes, edges, recent runs, pending approvals, ingest events, dead letters, learning metrics, capabilities, and warnings. The optional action endpoints return `{ "ok": true }` with an optional message. Studio keeps `view=workflows`, `workflow`, `workflowTab`, `workflowRun`, and `workflowFrame` in the URL hash so operators can share exact Workflow links.
+
+The local Prisma Postgres demo includes a mocked dispute-resolution workflow at `/api/prisma-workflows` and seeds the same story into the ephemeral `@prisma/dev` database. Start it with `pnpm demo:ppg`, open Studio, and choose `Workflows` in the sidebar to see the end-to-end workflow graph, run timeline, approval queue, ingest events, and dead-letter replay actions. Table browsing also shows the seeded `_prisma_workflows` runtime tables plus `dispute_cases` and `approved_dispute_responses`.
 
 ## AI Contract
 
@@ -211,6 +260,8 @@ Studio is an embeddable React surface, not a standalone app shell. A production 
 - create one database adapter per connection using `createPostgresAdapter`, `createMySQLAdapter`, or `createSQLiteAdapter`
 - back that adapter with an authenticated executor, typically `createStudioBFFClient({ url: "/api/query" })`
 - expose a JSON BFF endpoint that accepts Studio requests and executes them against the database
+- optionally provide `workflows` through `createWorkflowStudioClient({ baseUrl })` when the host exposes Prisma Workflow operations endpoints
+- set `hasDatabase={false}` when embedding Studio as a workflows-only surface
 - pass any tenant or auth context through `customHeaders` and/or `customPayload`
 - optionally provide `llm` for AI-assisted filtering, SQL generation, SQL result visualization, and Query Insights recommendations
 - optionally provide `queryInsights` on the adapter when your BFF can return live query snapshots
@@ -599,7 +650,7 @@ The demo:
 
 - starts Prisma Postgres dev (`ppg-dev`) programmatically via `@prisma/dev`
 - uses direct TCP for query execution
-- seeds sample relational data on startup
+- seeds sample relational data and Prisma Workflow dispute data on startup
 - auto-rebuilds and reloads the UI when source files change
 
 The demo database is intentionally ephemeral: it is pre-seeded when the demo starts and reset when the demo process stops.

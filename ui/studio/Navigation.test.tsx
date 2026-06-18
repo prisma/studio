@@ -17,7 +17,15 @@ interface NavigationMockValue {
   setSchemaParam: () => Promise<URLSearchParams>;
   setTableParam: () => Promise<URLSearchParams>;
   streamParam: string | null;
-  viewParam: "table" | "schema" | "queries" | "console" | "sql" | "stream";
+  viewParam:
+    | "console"
+    | "queries"
+    | "schema"
+    | "sql"
+    | "stream"
+    | "table"
+    | "workflows";
+  workflowParam: string | null;
 }
 
 interface IntrospectionMockValue {
@@ -53,6 +61,20 @@ interface StreamsMockValue {
   }>;
 }
 
+interface WorkflowsMockValue {
+  data: {
+    workflows: Array<{
+      id: string;
+      name: string;
+      slug: string;
+    }>;
+  };
+  hasWorkflows: boolean;
+  isError: boolean;
+  isLoading: boolean;
+  refetch?: () => Promise<unknown>;
+}
+
 interface StudioMockValue {
   hasDatabase: boolean;
   isDarkMode: boolean;
@@ -64,6 +86,7 @@ interface StudioMockValue {
 const useNavigationMock = vi.fn<() => NavigationMockValue>();
 const useIntrospectionMock = vi.fn<() => IntrospectionMockValue>();
 const useStreamsMock = vi.fn<() => StreamsMockValue>();
+const useWorkflowsMock = vi.fn<() => WorkflowsMockValue>();
 const useStudioMock = vi.fn<() => StudioMockValue>();
 const uiStateValues = new Map<string, unknown>();
 const setNavigationWidthMock = vi.fn<(width: number) => void>();
@@ -80,6 +103,10 @@ vi.mock("../hooks/use-introspection", () => ({
 
 vi.mock("../hooks/use-streams", () => ({
   useStreams: () => useStreamsMock(),
+}));
+
+vi.mock("../hooks/use-workflows", () => ({
+  useWorkflows: () => useWorkflowsMock(),
 }));
 
 vi.mock("../hooks/use-navigation-table-list", () => ({
@@ -287,6 +314,7 @@ describe("Navigation", () => {
       setTableParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
       streamParam: null,
       viewParam: "table",
+      workflowParam: null,
     });
 
     useIntrospectionMock.mockReturnValue({
@@ -351,6 +379,14 @@ describe("Navigation", () => {
           uploadedThrough: "0",
         },
       ],
+    });
+    useWorkflowsMock.mockReturnValue({
+      data: {
+        workflows: [],
+      },
+      hasWorkflows: false,
+      isError: false,
+      isLoading: false,
     });
   });
 
@@ -452,6 +488,7 @@ describe("Navigation", () => {
       setTableParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
       streamParam: null,
       viewParam: "stream",
+      workflowParam: null,
     });
 
     const container = document.createElement("div");
@@ -519,6 +556,7 @@ describe("Navigation", () => {
       setTableParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
       streamParam: null,
       viewParam: "queries",
+      workflowParam: null,
     });
 
     const container = document.createElement("div");
@@ -575,6 +613,7 @@ describe("Navigation", () => {
       setTableParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
       streamParam: null,
       viewParam: "sql",
+      workflowParam: null,
     });
 
     const container = document.createElement("div");
@@ -671,6 +710,7 @@ describe("Navigation", () => {
       setTableParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
       streamParam: null,
       viewParam: "table",
+      workflowParam: null,
     });
     useIntrospectionMock.mockReturnValue({
       data: {
@@ -806,6 +846,65 @@ describe("Navigation", () => {
     container.remove();
   });
 
+  it("renders a Workflows section when workflow support is configured", () => {
+    useWorkflowsMock.mockReturnValue({
+      data: {
+        workflows: [
+          {
+            id: "wf_dispute_evidence",
+            name: "DisputeEvidence",
+            slug: "dispute-evidence",
+          },
+        ],
+      },
+      hasWorkflows: true,
+      isError: false,
+      isLoading: false,
+      refetch: vi.fn(() => Promise.resolve()),
+    });
+    useNavigationMock.mockReturnValue({
+      createUrl(values: Record<string, string>) {
+        return `#${Object.entries(values)
+          .map(([key, value]) => `${key}=${value}`)
+          .join("&")}`;
+      },
+      metadata: {
+        activeTable: { name: "organizations", schema: "public" },
+        isFetching: false,
+      },
+      schemaParam: "public",
+      setSchemaParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+      setTableParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+      streamParam: null,
+      viewParam: "workflows",
+      workflowParam: "dispute-evidence",
+    });
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const workflowLink = Array.from(container.querySelectorAll("a")).find(
+      (link) => link.textContent?.trim() === "DisputeEvidence",
+    );
+
+    expect(container.textContent).toContain("Workflows");
+    expect(workflowLink).toBeInstanceOf(HTMLAnchorElement);
+    expect(workflowLink?.getAttribute("href")).toBe(
+      "#viewParam=workflows&workflowParam=dispute-evidence",
+    );
+    expect(workflowLink?.getAttribute("data-active")).toBe("true");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it("hides the Streams section when Studio has no streams server configured", () => {
     useStreamsMock.mockReturnValue({
       hasStreamsServer: false,
@@ -853,6 +952,7 @@ describe("Navigation", () => {
       setTableParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
       streamParam: "prisma-wal",
       viewParam: "stream",
+      workflowParam: null,
     });
 
     const container = document.createElement("div");

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { Adapter } from "../../data/adapter";
 import type { StudioLlm, StudioLlmResponse } from "../../data/llm";
 import { isStudioLlmResponse } from "../../data/llm";
+import type { WorkflowStudioProvider } from "../../data/workflows";
 import { Studio } from "../../ui";
 
 function canUseBrowserFullscreen(): boolean {
@@ -75,9 +76,17 @@ export function DemoApp(props: {
   hasDatabase: boolean;
   seededAt?: string;
   streamsUrl?: string;
+  workflows?: WorkflowStudioProvider;
 }) {
-  const { adapter, aiEnabled, bootId, hasDatabase, seededAt, streamsUrl } =
-    props;
+  const {
+    adapter,
+    aiEnabled,
+    bootId,
+    hasDatabase,
+    seededAt,
+    streamsUrl,
+    workflows,
+  } = props;
   const llm: StudioLlm | undefined = aiEnabled
     ? async (request) => {
         const response = await fetch("/api/ai", {
@@ -168,6 +177,7 @@ export function DemoApp(props: {
           hasDatabase={hasDatabase}
           llm={llm}
           streamsUrl={streamsUrl}
+          workflows={workflows}
         />
       </main>
     </div>
