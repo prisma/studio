@@ -600,7 +600,7 @@ function createIntrospection(args: {
       const { schemas } = result;
       const { columns, name: tableName, schema } = table;
 
-      const columnsRecord = columns
+      const columnsRecord = normalizeColumns(columns)
         .sort((a, b) => a.position - b.position)
         .reduce(
           (columns, column) => {
@@ -682,6 +682,26 @@ function createIntrospection(args: {
       timezone,
     } satisfies AdapterIntrospectResult as AdapterIntrospectResult,
   );
+}
+
+function normalizeColumns(
+  columns: QueryResult<typeof getTablesQuery>[number]["columns"],
+): QueryResult<typeof getTablesQuery>[number]["columns"] {
+  if (Array.isArray(columns)) {
+    return columns;
+  }
+
+  if (typeof columns === "string") {
+    const parsedColumns: unknown = JSON.parse(columns);
+
+    if (Array.isArray(parsedColumns)) {
+      return parsedColumns as QueryResult<
+        typeof getTablesQuery
+      >[number]["columns"];
+    }
+  }
+
+  throw new TypeError("Expected MySQL introspection columns to be an array");
 }
 
 const filterOperators = [
