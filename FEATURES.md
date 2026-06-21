@@ -26,13 +26,16 @@ In that mode the shell hides schema selection, table navigation, and database-on
 Studio's local development workflow can temporarily replace the published npm `@prisma/dev` package with the sibling source package from `../team-expansion/dev/server`, while also swapping its `@prisma/streams-local` dependency over to a built local Streams checkout.
 That override stays opt-in, rebuilds from the sibling repos by default, and can be reverted without rewriting the tracked lockfile, so experimental Prisma Dev and Durable Streams work can stay local to one Studio checkout.
 
-## Compute PR Preview Deploys
+## Compute Preview Deploys
 
 Pull requests can publish the current branch into the dedicated `studio-preview`
 Compute project without hand-creating services for each branch.
 The preview workflow derives a stable Compute-safe service name from the branch,
 reuses that service across later pushes, posts the live URL back to the PR, and
 destroys the preview service when the branch is deleted.
+The same deployment path also keeps one reserved `main` preview service updated
+whenever commits land on the default branch, giving consumers a stable preview of
+the latest merged Studio build.
 
 ## Introspection Recovery and Retry
 
