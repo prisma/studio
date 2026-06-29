@@ -24,11 +24,14 @@ It is responsible for:
 4. copying Prisma Dev runtime assets into `bundle/` with their stable filenames
 5. bundling Prisma Streams local's worker into `touch/processor_worker.js`
 6. copying the worker's vendored `hash_vendor/` files into `touch/`
-7. writing a self-contained output directory whose entrypoint is `bundle/server.bundle.js`
+7. writing a self-contained output directory whose Compute entrypoint is
+   `bundle/compute-entrypoint.js`
+8. writing `bundle/compute-entrypoint.js` so it defaults `STUDIO_DEMO_PORT` to
+   `8080` before importing `bundle/server.bundle.js`
 
 ## Prisma Dev Runtime Assets
 
-`@prisma/dev@0.24.6` exposes a Bun runtime-asset manifest for PGlite and also
+`@prisma/dev@0.24.13` exposes a Bun runtime-asset manifest for PGlite and also
 exports `copyPrismaDevRuntimeAssets()`.
 
 That means when `build-compute.ts` bundles `demo/ppg-dev/server.ts` with Bun:
@@ -49,7 +52,8 @@ hashed Bun-emitted assets and the canonical names.
 
 For the Compute artifact that means:
 
-- the server entrypoint stays at `deploy/bundle/server.bundle.js`
+- the Compute entrypoint stays at `deploy/bundle/compute-entrypoint.js`
+- the bundled server stays at `deploy/bundle/server.bundle.js`
 - stable PGlite assets live in `deploy/bundle/`
 - the Streams worker must live at `deploy/touch/processor_worker.js`
 - the worker's vendored hashing modules must live at `deploy/touch/hash_vendor/`

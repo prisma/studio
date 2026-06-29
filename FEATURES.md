@@ -33,6 +33,10 @@ Compute project without hand-creating services for each branch.
 The preview workflow derives a stable Compute-safe service name from the branch,
 reuses that service across later pushes, posts the live URL back to the PR, and
 destroys the preview service when the branch is deleted.
+The same workflow deploys the latest `main` branch to a stable `main` Compute
+service URL, and preview deployments carry the configured Anthropic key so the
+demo's AI filtering, SQL generation, visualization, and Query Insights
+recommendation features are available in previews.
 
 ## Introspection Recovery and Retry
 
