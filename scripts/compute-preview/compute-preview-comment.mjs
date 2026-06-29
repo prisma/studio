@@ -9,10 +9,7 @@ async function main() {
   const githubToken = getRequiredEnv("GITHUB_TOKEN");
   const repository = getRequiredEnv("GITHUB_REPOSITORY");
   const prNumber = getRequiredEnv("PREVIEW_PR_NUMBER");
-  const branchName = getRequiredEnv("PREVIEW_BRANCH_NAME");
-  const serviceName = getRequiredEnv("PREVIEW_SERVICE_NAME");
   const serviceUrl = getRequiredEnv("PREVIEW_SERVICE_URL");
-  const versionUrl = process.env.PREVIEW_VERSION_URL?.trim();
   const [owner, repo] = repository.split("/");
 
   if (!owner || !repo) {
@@ -20,10 +17,7 @@ async function main() {
   }
 
   const body = buildPreviewCommentBody({
-    branchName,
-    serviceName,
     serviceUrl,
-    versionUrl,
   });
   const comments = await githubRequest({
     githubToken,

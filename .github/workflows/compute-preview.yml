@@ -1,6 +1,9 @@
 name: compute preview
 
 on:
+  push:
+    branches:
+      - main
   pull_request:
     types:
       - opened
@@ -19,12 +22,15 @@ concurrency:
 
 jobs:
   deploy-preview:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      (github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
@@ -52,20 +58,26 @@ jobs:
       - name: Deploy preview
         id: deploy
         env:
+          ANTHROPIC_API_KEY: ${{ secrets.STUDIO_PREVIEW_ANTHROPIC_API_KEY }}
           PRISMA_API_TOKEN: ${{ secrets.STUDIO_PREVIEW_COMPUTE_TOKEN }}
-          PREVIEW_BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
+          PREVIEW_BRANCH_NAME: ${{ github.event.pull_request.head.ref || github.ref_name }}
         run: node scripts/compute-preview/compute-preview-deploy.mjs
 
       - name: Comment preview URL on PR
+        if: github.event_name == 'pull_request'
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ github.token }}
-          PREVIEW_BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
           PREVIEW_PR_NUMBER: ${{ github.event.pull_request.number }}
-          PREVIEW_SERVICE_NAME: ${{ steps.deploy.outputs.preview_service_name }}
           PREVIEW_SERVICE_URL: ${{ steps.deploy.outputs.preview_service_url }}
-          PREVIEW_VERSION_URL: ${{ steps.deploy.outputs.preview_version_url }}
         run: node scripts/compute-preview/compute-preview-comment.mjs
+
+      - name: Summarize main preview URL
+        if: github.event_name == 'push'
+        run: |
+          echo "### Main Compute preview" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.deploy.outputs.preview_service_url }}" >> "$GITHUB_STEP_SUMMARY"
 
   destroy-preview:
     if: github.event_name == 'delete' && github.event.ref_type == 'branch'

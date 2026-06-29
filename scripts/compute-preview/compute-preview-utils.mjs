@@ -39,26 +39,95 @@ export function findNamedService(services, serviceName) {
   return services.find((service) => service.name === serviceName);
 }
 
-export function buildPreviewCommentBody(args) {
+export function buildPreviewRuntimeEnv(args) {
+  const { anthropicApiKey, httpPort } = args;
+
+  return {
+    ANTHROPIC_API_KEY: anthropicApiKey,
+    STUDIO_DEMO_AI_ENABLED: "true",
+    STUDIO_DEMO_PORT: httpPort,
+  };
+}
+
+export function formatDotenvFile(env) {
+  return `${Object.entries(env)
+    .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+    .join("\n")}\n`;
+}
+
+export function buildComputeDeployArgs(args) {
   const {
+    deployPath,
+    entrypoint,
+    envFilePath,
+    httpPort,
+    serviceId,
+  } = args;
+  const deployArgs = [
+    "deploy",
+    "--skip-build",
+    "--path",
+    deployPath,
+    "--entrypoint",
+    entrypoint,
+    "--http-port",
+    httpPort,
+  ];
+
+  if (envFilePath) {
+    deployArgs.push("--env", envFilePath);
+  }
+
+  deployArgs.push("--service", serviceId);
+
+  return deployArgs;
+}
+
+export function normalizePreviewUrl(value) {
+  const trimmedValue = value?.trim();
+
+  if (!trimmedValue) {
+    return undefined;
+  }
+
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmedValue)
+    ? trimmedValue
+    : `https://${trimmedValue}`;
+}
+
+export function buildPreviewDeployResult(args) {
+  const { branchName, deployResult, project, region, service, serviceName } =
+    args;
+  const serviceUrl = normalizePreviewUrl(
+    deployResult.appEndpointDomain ?? deployResult.serviceEndpointDomain,
+  );
+
+  if (!serviceUrl) {
+    throw new Error("Compute deploy did not return a preview URL.");
+  }
+
+  return {
     branchName,
+    projectId: project.id,
+    region,
+    serviceId: service.id,
     serviceName,
     serviceUrl,
-    versionUrl,
-  } = args;
+    versionId: deployResult.deploymentId ?? deployResult.versionId,
+    versionUrl: normalizePreviewUrl(
+      deployResult.deploymentEndpointDomain ??
+        deployResult.versionEndpointDomain,
+    ),
+  };
+}
+
+export function buildPreviewCommentBody(args) {
+  const { serviceUrl } = args;
 
   const lines = [
     PREVIEW_COMMENT_MARKER,
-    "Compute preview deployed.",
-    "",
-    `Branch: \`${branchName}\``,
-    `Service: \`${serviceName}\``,
-    `Preview: ${serviceUrl}`,
+    `🖥️ Preview: ${serviceUrl}`,
   ];
-
-  if (versionUrl) {
-    lines.push(`Version: ${versionUrl}`);
-  }
 
   return lines.join("\n");
 }

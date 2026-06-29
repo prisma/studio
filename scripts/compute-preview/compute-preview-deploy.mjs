@@ -2,12 +2,19 @@
 
 import { execFile } from "node:child_process";
 import { appendFileSync } from "node:fs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { promisify } from "node:util";
 
 import {
   PREVIEW_PROJECT_NAME,
+  buildComputeDeployArgs,
+  buildPreviewDeployResult,
+  buildPreviewRuntimeEnv,
   findNamedProject,
   findNamedService,
+  formatDotenvFile,
   sanitizeComputeServiceName,
 } from "./compute-preview-utils.mjs";
 
@@ -15,6 +22,7 @@ const execFileAsync = promisify(execFile);
 
 async function main() {
   const branchName = getRequiredEnv("PREVIEW_BRANCH_NAME");
+  const anthropicApiKey = getRequiredEnv("ANTHROPIC_API_KEY");
   const projectName = process.env.PREVIEW_PROJECT_NAME ?? PREVIEW_PROJECT_NAME;
   const deployPath = process.env.PREVIEW_DEPLOY_PATH ?? "deploy";
   const entrypoint =
@@ -28,32 +36,49 @@ async function main() {
     region: project.defaultRegion ?? "eu-west-3",
     serviceName,
   });
-  const deployResult = await runComputeJson([
-    "deploy",
-    "--skip-build",
-    "--path",
-    deployPath,
-    "--entrypoint",
-    entrypoint,
-    "--http-port",
-    httpPort,
-    "--service",
-    service.id,
-  ]);
+  const runtimeEnvDir = await mkdtemp(
+    join(tmpdir(), "studio-compute-preview-env-"),
+  );
+  const runtimeEnvPath = join(runtimeEnvDir, ".env");
+  let deployResult;
 
-  const result = {
+  try {
+    await writeFile(
+      runtimeEnvPath,
+      formatDotenvFile(
+        buildPreviewRuntimeEnv({
+          anthropicApiKey,
+          httpPort,
+        }),
+      ),
+      { mode: 0o600 },
+    );
+    deployResult = await runComputeJson(
+      buildComputeDeployArgs({
+        deployPath,
+        entrypoint,
+        envFilePath: runtimeEnvPath,
+        httpPort,
+        serviceId: service.id,
+      }),
+    );
+  } finally {
+    await rm(runtimeEnvDir, { force: true, recursive: true });
+  }
+
+  const result = buildPreviewDeployResult({
     branchName,
-    projectId: project.id,
     region: project.defaultRegion ?? "eu-west-3",
-    serviceId: service.id,
+    project,
+    deployResult,
+    service,
     serviceName,
-    serviceUrl: deployResult.serviceEndpointDomain,
-    versionId: deployResult.versionId,
-    versionUrl: deployResult.versionEndpointDomain,
-  };
+  });
 
   writeOutputs(result);
-  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify({ previewUrl: result.serviceUrl }, null, 2)}\n`,
+  );
 }
 
 async function resolveProject(projectName) {
@@ -139,7 +164,9 @@ function writeOutputs(result) {
     preview_service_url: result.serviceUrl,
     preview_version_id: result.versionId,
     preview_version_url: result.versionUrl,
-  }).map(([key, value]) => `${key}=${value}`);
+  })
+    .filter(([, value]) => value != null)
+    .map(([key, value]) => `${key}=${value}`);
 
   appendFileSync(outputPath, `${lines.join("\n")}\n`);
 }

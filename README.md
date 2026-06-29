@@ -676,12 +676,17 @@ This repo also maintains branch-scoped Compute previews for pull requests.
   duplicates.
 - The workflow updates one sticky PR comment with the live preview URL after a
   successful deploy.
+- Pushes to `main` deploy the latest default-branch build to the stable `main`
+  Compute service and write that service URL to the GitHub Actions job summary.
 - When a Git branch is deleted, the same workflow destroys the matching preview
   service.
 
-The workflow expects the GitHub Actions secret
-`STUDIO_PREVIEW_COMPUTE_TOKEN`, which should contain a Compute API token for the
-`studio-preview` project.
+The workflow expects these GitHub Actions secrets:
+
+- `STUDIO_PREVIEW_COMPUTE_TOKEN`, a Compute API token for the `studio-preview`
+  project
+- `STUDIO_PREVIEW_ANTHROPIC_API_KEY`, the Anthropic key used to enable Studio AI
+  features in Compute previews
 
 For branch-deletion cleanup to happen automatically, the workflow must be
 present on the default branch. In practice that means merging the preview
