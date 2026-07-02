@@ -170,6 +170,7 @@ function useNavigationInternal() {
   const [filterParam, setFilterParam] = useQueryState("filter", {
     defaultValue: defaults.filter,
   });
+  const [migrationParam, setMigrationParam] = useQueryState("migration");
   const [pageIndexParam, setPageIndexParam] = useQueryState("pageIndex", {
     defaultValue: defaults.pageIndex,
   });
@@ -243,6 +244,7 @@ function useNavigationInternal() {
     metadata,
     createUrl,
     filterParam,
+    migrationParam,
     pageIndexParam,
     pageSizeParam,
     pinParam,
@@ -259,6 +261,7 @@ function useNavigationInternal() {
     tableParam,
     viewParam: resolvedViewParam,
     setFilterParam: setFilterParam as NuqsSetNullableValue<string>,
+    setMigrationParam: setMigrationParam as NuqsSetNullableValue<string>,
     setPageIndexParam: setPageIndexParam as NuqsSetNullableValue<string>,
     setPageSizeParam: setPageSizeParam as NuqsSetNullableValue<string>,
     setPinParam: setPinParam as NuqsSetNullableValue<string>,

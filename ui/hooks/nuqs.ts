@@ -18,6 +18,7 @@ export * from "nuqs";
 
 export type StateKey =
   | "aggregations"
+  | "migration"
   | "pageIndex"
   | "pageSize"
   | "pin"

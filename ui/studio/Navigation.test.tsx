@@ -552,6 +552,71 @@ describe("Navigation", () => {
     container.remove();
   });
 
+  it("shows Migrations only when the prisma_contract.ledger table is detected", () => {
+    const withoutLedgerContainer = document.createElement("div");
+    document.body.appendChild(withoutLedgerContainer);
+    const withoutLedgerRoot = createRoot(withoutLedgerContainer);
+
+    act(() => {
+      withoutLedgerRoot.render(<Navigation />);
+    });
+
+    expect(withoutLedgerContainer.textContent).not.toContain("Migrations");
+
+    act(() => {
+      withoutLedgerRoot.unmount();
+    });
+    withoutLedgerContainer.remove();
+
+    const baseIntrospection = useIntrospectionMock();
+
+    useIntrospectionMock.mockReturnValue({
+      ...baseIntrospection,
+      data: {
+        schemas: {
+          ...baseIntrospection.data.schemas,
+          prisma_contract: {
+            name: "prisma_contract",
+            tables: {
+              ledger: {
+                columns: {},
+                name: "ledger",
+                schema: "prisma_contract",
+              },
+              marker: {
+                columns: {},
+                name: "marker",
+                schema: "prisma_contract",
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const migrationsLink = container.querySelector(
+      '[data-testid="navigation-migrations-item"]',
+    );
+
+    expect(migrationsLink).not.toBeNull();
+    expect(migrationsLink?.getAttribute("href")).toBe(
+      "#schemaParam=public&viewParam=migrations",
+    );
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it("preserves selected schema when navigating between Studio views", () => {
     useStudioMock.mockImplementation(() => ({
       hasDatabase: true,
