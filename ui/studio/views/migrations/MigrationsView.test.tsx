@@ -270,6 +270,65 @@ describe("MigrationsView", () => {
     cleanup();
   });
 
+  it("resizes the details panel from its drag handle via keyboard", () => {
+    const { container, cleanup } = renderView();
+
+    const sqlButton = container.querySelector(
+      '[data-testid="migration-panel-sql"]',
+    );
+
+    act(() => {
+      sqlButton?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+    });
+
+    const panel = container.querySelector<HTMLElement>(
+      '[data-testid="migration-details-panel"]',
+    );
+    const handle = container.querySelector(
+      '[data-testid="migration-panel-resize-handle"]',
+    );
+
+    expect(panel).not.toBeNull();
+    expect(handle).not.toBeNull();
+    expect(panel?.style.height).toBe("256px");
+
+    act(() => {
+      handle?.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          key: "ArrowUp",
+        }),
+      );
+    });
+
+    expect(
+      container.querySelector<HTMLElement>(
+        '[data-testid="migration-details-panel"]',
+      )?.style.height,
+    ).toBe("272px");
+
+    act(() => {
+      handle?.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          key: "ArrowDown",
+        }),
+      );
+    });
+
+    expect(
+      container.querySelector<HTMLElement>(
+        '[data-testid="migration-details-panel"]',
+      )?.style.height,
+    ).toBe("256px");
+
+    cleanup();
+  });
+
   it("shows an empty state when no ledger is detected", () => {
     useMigrationsMock.mockReturnValue({
       hasPrismaNextMigrations: false,
