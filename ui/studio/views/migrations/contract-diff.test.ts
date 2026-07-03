@@ -359,6 +359,33 @@ describe("diffContracts", () => {
     expect(post?.addedRelations[0]?.toModel).toBe("User");
   });
 
+  it("keeps a model unchanged when it only gains a back-relation", () => {
+    const before = makeContract({ models: { User: baseUser } });
+    const after = makeContract({
+      models: {
+        User: {
+          ...baseUser,
+          relations: { projects: { toModel: "Project", cardinality: "1:N" } },
+        },
+        Project: {
+          fields: {
+            id: { codec: "pg/uuid@1", nativeType: "uuid" },
+            ownerId: { codec: "pg/uuid@1", nativeType: "uuid" },
+          },
+          relations: { owner: { toModel: "User" } },
+        },
+      },
+    });
+
+    const diff = diffContracts(before, after);
+    const user = diff.models.find((model) => model.name === "User");
+
+    expect(user?.status).toBe("unchanged");
+    expect(user?.addedRelations).toHaveLength(1);
+    expect(diff.stats.modelsChanged).toBe(0);
+    expect(diff.stats.modelsAdded).toBe(1);
+  });
+
   it("leaves untouched models unchanged", () => {
     const contract = makeContract({
       models: { User: baseUser, Post: { fields: { id: {} } } },

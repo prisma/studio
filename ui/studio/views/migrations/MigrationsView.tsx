@@ -1,13 +1,12 @@
 import dayjs from "dayjs";
 import {
   ArrowRight,
-  ChevronDown,
-  ChevronRight,
+  FileDiff,
   GitBranch,
   Key,
+  Terminal,
   TriangleAlert,
 } from "lucide-react";
-import { motion } from "motion/react";
 import { type FC, memo, useEffect, useMemo, useRef, useState } from "react";
 import ReactFlow, {
   Background,
@@ -23,11 +22,13 @@ import ReactFlow, {
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { Skeleton } from "../../../components/ui/skeleton";
+import { Switch } from "../../../components/ui/switch";
 import {
   type StudioMigration,
   useMigrations,
 } from "../../../hooks/use-migrations";
 import { useNavigation } from "../../../hooks/use-navigation";
+import { useUiState } from "../../../hooks/use-ui-state";
 import { cn } from "../../../lib/utils";
 import { StudioHeader } from "../../StudioHeader";
 import type { ViewProps } from "../View";
@@ -36,6 +37,7 @@ import {
   type DiffStatus,
   type FieldDiff,
   type MigrationDiff,
+  parseContractSnapshot,
   summarizeDiff,
 } from "./contract-diff";
 import {
@@ -46,6 +48,12 @@ import {
   type MigrationDiffNode,
   type ModelDiffNodeData,
 } from "./diff-layout";
+import {
+  diffSchemas,
+  renderPslSchema,
+  schemaDiffHasChanges,
+  type SchemaDiffLine,
+} from "./psl-schema";
 
 const STATUS_STYLES: Record<
   DiffStatus,
@@ -354,13 +362,18 @@ const nodeTypes: NodeTypes = {
   enumDiff: EnumDiffNodeComponent,
 };
 
-function buildDiffGraph(diff: MigrationDiff): {
+function buildDiffGraph(
+  diff: MigrationDiff,
+  showAllModels: boolean,
+): {
   nodes: MigrationDiffNode[];
   edges: Edge[];
 } {
-  const touchedModels = diff.models.filter(
-    (model) => model.status !== "unchanged",
-  );
+  const isTouched = (model: MigrationDiff["models"][number]) =>
+    model.status !== "unchanged" ||
+    model.addedRelations.length > 0 ||
+    model.removedRelations.length > 0;
+  const touchedModels = diff.models.filter(isTouched);
   const touchedNames = new Set(touchedModels.map((model) => model.name));
   const contextNames = new Set<string>();
 
@@ -385,12 +398,12 @@ function buildDiffGraph(diff: MigrationDiff): {
   }
 
   const visibleModels =
-    touchedModels.length > 0
-      ? diff.models.filter(
+    showAllModels || touchedModels.length === 0
+      ? diff.models
+      : diff.models.filter(
           (model) =>
             touchedNames.has(model.name) || contextNames.has(model.name),
-        )
-      : diff.models;
+        );
   const visibleNames = new Set(visibleModels.map((model) => model.name));
   const touchedEnums = diff.enums.filter(
     (enumDiff) => enumDiff.status !== "unchanged",
@@ -458,14 +471,23 @@ function buildDiffGraph(diff: MigrationDiff): {
   return { nodes, edges };
 }
 
-function MigrationDiffCanvas(props: { migration: StudioMigration }) {
-  const { migration } = props;
+function MigrationDiffCanvas(props: {
+  migration: StudioMigration;
+  showAllModels: boolean;
+}) {
+  const { migration, showAllModels } = props;
   const diff = useMemo(
     () => diffContracts(migration.contractBefore, migration.contractAfter),
     [migration.contractBefore, migration.contractAfter],
   );
-  const graph = useMemo(() => buildDiffGraph(diff), [diff]);
-  const [layoutedNodes, setLayoutedNodes] = useState<MigrationDiffNode[]>([]);
+  const graph = useMemo(
+    () => buildDiffGraph(diff, showAllModels),
+    [diff, showAllModels],
+  );
+  const [layoutedGraph, setLayoutedGraph] = useState<{
+    nodes: MigrationDiffNode[];
+    edges: Edge[];
+  }>({ nodes: [], edges: [] });
   const reactFlowInstanceRef = useRef<ReactFlowInstance | null>(null);
 
   useEffect(() => {
@@ -476,13 +498,16 @@ function MigrationDiffCanvas(props: { migration: StudioMigration }) {
         return;
       }
 
-      setLayoutedNodes(nodes);
+      // Nodes and edges swap together so the morph transition animates
+      // shared nodes (stable `model:<name>` ids) to their new positions
+      // instead of tearing the whole canvas down.
+      setLayoutedGraph({ nodes, edges: graph.edges });
 
       if (typeof window !== "undefined") {
         window.requestAnimationFrame(() => {
           window.requestAnimationFrame(() => {
             void reactFlowInstanceRef.current?.fitView({
-              duration: 420,
+              duration: 500,
               padding: 0.18,
             });
           });
@@ -506,14 +531,15 @@ function MigrationDiffCanvas(props: { migration: StudioMigration }) {
 
   return (
     <ReactFlow
-      key={migration.id}
-      edges={graph.edges}
+      className="migrations-diff-canvas"
+      edges={layoutedGraph.edges}
       fitView
       fitViewOptions={{ padding: 0.18 }}
       maxZoom={1.4}
       minZoom={0.2}
-      nodes={layoutedNodes}
+      nodes={layoutedGraph.nodes}
       nodesConnectable={false}
+      nodesDraggable={false}
       nodeTypes={nodeTypes}
       onInit={(instance) => {
         reactFlowInstanceRef.current = instance;
@@ -613,7 +639,7 @@ function MigrationSqlPanel(props: { migration: StudioMigration }) {
 
   return (
     <div
-      className="max-h-56 shrink-0 overflow-y-auto border-t border-border bg-card/80 px-4 py-3"
+      className="max-h-64 shrink-0 overflow-y-auto border-t border-border bg-card/80 px-4 py-3"
       data-testid="migration-sql-panel"
     >
       <div className="flex flex-col gap-3">
@@ -649,11 +675,104 @@ function MigrationSqlPanel(props: { migration: StudioMigration }) {
   );
 }
 
+const SCHEMA_DIFF_LINE_STYLES: Record<
+  SchemaDiffLine["kind"],
+  { row: string; gutter: string; symbol: string }
+> = {
+  added: {
+    row: "bg-emerald-500/10 text-emerald-800 dark:text-emerald-200",
+    gutter: "text-emerald-600 dark:text-emerald-400",
+    symbol: "+",
+  },
+  removed: {
+    row: "bg-rose-500/10 text-rose-800 dark:text-rose-200",
+    gutter: "text-rose-600 dark:text-rose-400",
+    symbol: "−",
+  },
+  context: {
+    row: "text-muted-foreground",
+    gutter: "text-transparent",
+    symbol: " ",
+  },
+  collapsed: {
+    row: "text-muted-foreground/60 italic",
+    gutter: "text-transparent",
+    symbol: " ",
+  },
+};
+
+function MigrationSchemaPanel(props: { migration: StudioMigration }) {
+  const { migration } = props;
+  const lines = useMemo(
+    () =>
+      diffSchemas(
+        renderPslSchema(parseContractSnapshot(migration.contractBefore)),
+        renderPslSchema(parseContractSnapshot(migration.contractAfter)),
+      ),
+    [migration.contractBefore, migration.contractAfter],
+  );
+
+  return (
+    <div
+      className="max-h-64 shrink-0 overflow-y-auto border-t border-border bg-card/80 px-4 py-3"
+      data-testid="migration-schema-panel"
+    >
+      {schemaDiffHasChanges(lines) ? (
+        <div className="overflow-hidden rounded-md border border-border/70 bg-muted/30">
+          {lines.map((line, index) =>
+            line.kind === "collapsed" ? (
+              <div
+                key={index}
+                className={cn(
+                  "px-3 py-1 text-center font-mono text-[10px]",
+                  SCHEMA_DIFF_LINE_STYLES.collapsed.row,
+                )}
+              >
+                ⋯ {line.hiddenCount} unchanged line
+                {line.hiddenCount === 1 ? "" : "s"}
+              </div>
+            ) : (
+              <div
+                key={index}
+                className={cn(
+                  "flex gap-2 px-3 font-mono text-[11px] leading-relaxed",
+                  SCHEMA_DIFF_LINE_STYLES[line.kind].row,
+                )}
+              >
+                <span
+                  className={cn(
+                    "w-3 shrink-0 select-none text-center",
+                    SCHEMA_DIFF_LINE_STYLES[line.kind].gutter,
+                  )}
+                >
+                  {SCHEMA_DIFF_LINE_STYLES[line.kind].symbol}
+                </span>
+                <span className="whitespace-pre">{line.text}</span>
+              </div>
+            ),
+          )}
+        </div>
+      ) : (
+        <div className="py-4 text-center text-xs text-muted-foreground">
+          No schema-level changes in this migration.
+        </div>
+      )}
+    </div>
+  );
+}
+
+type MigrationDetailsPanelMode = "sql" | "schema" | null;
+
 export function MigrationsView(_props: ViewProps) {
   const { hasPrismaNextMigrations, isLoading, isError, migrations } =
     useMigrations();
   const { migrationParam, setMigrationParam } = useNavigation();
-  const [isSqlPanelOpen, setIsSqlPanelOpen] = useState(false);
+  const [detailsPanel, setDetailsPanel] =
+    useState<MigrationDetailsPanelMode>(null);
+  const [showAllModels, setShowAllModels] = useUiState<boolean>(
+    "migrations:show-all-models",
+    false,
+  );
 
   const selectedMigration = useMemo(() => {
     if (migrationParam) {
@@ -779,36 +898,79 @@ export function MigrationsView(_props: ViewProps) {
                       </span>
                     ))}
                   </div>
-                  <Button
-                    className="ml-auto h-7 shadow-none"
-                    onClick={() => setIsSqlPanelOpen((open) => !open)}
-                    size="xs"
-                    type="button"
-                    variant="outline"
-                  >
-                    {isSqlPanelOpen ? (
-                      <ChevronDown data-icon="inline-start" />
-                    ) : (
-                      <ChevronRight data-icon="inline-start" />
-                    )}
-                    SQL
-                  </Button>
+                  <div className="ml-auto flex items-center gap-3">
+                    <div className="flex items-center gap-1.5">
+                      <Switch
+                        aria-label="Show all models"
+                        checked={showAllModels}
+                        data-testid="migration-show-all-models"
+                        id="migration-show-all-models-switch"
+                        onCheckedChange={(checked) =>
+                          setShowAllModels(checked === true)
+                        }
+                      />
+                      <label
+                        className="cursor-pointer text-[11px] font-medium text-muted-foreground"
+                        htmlFor="migration-show-all-models-switch"
+                      >
+                        All models
+                      </label>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        className="h-7 shadow-none"
+                        data-active={detailsPanel === "sql"}
+                        data-testid="migration-panel-sql"
+                        onClick={() =>
+                          setDetailsPanel((panel) =>
+                            panel === "sql" ? null : "sql",
+                          )
+                        }
+                        size="xs"
+                        type="button"
+                        variant={
+                          detailsPanel === "sql" ? "secondary" : "outline"
+                        }
+                      >
+                        <Terminal data-icon="inline-start" />
+                        SQL
+                      </Button>
+                      <Button
+                        className="h-7 shadow-none"
+                        data-active={detailsPanel === "schema"}
+                        data-testid="migration-panel-schema"
+                        onClick={() =>
+                          setDetailsPanel((panel) =>
+                            panel === "schema" ? null : "schema",
+                          )
+                        }
+                        size="xs"
+                        type="button"
+                        variant={
+                          detailsPanel === "schema" ? "secondary" : "outline"
+                        }
+                      >
+                        <FileDiff data-icon="inline-start" />
+                        Schema
+                      </Button>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="relative min-h-0 flex-1">
-                  <motion.div
-                    key={selectedMigration.id}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="absolute inset-0"
-                    initial={{ opacity: 0, scale: 0.985 }}
-                    transition={{ duration: 0.18 }}
-                  >
-                    <MigrationDiffCanvas migration={selectedMigration} />
-                  </motion.div>
+                  <div className="absolute inset-0">
+                    <MigrationDiffCanvas
+                      migration={selectedMigration}
+                      showAllModels={showAllModels}
+                    />
+                  </div>
                 </div>
 
-                {isSqlPanelOpen && (
+                {detailsPanel === "sql" && (
                   <MigrationSqlPanel migration={selectedMigration} />
+                )}
+                {detailsPanel === "schema" && (
+                  <MigrationSchemaPanel migration={selectedMigration} />
                 )}
               </>
             )}

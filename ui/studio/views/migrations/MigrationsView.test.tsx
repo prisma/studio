@@ -237,6 +237,39 @@ describe("MigrationsView", () => {
     cleanup();
   });
 
+  it("toggles the Schema panel with a rendered schema diff", () => {
+    const { container, cleanup } = renderView();
+
+    const schemaButton = container.querySelector(
+      '[data-testid="migration-panel-schema"]',
+    );
+
+    act(() => {
+      schemaButton?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+    });
+
+    const panel = container.querySelector(
+      '[data-testid="migration-schema-panel"]',
+    );
+
+    expect(panel).not.toBeNull();
+    expect(panel?.textContent).toContain("model Project {");
+
+    cleanup();
+  });
+
+  it("renders an all-models toggle for the diff canvas", () => {
+    const { container, cleanup } = renderView();
+
+    expect(
+      container.querySelector('[data-testid="migration-show-all-models"]'),
+    ).not.toBeNull();
+
+    cleanup();
+  });
+
   it("shows an empty state when no ledger is detected", () => {
     useMigrationsMock.mockReturnValue({
       hasPrismaNextMigrations: false,

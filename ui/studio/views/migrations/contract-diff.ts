@@ -544,13 +544,14 @@ export function diffContracts(
       const hasFieldChanges = fields.some(
         (field) => field.status !== "unchanged",
       );
-      const hasStructureChanges =
-        addedIndexes.length > 0 ||
-        removedIndexes.length > 0 ||
-        addedRelations.length > 0 ||
-        removedRelations.length > 0;
+      // Relation changes alone don't flip a model to "changed": a
+      // back-relation is stored via the other table's foreign key, so
+      // the model's own table is untouched. Relation additions still
+      // surface through emphasized edges on the canvas.
+      const hasStorageChanges =
+        addedIndexes.length > 0 || removedIndexes.length > 0;
 
-      status = hasFieldChanges || hasStructureChanges ? "changed" : "unchanged";
+      status = hasFieldChanges || hasStorageChanges ? "changed" : "unchanged";
     }
 
     models.push({
