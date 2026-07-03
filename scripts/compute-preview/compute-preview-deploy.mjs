@@ -41,19 +41,32 @@ async function main() {
     service.id,
   ]);
 
+  // Newer Compute CLI payloads surface the endpoint as `appEndpointDomain`
+  // (on both the deploy result and `services show`) instead of the older
+  // `serviceEndpointDomain`; fall back through the known shapes so the PR
+  // comment step always receives a URL.
+  const serviceUrl =
+    deployResult.serviceEndpointDomain ??
+    deployResult.appEndpointDomain ??
+    (await showService(service.id)).appEndpointDomain;
+
   const result = {
     branchName,
     projectId: project.id,
     region: project.defaultRegion ?? "eu-west-3",
     serviceId: service.id,
     serviceName,
-    serviceUrl: deployResult.serviceEndpointDomain,
+    serviceUrl,
     versionId: deployResult.versionId,
     versionUrl: deployResult.versionEndpointDomain,
   };
 
   writeOutputs(result);
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+}
+
+async function showService(serviceId) {
+  return await runComputeJson(["services", "show", serviceId]);
 }
 
 async function resolveProject(projectName) {
