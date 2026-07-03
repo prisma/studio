@@ -152,7 +152,9 @@ function writeOutputs(result) {
     preview_service_url: result.serviceUrl,
     preview_version_id: result.versionId,
     preview_version_url: result.versionUrl,
-  }).map(([key, value]) => `${key}=${value}`);
+  })
+    .filter(([, value]) => value != null)
+    .map(([key, value]) => `${key}=${value}`);
 
   appendFileSync(outputPath, `${lines.join("\n")}\n`);
 }
