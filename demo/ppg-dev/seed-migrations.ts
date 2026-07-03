@@ -1,6 +1,6 @@
-import { readFileSync } from "node:fs";
-
 import type postgres from "postgres";
+
+import fixtureJson from "./fixtures/prisma-contract-migrations.json";
 
 /**
  * Replays the Prisma Next migration history captured from the
@@ -59,13 +59,11 @@ interface MigrationsFixture {
   ledger: FixtureLedgerRow[];
 }
 
+// Statically imported so every bundling path (tsx, `bun build` for the
+// local bundle, and the Compute deploy build) inlines the fixture into
+// the artifact instead of depending on a file next to the bundle.
 function loadFixture(): MigrationsFixture {
-  const fixtureUrl = new URL(
-    "./fixtures/prisma-contract-migrations.json",
-    import.meta.url,
-  );
-
-  return JSON.parse(readFileSync(fixtureUrl, "utf-8")) as MigrationsFixture;
+  return fixtureJson as unknown as MigrationsFixture;
 }
 
 export async function seedPrismaNextMigrations(
