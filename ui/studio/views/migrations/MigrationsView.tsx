@@ -36,13 +36,11 @@ import {
   diffContracts,
   type DiffStatus,
   type FieldDiff,
-  type MigrationDiff,
   parseContractSnapshot,
   summarizeDiff,
 } from "./contract-diff";
 import {
-  createEnumDiffNode,
-  createModelDiffNode,
+  buildDiffGraph,
   type EnumDiffNodeData,
   layoutMigrationDiffNodes,
   type MigrationDiffNode,
@@ -361,115 +359,6 @@ const nodeTypes: NodeTypes = {
   modelDiff: ModelDiffNodeComponent,
   enumDiff: EnumDiffNodeComponent,
 };
-
-function buildDiffGraph(
-  diff: MigrationDiff,
-  showAllModels: boolean,
-): {
-  nodes: MigrationDiffNode[];
-  edges: Edge[];
-} {
-  const isTouched = (model: MigrationDiff["models"][number]) =>
-    model.status !== "unchanged" ||
-    model.addedRelations.length > 0 ||
-    model.removedRelations.length > 0;
-  const touchedModels = diff.models.filter(isTouched);
-  const touchedNames = new Set(touchedModels.map((model) => model.name));
-  const contextNames = new Set<string>();
-
-  for (const model of touchedModels) {
-    for (const relation of [...model.relations, ...model.removedRelations]) {
-      if (!touchedNames.has(relation.toModel)) {
-        contextNames.add(relation.toModel);
-      }
-    }
-  }
-
-  for (const model of diff.models) {
-    if (touchedNames.has(model.name)) {
-      continue;
-    }
-
-    if (
-      model.relations.some((relation) => touchedNames.has(relation.toModel))
-    ) {
-      contextNames.add(model.name);
-    }
-  }
-
-  const visibleModels =
-    showAllModels || touchedModels.length === 0
-      ? diff.models
-      : diff.models.filter(
-          (model) =>
-            touchedNames.has(model.name) || contextNames.has(model.name),
-        );
-  const visibleNames = new Set(visibleModels.map((model) => model.name));
-  const touchedEnums = diff.enums.filter(
-    (enumDiff) => enumDiff.status !== "unchanged",
-  );
-
-  const nodes: MigrationDiffNode[] = [
-    ...visibleModels.map((model) => createModelDiffNode(model)),
-    ...touchedEnums.map((enumDiff) => createEnumDiffNode(enumDiff)),
-  ];
-
-  const edges: Edge[] = [];
-  const seenEdges = new Set<string>();
-
-  for (const model of visibleModels) {
-    const relationEntries = [
-      ...model.relations.map((relation) => ({ relation, removed: false })),
-      ...model.removedRelations.map((relation) => ({
-        relation,
-        removed: true,
-      })),
-    ];
-
-    for (const { relation, removed } of relationEntries) {
-      if (!visibleNames.has(relation.toModel)) {
-        continue;
-      }
-
-      const pairKey = [model.name, relation.toModel].sort().join("↔");
-
-      if (seenEdges.has(pairKey)) {
-        continue;
-      }
-
-      seenEdges.add(pairKey);
-
-      const added = model.addedRelations.some(
-        (candidate) =>
-          candidate.name === relation.name &&
-          candidate.toModel === relation.toModel,
-      );
-
-      edges.push({
-        id: `relation:${pairKey}`,
-        source: `model:${model.name}`,
-        target: `model:${relation.toModel}`,
-        label: relation.cardinality,
-        labelStyle: { fontSize: 10, fill: "var(--muted-foreground)" },
-        labelBgStyle: { fill: "var(--background)", fillOpacity: 0.8 },
-        animated: added,
-        style: {
-          stroke: removed
-            ? "var(--destructive)"
-            : added
-              ? "oklch(0.7 0.15 160)"
-              : "var(--muted-foreground)",
-          strokeDasharray: removed ? "3 3" : added ? undefined : "5 5",
-          strokeWidth: added || removed ? 2 : 1,
-          opacity: removed ? 0.7 : 0.9,
-        },
-        type: "default",
-      });
-    }
-  }
-
-  return { nodes, edges };
-}
 
 function MigrationDiffCanvas(props: {
   migration: StudioMigration;

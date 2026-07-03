@@ -56,7 +56,7 @@ Model-level structure comes from the contract's domain plane; storage-plane data
 
 ## Visual Canvas
 
-The diff renders on a React Flow canvas (same dependency as the Schema Visualizer) with ELK auto-layout in `diff-layout.ts`. By default only touched models, their direct relation neighbors (rendered dimmed as context), and touched enums become nodes; the `All models` toggle (persisted UI state) expands to every model in the migration's contract, and a migration that touches nothing falls back to showing all models. Relation edges connect visible nodes, with added relations emphasized and removed relations drawn in the destructive color.
+The diff renders on a React Flow canvas (same dependency as the Schema Visualizer) with ELK auto-layout in `diff-layout.ts`. By default only touched models, their direct relation neighbors (rendered dimmed as context), and touched enums become nodes; the `All models` toggle (persisted UI state) expands to every model **and enum** in the migration's contract (unchanged ones in the dimmed context style), and a migration that touches nothing falls back to showing the full schema. Relation edges connect visible nodes, with added relations emphasized and removed relations drawn in the destructive color.
 
 A model's status is table-anchored: only field or index changes mark it `changed`. Relation-only changes (a back-relation whose foreign key lives in the other table) keep the model `unchanged` — the added or removed relation surfaces through the emphasized edge, never through an amber card. This keeps the amber signal synonymous with "this table's DDL changed".
 
