@@ -598,6 +598,29 @@ const SCHEMA_DIFF_LINE_STYLES: Record<
   },
 };
 
+function SchemaDiffRow(props: { line: SchemaDiffLine }) {
+  const { line } = props;
+
+  return (
+    <div
+      className={cn(
+        "flex gap-2 px-3 font-mono text-[11px] leading-relaxed",
+        SCHEMA_DIFF_LINE_STYLES[line.kind].row,
+      )}
+    >
+      <span
+        className={cn(
+          "w-3 shrink-0 select-none text-center",
+          SCHEMA_DIFF_LINE_STYLES[line.kind].gutter,
+        )}
+      >
+        {SCHEMA_DIFF_LINE_STYLES[line.kind].symbol}
+      </span>
+      <span className="whitespace-pre">{line.text}</span>
+    </div>
+  );
+}
+
 function MigrationSchemaPanel(props: { migration: StudioMigration }) {
   const { migration } = props;
   const lines = useMemo(
@@ -608,43 +631,50 @@ function MigrationSchemaPanel(props: { migration: StudioMigration }) {
       ),
     [migration.contractBefore, migration.contractAfter],
   );
+  const [expandedFolds, setExpandedFolds] = useState<ReadonlySet<number>>(
+    () => new Set(),
+  );
 
   return (
     <div data-testid="migration-schema-panel">
       {schemaDiffHasChanges(lines) ? (
         <div className="overflow-hidden rounded-md border border-border/70 bg-muted/30">
-          {lines.map((line, index) =>
-            line.kind === "collapsed" ? (
-              <div
+          {lines.map((line, index) => {
+            if (line.kind !== "collapsed") {
+              return <SchemaDiffRow key={index} line={line} />;
+            }
+
+            if (expandedFolds.has(index)) {
+              return (line.hiddenLines ?? []).map((text, hiddenIndex) => (
+                <SchemaDiffRow
+                  key={`${index}-${hiddenIndex}`}
+                  line={{ kind: "context", text }}
+                />
+              ));
+            }
+
+            return (
+              <button
                 key={index}
                 className={cn(
-                  "px-3 py-1 text-center font-mono text-[10px]",
+                  "group block w-full cursor-pointer px-3 py-1 text-center font-mono text-[10px] transition-colors hover:bg-muted/60 hover:text-muted-foreground",
                   SCHEMA_DIFF_LINE_STYLES.collapsed.row,
                 )}
+                data-testid="schema-diff-expand"
+                onClick={() =>
+                  setExpandedFolds((previous) => new Set([...previous, index]))
+                }
+                type="button"
               >
                 ⋯ {line.hiddenCount} unchanged line
                 {line.hiddenCount === 1 ? "" : "s"}
-              </div>
-            ) : (
-              <div
-                key={index}
-                className={cn(
-                  "flex gap-2 px-3 font-mono text-[11px] leading-relaxed",
-                  SCHEMA_DIFF_LINE_STYLES[line.kind].row,
-                )}
-              >
-                <span
-                  className={cn(
-                    "w-3 shrink-0 select-none text-center",
-                    SCHEMA_DIFF_LINE_STYLES[line.kind].gutter,
-                  )}
-                >
-                  {SCHEMA_DIFF_LINE_STYLES[line.kind].symbol}
+                <span className="not-italic text-muted-foreground/40 transition-colors group-hover:text-muted-foreground">
+                  {" "}
+                  · expand
                 </span>
-                <span className="whitespace-pre">{line.text}</span>
-              </div>
-            ),
-          )}
+              </button>
+            );
+          })}
         </div>
       ) : (
         <div className="py-4 text-center text-xs text-muted-foreground">
@@ -671,9 +701,7 @@ export function MigrationsView(_props: ViewProps) {
     "migrations:details-panel-height",
     DETAILS_PANEL_DEFAULT_HEIGHT,
   );
-  const [draftPanelHeight, setDraftPanelHeight] = useState<number | null>(
-    null,
-  );
+  const [draftPanelHeight, setDraftPanelHeight] = useState<number | null>(null);
   const [isPanelResizing, setIsPanelResizing] = useState(false);
   const panelResizeStateRef = useRef<{
     startHeight: number;
@@ -974,7 +1002,10 @@ export function MigrationsView(_props: ViewProps) {
                       {detailsPanel === "sql" ? (
                         <MigrationSqlPanel migration={selectedMigration} />
                       ) : (
-                        <MigrationSchemaPanel migration={selectedMigration} />
+                        <MigrationSchemaPanel
+                          key={selectedMigration.id}
+                          migration={selectedMigration}
+                        />
                       )}
                     </div>
                   </div>

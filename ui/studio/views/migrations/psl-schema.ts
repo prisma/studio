@@ -175,6 +175,11 @@ export interface SchemaDiffLine {
   text: string;
   /** Number of hidden lines when `kind` is "collapsed". */
   hiddenCount?: number;
+  /**
+   * The collapsed run's actual lines when `kind` is "collapsed", so the
+   * view can expand a fold in place without re-diffing.
+   */
+  hiddenLines?: string[];
 }
 
 const CONTEXT_LINES = 2;
@@ -229,7 +234,12 @@ export function diffSchemas(before: string, after: string): SchemaDiffLine[] {
 
     const hiddenCount = contextLines.length - leadingKeep - trailingKeep;
 
-    lines.push({ kind: "collapsed", text: "", hiddenCount });
+    lines.push({
+      kind: "collapsed",
+      text: "",
+      hiddenCount,
+      hiddenLines: contextLines.slice(leadingKeep, leadingKeep + hiddenCount),
+    });
 
     if (trailingKeep > 0) {
       for (const text of contextLines.slice(-trailingKeep)) {

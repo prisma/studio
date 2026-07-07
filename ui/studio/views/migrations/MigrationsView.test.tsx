@@ -260,6 +260,63 @@ describe("MigrationsView", () => {
     cleanup();
   });
 
+  it("expands a collapsed unchanged run in the schema diff on click", () => {
+    const wideUser = Object.fromEntries(
+      Array.from({ length: 10 }, (_, index) => [`field${index}`, {}]),
+    );
+
+    useMigrationsMock.mockReturnValue({
+      hasPrismaNextMigrations: true,
+      isLoading: false,
+      isError: false,
+      migrations: [
+        migration({
+          id: 2,
+          fromHash: "sha256:c1",
+          toHash: "sha256:c2",
+          contractBefore: contract({ User: wideUser }),
+          contractAfter: contract({
+            User: wideUser,
+            Project: { id: {}, name: {} },
+          }),
+        }),
+      ],
+    });
+
+    const { container, cleanup } = renderView();
+
+    act(() => {
+      container
+        .querySelector('[data-testid="migration-panel-schema"]')
+        ?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true, cancelable: true }),
+        );
+    });
+
+    const panel = container.querySelector(
+      '[data-testid="migration-schema-panel"]',
+    );
+    const fold = container.querySelector('[data-testid="schema-diff-expand"]');
+
+    expect(fold?.textContent).toContain("unchanged line");
+    expect(fold?.textContent).toContain("expand");
+    // The folded run hides the User model's trailing fields.
+    expect(panel?.textContent).not.toContain("field5 String");
+
+    act(() => {
+      fold?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+    });
+
+    expect(
+      container.querySelector('[data-testid="schema-diff-expand"]'),
+    ).toBeNull();
+    expect(panel?.textContent).toContain("field5 String");
+
+    cleanup();
+  });
+
   it("renders an all-models toggle for the diff canvas", () => {
     const { container, cleanup } = renderView();
 

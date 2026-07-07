@@ -169,6 +169,27 @@ describe("diffSchemas", () => {
     expect(lines.filter((line) => line.kind === "added")).toHaveLength(1);
   });
 
+  it("carries the folded lines so the view can expand a collapse in place", () => {
+    const stable = Array.from({ length: 12 }, (_, i) => `  line${i}`);
+    const before = ["model A {", ...stable, "}"].join("\n");
+    const after = ["model A {", ...stable, "  extra Int", "}"].join("\n");
+
+    const lines = diffSchemas(before, after);
+    const collapsed = lines.find((line) => line.kind === "collapsed");
+    const visibleContext = lines
+      .filter((line) => line.kind === "context")
+      .map((line) => line.text);
+
+    expect(collapsed?.hiddenLines).toHaveLength(collapsed?.hiddenCount ?? -1);
+    // The fold leads (first hunk keeps no leading context), so folded +
+    // visible context reassemble the full unchanged text, in order.
+    expect([...(collapsed?.hiddenLines ?? []), ...visibleContext]).toEqual([
+      "model A {",
+      ...stable,
+      "}",
+    ]);
+  });
+
   it("reports no changes for identical schemas", () => {
     const schema = "model User {\n  id String @id\n}";
 
