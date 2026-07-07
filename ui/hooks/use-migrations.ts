@@ -8,16 +8,18 @@ const LEDGER_QUERY = `
     l."id", l."space", l."migration_name", l."migration_hash",
     l."origin_core_hash", l."destination_core_hash",
     l."operations", l."created_at",
-    c."contract_json"
+    cb."contract_json" as "contract_json_before",
+    ca."contract_json" as "contract_json_after"
   from "prisma_contract"."ledger" l
-  left join "prisma_contract"."contract" c on c."ledger_id" = l."id"
+  left join "prisma_contract"."contract" cb on cb."core_hash" = l."origin_core_hash"
+  left join "prisma_contract"."contract" ca on ca."core_hash" = l."destination_core_hash"
   order by l."id" asc
 `;
 
 /**
- * Fallback for databases bootstrapped before the 1:1
- * `prisma_contract.contract` snapshot table existed — the ledger alone
- * still renders the list; diffs are empty without snapshots.
+ * Fallback for databases bootstrapped before the content-addressed
+ * `prisma_contract.contract` store existed — the ledger alone still
+ * renders the list; diffs are empty without snapshots.
  */
 const LEDGER_QUERY_WITHOUT_CONTRACT = `
   select
@@ -180,8 +182,8 @@ export function parseLedgerRows(
           : "",
       appliedAt: parseAppliedAt(row.created_at),
       operations,
-      contractBefore: null,
-      contractAfter: parseJsonish(row.contract_json) ?? null,
+      contractBefore: parseJsonish(row.contract_json_before) ?? null,
+      contractAfter: parseJsonish(row.contract_json_after) ?? null,
       isDestructive: operations.some(
         (operation) => operation.operationClass === "destructive",
       ),
@@ -190,38 +192,13 @@ export function parseLedgerRows(
 
   migrations.sort((left, right) => left.id - right.id);
 
-  // Only the after-state is stored (1:1 `prisma_contract.contract` row);
-  // each migration's before-state is its predecessor's after-state within
-  // the same contract space. The hash guard (this edge's origin must equal
-  // the predecessor's destination) keeps the derivation exact — when the
-  // chain is broken (out-of-band drift, missing rows), before stays null
-  // rather than showing a wrong baseline.
-  const lastBySpace = new Map<string, { hash: string; contract: unknown }>();
-
-  for (const migration of migrations) {
-    const previous = lastBySpace.get(migration.space);
-
-    if (
-      migration.fromHash !== null &&
-      previous != null &&
-      previous.hash === migration.fromHash
-    ) {
-      migration.contractBefore = previous.contract;
-    }
-
-    lastBySpace.set(migration.space, {
-      hash: migration.toHash,
-      contract: migration.contractAfter,
-    });
-  }
-
   return migrations;
 }
 
 /**
  * Detects whether the connected database carries a Prisma Next
- * migration ledger (`prisma_contract.ledger`) and its 1:1 snapshot
- * companion (`prisma_contract.contract`). Purely derived from
+ * migration ledger (`prisma_contract.ledger`) and its hash-keyed
+ * contract store (`prisma_contract.contract`). Purely derived from
  * introspection data — no extra query.
  */
 export function useMigrationsDetection(): {

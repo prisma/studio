@@ -25,17 +25,17 @@ This architecture governs:
 
 ## Data Source
 
-Prisma Next records one row per applied migration in `prisma_contract.ledger`, and the migration's destination contract IR in the 1:1 companion table `prisma_contract.contract` (`ledger_id` PK/FK → `ledger.id`; see the Migration System subsystem doc in the prisma-next repository). The columns Studio consumes:
+Prisma Next records one row per applied migration in `prisma_contract.ledger`, and each distinct contract IR once in the content-addressed store `prisma_contract.contract` (`core_hash` PK — a contract's storage hash is its identity; see the Migration System subsystem doc in the prisma-next repository). The columns Studio consumes:
 
 - `ledger.id` — apply order (bigserial)
 - `ledger.space` — contract space (`app` for the application schema)
 - `ledger.migration_name`, `ledger.migration_hash` — identity; the name is empty for synthesised `db init`/`db update` applies
-- `ledger.origin_core_hash`, `ledger.destination_core_hash` — the contract-graph edge
+- `ledger.origin_core_hash`, `ledger.destination_core_hash` — the contract-graph edge; both are contract identifiers that resolve into the store by hash equality
 - `ledger.operations` — the executed operation envelopes, including per-step SQL and `operationClass`
 - `ledger.created_at` — apply time
-- `contract.contract_json` — full contract IR of the migration's destination state (LEFT JOIN; null when the edge carried no snapshot)
+- `contract.contract_json` — full contract IR, LEFT JOINed twice (once per edge endpoint); null when no contract is stored under that hash
 
-Only the after-state is stored; a migration's before-state is derived from its predecessor (see Snapshot Chain Derivation). Rows are read through the standard `Adapter.raw` surface, so every executor (direct TCP, BFF, PGlite) works unchanged. Databases bootstrapped before the `contract` table existed are queried without the join (detection below) — the list still renders, with empty diffs.
+Both endpoint snapshots come straight from the joins — a baseline origin (no stored contract) yields a null before-state and diffs against the empty contract; an unresolved origin hash (out-of-band drift, snapshot-less predecessor) yields null rather than a wrong baseline. No client-side chain reconstruction exists. Rows are read through the standard `Adapter.raw` surface, so every executor (direct TCP, BFF, PGlite) works unchanged. Databases bootstrapped before the `contract` table existed are queried without the joins (detection below) — the list still renders, with empty diffs.
 
 ## Detection
 
@@ -45,9 +45,9 @@ Only the after-state is stored; a migration's before-state is derived from its p
 
 When the ledger has rows but none of them joins to a contract snapshot (the `contract` table is missing or empty — a database written by a prisma-next predating the 1:1 table), there is nothing to diff: the view keeps the migration list and the SQL panel (both are pure ledger data), hides the All models toggle and Schema button, and replaces the canvas with an upgrade notice pointing at the latest Prisma Next. A single non-null snapshot anywhere renders the normal canvas with whatever data exists.
 
-## Snapshot Chain Derivation
+## Snapshot Coverage
 
-Each migration's `contractBefore` is derived per contract space from the predecessor row's `contract_json`, guarded by hash continuity: the edge's `origin_core_hash` must equal the predecessor's `destination_core_hash` (the runner's marker CAS enforces this for graph-walk applies). When the guard fails (out-of-band drift around a synthesised apply, missing rows) or the predecessor carries no snapshot, `contractBefore` stays null — an unknown baseline renders as an empty before-state rather than a wrong one. A baseline migration (null `origin_core_hash`) keeps a null before-snapshot and diffs against the empty contract.
+Prisma Next writes only each apply's destination contract into the store, yet both endpoints of every edge resolve: every non-baseline origin hash was some predecessor apply's destination hash, so its contract is already stored, and content addressing means a contract revisited by a rollback cycle exists exactly once. The hash join is the correctness guard — there is nothing for Studio to verify or reconstruct client-side.
 
 ## Diff Engine
 
@@ -81,4 +81,4 @@ Two mutually exclusive collapsible panels sit under the canvas in a shared conta
 
 ## Demo Seeding
 
-`seed-migrations.ts` replays a fixture captured from the prisma-next `migrations-showcase` example (`demo/ppg-dev/fixtures/prisma-contract-migrations.json`): it recreates the `prisma_contract` schema (marker, ledger, and the 1:1 contract table), restores the marker and ledger rows plus one contract row per snapshot-carrying migration (ledger insert `RETURNING id`, after-state only — the fixture's `contract_json_before` values are intentionally not stored), and re-executes every operation's SQL in ledger order so the live schema matches the migration history exactly. A legacy demo volume seeded with the old two-column ledger is upgraded in place (snapshots moved into the contract table, bookend columns dropped). A few showcase rows are inserted so the resulting tables are browsable.
+`seed-migrations.ts` replays a fixture captured from the prisma-next `migrations-showcase` example (`demo/ppg-dev/fixtures/prisma-contract-migrations.json`): it recreates the `prisma_contract` schema (marker, ledger, and the hash-keyed contract store), upserts each migration's after-state under its destination hash (`ON CONFLICT DO NOTHING` — the fixture's `contract_json_before` values are intentionally not written; origins resolve as predecessors' destinations), restores the marker and ledger rows, and re-executes every operation's SQL in ledger order so the live schema matches the migration history exactly. Legacy demo volumes are upgraded in place: a `ledger_id`-keyed contract table is re-keyed by destination hash, and a two-column ledger has its after-states moved into the store and the bookend columns dropped. A few showcase rows are inserted so the resulting tables are browsable.
