@@ -25,25 +25,25 @@ This architecture governs:
 
 ## Data Source
 
-Prisma Next records one row per applied migration in `prisma_contract.ledger` (see the Migration System subsystem doc in the prisma-next repository). The columns Studio consumes:
+Prisma Next records one row per applied migration in `prisma_contract.ledger`, and the migration's destination contract IR in the 1:1 companion table `prisma_contract.contract` (`ledger_id` PK/FK → `ledger.id`; see the Migration System subsystem doc in the prisma-next repository). The columns Studio consumes:
 
-- `id` — apply order (bigserial)
-- `space` — contract space (`app` for the application schema)
-- `migration_name`, `migration_hash` — identity; the name is empty for synthesised `db init`/`db update` applies
-- `origin_core_hash`, `destination_core_hash` — the contract-graph edge
-- `contract_json_before`, `contract_json_after` — full contract IR snapshots bracketing the migration
-- `operations` — the executed operation envelopes, including per-step SQL and `operationClass`
-- `created_at` — apply time
+- `ledger.id` — apply order (bigserial)
+- `ledger.space` — contract space (`app` for the application schema)
+- `ledger.migration_name`, `ledger.migration_hash` — identity; the name is empty for synthesised `db init`/`db update` applies
+- `ledger.origin_core_hash`, `ledger.destination_core_hash` — the contract-graph edge
+- `ledger.operations` — the executed operation envelopes, including per-step SQL and `operationClass`
+- `ledger.created_at` — apply time
+- `contract.contract_json` — full contract IR of the migration's destination state (LEFT JOIN; null when the edge carried no snapshot)
 
-Rows are read through the standard `Adapter.raw` surface, so every executor (direct TCP, BFF, PGlite) works unchanged.
+Only the after-state is stored; a migration's before-state is derived from its predecessor (see Snapshot Chain Derivation). Rows are read through the standard `Adapter.raw` surface, so every executor (direct TCP, BFF, PGlite) works unchanged. Databases bootstrapped before the `contract` table existed are queried without the join (detection below) — the list still renders, with empty diffs.
 
 ## Detection
 
-`useMigrationsDetection` derives ledger presence purely from introspection data (`introspection.schemas["prisma_contract"].tables["ledger"]`); no extra probe query runs. The Migrations navigation item renders only when the ledger table exists. Stale `view=migrations` URLs against a database without a ledger show the view's empty state rather than breaking navigation.
+`useMigrationsDetection` derives ledger and contract-table presence purely from introspection data (`introspection.schemas["prisma_contract"].tables["ledger"|"contract"]`); no extra probe query runs. The Migrations navigation item renders only when the ledger table exists; the contract-table flag picks the joined or join-less ledger query. Stale `view=migrations` URLs against a database without a ledger show the view's empty state rather than breaking navigation.
 
-## Snapshot Chain Repair
+## Snapshot Chain Derivation
 
-`contract_json_before` MAY be null (synthesised applies, or rows written before snapshots existed). `parseLedgerRows` repairs the chain per contract space: a missing before-snapshot is filled from the predecessor row's after-snapshot, which is exact because each edge's origin hash is its predecessor's destination hash. A baseline migration (null `origin_core_hash`) keeps a null before-snapshot and diffs against the empty contract.
+Each migration's `contractBefore` is derived per contract space from the predecessor row's `contract_json`, guarded by hash continuity: the edge's `origin_core_hash` must equal the predecessor's `destination_core_hash` (the runner's marker CAS enforces this for graph-walk applies). When the guard fails (out-of-band drift around a synthesised apply, missing rows) or the predecessor carries no snapshot, `contractBefore` stays null — an unknown baseline renders as an empty before-state rather than a wrong one. A baseline migration (null `origin_core_hash`) keeps a null before-snapshot and diffs against the empty contract.
 
 ## Diff Engine
 
@@ -77,4 +77,4 @@ Two mutually exclusive collapsible panels sit under the canvas in a shared conta
 
 ## Demo Seeding
 
-`seed-migrations.ts` replays a fixture captured from the prisma-next `migrations-showcase` example (`demo/ppg-dev/fixtures/prisma-contract-migrations.json`): it recreates the `prisma_contract` schema, restores the marker and ledger rows (including contract snapshots), and re-executes every operation's SQL in ledger order so the live schema matches the migration history exactly. A few showcase rows are inserted so the resulting tables are browsable.
+`seed-migrations.ts` replays a fixture captured from the prisma-next `migrations-showcase` example (`demo/ppg-dev/fixtures/prisma-contract-migrations.json`): it recreates the `prisma_contract` schema (marker, ledger, and the 1:1 contract table), restores the marker and ledger rows plus one contract row per snapshot-carrying migration (ledger insert `RETURNING id`, after-state only — the fixture's `contract_json_before` values are intentionally not stored), and re-executes every operation's SQL in ledger order so the live schema matches the migration history exactly. A legacy demo volume seeded with the old two-column ledger is upgraded in place (snapshots moved into the contract table, bookend columns dropped). A few showcase rows are inserted so the resulting tables are browsable.

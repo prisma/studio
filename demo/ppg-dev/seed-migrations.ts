@@ -7,13 +7,15 @@ import fixtureJson from "./fixtures/prisma-contract-migrations.json";
  * migrations-showcase example (see prisma-next repo,
  * examples/migrations-showcase) into the demo database:
  *
- * - restores `prisma_contract.marker` / `prisma_contract.ledger`
- *   (including per-migration contract snapshots), and
+ * - restores `prisma_contract.marker` / `prisma_contract.ledger` plus the
+ *   1:1 `prisma_contract.contract` snapshot rows (each ledger row's
+ *   destination contract IR, keyed by ledger id), and
  * - re-executes every migration operation's SQL in ledger order so the
  *   live schema matches the migration history exactly.
  *
  * Studio's Migrations view detects the ledger table and renders the
- * visual diff per migration from the stored contract snapshots.
+ * visual diff per migration by joining the contract snapshots and
+ * deriving each edge's before-state from its predecessor.
  */
 
 interface FixtureMarkerRow {
@@ -96,11 +98,19 @@ export async function seedPrismaNextMigrations(
       origin_profile_hash text,
       destination_core_hash text not null,
       destination_profile_hash text,
-      contract_json_before jsonb,
-      contract_json_after jsonb,
       operations jsonb not null
     )
   `);
+  await sql.unsafe(`
+    create table if not exists prisma_contract.contract (
+      ledger_id int8 not null primary key,
+      created_at timestamptz not null default now(),
+      contract_json jsonb not null,
+      foreign key (ledger_id) references prisma_contract.ledger (id) on delete cascade
+    )
+  `);
+
+  await upgradeLegacyLedger(sql);
 
   const [{ count }] = (await sql.unsafe(
     `select count(*)::int as count from prisma_contract.ledger`,
@@ -117,20 +127,31 @@ export async function seedPrismaNextMigrations(
       }
     }
 
-    await sql`
+    const [inserted] = await sql`
       insert into prisma_contract.ledger (
         created_at, space, migration_name, migration_hash,
-        origin_core_hash, destination_core_hash,
-        contract_json_before, contract_json_after, operations
+        origin_core_hash, destination_core_hash, operations
       ) values (
         ${row.created_at}, ${row.space}, ${row.migration_name},
         ${row.migration_hash}, ${row.origin_core_hash},
         ${row.destination_core_hash},
-        ${row.contract_json_before === null ? null : sql.json(row.contract_json_before as never)},
-        ${row.contract_json_after === null ? null : sql.json(row.contract_json_after as never)},
         ${sql.json(row.operations as never)}
       )
+      returning id
     `;
+
+    // The fixture predates the 1:1 snapshot table and carries both
+    // bookends per row; only the after-state is stored — the before-state
+    // is the predecessor's snapshot by chain construction.
+    if (row.contract_json_after !== null && inserted?.id != null) {
+      await sql`
+        insert into prisma_contract.contract (ledger_id, created_at, contract_json)
+        values (
+          ${inserted.id as number}, ${row.created_at},
+          ${sql.json(row.contract_json_after as never)}
+        )
+      `;
+    }
   }
 
   for (const row of fixture.marker) {
@@ -149,6 +170,40 @@ export async function seedPrismaNextMigrations(
   }
 
   await seedShowcaseRows(sql);
+}
+
+/**
+ * Upgrades a demo database seeded before the 1:1 snapshot table existed:
+ * moves each ledger row's `contract_json_after` into
+ * `prisma_contract.contract` and drops the legacy bookend columns, so a
+ * persistent demo volume converges on the current control-table shape.
+ */
+async function upgradeLegacyLedger(sql: postgres.Sql): Promise<void> {
+  const legacyColumns = (await sql.unsafe(`
+    select 1
+    from information_schema.columns
+    where table_schema = 'prisma_contract'
+      and table_name = 'ledger'
+      and column_name = 'contract_json_after'
+  `)) as unknown as unknown[];
+
+  if (legacyColumns.length === 0) {
+    return;
+  }
+
+  await sql.unsafe(`
+    insert into prisma_contract.contract (ledger_id, created_at, contract_json)
+    select id, created_at, contract_json_after
+    from prisma_contract.ledger
+    where contract_json_after is not null
+    on conflict (ledger_id) do nothing
+  `);
+  await sql.unsafe(
+    `alter table prisma_contract.ledger drop column if exists contract_json_before`,
+  );
+  await sql.unsafe(
+    `alter table prisma_contract.ledger drop column if exists contract_json_after`,
+  );
 }
 
 /**

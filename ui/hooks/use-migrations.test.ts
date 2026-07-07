@@ -12,8 +12,7 @@ function ledgerRow(
     migration_hash: "sha256:mig",
     origin_core_hash: null,
     destination_core_hash: "sha256:c1",
-    contract_json_before: null,
-    contract_json_after: { marker: "after" },
+    contract_json: { marker: "after" },
     operations: [],
     created_at: "2026-07-02T22:36:00.000Z",
     ...overrides,
@@ -42,7 +41,7 @@ describe("parseLedgerRows", () => {
   it("parses jsonb columns that arrive as strings", () => {
     const migrations = parseLedgerRows([
       ledgerRow({
-        contract_json_after: JSON.stringify({ marker: "after" }),
+        contract_json: JSON.stringify({ marker: "after" }),
         operations: JSON.stringify([
           {
             id: "op",
@@ -77,18 +76,72 @@ describe("parseLedgerRows", () => {
     expect(migrations[0]?.isDestructive).toBe(true);
   });
 
-  it("fills a missing before-snapshot from the predecessor's after-snapshot", () => {
+  it("derives each before-snapshot from the predecessor's after-snapshot", () => {
     const migrations = parseLedgerRows([
-      ledgerRow({ id: 1, contract_json_after: { state: "c1" } }),
+      ledgerRow({ id: 1, contract_json: { state: "c1" } }),
       ledgerRow({
         id: 2,
         origin_core_hash: "sha256:c1",
-        contract_json_before: null,
-        contract_json_after: { state: "c2" },
+        destination_core_hash: "sha256:c2",
+        contract_json: { state: "c2" },
       }),
     ]);
 
+    expect(migrations[0]?.contractBefore).toBeNull();
     expect(migrations[1]?.contractBefore).toEqual({ state: "c1" });
+    expect(migrations[1]?.contractAfter).toEqual({ state: "c2" });
+  });
+
+  it("leaves before empty when the hash chain is broken", () => {
+    // Row 2's origin doesn't match row 1's destination (out-of-band
+    // drift) — showing row 1's contract as the baseline would be wrong.
+    const migrations = parseLedgerRows([
+      ledgerRow({ id: 1, contract_json: { state: "c1" } }),
+      ledgerRow({
+        id: 2,
+        origin_core_hash: "sha256:not-c1",
+        destination_core_hash: "sha256:c2",
+        contract_json: { state: "c2" },
+      }),
+    ]);
+
+    expect(migrations[1]?.contractBefore).toBeNull();
+  });
+
+  it("chains per contract space, not across spaces", () => {
+    const migrations = parseLedgerRows([
+      ledgerRow({ id: 1, space: "app", contract_json: { state: "app-c1" } }),
+      ledgerRow({
+        id: 2,
+        space: "ext",
+        destination_core_hash: "sha256:ext-c1",
+        contract_json: { state: "ext-c1" },
+      }),
+      ledgerRow({
+        id: 3,
+        space: "app",
+        origin_core_hash: "sha256:c1",
+        destination_core_hash: "sha256:c2",
+        contract_json: { state: "app-c2" },
+      }),
+    ]);
+
+    expect(migrations[2]?.contractBefore).toEqual({ state: "app-c1" });
+    expect(migrations[1]?.contractBefore).toBeNull();
+  });
+
+  it("treats a snapshot-less predecessor as an unknown before-state", () => {
+    const migrations = parseLedgerRows([
+      ledgerRow({ id: 1, contract_json: null }),
+      ledgerRow({
+        id: 2,
+        origin_core_hash: "sha256:c1",
+        destination_core_hash: "sha256:c2",
+        contract_json: { state: "c2" },
+      }),
+    ]);
+
+    expect(migrations[1]?.contractBefore).toBeNull();
   });
 
   it("leaves a baseline migration's before-snapshot empty", () => {
