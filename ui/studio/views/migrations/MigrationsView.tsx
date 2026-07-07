@@ -792,6 +792,15 @@ export function MigrationsView(_props: ViewProps) {
     [selectedMigration],
   );
 
+  // Ledger rows without a single contract snapshot mean the database was
+  // written by a prisma-next predating the 1:1 contract table (or the
+  // table was never populated) — there is nothing to diff, so the canvas
+  // yields to an upgrade notice. Any one non-null snapshot renders
+  // normally with whatever data exists.
+  const contractDataMissing =
+    migrations.length > 0 &&
+    migrations.every((migration) => migration.contractAfter == null);
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
       <StudioHeader>
@@ -888,23 +897,25 @@ export function MigrationsView(_props: ViewProps) {
                     ))}
                   </div>
                   <div className="ml-auto flex items-center gap-3">
-                    <div className="flex items-center gap-1.5">
-                      <Switch
-                        aria-label="Show all models"
-                        checked={showAllModels}
-                        data-testid="migration-show-all-models"
-                        id="migration-show-all-models-switch"
-                        onCheckedChange={(checked) =>
-                          setShowAllModels(checked === true)
-                        }
-                      />
-                      <label
-                        className="cursor-pointer text-[11px] font-medium text-muted-foreground"
-                        htmlFor="migration-show-all-models-switch"
-                      >
-                        All models
-                      </label>
-                    </div>
+                    {!contractDataMissing && (
+                      <div className="flex items-center gap-1.5">
+                        <Switch
+                          aria-label="Show all models"
+                          checked={showAllModels}
+                          data-testid="migration-show-all-models"
+                          id="migration-show-all-models-switch"
+                          onCheckedChange={(checked) =>
+                            setShowAllModels(checked === true)
+                          }
+                        />
+                        <label
+                          className="cursor-pointer text-[11px] font-medium text-muted-foreground"
+                          htmlFor="migration-show-all-models-switch"
+                        >
+                          All models
+                        </label>
+                      </div>
+                    )}
                     <div className="flex items-center gap-1">
                       <Button
                         className="h-7 shadow-none"
@@ -924,35 +935,47 @@ export function MigrationsView(_props: ViewProps) {
                         <Terminal data-icon="inline-start" />
                         SQL
                       </Button>
-                      <Button
-                        className="h-7 shadow-none"
-                        data-active={detailsPanel === "schema"}
-                        data-testid="migration-panel-schema"
-                        onClick={() =>
-                          setDetailsPanel((panel) =>
-                            panel === "schema" ? null : "schema",
-                          )
-                        }
-                        size="xs"
-                        type="button"
-                        variant={
-                          detailsPanel === "schema" ? "secondary" : "outline"
-                        }
-                      >
-                        <FileDiff data-icon="inline-start" />
-                        Schema
-                      </Button>
+                      {!contractDataMissing && (
+                        <Button
+                          className="h-7 shadow-none"
+                          data-active={detailsPanel === "schema"}
+                          data-testid="migration-panel-schema"
+                          onClick={() =>
+                            setDetailsPanel((panel) =>
+                              panel === "schema" ? null : "schema",
+                            )
+                          }
+                          size="xs"
+                          type="button"
+                          variant={
+                            detailsPanel === "schema" ? "secondary" : "outline"
+                          }
+                        >
+                          <FileDiff data-icon="inline-start" />
+                          Schema
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
 
                 <div className="relative min-h-0 flex-1">
-                  <div className="absolute inset-0">
-                    <MigrationDiffCanvas
-                      migration={selectedMigration}
-                      showAllModels={showAllModels}
-                    />
-                  </div>
+                  {contractDataMissing ? (
+                    <div
+                      className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground"
+                      data-testid="migration-contract-upgrade-notice"
+                    >
+                      Please update to the latest version of Prisma Next to view
+                      migrations in Studio
+                    </div>
+                  ) : (
+                    <div className="absolute inset-0">
+                      <MigrationDiffCanvas
+                        migration={selectedMigration}
+                        showAllModels={showAllModels}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {detailsPanel !== null && (

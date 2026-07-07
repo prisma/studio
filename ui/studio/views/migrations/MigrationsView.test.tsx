@@ -317,6 +317,41 @@ describe("MigrationsView", () => {
     cleanup();
   });
 
+  it("shows an upgrade notice instead of the canvas when no row carries a contract", () => {
+    useMigrationsMock.mockReturnValue({
+      hasPrismaNextMigrations: true,
+      isLoading: false,
+      isError: false,
+      migrations: [
+        migration({ id: 2, contractBefore: null, contractAfter: null }),
+        migration({ id: 1, contractBefore: null, contractAfter: null }),
+      ],
+    });
+
+    const { container, cleanup } = renderView();
+
+    const notice = container.querySelector(
+      '[data-testid="migration-contract-upgrade-notice"]',
+    );
+
+    expect(notice?.textContent).toContain(
+      "update to the latest version of Prisma Next",
+    );
+    expect(container.querySelector('[data-testid="diff-canvas"]')).toBeNull();
+    // Diff-dependent controls hide; the SQL panel still works off ledger data.
+    expect(
+      container.querySelector('[data-testid="migration-show-all-models"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-testid="migration-panel-schema"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-testid="migration-panel-sql"]'),
+    ).not.toBeNull();
+
+    cleanup();
+  });
+
   it("renders an all-models toggle for the diff canvas", () => {
     const { container, cleanup } = renderView();
 

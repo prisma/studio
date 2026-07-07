@@ -10,6 +10,7 @@ type QueryKey =
   | [] // all
   | ["introspection"]
   | ["prisma-next-migrations", "contract-table", boolean]
+  | ["prisma-next-migrations-probe"]
   | ["stream-details", string]
   | ["stream-routing-keys", string, "stream", string, "prefix", string]
   | ["streams-server-details", string]

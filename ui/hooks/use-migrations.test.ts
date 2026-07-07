@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseLedgerRows } from "./use-migrations";
+import { parseLedgerProbeRows, parseLedgerRows } from "./use-migrations";
 
 function ledgerRow(
   overrides: Record<string, unknown>,
@@ -155,5 +155,21 @@ describe("parseLedgerRows", () => {
     const migrations = parseLedgerRows([ledgerRow({}), { id: "not-a-number" }]);
 
     expect(migrations).toHaveLength(1);
+  });
+});
+
+describe("parseLedgerProbeRows", () => {
+  it("accepts driver-flavored truthy values", () => {
+    expect(parseLedgerProbeRows([{ has_rows: true }])).toBe(true);
+    expect(parseLedgerProbeRows([{ has_rows: "t" }])).toBe(true);
+    expect(parseLedgerProbeRows([{ has_rows: "true" }])).toBe(true);
+    expect(parseLedgerProbeRows([{ has_rows: 1 }])).toBe(true);
+  });
+
+  it("treats false, missing, and malformed results as no history", () => {
+    expect(parseLedgerProbeRows([{ has_rows: false }])).toBe(false);
+    expect(parseLedgerProbeRows([{ has_rows: "f" }])).toBe(false);
+    expect(parseLedgerProbeRows([{}])).toBe(false);
+    expect(parseLedgerProbeRows([])).toBe(false);
   });
 });

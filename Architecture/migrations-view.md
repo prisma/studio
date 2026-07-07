@@ -39,7 +39,11 @@ Only the after-state is stored; a migration's before-state is derived from its p
 
 ## Detection
 
-`useMigrationsDetection` derives ledger and contract-table presence purely from introspection data (`introspection.schemas["prisma_contract"].tables["ledger"|"contract"]`); no extra probe query runs. The Migrations navigation item renders only when the ledger table exists; the contract-table flag picks the joined or join-less ledger query. Stale `view=migrations` URLs against a database without a ledger show the view's empty state rather than breaking navigation.
+`useMigrationsDetection` derives ledger and contract-table presence purely from introspection data (`introspection.schemas["prisma_contract"].tables["ledger"|"contract"]`); the contract-table flag picks the joined or join-less ledger query. The Migrations navigation item is gated by `useHasMigrationHistory`, which additionally runs a one-row `EXISTS` probe (not a full ledger fetch — snapshots can be megabytes of jsonb): a missing `prisma_contract` schema, a missing ledger table, or an empty ledger all hide the item. Stale `view=migrations` URLs against such a database show the view's empty state rather than breaking navigation.
+
+## Missing Contract Data
+
+When the ledger has rows but none of them joins to a contract snapshot (the `contract` table is missing or empty — a database written by a prisma-next predating the 1:1 table), there is nothing to diff: the view keeps the migration list and the SQL panel (both are pure ledger data), hides the All models toggle and Schema button, and replaces the canvas with an upgrade notice pointing at the latest Prisma Next. A single non-null snapshot anywhere renders the normal canvas with whatever data exists.
 
 ## Snapshot Chain Derivation
 

@@ -28,6 +28,14 @@ const LEDGER_QUERY_WITHOUT_CONTRACT = `
   order by "id" asc
 `;
 
+/**
+ * Cheap navigation-visibility probe: one EXISTS instead of fetching the
+ * full ledger (whose contract snapshots can be megabytes of jsonb).
+ */
+const LEDGER_PROBE_QUERY = `
+  select exists (select 1 from "prisma_contract"."ledger") as "has_rows"
+`;
+
 export interface StudioMigrationOperationStep {
   sql: string;
 }
@@ -227,6 +235,48 @@ export function useMigrationsDetection(): {
     hasPrismaNextMigrations: contractSchema?.tables["ledger"] != null,
     hasContractTable: contractSchema?.tables["contract"] != null,
   };
+}
+
+export function parseLedgerProbeRows(rows: Record<string, unknown>[]): boolean {
+  const value = rows[0]?.has_rows;
+
+  return value === true || value === "t" || value === "true" || value === 1;
+}
+
+/**
+ * True when the connected database has a Prisma Next migration ledger
+ * with at least one row. Drives the Migrations navigation item: a
+ * database without the `prisma_contract` schema, without the ledger
+ * table, or with an empty ledger shows no menu entry. Resolves to
+ * `false` while the probe is in flight, so the item appears only once
+ * history is confirmed.
+ */
+export function useHasMigrationHistory(): boolean {
+  const { adapter } = useStudio();
+  const { hasPrismaNextMigrations } = useMigrationsDetection();
+
+  const query = useQuery({
+    enabled: hasPrismaNextMigrations,
+    queryKey: ["prisma-next-migrations-probe"],
+    queryFn: async ({ signal }) => {
+      const [error, result] = await adapter.raw(
+        { sql: LEDGER_PROBE_QUERY },
+        { abortSignal: signal },
+      );
+
+      if (error) {
+        throw error;
+      }
+
+      return parseLedgerProbeRows(result.rows);
+    },
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
+    retry: false,
+    staleTime: 30_000,
+  });
+
+  return hasPrismaNextMigrations && query.data === true;
 }
 
 /**

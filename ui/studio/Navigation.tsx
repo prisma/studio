@@ -14,7 +14,7 @@ import {
 } from "../components/ui/select";
 import { Skeleton } from "../components/ui/skeleton";
 import { useIntrospection } from "../hooks/use-introspection";
-import { useMigrationsDetection } from "../hooks/use-migrations";
+import { useHasMigrationHistory } from "../hooks/use-migrations";
 import { useNavigation } from "../hooks/use-navigation";
 import { useNavigationTableList } from "../hooks/use-navigation-table-list";
 import { useStreams } from "../hooks/use-streams";
@@ -52,7 +52,7 @@ export function Navigation({ className }: NavigationProps) {
   const { isFetching, activeTable } = metadata;
   const { errorState, hasResolvedIntrospection, isRefetching, refetch } =
     useIntrospection();
-  const { hasPrismaNextMigrations } = useMigrationsDetection();
+  const hasMigrationHistory = useHasMigrationHistory();
   const [tableSearchUiState, setTableSearchUiState] =
     useUiState<TableSearchUiState>(TABLE_SEARCH_UI_STATE_KEY, {
       isOpen: false,
@@ -577,7 +577,7 @@ export function Navigation({ className }: NavigationProps) {
                 SQL
               </a>
             </Navigation.Item>
-            {hasPrismaNextMigrations && (
+            {hasMigrationHistory && (
               <Navigation.Item
                 asChild
                 isActive={viewParam === "migrations"}
