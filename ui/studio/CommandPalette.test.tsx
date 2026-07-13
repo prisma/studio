@@ -54,6 +54,10 @@ vi.mock("../hooks/use-navigation", () => ({
   useNavigation: () => useNavigationMock(),
 }));
 
+vi.mock("../hooks/use-migrations", () => ({
+  useHasMigrationHistory: () => false,
+}));
+
 vi.mock("../hooks/use-introspection", () => ({
   useIntrospection: () => useIntrospectionMock(),
 }));

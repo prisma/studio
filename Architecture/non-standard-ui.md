@@ -186,6 +186,19 @@ It deliberately excludes:
 
 These are the current high-signal places where Studio is bypassing a plausible standard ShadCN component or composition pattern.
 
+### Migration Diff Canvas Cards
+
+- Canonical components:
+  - [`ui/studio/views/migrations/MigrationsView.tsx`](ui/studio/views/migrations/MigrationsView.tsx)
+  - [`ui/studio/views/migrations/diff-layout.ts`](ui/studio/views/migrations/diff-layout.ts)
+- Closest standard ShadCN alternative:
+  - `Card` with `Badge`
+- Why it stays non-standard:
+  - The Migrations view renders model/enum diff cards as React Flow custom nodes on a pan/zoom canvas with ELK layout; ShadCN `Card` cannot express canvas nodes with connection handles, status-driven color systems, or per-field diff glyph rows.
+  - The FigJam-inspired treatment (status-colored sticky-note cards, tape accents, deterministic tilt, before → after change pills) is a deliberate product decision for this view so schema changes read as an approachable visual story rather than a table.
+- Required internals:
+  - `Badge`, `Button`, `Skeleton` for the surrounding chrome; the timeline list items are custom buttons because they combine an index chip, name, timestamp, and diff-stat chips in one selectable row, which `Button` alone does not model.
+
 ### Introspection Status Notice
 
 - Files:

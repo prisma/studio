@@ -273,3 +273,26 @@
 [data-radix-popper-content-wrapper] {
   z-index: 950 !important;
 }
+
+/* Migrations view: morph shared diff nodes between selections instead of
+   tearing the canvas down. Node ids are stable (`model:<name>`), so a
+   transform transition glides each surviving card to its new layout
+   position while the camera fitView animates alongside. */
+.migrations-diff-canvas .react-flow__node {
+  transition: transform 500ms cubic-bezier(0.33, 1, 0.68, 1);
+  animation: migrations-node-enter 300ms ease-out;
+}
+
+.migrations-diff-canvas .react-flow__node.dragging {
+  transition: none;
+}
+
+.migrations-diff-canvas .react-flow__edge {
+  animation: migrations-node-enter 400ms ease-out;
+}
+
+@keyframes migrations-node-enter {
+  from {
+    opacity: 0;
+  }
+}

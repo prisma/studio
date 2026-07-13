@@ -5,9 +5,9 @@ import { appendFileSync } from "node:fs";
 import { promisify } from "node:util";
 
 import {
-  PREVIEW_PROJECT_NAME,
   findNamedProject,
   findNamedService,
+  PREVIEW_PROJECT_NAME,
   sanitizeComputeServiceName,
 } from "./compute-preview-utils.mjs";
 
@@ -41,19 +41,40 @@ async function main() {
     service.id,
   ]);
 
+  // Newer Compute CLI payloads surface the endpoint as `appEndpointDomain`
+  // (on both the deploy result and `services show`) instead of the older
+  // `serviceEndpointDomain`; fall back through the known shapes so the PR
+  // comment step always receives a URL.
+  const serviceUrl =
+    deployResult.serviceEndpointDomain ??
+    deployResult.appEndpointDomain ??
+    (await showService(service.id)).appEndpointDomain;
+
+  if (!serviceUrl) {
+    throw new Error(
+      `Compute deploy for service ${service.id} returned no endpoint domain ` +
+        "(checked serviceEndpointDomain, appEndpointDomain, and services show); " +
+        "cannot report a preview URL.",
+    );
+  }
+
   const result = {
     branchName,
     projectId: project.id,
     region: project.defaultRegion ?? "eu-west-3",
     serviceId: service.id,
     serviceName,
-    serviceUrl: deployResult.serviceEndpointDomain,
+    serviceUrl,
     versionId: deployResult.versionId,
     versionUrl: deployResult.versionEndpointDomain,
   };
 
   writeOutputs(result);
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+}
+
+async function showService(serviceId) {
+  return await runComputeJson(["services", "show", serviceId]);
 }
 
 async function resolveProject(projectName) {
@@ -139,7 +160,9 @@ function writeOutputs(result) {
     preview_service_url: result.serviceUrl,
     preview_version_id: result.versionId,
     preview_version_url: result.versionUrl,
-  }).map(([key, value]) => `${key}=${value}`);
+  })
+    .filter(([, value]) => value != null)
+    .map(([key, value]) => `${key}=${value}`);
 
   appendFileSync(outputPath, `${lines.join("\n")}\n`);
 }

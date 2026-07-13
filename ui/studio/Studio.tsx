@@ -14,6 +14,7 @@ import { IntrospectionStatusNotice } from "./IntrospectionStatusNotice";
 import { Navigation } from "./Navigation";
 import { StudioHeader } from "./StudioHeader";
 import { ConsoleView } from "./views/console/ConsoleView";
+import { MigrationsView } from "./views/migrations/MigrationsView";
 import { QueriesView } from "./views/queries/QueriesView";
 import { SchemaView } from "./views/schema/SchemaView";
 import { SqlView } from "./views/sql/SqlView";
@@ -116,6 +117,7 @@ const views: Record<string, (props: ViewProps) => JSX.Element | null> = {
   stream: StreamView,
   console: ConsoleView,
   sql: SqlView,
+  migrations: MigrationsView,
   default: BasicView,
 };
 

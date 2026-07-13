@@ -1,5 +1,7 @@
 import postgres from "postgres";
 
+import { seedPrismaNextMigrations } from "./seed-migrations";
+
 type OrganizationSeedRow = {
   created_at: Date;
   id: string;
@@ -611,6 +613,8 @@ export async function seedDatabase(connectionString: string): Promise<void> {
         from generate_series(1, 100) as series(i)
       `);
     });
+
+    await seedPrismaNextMigrations(sql);
   } finally {
     await sql.end({ timeout: 5 });
   }

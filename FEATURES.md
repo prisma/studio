@@ -155,6 +155,16 @@ The table and recommendation text label returned-row volume as `Rows Returned`; 
 When Studio's shared `llm` hook is available, the query table adds an Analysis column that analyzes newly observed query groups in the background, one at a time, and stops automatic work after the first five groups. Rows show a running indicator, a manual Analyze action, and a completed all-good, info, or warning icon; the detail sheet uses the same analysis queue for manual recommendations. Without that hook, the AI analysis UI is hidden.
 If an embedder does not provide query insights, Studio hides the `Queries` menu item and stale `view=queries` URLs fall back to the normal default view.
 
+## Prisma Next Migrations View
+
+When the connected database carries a Prisma Next migration ledger (`prisma_contract.ledger`) with at least one applied migration, Studio shows a `Migrations` item in the main navigation; databases without the `prisma_contract` schema, without the ledger table, or with an empty ledger never see the entry.
+The view lists every applied migration newest-first — name, apply time, operation count, a destructive-change marker, and compact `+`/`−`/`~` chips summarizing what each migration did to models, fields, enums, and indexes.
+Selecting a migration renders a visual, UML-style diff on a pan/zoom canvas built from the contract snapshots Prisma Next records alongside the ledger (a content-addressed store joined onto each migration's origin/destination hashes): added models appear as green cards, removed models red with strikethrough, changed models amber with per-field detail rows (type, nullability, and default transitions rendered as before → after), plus enum cards and relation edges; untouched neighbor models render dimmed for context, and an `All models` toggle expands the canvas to the migration's full schema, including unchanged enums.
+A model only turns amber when its own table changed (fields or indexes); gaining a back-relation whose foreign key lives in the other table keeps the model dimmed while the new relation edge is emphasized instead.
+Switching between migrations morphs the canvas rather than rebuilding it: surviving model cards glide to their new layout positions and the camera refits over ~500ms, so stepping through adjacent migrations reads as one continuous story.
+Collapsible detail panels show the executed SQL (per-operation class and exact statements) and a Prisma-schema-style diff of the migration — a unified, color-coded line diff of the before/after schema with long unchanged runs collapsed into click-to-expand folds — and the split between canvas and panel is resizable from a drag handle. The migration header floats over the canvas top edge so the diagram gets the full content height. The selected migration is tracked in the URL so views can be shared and revisited.
+When the ledger has migrations but no contract snapshots to diff (a database written by an older Prisma Next), the list and SQL panel keep working and the canvas is replaced by a notice asking to update Prisma Next.
+
 ## Data Grid Browsing
 
 Table data is shown in a grid with server-backed pagination, filtered-row counts, loading feedback, and explicit empty states.

@@ -64,6 +64,7 @@ interface StudioMockValue {
 const useNavigationMock = vi.fn<() => NavigationMockValue>();
 const useIntrospectionMock = vi.fn<() => IntrospectionMockValue>();
 const useStreamsMock = vi.fn<() => StreamsMockValue>();
+const useHasMigrationHistoryMock = vi.fn<() => boolean>(() => false);
 const useStudioMock = vi.fn<() => StudioMockValue>();
 const uiStateValues = new Map<string, unknown>();
 const setNavigationWidthMock = vi.fn<(width: number) => void>();
@@ -76,6 +77,10 @@ vi.mock("../hooks/use-navigation", () => ({
 
 vi.mock("../hooks/use-introspection", () => ({
   useIntrospection: () => useIntrospectionMock(),
+}));
+
+vi.mock("../hooks/use-migrations", () => ({
+  useHasMigrationHistory: () => useHasMigrationHistoryMock(),
 }));
 
 vi.mock("../hooks/use-streams", () => ({
@@ -260,6 +265,7 @@ function getSearchBlock(
 describe("Navigation", () => {
   beforeEach(() => {
     isDarkMode = false;
+    useHasMigrationHistoryMock.mockReturnValue(false);
     setNavigationWidthMock.mockReset();
     refetchIntrospectionMock.mockReset();
     refetchStreamsMock.mockReset();
@@ -545,6 +551,50 @@ describe("Navigation", () => {
       "#schemaParam=public&viewParam=queries",
     );
     expect(queriesLink?.getAttribute("data-active")).toBe("true");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("shows Migrations only when the ledger holds applied migrations", () => {
+    // useHasMigrationHistory resolves false for a missing prisma_contract
+    // schema, a missing ledger table, or an empty ledger — all three hide
+    // the item (mock default from beforeEach).
+    const withoutHistoryContainer = document.createElement("div");
+    document.body.appendChild(withoutHistoryContainer);
+    const withoutHistoryRoot = createRoot(withoutHistoryContainer);
+
+    act(() => {
+      withoutHistoryRoot.render(<Navigation />);
+    });
+
+    expect(withoutHistoryContainer.textContent).not.toContain("Migrations");
+
+    act(() => {
+      withoutHistoryRoot.unmount();
+    });
+    withoutHistoryContainer.remove();
+
+    useHasMigrationHistoryMock.mockReturnValue(true);
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const migrationsLink = container.querySelector(
+      '[data-testid="navigation-migrations-item"]',
+    );
+
+    expect(migrationsLink).not.toBeNull();
+    expect(migrationsLink?.getAttribute("href")).toBe(
+      "#schemaParam=public&viewParam=migrations",
+    );
 
     act(() => {
       root.unmount();
