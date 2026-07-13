@@ -5,9 +5,9 @@ import { appendFileSync } from "node:fs";
 import { promisify } from "node:util";
 
 import {
-  PREVIEW_PROJECT_NAME,
   findNamedProject,
   findNamedService,
+  PREVIEW_PROJECT_NAME,
   sanitizeComputeServiceName,
 } from "./compute-preview-utils.mjs";
 
@@ -49,6 +49,14 @@ async function main() {
     deployResult.serviceEndpointDomain ??
     deployResult.appEndpointDomain ??
     (await showService(service.id)).appEndpointDomain;
+
+  if (!serviceUrl) {
+    throw new Error(
+      `Compute deploy for service ${service.id} returned no endpoint domain ` +
+        "(checked serviceEndpointDomain, appEndpointDomain, and services show); " +
+        "cannot report a preview URL.",
+    );
+  }
 
   const result = {
     branchName,

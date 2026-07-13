@@ -158,8 +158,7 @@ export function buildDiffGraph(
   const visibleModels = showEverything
     ? diff.models
     : diff.models.filter(
-        (model) =>
-          touchedNames.has(model.name) || contextNames.has(model.name),
+        (model) => touchedNames.has(model.name) || contextNames.has(model.name),
       );
   const visibleNames = new Set(visibleModels.map((model) => model.name));
   const visibleEnums = showEverything
@@ -172,7 +171,13 @@ export function buildDiffGraph(
   ];
 
   const edges: Edge[] = [];
-  const seenEdges = new Set<string>();
+  // A relation is listed on both of its models (forward + back-relation),
+  // so per model pair only the first-encountered side draws its edges —
+  // but it draws ALL of them, keyed by relation name, so two distinct
+  // relations to the same model stay two edges. Removed relations get
+  // their own ownership so a drop still renders when only the far side
+  // remembers it.
+  const pairOwners = new Map<string, string>();
 
   for (const model of visibleModels) {
     const relationEntries = [
@@ -189,12 +194,14 @@ export function buildDiffGraph(
       }
 
       const pairKey = [model.name, relation.toModel].sort().join("↔");
+      const ownerKey = `${pairKey}|${removed ? "removed" : "live"}`;
+      const owner = pairOwners.get(ownerKey);
 
-      if (seenEdges.has(pairKey)) {
+      if (owner !== undefined && owner !== model.name) {
         continue;
       }
 
-      seenEdges.add(pairKey);
+      pairOwners.set(ownerKey, model.name);
 
       const added = model.addedRelations.some(
         (candidate) =>
@@ -203,7 +210,7 @@ export function buildDiffGraph(
       );
 
       edges.push({
-        id: `relation:${pairKey}`,
+        id: `relation:${pairKey}:${removed ? "removed:" : ""}${relation.name}`,
         source: `model:${model.name}`,
         target: `model:${relation.toModel}`,
         label: relation.cardinality,
@@ -262,7 +269,11 @@ export async function layoutMigrationDiffNodes(
       ...node,
       position: positions.get(node.id) ?? node.position,
     }));
-  } catch {
+  } catch (error) {
+    console.warn(
+      "[migrations] ELK layout failed; falling back to grid placement",
+      error,
+    );
     const columns = Math.max(1, Math.ceil(Math.sqrt(nodes.length)));
 
     return nodes.map((node, index) => ({

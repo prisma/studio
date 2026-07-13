@@ -120,58 +120,78 @@ export async function seedPrismaNextMigrations(
     return;
   }
 
-  for (const row of fixture.ledger) {
-    for (const operation of row.operations) {
-      for (const step of operation.execute ?? []) {
-        await sql.unsafe(step.sql, (step.params ?? []) as never[]);
+  // One transaction for the whole replay: a partial failure would leave
+  // ledger rows behind, and the count-based idempotency guard would then
+  // skip reseeding forever on a persistent volume. Statements go through
+  // `tx.unsafe` with bound params because this postgres.js version's
+  // `TransactionSql` type is an `Omit<Sql, …>` that loses the
+  // template-tag call signature.
+  await sql.begin(async (tx) => {
+    for (const row of fixture.ledger) {
+      for (const operation of row.operations) {
+        for (const step of operation.execute ?? []) {
+          await tx.unsafe(step.sql, (step.params ?? []) as never[]);
+        }
       }
+
+      // The fixture predates the content-addressed store and carries both
+      // bookends per row; only the after-state is written — keyed by the
+      // destination hash, deduplicated on conflict — and every non-baseline
+      // origin hash is some predecessor's destination, so both endpoints of
+      // every edge resolve.
+      if (row.contract_json_after !== null) {
+        await tx.unsafe(
+          `insert into prisma_contract.contract (core_hash, created_at, contract_json)
+           values ($1, $2, $3::jsonb)
+           on conflict (core_hash) do nothing`,
+          [
+            row.destination_core_hash,
+            row.created_at,
+            JSON.stringify(row.contract_json_after),
+          ] as never[],
+        );
+      }
+
+      await tx.unsafe(
+        `insert into prisma_contract.ledger (
+           created_at, space, migration_name, migration_hash,
+           origin_core_hash, destination_core_hash, operations
+         ) values ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+        [
+          row.created_at,
+          row.space,
+          row.migration_name,
+          row.migration_hash,
+          row.origin_core_hash,
+          row.destination_core_hash,
+          JSON.stringify(row.operations),
+        ] as never[],
+      );
     }
 
-    // The fixture predates the content-addressed store and carries both
-    // bookends per row; only the after-state is written — keyed by the
-    // destination hash, deduplicated on conflict — and every non-baseline
-    // origin hash is some predecessor's destination, so both endpoints of
-    // every edge resolve.
-    if (row.contract_json_after !== null) {
-      await sql`
-        insert into prisma_contract.contract (core_hash, created_at, contract_json)
-        values (
-          ${row.destination_core_hash}, ${row.created_at},
-          ${sql.json(row.contract_json_after as never)}
-        )
-        on conflict (core_hash) do nothing
-      `;
+    for (const row of fixture.marker) {
+      await tx.unsafe(
+        `insert into prisma_contract.marker (
+           space, core_hash, profile_hash, contract_json, canonical_version,
+           updated_at, app_tag, meta, invariants
+         ) values ($1, $2, $3, $4::jsonb, $5, $6, $7, $8::jsonb, $9::text[])
+         on conflict (space) do nothing`,
+        [
+          row.space,
+          row.core_hash,
+          row.profile_hash,
+          row.contract_json === null ? null : JSON.stringify(row.contract_json),
+          row.canonical_version,
+          row.updated_at,
+          row.app_tag,
+          JSON.stringify(row.meta ?? {}),
+          row.invariants,
+        ] as never[],
+      );
     }
 
-    await sql`
-      insert into prisma_contract.ledger (
-        created_at, space, migration_name, migration_hash,
-        origin_core_hash, destination_core_hash, operations
-      ) values (
-        ${row.created_at}, ${row.space}, ${row.migration_name},
-        ${row.migration_hash}, ${row.origin_core_hash},
-        ${row.destination_core_hash},
-        ${sql.json(row.operations as never)}
-      )
-    `;
-  }
-
-  for (const row of fixture.marker) {
-    await sql`
-      insert into prisma_contract.marker (
-        space, core_hash, profile_hash, contract_json, canonical_version,
-        updated_at, app_tag, meta, invariants
-      ) values (
-        ${row.space}, ${row.core_hash}, ${row.profile_hash},
-        ${row.contract_json === null ? null : sql.json(row.contract_json as never)},
-        ${row.canonical_version}, ${row.updated_at}, ${row.app_tag},
-        ${sql.json((row.meta ?? {}) as never)}, ${row.invariants}
-      )
-      on conflict (space) do nothing
-    `;
-  }
-
-  await seedShowcaseRows(sql);
+    await seedShowcaseRows(tx);
+  });
 }
 
 /**
@@ -243,9 +263,10 @@ async function upgradeLegacyLedger(sql: postgres.Sql): Promise<void> {
 
 /**
  * A few rows for the tables created by the replayed migrations so the
- * demo tables aren't empty when browsed.
+ * demo tables aren't empty when browsed. Receives the replay transaction
+ * so the showcase rows commit atomically with the history.
  */
-async function seedShowcaseRows(sql: postgres.Sql): Promise<void> {
+async function seedShowcaseRows(sql: postgres.TransactionSql): Promise<void> {
   await sql.unsafe(`
     with team as (
       insert into "team" (id, name, slug)

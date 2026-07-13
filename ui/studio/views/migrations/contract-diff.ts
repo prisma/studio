@@ -46,7 +46,7 @@ export interface ContractSnapshot {
 export type DiffStatus = "added" | "removed" | "changed" | "unchanged";
 
 export interface FieldChangeDetail {
-  aspect: "type" | "nullable" | "default" | "enum";
+  aspect: "type" | "nullable" | "default" | "key";
   before: string;
   after: string;
 }
@@ -447,6 +447,14 @@ function diffFields(
         aspect: "default",
         before: fieldBefore.defaultValue ?? "none",
         after: fieldAfter.defaultValue ?? "none",
+      });
+    }
+
+    if (fieldBefore.isPrimaryKey !== fieldAfter.isPrimaryKey) {
+      details.push({
+        aspect: "key",
+        before: fieldBefore.isPrimaryKey ? "@id" : "plain",
+        after: fieldAfter.isPrimaryKey ? "@id" : "plain",
       });
     }
 

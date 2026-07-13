@@ -46,8 +46,10 @@ function pslDefault(defaultValue: string | null): string | null {
     return "@default(uuid())";
   }
 
-  if (defaultValue.endsWith("()")) {
-    return `@default(dbgenerated("${defaultValue}"))`;
+  // Any other function-call expression (zero-arg like `now()` variants or
+  // parameterized like `nextval('seq'::regclass)`) is not valid bare PSL.
+  if (/^[A-Za-z_][\w.]*\(.*\)$/.test(defaultValue)) {
+    return `@default(dbgenerated("${defaultValue.replaceAll('"', '\\"')}"))`;
   }
 
   return `@default(${defaultValue})`;

@@ -371,7 +371,10 @@ const nodeTypes: NodeTypes = {
   enumDiff: EnumDiffNodeComponent,
 };
 
-function MigrationDiffCanvas(props: {
+// Memoized: the details-panel drag handler updates MigrationsView state on
+// every pointermove; stable props keep the ReactFlow subtree out of those
+// re-renders.
+const MigrationDiffCanvas = memo(function MigrationDiffCanvas(props: {
   migration: StudioMigration;
   showAllModels: boolean;
 }) {
@@ -453,7 +456,7 @@ function MigrationDiffCanvas(props: {
       />
     </ReactFlow>
   );
-}
+});
 
 function MigrationListItem(props: {
   index: number;
@@ -540,8 +543,8 @@ function MigrationSqlPanel(props: { migration: StudioMigration }) {
   return (
     <div data-testid="migration-sql-panel">
       <div className="flex flex-col gap-3">
-        {migration.operations.map((operation) => (
-          <div key={operation.id} className="flex flex-col gap-1">
+        {migration.operations.map((operation, index) => (
+          <div key={`${index}-${operation.id}`} className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
               <Badge
                 variant={
@@ -918,6 +921,7 @@ export function MigrationsView(_props: ViewProps) {
                     )}
                     <div className="flex items-center gap-1">
                       <Button
+                        aria-pressed={detailsPanel === "sql"}
                         className="h-7 shadow-none"
                         data-active={detailsPanel === "sql"}
                         data-testid="migration-panel-sql"
@@ -937,6 +941,7 @@ export function MigrationsView(_props: ViewProps) {
                       </Button>
                       {!contractDataMissing && (
                         <Button
+                          aria-pressed={detailsPanel === "schema"}
                           className="h-7 shadow-none"
                           data-active={detailsPanel === "schema"}
                           data-testid="migration-panel-schema"
