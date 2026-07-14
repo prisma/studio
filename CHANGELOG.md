@@ -1,5 +1,13 @@
 # @prisma/studio-core
 
+## 0.33.0
+
+### Minor Changes
+
+- c341072: # Fix duplicate startup introspection requests
+
+  Avoid cancelling and repeating introspection requests when Studio initially mounts.
+
 ## 0.32.0
 
 ### Minor Changes
