@@ -211,6 +211,9 @@ describe("StudioContextProvider database cache lifecycle", () => {
       harness.rerender({ adapter: nextAdapter });
       expect(resetQueriesSpy).toHaveBeenCalledTimes(1);
 
+      harness.rerender({ adapter: nextAdapter });
+      expect(resetQueriesSpy).toHaveBeenCalledTimes(1);
+
       harness.rerender({ adapter: nextAdapter, hasDatabase: false });
       expect(resetQueriesSpy).toHaveBeenCalledTimes(2);
     } finally {
