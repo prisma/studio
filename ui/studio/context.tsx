@@ -317,6 +317,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
   } = props;
 
   const queryClientRef = useRef(new QueryClient());
+  const previousDatabaseConfigRef = useRef({ adapter, hasDatabase });
   const signatureRef = useRef(shortUUID.generate());
   const rowsCollectionCacheRef = useRef(new Map<string, unknown>());
   const tableQueryExecutionStateCacheRef = useRef(
@@ -526,7 +527,17 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
   }, [studioUiCollection]);
 
   useEffect(() => {
-    // if the adapter has been changed, then we need to reload
+    const previousDatabaseConfig = previousDatabaseConfigRef.current;
+    previousDatabaseConfigRef.current = { adapter, hasDatabase };
+
+    if (
+      previousDatabaseConfig.adapter === adapter &&
+      previousDatabaseConfig.hasDatabase === hasDatabase
+    ) {
+      return;
+    }
+
+    // If the database configuration changed, then we need to reload.
     for (const state of tableQueryExecutionStateCacheRef.current.values()) {
       state.activeController?.abort();
     }

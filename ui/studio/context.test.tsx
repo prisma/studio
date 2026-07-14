@@ -1,3 +1,4 @@
+import { QueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -50,10 +51,20 @@ function createAdapter(): Adapter {
   } as unknown as Adapter;
 }
 
-function renderHarness(props?: { streamsUrl?: string }) {
+type RenderHarnessProps = {
+  adapter?: Adapter;
+  hasDatabase?: boolean;
+  streamsUrl?: string;
+};
+
+function renderHarness(props?: RenderHarnessProps) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
+  let currentProps = {
+    ...props,
+    adapter: props?.adapter ?? createAdapter(),
+  };
 
   let latestStudio: ReturnType<typeof useStudio> | undefined;
 
@@ -62,15 +73,20 @@ function renderHarness(props?: { streamsUrl?: string }) {
     return null;
   }
 
-  act(() => {
+  function render() {
     root.render(
       <StudioContextProvider
-        adapter={createAdapter()}
-        streamsUrl={props?.streamsUrl}
+        adapter={currentProps.adapter}
+        hasDatabase={currentProps.hasDatabase}
+        streamsUrl={currentProps.streamsUrl}
       >
         <Harness />
       </StudioContextProvider>,
     );
+  }
+
+  act(() => {
+    render();
   });
 
   return {
@@ -82,6 +98,16 @@ function renderHarness(props?: { streamsUrl?: string }) {
     },
     getLatestStudio() {
       return latestStudio;
+    },
+    rerender(nextProps: RenderHarnessProps) {
+      currentProps = {
+        ...currentProps,
+        ...nextProps,
+      };
+
+      act(() => {
+        render();
+      });
     },
   };
 }
@@ -168,6 +194,30 @@ afterEach(() => {
   delete process.env.CHECKPOINT_DISABLE;
   delete (globalThis as { VERSION_INJECTED_AT_BUILD_TIME?: string })
     .VERSION_INJECTED_AT_BUILD_TIME;
+});
+
+describe("StudioContextProvider database cache lifecycle", () => {
+  it("resets cached queries only after the database configuration changes", () => {
+    const resetQueriesSpy = vi
+      .spyOn(QueryClient.prototype, "resetQueries")
+      .mockResolvedValue();
+    const initialAdapter = createAdapter();
+    const harness = renderHarness({ adapter: initialAdapter });
+
+    try {
+      expect(resetQueriesSpy).not.toHaveBeenCalled();
+
+      const nextAdapter = createAdapter();
+      harness.rerender({ adapter: nextAdapter });
+      expect(resetQueriesSpy).toHaveBeenCalledTimes(1);
+
+      harness.rerender({ adapter: nextAdapter, hasDatabase: false });
+      expect(resetQueriesSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      harness.cleanup();
+      resetQueriesSpy.mockRestore();
+    }
+  });
 });
 
 describe("StudioContextProvider pagination preferences", () => {

@@ -9,6 +9,7 @@ Each adapter handles introspection, querying, inserts, updates, and deletes whil
 
 Studio introspects connected databases to build schemas, tables, columns, relationships, filter operators, and timezone metadata.
 This gives users an accurate live model of the database and keeps table navigation grounded in current structure.
+A fresh Studio mount performs this discovery once, while actual adapter or database-availability changes invalidate cached metadata and load it again.
 
 ## Deployable Prisma Postgres Demo
 
