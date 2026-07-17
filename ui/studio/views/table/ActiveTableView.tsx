@@ -205,20 +205,39 @@ export function ActiveTableView(_props: ViewProps) {
       schemaVersion: sqlEditorSchema.version,
     };
   }, [adapter, sqlEditorSchema.dialect, sqlEditorSchema.version]);
+  // Single source of truth for the active table query scope. The row mutation
+  // hooks (update/insert/delete) must receive these exact props so they target
+  // the same rows collection the grid displays — with infinite scroll enabled
+  // that is the grown `pageIndex: 0` window, not the paginated page.
+  const activeTableQueryProps = useMemo(
+    () => ({
+      pageIndex: isInfiniteScrollEnabled ? 0 : paginationState.pageIndex,
+      pageSize: isInfiniteScrollEnabled
+        ? INFINITE_SCROLL_BATCH_SIZE * loadedInfinitePageCount
+        : paginationState.pageSize,
+      sortOrder: sortingState,
+      filter: appliedFilter,
+      searchScope: supportsFullTableSearch
+        ? ("row" as const)
+        : ("table" as const),
+      searchTerm: activeRowSearchTerm,
+    }),
+    [
+      activeRowSearchTerm,
+      appliedFilter,
+      isInfiniteScrollEnabled,
+      loadedInfinitePageCount,
+      paginationState.pageIndex,
+      paginationState.pageSize,
+      sortingState,
+      supportsFullTableSearch,
+    ],
+  );
   const {
     data,
     isFetching,
     refetch: refetchActiveTable,
-  } = useActiveTableQuery({
-    pageIndex: isInfiniteScrollEnabled ? 0 : paginationState.pageIndex,
-    pageSize: isInfiniteScrollEnabled
-      ? INFINITE_SCROLL_BATCH_SIZE * loadedInfinitePageCount
-      : paginationState.pageSize,
-    sortOrder: sortingState,
-    filter: appliedFilter,
-    searchScope: supportsFullTableSearch ? "row" : "table",
-    searchTerm: activeRowSearchTerm,
-  });
+  } = useActiveTableQuery(activeTableQueryProps);
   const [stableInfiniteData, setStableInfiniteData] = useState<{
     data: NonNullable<typeof data>;
     key: string;
@@ -284,7 +303,7 @@ export function ActiveTableView(_props: ViewProps) {
     isSelecting,
     rowSelectionState,
     setRowSelectionState,
-  } = useSelection(visibleData);
+  } = useSelection(visibleData, activeTableQueryProps);
   const { streams } = useStreams();
   const { tableUiState, updateTableUiState } = useTableUiState({
     editingFilter,
@@ -543,8 +562,8 @@ export function ActiveTableView(_props: ViewProps) {
     (column) => column.pkPosition != null,
   );
   const isInserting = useIsInserting();
-  const insert = useActiveTableInsert();
-  const updateMany = useActiveTableUpdateMany();
+  const insert = useActiveTableInsert(activeTableQueryProps);
+  const updateMany = useActiveTableUpdateMany(activeTableQueryProps);
   const pageCount = getPageCount(
     visibleData?.filteredRowCount ?? Infinity,
     paginationState.pageSize,

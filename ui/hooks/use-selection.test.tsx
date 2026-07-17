@@ -57,6 +57,18 @@ vi.mock("./use-table-ui-state", () => ({
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
+const testQueryProps = {
+  filter: {
+    after: "and" as const,
+    filters: [],
+    id: "root",
+    kind: "FilterGroup" as const,
+  },
+  pageIndex: 0,
+  pageSize: 25,
+  sortOrder: [],
+};
+
 function renderHarness(data: { rows: Record<string, unknown>[] }) {
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -65,7 +77,7 @@ function renderHarness(data: { rows: Record<string, unknown>[] }) {
   let latestState: ReturnType<typeof useSelection> | undefined;
 
   function Harness() {
-    latestState = useSelection(data);
+    latestState = useSelection(data, testQueryProps);
     return null;
   }
 
