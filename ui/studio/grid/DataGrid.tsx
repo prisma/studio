@@ -82,7 +82,12 @@ import {
   DEFAULT_GRID_COLUMN_SIZE,
   resolveColumnSizingStateUpdate,
 } from "./column-sizing";
-import { computeColumnVirtualizationWindow } from "./column-virtualization";
+import {
+  type ColumnVirtualizationWindow,
+  columnVirtualizationWindowsAreEqual,
+  computeColumnVirtualizationWindow,
+  DISABLED_COLUMN_VIRTUALIZATION_WINDOW,
+} from "./column-virtualization";
 import { DataGridLoadingBar } from "./DataGridLoadingBar";
 import { DataGridPagination } from "./DataGridPagination";
 import { getColumnPinningStyles } from "./features/column-pinning";
@@ -1048,9 +1053,16 @@ export function DataGrid(props: DataGridProps) {
     },
   });
   const sensors = useSensors(mouseSensor);
-  const [centerViewport, setCenterViewport] = useState({
-    scrollLeft: 0,
-    width: 0,
+  const [centerColumnWindow, setCenterColumnWindow] =
+    useState<ColumnVirtualizationWindow>(DISABLED_COLUMN_VIRTUALIZATION_WINDOW);
+  const centerVirtualizationInputsRef = useRef<{
+    columnWidths: number[];
+    leftPinnedWidth: number;
+    rightPinnedWidth: number;
+  }>({
+    columnWidths: [],
+    leftPinnedWidth: 0,
+    rightPinnedWidth: 0,
   });
   const [contextMenuTarget, setContextMenuTarget] =
     useState<GridContextMenuTarget | null>(null);
@@ -1194,21 +1206,59 @@ export function DataGrid(props: DataGridProps) {
   const rightPinnedWidth = table
     .getRightVisibleLeafColumns()
     .reduce((total, column) => total + column.getSize(), 0);
-  const centerViewportWidth = Math.max(
-    0,
-    centerViewport.width - leftPinnedWidth - rightPinnedWidth,
-  );
-  const centerViewportScrollLeft = Math.max(
-    0,
-    centerViewport.scrollLeft - leftPinnedWidth,
-  );
-  const centerColumnWindow = computeColumnVirtualizationWindow({
-    columnWidths: centerVisibleLeafColumns.map((column) => column.getSize()),
-    minColumnCount: COLUMN_VIRTUALIZATION_MIN_COLUMN_COUNT,
-    overscanPx: COLUMN_VIRTUALIZATION_OVERSCAN_PX,
-    scrollLeft: centerViewportScrollLeft,
-    viewportWidth: centerViewportWidth,
-  });
+  const centerVirtualizationInputsKey = `${centerVisibleLeafColumns
+    .map((column) => `${column.id}:${column.getSize()}`)
+    .join("|")}|left:${leftPinnedWidth}|right:${rightPinnedWidth}`;
+
+  // Recomputes the center-column virtualization window from the live scroll
+  // position. State only changes when the window itself changes, so plain
+  // scrolling inside the overscan area never re-renders the grid.
+  const recomputeCenterColumnWindow = useCallback(() => {
+    const scrollContainer = tableRef.current?.parentElement;
+
+    if (!scrollContainer) {
+      return;
+    }
+
+    const inputs = centerVirtualizationInputsRef.current;
+    // The virtualization window is computed in center-column coordinates.
+    // Left-pinned columns occupy the start of the scrollable row and overlay
+    // the same amount of viewport width (they are sticky), so the container
+    // scrollLeft maps 1:1 onto the center-column offset space.
+    const nextWindow = computeColumnVirtualizationWindow({
+      columnWidths: inputs.columnWidths,
+      minColumnCount: COLUMN_VIRTUALIZATION_MIN_COLUMN_COUNT,
+      overscanPx: COLUMN_VIRTUALIZATION_OVERSCAN_PX,
+      scrollLeft: Math.max(0, scrollContainer.scrollLeft),
+      viewportWidth: Math.max(
+        0,
+        scrollContainer.clientWidth -
+          inputs.leftPinnedWidth -
+          inputs.rightPinnedWidth,
+      ),
+    });
+
+    setCenterColumnWindow((current) =>
+      columnVirtualizationWindowsAreEqual(current, nextWindow)
+        ? current
+        : nextWindow,
+    );
+  }, []);
+
+  useLayoutEffect(() => {
+    centerVirtualizationInputsRef.current = {
+      columnWidths: table
+        .getCenterVisibleLeafColumns()
+        .map((column) => column.getSize()),
+      leftPinnedWidth: table
+        .getLeftVisibleLeafColumns()
+        .reduce((total, column) => total + column.getSize(), 0),
+      rightPinnedWidth: table
+        .getRightVisibleLeafColumns()
+        .reduce((total, column) => total + column.getSize(), 0),
+    };
+    recomputeCenterColumnWindow();
+  }, [centerVirtualizationInputsKey, recomputeCenterColumnWindow, table]);
 
   const visibleLeafColumns = table.getVisibleLeafColumns();
   const selectableColumnIds = useMemo(() => {
@@ -1757,6 +1807,13 @@ export function DataGrid(props: DataGridProps) {
       return;
     }
 
+    // Mark the focused cell as handled before scrolling so the auto-scroll
+    // runs at most once per focused-cell change. Retrying while the focused
+    // column is outside the virtualization window (its cell element is not
+    // rendered) would re-apply the computed scrollLeft on every scroll update
+    // and fight user-initiated scrolling.
+    autoScrolledFocusedCellRef.current = focusedCell;
+
     const tableElement = tableRef.current;
     const scrollContainer = tableElement?.parentElement;
 
@@ -1770,9 +1827,24 @@ export function DataGrid(props: DataGridProps) {
       return;
     }
 
+    const currentLeftPinnedWidth = table
+      .getLeftVisibleLeafColumns()
+      .reduce((total, column) => total + column.getSize(), 0);
+    const currentRightPinnedWidth = table
+      .getRightVisibleLeafColumns()
+      .reduce((total, column) => total + column.getSize(), 0);
+    const currentCenterViewportWidth = Math.max(
+      0,
+      scrollContainer.clientWidth -
+        currentLeftPinnedWidth -
+        currentRightPinnedWidth,
+    );
     let nextScrollLeft: number | null = null;
 
-    if (focusedColumn.getIsPinned() === false && centerViewportWidth > 0) {
+    if (
+      focusedColumn.getIsPinned() === false &&
+      currentCenterViewportWidth > 0
+    ) {
       const centerColumns = table.getCenterVisibleLeafColumns();
       const currentCenterScrollLeft = Math.max(0, scrollContainer.scrollLeft);
       const nextCenterScrollLeft = getFocusedCellScrollLeft({
@@ -1780,7 +1852,7 @@ export function DataGrid(props: DataGridProps) {
         columnWidths: centerColumns.map((column) => column.getSize()),
         currentScrollLeft: currentCenterScrollLeft,
         focusedColumnId: focusedCell.columnId,
-        viewportWidth: centerViewportWidth,
+        viewportWidth: currentCenterViewportWidth,
       });
       nextScrollLeft = Math.max(0, nextCenterScrollLeft);
 
@@ -1790,14 +1862,19 @@ export function DataGrid(props: DataGridProps) {
       }
     }
 
-    const focusedCellElement = Array.from(
+    // The focused column may be outside the rendered virtualization window.
+    // Rows are never virtualized, so fall back to any rendered cell in the
+    // focused row to keep the vertical scroll-into-view behavior.
+    const focusedRowCells = Array.from(
       scrollContainer.querySelectorAll<HTMLElement>(
         `td[data-grid-visual-row-index="${focusedCell.rowIndex}"][data-grid-column-id]`,
       ),
-    ).find(
-      (cellElement) =>
-        cellElement.dataset.gridColumnId === focusedCell.columnId,
     );
+    const focusedCellElement =
+      focusedRowCells.find(
+        (cellElement) =>
+          cellElement.dataset.gridColumnId === focusedCell.columnId,
+      ) ?? focusedRowCells[0];
 
     if (!focusedCellElement) {
       return;
@@ -1812,16 +1889,7 @@ export function DataGrid(props: DataGridProps) {
       scrollContainer.scrollLeft = nextScrollLeft;
       scrollContainer.dispatchEvent(new Event("scroll"));
     }
-
-    autoScrolledFocusedCellRef.current = focusedCell;
-  }, [
-    centerViewport.scrollLeft,
-    centerViewportWidth,
-    focusedCell,
-    leftPinnedWidth,
-    rightPinnedWidth,
-    table,
-  ]);
+  }, [focusedCell, table]);
 
   useEffect(() => {
     const tableElement = tableRef.current;
@@ -1831,67 +1899,32 @@ export function DataGrid(props: DataGridProps) {
       return;
     }
 
-    let animationFrameId: number | null = null;
-
-    const updateViewport = () => {
-      animationFrameId = null;
-
-      const nextScrollLeft = scrollContainer.scrollLeft;
-      const nextWidth = scrollContainer.clientWidth;
-
-      setCenterViewport((current) => {
-        if (
-          current.scrollLeft === nextScrollLeft &&
-          current.width === nextWidth
-        ) {
-          return current;
-        }
-
-        return {
-          scrollLeft: nextScrollLeft,
-          width: nextWidth,
-        };
-      });
+    // Recompute synchronously on scroll. Scroll events already fire at most
+    // once per frame, and deferring the window update behind an animation
+    // frame plus a state update lets fast scrolling outrun the overscan area,
+    // which shows up as blank columns and jumpy repaints.
+    const handleViewportChange = () => {
+      recomputeCenterColumnWindow();
     };
 
-    const scheduleViewportUpdate = () => {
-      if (animationFrameId !== null) {
-        return;
-      }
-
-      if (typeof window.requestAnimationFrame !== "function") {
-        updateViewport();
-        return;
-      }
-
-      animationFrameId = window.requestAnimationFrame(updateViewport);
-    };
-
-    scheduleViewportUpdate();
-    scrollContainer.addEventListener("scroll", scheduleViewportUpdate, {
+    handleViewportChange();
+    scrollContainer.addEventListener("scroll", handleViewportChange, {
       passive: true,
     });
-    window.addEventListener("resize", scheduleViewportUpdate);
+    window.addEventListener("resize", handleViewportChange);
 
     let resizeObserver: ResizeObserver | null = null;
     if (typeof ResizeObserver !== "undefined") {
-      resizeObserver = new ResizeObserver(scheduleViewportUpdate);
+      resizeObserver = new ResizeObserver(handleViewportChange);
       resizeObserver.observe(scrollContainer);
     }
 
     return () => {
-      if (
-        animationFrameId !== null &&
-        typeof window.cancelAnimationFrame === "function"
-      ) {
-        window.cancelAnimationFrame(animationFrameId);
-      }
-
-      scrollContainer.removeEventListener("scroll", scheduleViewportUpdate);
-      window.removeEventListener("resize", scheduleViewportUpdate);
+      scrollContainer.removeEventListener("scroll", handleViewportChange);
+      window.removeEventListener("resize", handleViewportChange);
       resizeObserver?.disconnect();
     };
-  }, [columnDefinitionIdentityKey]);
+  }, [columnDefinitionIdentityKey, recomputeCenterColumnWindow]);
 
   useEffect(() => {
     const tableElement = tableRef.current;

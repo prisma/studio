@@ -172,6 +172,7 @@ Table data is shown in a grid with server-backed pagination, filtered-row counts
 The footer keeps page navigation, a page jump field, a fixed rows-per-page dropdown, and infinite-scroll mode in one compact control group, so users can either jump directly to a page, switch page density from a known preset, or turn on lazy-loading without leaving the grid.
 Rows-per-page and infinite-scroll preferences persist across tables through local storage, while the known filtered-row count keeps the footer stable during page transitions for the same filtered result set. Infinite scroll preloads before the hard bottom edge, always appends in fixed 25-row chunks regardless of the paginated page-size setting, keeps filling tall viewports until the grid is actually scrollable, and appends new rows in place without snapping the grid back to the top.
 Rapid sort and filter changes keep the latest request authoritative, and superseded table reads are aborted so a slower older result cannot overwrite the visible grid.
+Wide tables virtualize their non-pinned columns so only the columns near the viewport are mounted. The virtualization window follows horizontal scrolling synchronously and grid re-renders only happen when the set of mounted columns actually changes, which keeps horizontal scrolling smooth, makes the last column reachable, and lets cell focus changes reveal off-screen columns without fighting user-initiated scrolling.
 
 ## PostgreSQL Stored Temporal Values
 
