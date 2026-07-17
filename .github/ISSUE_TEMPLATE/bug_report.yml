@@ -1,0 +1,114 @@
+# https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/configuring-issue-templates-for-your-repository
+name: Bug report
+description: Report a bug in Prisma Studio (@prisma/studio-core)
+labels: ['kind/bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! 🙏
+
+        This repository hosts **@prisma/studio-core**, the Prisma Studio UI used by the `prisma studio` CLI command (Prisma v7+), embedded distributions, and the Prisma VS Code extension.
+
+        If your problem is with the Prisma ORM, migrations, or the CLI itself (not the Studio UI), please file it in [prisma/prisma](https://github.com/prisma/prisma/issues) instead.
+
+        💡 For questions, join our [Discord server](https://pris.ly/discord) instead of filing an issue.
+  - type: dropdown
+    id: distribution
+    attributes:
+      label: Studio distribution
+      description: How are you running Prisma Studio?
+      options:
+        - 'Prisma CLI (`prisma studio`, Prisma v7 or later)'
+        - 'Embedded (@prisma/studio-core in my own app)'
+        - 'VS Code extension (Prisma)'
+        - 'Other / not sure'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: database
+    attributes:
+      label: Database
+      description: Which database are you connecting Studio to?
+      options:
+        - PostgreSQL
+        - MySQL / MariaDB
+        - SQLite
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: database-version
+    attributes:
+      label: Database version
+      placeholder: 'e.g. PostgreSQL 17.2'
+    validations:
+      required: true
+
+  - type: textarea
+    id: versions
+    attributes:
+      label: Prisma & studio-core versions
+      description: |
+        Run `npx prisma --version` and paste the output. If you embed Studio, also include your `@prisma/studio-core` version from `package.json`.
+      value: |
+        ```
+        // Output of `npx prisma --version`
+        ```
+        - @prisma/studio-core version (if embedded):
+    validations:
+      required: true
+
+  - type: input
+    id: os-browser
+    attributes:
+      label: Operating system & browser
+      placeholder: 'e.g. macOS 15.5, Chrome 138 / VS Code 1.102'
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: |
+        Step-by-step instructions to reproduce the issue. Include relevant parts of your Prisma schema if the issue is data- or model-specific.
+
+        ⚠️ **Do NOT include database credentials!**
+      placeholder: |
+        1. Run `prisma studio`
+        2. Open the `User` model
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened? Screenshots are welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Any relevant output from the browser console (DevTools), the terminal running `prisma studio`, or the VS Code output panel.
+      value: |
+        ```
+        // Logs here
+        ```
+    validations:
+      required: false

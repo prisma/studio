@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Prisma ORM / CLI issues
+    url: https://github.com/prisma/prisma/issues
+    about: Problems with the `prisma studio` CLI command itself, the ORM, migrations, or other server-side Prisma issues belong in the prisma/prisma repository.
+  - name: Prisma Discord
+    url: https://pris.ly/discord
+    about: Ask questions and discuss with other community members.
+  - name: Prisma documentation
+    url: https://www.prisma.io/docs
+    about: Guides and reference docs for Prisma ORM and Prisma Studio.
