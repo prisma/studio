@@ -9,6 +9,13 @@ import {
 import { getCancelQuery, getPIDQuery } from "../postgres-core/utility";
 import type { Query, QueryResult } from "../query";
 
+export {
+  createPostgresJSConnectionConfig,
+  type PostgresJSConnectionConfig,
+  type PostgresJSConnectionConfigDependencies,
+  type PostgresJSSslOptions,
+} from "./connection-options";
+
 const SQL_LINT_STATEMENT_TIMEOUT = "1000ms";
 const SQL_LINT_LOCK_TIMEOUT = "100ms";
 const SQL_LINT_IDLE_IN_TRANSACTION_TIMEOUT = "1000ms";

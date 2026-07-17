@@ -5,6 +5,11 @@
 Studio connects to PostgreSQL, MySQL, and SQLite through a unified adapter contract, so the same UI works across supported engines.
 Each adapter handles introspection, querying, inserts, updates, and deletes while exposing capabilities that drive conditional UI behavior.
 
+## PostgreSQL SSL Connection Parameters
+
+PostgreSQL connection strings can carry the standard libpq SSL parameters `sslrootcert`, `sslcert`, `sslkey`, `sslpassword`, and `sslmode`, so Studio hosts can connect to TLS-protected databases such as managed Postgres with custom CAs or mutual TLS.
+The `createPostgresJSConnectionConfig` helper in `@prisma/studio-core/data/postgresjs` consumes these parameters client-side — reading certificate files from disk and mapping the mode to TLS verification behavior — and strips them from the connection string so postgres.js does not forward them to the server as runtime configuration parameters.
+
 ## Live Introspection and Schema Discovery
 
 Studio introspects connected databases to build schemas, tables, columns, relationships, filter operators, and timezone metadata.
