@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 
+import { formatDatatypeName } from "../lib/datatype-display";
 import { useIntrospection } from "./use-introspection";
 import { useNavigation } from "./use-navigation";
 
@@ -64,7 +65,7 @@ export function useSchemaVisualization(): SchemaVisualizationData {
       Object.values(table.columns).forEach((column) => {
         const fieldData: Field = {
           name: column.name,
-          type: column.datatype.name,
+          type: formatDatatypeName(column.datatype),
           isPrimary: column.pkPosition != null,
           isRequired: !column.nullable,
           isNullable: column.nullable,
