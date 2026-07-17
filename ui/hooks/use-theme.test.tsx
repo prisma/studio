@@ -6,6 +6,7 @@ import {
   applyDarkModeClass,
   applyThemeVariables,
   clearThemeVariables,
+  STUDIO_DOCUMENT_THEME_ATTRIBUTE,
   useTheme,
 } from "./use-theme";
 
@@ -55,8 +56,10 @@ function renderThemeHarness(args: {
 
 afterEach(() => {
   document.body.innerHTML = "";
+  document.body.removeAttribute("style");
   document.documentElement.className = "";
   document.documentElement.removeAttribute("style");
+  document.documentElement.removeAttribute(STUDIO_DOCUMENT_THEME_ATTRIBUTE);
 });
 
 describe("theme helpers", () => {
@@ -213,5 +216,104 @@ describe("useTheme", () => {
 
     harness.cleanup();
     portalRoot.remove();
+  });
+
+  it("syncs the resolved dark theme to the document root when the page background is unstyled", () => {
+    const harness = renderThemeHarness({
+      isDarkMode: true,
+    });
+
+    expect(
+      document.documentElement.getAttribute(STUDIO_DOCUMENT_THEME_ATTRIBUTE),
+    ).toBe("dark");
+    expect(document.documentElement.style.colorScheme).toBe("dark");
+
+    harness.cleanup();
+  });
+
+  it("paints the document background with Studio's resolved background variable", () => {
+    const harness = renderThemeHarness({
+      customTheme: {
+        dark: {
+          "--background": "rgb(20, 20, 22)",
+        },
+        light: {
+          "--background": "rgb(250, 250, 250)",
+        },
+      },
+      isDarkMode: true,
+    });
+
+    expect(document.documentElement.style.backgroundColor).toBe(
+      "rgb(20, 20, 22)",
+    );
+
+    harness.cleanup();
+  });
+
+  it("keeps following theme changes after claiming the document", async () => {
+    const container = createStudioRoot();
+    const root = createRoot(container);
+
+    function Harness(props: { isDarkMode: boolean }) {
+      useTheme(undefined, props.isDarkMode);
+      return null;
+    }
+
+    act(() => {
+      root.render(<Harness isDarkMode />);
+    });
+
+    expect(document.documentElement.style.colorScheme).toBe("dark");
+
+    act(() => {
+      root.render(<Harness isDarkMode={false} />);
+    });
+
+    await flush();
+
+    expect(
+      document.documentElement.getAttribute(STUDIO_DOCUMENT_THEME_ATTRIBUTE),
+    ).toBe("light");
+    expect(document.documentElement.style.colorScheme).toBe("light");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("leaves the document untouched when the host authored a page background", () => {
+    document.body.style.background = "#ffffff";
+
+    const harness = renderThemeHarness({
+      isDarkMode: true,
+    });
+
+    expect(
+      document.documentElement.hasAttribute(STUDIO_DOCUMENT_THEME_ATTRIBUTE),
+    ).toBe(false);
+    expect(document.documentElement.style.colorScheme).toBe("");
+    expect(document.documentElement.style.backgroundColor).toBe("");
+
+    harness.cleanup();
+  });
+
+  it("clears the document-level theme when Studio unmounts", () => {
+    const harness = renderThemeHarness({
+      isDarkMode: true,
+    });
+
+    expect(
+      document.documentElement.hasAttribute(STUDIO_DOCUMENT_THEME_ATTRIBUTE),
+    ).toBe(true);
+
+    harness.cleanup();
+
+    expect(
+      document.documentElement.hasAttribute(STUDIO_DOCUMENT_THEME_ATTRIBUTE),
+    ).toBe(false);
+    expect(document.documentElement.style.colorScheme).toBe("");
+    expect(document.documentElement.style.backgroundColor).toBe("");
   });
 });

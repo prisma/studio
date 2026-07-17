@@ -107,6 +107,111 @@ export function clearThemeVariables(variableNames: Iterable<string>): void {
 }
 
 /**
+ * Marker attribute set on `<html>` when Studio owns the document background.
+ */
+export const STUDIO_DOCUMENT_THEME_ATTRIBUTE = "data-prisma-studio-theme";
+
+function hasAuthoredBackground(element: Element): boolean {
+  if (
+    typeof window === "undefined" ||
+    typeof window.getComputedStyle !== "function"
+  ) {
+    return false;
+  }
+
+  const style = window.getComputedStyle(element);
+  const backgroundColor = style.backgroundColor;
+  const hasBackgroundColor =
+    backgroundColor !== "" &&
+    backgroundColor !== "transparent" &&
+    backgroundColor !== "rgba(0, 0, 0, 0)";
+  const backgroundImage = style.backgroundImage;
+  const hasBackgroundImage =
+    backgroundImage !== "" && backgroundImage !== "none";
+
+  return hasBackgroundColor || hasBackgroundImage;
+}
+
+/**
+ * Studio may only paint the page canvas when no host styling claimed it.
+ * Embedded hosts (Console, arbitrary web apps) style `<html>`/`<body>`
+ * themselves, so Studio must leave their document untouched. Full-page
+ * shells that ship an unstyled document (the default-white overscroll and
+ * behind-border-radius areas from prisma/studio#1475) are safe to claim.
+ */
+function canOwnDocumentBackground(): boolean {
+  const documentElement = document.documentElement;
+
+  if (documentElement.hasAttribute(STUDIO_DOCUMENT_THEME_ATTRIBUTE)) {
+    // Already claimed by Studio earlier; keep syncing.
+    return true;
+  }
+
+  if (hasAuthoredBackground(documentElement)) {
+    return false;
+  }
+
+  const body = document.body;
+
+  return body == null || !hasAuthoredBackground(body);
+}
+
+/**
+ * Sync the resolved Studio theme to the document root so overscroll areas and
+ * the space behind Studio's rounded corners match the active theme. This is
+ * a no-op whenever the host page authored its own document background.
+ */
+export function syncDocumentTheme(args: {
+  isDarkMode: boolean;
+  studioRoot: HTMLElement | null;
+}): void {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  if (!canOwnDocumentBackground()) {
+    return;
+  }
+
+  const { isDarkMode, studioRoot } = args;
+  const documentElement = document.documentElement;
+  const resolvedTheme = isDarkMode ? "dark" : "light";
+
+  documentElement.setAttribute(STUDIO_DOCUMENT_THEME_ATTRIBUTE, resolvedTheme);
+  documentElement.style.colorScheme = resolvedTheme;
+
+  const studioBackground =
+    studioRoot != null && typeof window.getComputedStyle === "function"
+      ? window.getComputedStyle(studioRoot).getPropertyValue("--background")
+      : "";
+
+  if (studioBackground.trim() !== "") {
+    documentElement.style.backgroundColor = studioBackground.trim();
+  } else {
+    documentElement.style.removeProperty("background-color");
+  }
+}
+
+/**
+ * Remove the document-level theme Studio applied, if any.
+ */
+export function clearDocumentTheme(): void {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  const documentElement = document.documentElement;
+
+  if (!documentElement.hasAttribute(STUDIO_DOCUMENT_THEME_ATTRIBUTE)) {
+    return;
+  }
+
+  documentElement.removeAttribute(STUDIO_DOCUMENT_THEME_ATTRIBUTE);
+  documentElement.style.removeProperty("color-scheme");
+  documentElement.style.removeProperty("background-color");
+}
+
+/**
  * Apply dark mode class to every Studio root element.
  */
 export function applyDarkModeClass(isDarkMode: boolean): void {
@@ -144,6 +249,8 @@ function syncStudioRootTheme(args: {
       root.style.setProperty(property, value);
     }
   }
+
+  syncDocumentTheme({ isDarkMode, studioRoot: roots[0] ?? null });
 }
 
 const useIsomorphicLayoutEffect =
@@ -208,6 +315,7 @@ export function useTheme(
 
     return () => {
       observer.disconnect();
+      clearDocumentTheme();
     };
   }, [currentThemeVariables, isDarkMode]);
 

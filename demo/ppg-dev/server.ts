@@ -800,7 +800,7 @@ function getHtmlDocument(): string {
     <title>Studio + ppg demo${isProduction ? "" : " (direct tcp)"}</title>
     <link rel="stylesheet" href="/app.css${bustSuffix}" />
   </head>
-  <body style="margin: 0; min-height: 100vh; background: #f3f4f6;">
+  <body style="margin: 0; min-height: 100vh;">
     <div id="root" style="height: 100vh;"></div>${liveReloadScript}
     <script type="module" src="/app.js${bustSuffix}"></script>
   </body>
