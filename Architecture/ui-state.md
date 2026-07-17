@@ -40,6 +40,10 @@ Studio context provides the canonical stores in [`ui/studio/context.tsx`](../ui/
   - `filteredRowCount`
 - `uiLocalStateCollection` (`localOnlyCollectionOptions`)
   - General scoped UI state (for example DataGrid selection machine state).
+- `uiPersistentStateCollection` (`localStorageCollectionOptions`)
+  - General scoped UI state that must survive page reloads, accessed through
+    `useUiState` with `{ persistent: true }` (for example the schema
+    visualizer's manually arranged node positions).
 - `sqlEditorStateCollection` (`localStorageCollectionOptions`)
   - Persisted SQL editor draft state:
   - `queryText`
@@ -135,6 +139,9 @@ The following are valid examples of UI state and where they belong:
 - Schema visualizer node positions and layout state: `uiLocalStateCollection` via `useUiState`
   - Scoped by active schema plus the current visualized table set so returning to the same schema graph restores dragged positions without leaking across schemas.
   - Includes the stored ELK baseline positions and reset-layout request token used by the header action.
+- Schema visualizer manually arranged node positions: `uiPersistentStateCollection` via `useUiState({ persistent: true })`
+  - Scoped by active schema name (`schema-visualizer:${schema}:manual-layout:node-positions`) with per-table entries, so manual layouts survive reloads, new tables fall back to the ELK auto-layout, and different schemas do not collide.
+  - The header `Reset layout` action clears this store in addition to re-applying the ELK baseline.
 - Command-palette `x more...` handoff into table browsing: the same navigation table-name search `useUiState` entry, not a second command-palette-specific table-filter store
 
 If new UI state is shared across components, it MUST be assigned to one of these stores (or a new TanStack DB collection added in Studio context).

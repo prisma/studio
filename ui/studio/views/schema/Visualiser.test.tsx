@@ -41,6 +41,7 @@ const mocks = vi.hoisted(() => ({
   fitViewMock: vi.fn(),
   layoutMock: vi.fn(),
   latestReactFlowProps: null as ReactFlowProps | null,
+  persistentUiStateStore: new Map<string, unknown>(),
   uiStateStore: new Map<string, unknown>(),
   useNavigationMock: vi.fn<
     () => {
@@ -63,30 +64,32 @@ vi.mock("@/ui/hooks/use-ui-state", async () => {
     useUiState: <T,>(
       key: string,
       initialValue: T,
-      options?: { cleanupOnUnmount?: boolean },
+      options?: { cleanupOnUnmount?: boolean; persistent?: boolean },
     ) => {
       const cleanupOnUnmount = options?.cleanupOnUnmount ?? false;
+      const store = options?.persistent
+        ? mocks.persistentUiStateStore
+        : mocks.uiStateStore;
 
       const [value, setValue] = React.useState<T>(() => {
-        if (!mocks.uiStateStore.has(key)) {
-          mocks.uiStateStore.set(key, cloneMockValue(initialValue));
+        if (!store.has(key)) {
+          store.set(key, cloneMockValue(initialValue));
         }
 
         return (
-          (mocks.uiStateStore.get(key) as T | undefined) ??
-          cloneMockValue(initialValue)
+          (store.get(key) as T | undefined) ?? cloneMockValue(initialValue)
         );
       });
 
       React.useEffect(() => {
         if (cleanupOnUnmount) {
           return () => {
-            mocks.uiStateStore.delete(key);
+            store.delete(key);
           };
         }
 
         return undefined;
-      }, [cleanupOnUnmount, key]);
+      }, [cleanupOnUnmount, key, store]);
 
       const setSharedValue = React.useCallback(
         (updater: T | ((previous: T) => T)) => {
@@ -96,11 +99,11 @@ vi.mock("@/ui/hooks/use-ui-state", async () => {
                 ? (updater as (previous: T) => T)(previous)
                 : updater;
 
-            mocks.uiStateStore.set(key, cloneMockValue(nextValue));
+            store.set(key, cloneMockValue(nextValue));
             return cloneMockValue(nextValue);
           });
         },
-        [key],
+        [key, store],
       );
 
       return [value, setSharedValue] as const;
@@ -203,6 +206,7 @@ describe("SchemaVisualization", () => {
     mocks.layoutMock.mockReset();
     mocks.latestReactFlowProps = null;
     mocks.uiStateStore.clear();
+    mocks.persistentUiStateStore.clear();
     mocks.useNavigationMock.mockReturnValue({
       createUrl: () => "#",
       metadata: {
@@ -327,6 +331,137 @@ describe("SchemaVisualization", () => {
 
     act(() => {
       remountRoot.unmount();
+    });
+    container.remove();
+  });
+
+  it("persists manual positions and restores them after in-memory state is lost", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const tables = [
+      {
+        name: "users",
+        fields: [{ name: "id", type: "text", isPrimary: true }],
+      },
+      {
+        name: "posts",
+        fields: [{ name: "id", type: "text", isPrimary: true }],
+      },
+    ];
+    const relationships = [{ from: "users", to: "posts", type: "1:n" }];
+
+    act(() => {
+      root.render(
+        <SchemaVisualization tables={tables} relationships={relationships} />,
+      );
+    });
+
+    await flush();
+
+    act(() => {
+      mocks.latestReactFlowProps?.onNodesChange?.([
+        {
+          id: "users",
+          position: { x: 333, y: 444 },
+          type: "position",
+        },
+      ]);
+    });
+
+    expect(
+      mocks.persistentUiStateStore.get(
+        "schema-visualizer:public:manual-layout:node-positions",
+      ),
+    ).toEqual({
+      users: { x: 333, y: 444 },
+    });
+
+    act(() => {
+      root.unmount();
+    });
+
+    // Simulate a full page reload: in-memory ui state is gone, persisted
+    // localStorage-backed state survives.
+    mocks.uiStateStore.clear();
+
+    const remountRoot = createRoot(container);
+
+    act(() => {
+      remountRoot.render(
+        <SchemaVisualization tables={tables} relationships={relationships} />,
+      );
+    });
+
+    await flush();
+
+    expect(mocks.layoutMock).toHaveBeenCalledTimes(2);
+    expect(mocks.latestReactFlowProps?.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "users",
+          position: { x: 333, y: 444 },
+        }),
+        expect.objectContaining({
+          id: "posts",
+          position: { x: 300, y: 140 },
+        }),
+      ]),
+    );
+
+    act(() => {
+      remountRoot.unmount();
+    });
+    container.remove();
+  });
+
+  it("auto-layouts tables that have no persisted position", async () => {
+    mocks.persistentUiStateStore.set(
+      "schema-visualizer:public:manual-layout:node-positions",
+      {
+        users: { x: 333, y: 444 },
+      },
+    );
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <SchemaVisualization
+          tables={[
+            {
+              name: "users",
+              fields: [{ name: "id", type: "text", isPrimary: true }],
+            },
+            {
+              name: "posts",
+              fields: [{ name: "id", type: "text", isPrimary: true }],
+            },
+          ]}
+          relationships={[{ from: "users", to: "posts", type: "1:n" }]}
+        />,
+      );
+    });
+
+    await flush();
+
+    expect(mocks.latestReactFlowProps?.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "users",
+          position: { x: 333, y: 444 },
+        }),
+        expect.objectContaining({
+          id: "posts",
+          position: { x: 300, y: 140 },
+        }),
+      ]),
+    );
+
+    act(() => {
+      root.unmount();
     });
     container.remove();
   });
