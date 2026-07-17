@@ -602,4 +602,136 @@ describe("DataGrid pinning", () => {
       }
     }
   });
+
+  // Regression test for https://github.com/prisma/studio/issues/1371:
+  // pinning or unpinning a column round-trips through the pinnedColumnIds
+  // prop (URL state), which used to retrigger the "reset on column identity
+  // change" effect and wipe user column widths.
+  it("keeps user column sizing when pinned columns change", () => {
+    createSelection({ isCollapsed: true });
+
+    const columnDefs = [
+      {
+        accessorKey: "id",
+        id: "id",
+        header({ header, table }) {
+          return (props: Omit<CellProps, "children" | "ref">) => (
+            <TableHead {...props}>
+              <button
+                data-testid="resize-name-to-320"
+                type="button"
+                onClick={() => table.setColumnSizing({ name: 320 })}
+              >
+                Resize name
+              </button>
+              <button
+                data-testid="pin-id-controlled"
+                type="button"
+                onClick={() => header.column.pin("left")}
+              >
+                Pin id
+              </button>
+            </TableHead>
+          );
+        },
+        cell({ cell }) {
+          return (props: Omit<CellProps, "children" | "ref">) => (
+            <Cell {...props}>{String(cell.getValue() ?? "")}</Cell>
+          );
+        },
+      },
+      {
+        accessorKey: "name",
+        id: "name",
+        header({ header }) {
+          return (props: Omit<CellProps, "children" | "ref">) => (
+            <TableHead {...props}>{header.id}</TableHead>
+          );
+        },
+        cell({ cell }) {
+          return (props: Omit<CellProps, "children" | "ref">) => (
+            <Cell {...props}>{String(cell.getValue() ?? "")}</Cell>
+          );
+        },
+      },
+    ] satisfies GridColumnDef[];
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    function ControlledPinningHarness() {
+      const [rowSelectionState, setRowSelectionState] =
+        useState<RowSelectionState>({});
+      const [pinnedColumnIds, setPinnedColumnIds] = useState<string[]>([]);
+
+      return (
+        <DataGrid
+          columnDefs={
+            columnDefs as AccessorKeyColumnDefBase<Record<string, unknown>>[]
+          }
+          isFetching={false}
+          isProcessing={false}
+          onPaginationChange={vi.fn()}
+          onPinnedColumnIdsChange={(columnIds) => {
+            // Mimic URL-backed pinning state: every update produces a new
+            // array identity, like `useColumnPinning` does.
+            setPinnedColumnIds([...columnIds]);
+          }}
+          onRowSelectionChange={(updater) => {
+            setRowSelectionState((previous) =>
+              typeof updater === "function" ? updater(previous) : updater,
+            );
+          }}
+          pageCount={1}
+          paginationState={{ pageIndex: 0, pageSize: 20 }}
+          pinnedColumnIds={pinnedColumnIds}
+          rows={[{ __ps_rowid: "row_1", id: "org_acme", name: "Acme Labs" }]}
+          rowSelectionState={rowSelectionState}
+        />
+      );
+    }
+
+    act(() => {
+      root.render(<ControlledPinningHarness />);
+    });
+
+    function getHeader(columnId: string): HTMLTableCellElement {
+      const header = container.querySelector(
+        `th[data-grid-header-column-id="${columnId}"]`,
+      );
+
+      if (!(header instanceof HTMLTableCellElement)) {
+        throw new Error(`Could not find header: ${columnId}`);
+      }
+
+      return header;
+    }
+
+    function clickTestButton(testId: string) {
+      const button = container.querySelector(`[data-testid="${testId}"]`);
+
+      if (!(button instanceof HTMLButtonElement)) {
+        throw new Error(`Could not find button: ${testId}`);
+      }
+
+      act(() => {
+        button.click();
+      });
+    }
+
+    expect(getHeader("name").style.width).toBe("200px");
+
+    clickTestButton("resize-name-to-320");
+    expect(getHeader("name").style.width).toBe("320px");
+
+    clickTestButton("pin-id-controlled");
+    expect(getHeader("id").className).toContain("sticky");
+    expect(getHeader("name").style.width).toBe("320px");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
 });
