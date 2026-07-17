@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { determineColumnAffinity } from "./datatype";
+import { determineColumnAffinity, determineColumnMetadata } from "./datatype";
 
 describe("determineColumnAffinity", () => {
   it.each([
@@ -48,6 +48,58 @@ describe("determineColumnAffinity", () => {
       const actual = determineColumnAffinity(datatype);
 
       expect(actual).toBe(expected);
+    },
+  );
+});
+
+describe("determineColumnMetadata", () => {
+  it.each([
+    // date-like declared types keep NUMERIC affinity, but their values are
+    // treated as text so Studio never coerces date strings to numbers.
+    { datatype: "DATE", expected: { affinity: "NUMERIC", group: "string" } },
+    {
+      datatype: "DATETIME",
+      expected: { affinity: "NUMERIC", group: "string" },
+    },
+    {
+      datatype: "datetime",
+      expected: { affinity: "NUMERIC", group: "string" },
+    },
+    {
+      datatype: "TIMESTAMP",
+      expected: { affinity: "NUMERIC", group: "string" },
+    },
+    { datatype: "TIME", expected: { affinity: "NUMERIC", group: "string" } },
+
+    // other NUMERIC affinity declared types stay numeric.
+    {
+      datatype: "NUMERIC",
+      expected: { affinity: "NUMERIC", group: "numeric" },
+    },
+    {
+      datatype: "DECIMAL(10,5)",
+      expected: { affinity: "NUMERIC", group: "numeric" },
+    },
+    {
+      datatype: "BOOLEAN",
+      expected: { affinity: "NUMERIC", group: "numeric" },
+    },
+
+    // non-NUMERIC affinities are untouched.
+    { datatype: "INT", expected: { affinity: "INTEGER", group: "numeric" } },
+    { datatype: "REAL", expected: { affinity: "REAL", group: "numeric" } },
+    {
+      datatype: "VARCHAR(255)",
+      expected: { affinity: "TEXT", group: "string" },
+    },
+    { datatype: "BLOB", expected: { affinity: "BLOB", group: "raw" } },
+    { datatype: null, expected: { affinity: "BLOB", group: "raw" } },
+  ])(
+    "should determine metadata for $datatype as $expected",
+    ({ datatype, expected }) => {
+      const actual = determineColumnMetadata(datatype);
+
+      expect(actual).toEqual(expected);
     },
   );
 });

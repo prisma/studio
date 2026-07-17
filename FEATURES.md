@@ -277,6 +277,8 @@ Editable cells open popover editors with datatype-specific controls for raw text
 Save/cancel keyboard behavior is standardized, and null/default/empty semantics are handled explicitly per input type.
 Native PostgreSQL arrays can be edited from JSON-style array values and are written back with explicit array casts when inline SQL literals are required.
 PostgreSQL user-defined enum arrays also persist through that same staged-edit flow, with schema-qualified casts emitted in a form PostgreSQL accepts for `enum[]` writes.
+SQLite columns with date-like declared types (`date`, `datetime`, `timestamp`) are edited as text and stored as-is despite their NUMERIC affinity, matching how SQLite itself stores date strings.
+Numeric editing never writes `NaN`: input is only coerced to a number when it actually parses as one, and non-numeric text is passed through so SQLite NUMERIC-affinity columns keep it as text while stricter databases reject it with a clear error.
 
 ## Staged Multi-Cell Editing
 
