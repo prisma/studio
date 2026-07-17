@@ -160,6 +160,7 @@ Column-header pin/sort control rendering and interaction rules are defined in:
 - Infinite scroll MUST query from `pageIndex = 0` and grow the effective `pageSize` window in fixed `25`-row batches as the grid scroll nears the bottom, independent of the paginated rows-per-page preference.
 - Infinite-scroll window growth MUST reset to the first chunk whenever the visible row set changes, including table scope, applied filter, row-search term, sort order, or shared page size.
 - Filtered row-count metadata MUST be cached independently of `pageIndex`, `pageSize`, and sort order, so pagination controls stay mounted while a different page of the same filtered result set is loading.
+- The footer MUST display the filtered row count that drives pagination as a read-only, thousands-separated label (singular `row` for exactly one). The label MUST format via `BigInt` so counts beyond `Number.MAX_SAFE_INTEGER` stay exact, and MUST be hidden when the adapter cannot count rows (`filteredRowCount === Infinity`).
 - When staged rows or staged updates exist, pagination controls MUST refuse page changes until the staged edits are resolved.
 
 ## Row Selection Contract

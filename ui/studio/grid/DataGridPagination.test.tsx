@@ -156,6 +156,122 @@ describe("DataGridPagination", () => {
     container.remove();
   });
 
+  it("shows the formatted total row count in the pagination footer", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <DataGridPagination
+          table={createMockTable()}
+          totalRowCount={4725}
+          variant="numeric"
+        />,
+      );
+    });
+
+    const rowCountLabel = container.querySelector(
+      '[data-testid="data-grid-row-count"]',
+    );
+
+    expect(rowCountLabel?.textContent).toBe("4,725 rows");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("uses the singular row label when there is exactly one row", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <DataGridPagination
+          table={createMockTable()}
+          totalRowCount={1}
+          variant="numeric"
+        />,
+      );
+    });
+
+    const rowCountLabel = container.querySelector(
+      '[data-testid="data-grid-row-count"]',
+    );
+
+    expect(rowCountLabel?.textContent).toBe("1 row");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("renders row counts beyond the safe integer range exactly", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <DataGridPagination
+          table={createMockTable()}
+          totalRowCount={"9007199254740993"}
+          variant="numeric"
+        />,
+      );
+    });
+
+    const rowCountLabel = container.querySelector(
+      '[data-testid="data-grid-row-count"]',
+    );
+
+    expect(rowCountLabel?.textContent).toBe("9,007,199,254,740,993 rows");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("hides the row count when no count is available", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <DataGridPagination table={createMockTable()} variant="numeric" />,
+      );
+    });
+
+    expect(
+      container.querySelector('[data-testid="data-grid-row-count"]'),
+    ).toBeNull();
+
+    act(() => {
+      root.render(
+        <DataGridPagination
+          table={createMockTable()}
+          totalRowCount={Infinity}
+          variant="numeric"
+        />,
+      );
+    });
+
+    expect(
+      container.querySelector('[data-testid="data-grid-row-count"]'),
+    ).toBeNull();
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it("renders the page number as a tight right-aligned phrase", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

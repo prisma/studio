@@ -47,6 +47,7 @@ import {
 } from "react";
 
 import type { SortOrderItem } from "../../../data/adapter";
+import type { BigIntString, NumericString } from "../../../data/type-utils";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -230,6 +231,7 @@ export interface DataGridProps {
   rows: Record<string, unknown>[];
   rowSelectionState: RowSelectionState;
   sortingState?: SortOrderItem[];
+  totalRowCount?: number | bigint | NumericString | BigIntString;
   canWriteToCell?: (params: {
     columnId: string;
     row: Record<string, unknown>;
@@ -638,6 +640,7 @@ export function DataGrid(props: DataGridProps) {
     rows,
     rowSelectionState,
     sortingState,
+    totalRowCount,
     canWriteToCell,
   } = props;
 
@@ -2750,6 +2753,7 @@ export function DataGrid(props: DataGridProps) {
             onBlockedInteraction={onBlockedRowsInViewAction}
             onInfiniteScrollEnabledChange={onInfiniteScrollEnabledChange}
             table={table}
+            totalRowCount={totalRowCount}
             variant="numeric"
           />
         )}

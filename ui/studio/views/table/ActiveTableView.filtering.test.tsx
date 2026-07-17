@@ -477,6 +477,7 @@ vi.mock("../../grid/DataGrid", async () => {
       ) => void;
       paginationState?: { pageIndex: number; pageSize: number };
       rows?: Record<string, unknown>[];
+      totalRowCount?: number | bigint | string;
     }) => {
       const table = useReactTable({
         columns: props.columnDefs as never,
@@ -594,6 +595,11 @@ vi.mock("../../grid/DataGrid", async () => {
           >
             Load more rows
           </button>
+          {props.totalRowCount == null ? null : (
+            <span data-testid="mock-grid-total-row-count">
+              {String(props.totalRowCount)}
+            </span>
+          )}
         </>
       );
     },
@@ -2694,6 +2700,31 @@ describe("ActiveTableView filtering", () => {
       expect(view.getGridCell("email", 0).textContent).toContain(
         "alice@example.com",
       );
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  it("passes the filtered row count that drives pagination to the grid footer", async () => {
+    useActiveTableQueryMock.mockReturnValue({
+      data: {
+        filteredRowCount: 4725,
+        rows: [],
+      },
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+
+    const view = renderView();
+
+    try {
+      await flush();
+
+      const rowCountLabel = view.container.querySelector(
+        '[data-testid="mock-grid-total-row-count"]',
+      );
+
+      expect(rowCountLabel?.textContent).toBe("4725");
     } finally {
       view.cleanup();
     }
