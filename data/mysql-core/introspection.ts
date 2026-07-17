@@ -48,8 +48,48 @@ interface Database {
   };
 }
 
+/**
+ * The flavor of the connected MySQL-compatible server.
+ *
+ * MariaDB requires a different columns aggregation: `json_arrayagg` only
+ * exists on MariaDB >= 10.5 and `cast(... as json)` is invalid syntax there
+ * because JSON is an alias for LONGTEXT.
+ */
+export type MySQLServerFlavor = "mariadb" | "mysql";
+
+/**
+ * Detects the server flavor from a `select version()` result.
+ *
+ * MariaDB reports versions like `10.4.34-MariaDB`,
+ * `10.11.6-MariaDB-1:10.11.6+maria~ubu2204` or, behind replication-compatible
+ * setups, `5.5.5-10.5.23-MariaDB-log`. Anything else is treated as MySQL.
+ */
+export function detectMySQLServerFlavor(
+  version: string | null | undefined,
+): MySQLServerFlavor {
+  return typeof version === "string" &&
+    version.toLowerCase().includes("mariadb")
+    ? "mariadb"
+    : "mysql";
+}
+
+export function getServerVersionQuery(
+  requirements?: Omit<BuilderRequirements, "Adapter" | "QueryCompiler">,
+) {
+  const builder = getMySQLBuilder(requirements);
+
+  return compile(builder.selectNoFrom(sql<string>`version()`.as("version")));
+}
+
+export function mockServerVersionQuery() {
+  return [{ version: "8.0.40" }] as const satisfies QueryResult<
+    typeof getServerVersionQuery
+  >;
+}
+
 export function getTablesQuery(
   requirements?: Omit<BuilderRequirements, "Adapter" | "QueryCompiler">,
+  flavor: MySQLServerFlavor = "mysql",
 ) {
   const database = sql<string>`database()`;
 
@@ -110,31 +150,79 @@ export function getTablesQuery(
         "t.TABLE_TYPE as type",
       ])
       .$narrowType<{ type: "BASE TABLE" | "VIEW" }>()
-      .select((eb) =>
-        eb
-          .fn<Omit<InferResult<typeof columnsQuery>[number], "TABLE_NAME">[]>(
-            "json_arrayagg",
-            [
-              jsonBuildObject({
-                autoincrement: eb.ref("c.autoincrement"),
-                computed: eb.ref("c.computed"),
-                datatype: eb.ref("c.datatype"),
-                default: eb.ref("c.default"),
-                fk_column: eb.ref("c.fk_column"),
-                fk_table: eb.ref("c.fk_table"),
-                name: eb.ref("c.name"),
-                position: eb.ref("c.position"),
-                pk: eb.ref("c.pk"),
-                nullable: eb.ref("c.nullable"),
-              }),
-            ],
-          )
-          .as("columns"),
-      )
+      .select((eb) => {
+        type Columns = Omit<
+          InferResult<typeof columnsQuery>[number],
+          "TABLE_NAME"
+        >[];
+
+        const columnsJson = jsonBuildObject({
+          autoincrement: eb.ref("c.autoincrement"),
+          computed: eb.ref("c.computed"),
+          datatype: eb.ref("c.datatype"),
+          default: eb.ref("c.default"),
+          fk_column: eb.ref("c.fk_column"),
+          fk_table: eb.ref("c.fk_table"),
+          name: eb.ref("c.name"),
+          position: eb.ref("c.position"),
+          pk: eb.ref("c.pk"),
+          nullable: eb.ref("c.nullable"),
+        });
+
+        // MariaDB has no `json_arrayagg` before 10.5 (#1511) and no JSON cast
+        // type at all (#1367), so aggregate with `group_concat` into a JSON
+        // array string instead. The string payload is parsed back into an
+        // array by `normalizeTablesQueryResult`.
+        const aggregated =
+          flavor === "mariadb"
+            ? sql<Columns>`coalesce(concat('[', group_concat(${columnsJson} separator ','), ']'), '[]')`
+            : sql<Columns>`json_arrayagg(${columnsJson})`;
+
+        return aggregated.as("columns");
+      })
       .orderBy("t.TABLE_SCHEMA")
       .orderBy("t.TABLE_NAME")
       .orderBy("t.TABLE_TYPE"),
   );
+}
+
+/**
+ * Normalizes the `columns` payload of a tables query result.
+ *
+ * On MariaDB the columns are aggregated into a JSON array string (see
+ * {@link getTablesQuery}), and some transports also return `json_arrayagg`
+ * results as strings instead of parsed arrays. This parses those string
+ * payloads so downstream consumers always receive arrays.
+ */
+export function normalizeTablesQueryResult(
+  tables: QueryResult<typeof getTablesQuery>,
+): QueryResult<typeof getTablesQuery> {
+  return tables.map((table) => {
+    const { columns } = table;
+
+    if (typeof columns !== "string") {
+      return table;
+    }
+
+    let parsed: unknown;
+
+    try {
+      parsed = JSON.parse(columns);
+    } catch (error: unknown) {
+      throw new Error(
+        `Failed to parse introspected columns for table "${table.name}".`,
+        { cause: error },
+      );
+    }
+
+    if (!Array.isArray(parsed)) {
+      throw new Error(
+        `Expected introspected columns for table "${table.name}" to be an array.`,
+      );
+    }
+
+    return { ...table, columns: parsed };
+  });
 }
 
 export function mockTablesQuery() {

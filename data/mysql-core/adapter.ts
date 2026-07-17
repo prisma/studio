@@ -40,10 +40,14 @@ import {
   getUpdateRefetchQuery,
 } from "./dml";
 import {
+  detectMySQLServerFlavor,
+  getServerVersionQuery,
   getTablesQuery,
   getTimezoneQuery,
   mockTablesQuery,
   mockTimezoneQuery,
+  type MySQLServerFlavor,
+  normalizeTablesQueryResult,
 } from "./introspection";
 import { lintMySQLWithExplainFallback } from "./sql-lint";
 
@@ -148,11 +152,41 @@ export function createMySQLAdapter(
     }
   }
 
+  let cachedServerFlavor: MySQLServerFlavor | null = null;
+
+  async function detectServerFlavor(
+    options: Parameters<Adapter["introspect"]>[0],
+  ): Promise<MySQLServerFlavor> {
+    if (cachedServerFlavor) {
+      return cachedServerFlavor;
+    }
+
+    try {
+      const [error, versions] = await executor.execute(
+        getServerVersionQuery(otherRequirements),
+        options,
+      );
+
+      if (error) {
+        // fall back to the MySQL introspection SQL without caching, so the
+        // next introspection retries the detection.
+        return "mysql";
+      }
+
+      cachedServerFlavor = detectMySQLServerFlavor(versions[0]?.version);
+
+      return cachedServerFlavor;
+    } catch {
+      return "mysql";
+    }
+  }
+
   async function introspectDatabase(
     options: Parameters<Adapter["introspect"]>[0],
   ): Promise<Either<AdapterError, AdapterIntrospectResult>> {
     try {
-      const tablesQuery = getTablesQuery(otherRequirements);
+      const serverFlavor = await detectServerFlavor(options);
+      const tablesQuery = getTablesQuery(otherRequirements, serverFlavor);
       const timezoneQuery = getTimezoneQuery(otherRequirements);
 
       const [[tablesError, tables], [timezoneError, timezones]] =
@@ -174,7 +208,11 @@ export function createMySQLAdapter(
 
       return [
         null,
-        createIntrospection({ query: tablesQuery, tables, timezone }),
+        createIntrospection({
+          query: tablesQuery,
+          tables: normalizeTablesQueryResult(tables),
+          timezone,
+        }),
       ];
     } catch (error: unknown) {
       return createMySQLAdapterError({ error: error as Error });
