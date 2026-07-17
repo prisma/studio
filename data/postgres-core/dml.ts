@@ -52,7 +52,6 @@ export function getInsertQuery(
         applyTransformations({
           columns,
           context: "insert",
-          noParameters: requirements?.noParameters,
           supportsDefaultKeyword: true,
           values: rows,
         }),
@@ -286,7 +285,6 @@ export function getUpdateQuery(
         applyTransformations({
           columns,
           context: "update",
-          noParameters: requirements?.noParameters,
           supportsDefaultKeyword: true,
           values: changes,
         }),

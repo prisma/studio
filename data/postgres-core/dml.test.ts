@@ -1300,6 +1300,72 @@ describe("postgres-core/dml", () => {
       expect(persisted.rows).toEqual([{ arr_col: "{tag1,tag2,tag3}" }]);
     });
 
+    it("supports PostgreSQL enum array updates with array values", async () => {
+      const table = createEnumArrayUsersTable();
+      const query = getUpdateQuery({
+        changes: { roles: ["ADMIN", "MANAGE"] },
+        row: { id: 1 },
+        table,
+      });
+
+      expect(query).toMatchInlineSnapshot(`
+        {
+          "parameters": [
+            "ADMIN",
+            "MANAGE",
+            1,
+            1000,
+          ],
+          "sql": "update "public"."enum_array_users" set "roles" = cast(array[$1, $2] as "public"."studio_role"[]) where "id" = $3 returning "id", "roles", cast(floor(extract(epoch from now()) * $4) as text) as "__ps_updated_at__"",
+          "transformations": undefined,
+        }
+      `);
+
+      const [error] = await executor.execute(query);
+
+      expect(error).toBeNull();
+
+      const persisted = await pglite.query<{ roles: string }>(`
+        select "roles"::text as "roles"
+        from "public"."enum_array_users"
+        where "id" = 1
+      `);
+
+      expect(persisted.rows).toEqual([{ roles: "{ADMIN,MANAGE}" }]);
+    });
+
+    it("supports PostgreSQL enum array updates with array values when parameters are inlined", async () => {
+      const table = createEnumArrayUsersTable();
+      const query = getUpdateQuery(
+        {
+          changes: { roles: ["ADMIN", "VISIT"] },
+          row: { id: 1 },
+          table,
+        },
+        { noParameters: true },
+      );
+
+      expect(query).toMatchInlineSnapshot(`
+        {
+          "parameters": [],
+          "sql": "update "public"."enum_array_users" set "roles" = cast(array['ADMIN', 'VISIT'] as "public"."studio_role"[]) where "id" = 1 returning "id", "roles", cast(floor(extract(epoch from now()) * 1000) as text) as "__ps_updated_at__"",
+          "transformations": undefined,
+        }
+      `);
+
+      const [error] = await executor.execute(query);
+
+      expect(error).toBeNull();
+
+      const persisted = await pglite.query<{ roles: string }>(`
+        select "roles"::text as "roles"
+        from "public"."enum_array_users"
+        where "id" = 1
+      `);
+
+      expect(persisted.rows).toEqual([{ roles: "{ADMIN,VISIT}" }]);
+    });
+
     it("casts PostgreSQL enum arrays with the array suffix outside the quoted user-defined type name", async () => {
       const table = createEnumArrayUsersTable();
       const query = getUpdateQuery({

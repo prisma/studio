@@ -278,7 +278,6 @@ function tupleFrom(items: unknown[]): Expression<any> {
 export interface ApplyWriteTransformationsProps<C extends "insert" | "update"> {
   columns: Table["columns"];
   context: C;
-  noParameters?: boolean;
   values: C extends "update"
     ? Record<string, unknown>
     : Record<string, unknown> | Record<string, unknown>[];
@@ -301,7 +300,6 @@ export function applyTransformations<C extends "insert" | "update">(
 interface TransformValuesProps {
   columns: Table["columns"];
   context: "insert" | "update";
-  noParameters?: boolean;
   supportsDefaultKeyword: boolean;
   values: Record<string, unknown>;
 }
@@ -333,10 +331,7 @@ function transformValues(
   return valueEntries.reduce(
     (obj, [key, value]) => ({
       ...obj,
-      [key]: transformValue(value, columns[key]!, {
-        inlineArrayValues: props.noParameters === true,
-        supportsDefaultKeyword,
-      }),
+      [key]: transformValue(value, columns[key]!, supportsDefaultKeyword),
     }),
     requiredColumns.reduce((defaults, column) => {
       const { datatype, fkColumn, name } = column;
@@ -376,13 +371,9 @@ function transformValues(
 function transformValue(
   value: unknown,
   column: Column,
-  options: {
-    inlineArrayValues?: boolean;
-    supportsDefaultKeyword?: boolean;
-  } = {},
+  supportsDefaultKeyword = true,
 ): Expression<any> {
   const { datatype, defaultValue, nullable } = column;
-  const { inlineArrayValues = false, supportsDefaultKeyword = true } = options;
 
   const eb = expressionBuilder();
 
@@ -394,7 +385,7 @@ function transformValue(
     return supportsDefaultKeyword ? sql`default` : eb.lit(null);
   }
 
-  if (inlineArrayValues && datatype.isArray && Array.isArray(value)) {
+  if (datatype.isArray && Array.isArray(value)) {
     return eb.cast(
       getArrayValueExpression(value),
       getArrayTypeCastTarget(datatype),
