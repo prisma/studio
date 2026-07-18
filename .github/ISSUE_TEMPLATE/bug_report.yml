@@ -12,7 +12,7 @@ body:
 
         If your problem is with the Prisma ORM, migrations, or the CLI itself (not the Studio UI), please file it in [prisma/prisma](https://github.com/prisma/prisma/issues) instead.
 
-        💡 For questions, join our [Discord server](https://pris.ly/discord) instead of filing an issue.
+        💡 For general usage questions, join our [Discord server](https://pris.ly/discord) instead of filing an issue.
   - type: dropdown
     id: distribution
     attributes:
@@ -53,11 +53,11 @@ body:
       label: Prisma & studio-core versions
       description: |
         Run `npx prisma --version` and paste the output. If you embed Studio, also include your `@prisma/studio-core` version from `package.json`.
-      value: |
-        ```
-        // Output of `npx prisma --version`
-        ```
-        - @prisma/studio-core version (if embedded):
+      render: shell
+      placeholder: |
+        Output of `npx prisma --version`
+
+        @prisma/studio-core version (if embedded): x.y.z
     validations:
       required: true
 
@@ -106,9 +106,9 @@ body:
       label: Logs
       description: |
         Any relevant output from the browser console (DevTools), the terminal running `prisma studio`, or the VS Code output panel.
-      value: |
-        ```
-        // Logs here
-        ```
+
+        ⚠️ **Redact secrets before posting**: connection strings, tokens, API keys, and any personal data.
+      render: shell
+      placeholder: Paste logs here (with secrets redacted)
     validations:
       required: false

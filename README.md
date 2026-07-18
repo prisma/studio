@@ -29,9 +29,9 @@ Release process notes live in [`RELEASE.md`](RELEASE.md).
 
 ## Feedback and Contributions
 
-Open an issue for bugs, feature requests, or integration questions at [github.com/prisma/studio/issues](https://github.com/prisma/studio/issues). Clear reproduction steps, expected behavior, and screenshots make feedback much easier to act on.
+Open an issue for bugs, feature requests, or integration/API questions about embedding `@prisma/studio-core` at [github.com/prisma/studio/issues](https://github.com/prisma/studio/issues). Clear reproduction steps, expected behavior, and screenshots make feedback much easier to act on.
 
-Issue-first contributions work best for this repo. Please open an issue before investing in a large pull request; external PRs may not be the preferred path for every change. You can also join the [Prisma Discord](https://pris.ly/discord) for broader discussion.
+Issue-first contributions work best for this repo. Please open an issue before investing in a large pull request; external PRs may not be the preferred path for every change. For general usage questions and broader discussion, join the [Prisma Discord](https://pris.ly/discord).
 
 ## Security
 
