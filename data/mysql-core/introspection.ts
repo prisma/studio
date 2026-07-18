@@ -51,9 +51,9 @@ interface Database {
 /**
  * The flavor of the connected MySQL-compatible server.
  *
- * MariaDB requires a different columns aggregation: `json_arrayagg` only
- * exists on MariaDB >= 10.5 and `cast(... as json)` is invalid syntax there
- * because JSON is an alias for LONGTEXT.
+ * MariaDB requires a different tables query ({@link getMariaDBTablesQuery}):
+ * `json_arrayagg` only exists on MariaDB >= 10.5 and `cast(... as json)` is
+ * invalid syntax there because JSON is an alias for LONGTEXT.
  */
 export type MySQLServerFlavor = "mariadb" | "mysql";
 
@@ -87,15 +87,14 @@ export function mockServerVersionQuery() {
   >;
 }
 
-export function getTablesQuery(
+function getColumnsQuery(
   requirements?: Omit<BuilderRequirements, "Adapter" | "QueryCompiler">,
-  flavor: MySQLServerFlavor = "mysql",
 ) {
   const database = sql<string>`database()`;
 
   const builder = getMySQLBuilder<Database>(requirements);
 
-  const columnsQuery = builder
+  return builder
     .selectFrom("information_schema.columns as c")
     .leftJoin("information_schema.KEY_COLUMN_USAGE as kcu", (jb) =>
       jb
@@ -133,6 +132,14 @@ export function getTablesQuery(
       ]).as("computed"),
       eb("c.IS_NULLABLE", "=", "YES").as("nullable"),
     ]);
+}
+
+export function getTablesQuery(
+  requirements?: Omit<BuilderRequirements, "Adapter" | "QueryCompiler">,
+) {
+  const database = sql<string>`database()`;
+
+  const columnsQuery = getColumnsQuery(requirements);
 
   return compile(
     getMySQLBuilder<Database>(requirements)
@@ -150,36 +157,27 @@ export function getTablesQuery(
         "t.TABLE_TYPE as type",
       ])
       .$narrowType<{ type: "BASE TABLE" | "VIEW" }>()
-      .select((eb) => {
-        type Columns = Omit<
-          InferResult<typeof columnsQuery>[number],
-          "TABLE_NAME"
-        >[];
-
-        const columnsJson = jsonBuildObject({
-          autoincrement: eb.ref("c.autoincrement"),
-          computed: eb.ref("c.computed"),
-          datatype: eb.ref("c.datatype"),
-          default: eb.ref("c.default"),
-          fk_column: eb.ref("c.fk_column"),
-          fk_table: eb.ref("c.fk_table"),
-          name: eb.ref("c.name"),
-          position: eb.ref("c.position"),
-          pk: eb.ref("c.pk"),
-          nullable: eb.ref("c.nullable"),
-        });
-
-        // MariaDB has no `json_arrayagg` before 10.5 (#1511) and no JSON cast
-        // type at all (#1367), so aggregate with `group_concat` into a JSON
-        // array string instead. The string payload is parsed back into an
-        // array by `normalizeTablesQueryResult`.
-        const aggregated =
-          flavor === "mariadb"
-            ? sql<Columns>`coalesce(concat('[', group_concat(${columnsJson} separator ','), ']'), '[]')`
-            : sql<Columns>`json_arrayagg(${columnsJson})`;
-
-        return aggregated.as("columns");
-      })
+      .select((eb) =>
+        eb
+          .fn<Omit<InferResult<typeof columnsQuery>[number], "TABLE_NAME">[]>(
+            "json_arrayagg",
+            [
+              jsonBuildObject({
+                autoincrement: eb.ref("c.autoincrement"),
+                computed: eb.ref("c.computed"),
+                datatype: eb.ref("c.datatype"),
+                default: eb.ref("c.default"),
+                fk_column: eb.ref("c.fk_column"),
+                fk_table: eb.ref("c.fk_table"),
+                name: eb.ref("c.name"),
+                position: eb.ref("c.position"),
+                pk: eb.ref("c.pk"),
+                nullable: eb.ref("c.nullable"),
+              }),
+            ],
+          )
+          .as("columns"),
+      )
       .orderBy("t.TABLE_SCHEMA")
       .orderBy("t.TABLE_NAME")
       .orderBy("t.TABLE_TYPE"),
@@ -187,12 +185,99 @@ export function getTablesQuery(
 }
 
 /**
+ * MariaDB-compatible variant of {@link getTablesQuery}.
+ *
+ * MariaDB has no `json_arrayagg` before 10.5 (#1511) and no JSON cast type at
+ * all (#1367), and any server-side string aggregation (`group_concat`,
+ * MariaDB's own `json_arrayagg`) silently truncates at the session's
+ * `group_concat_max_len`. This query therefore avoids aggregation entirely: it
+ * returns one row per column, and {@link groupMariaDBTablesQueryResult} groups
+ * the rows into the {@link getTablesQuery} result shape on the client.
+ */
+export function getMariaDBTablesQuery(
+  requirements?: Omit<BuilderRequirements, "Adapter" | "QueryCompiler">,
+) {
+  const database = sql<string>`database()`;
+
+  return compile(
+    getMySQLBuilder<Database>(requirements)
+      .with("cols", () => getColumnsQuery(requirements))
+      .selectFrom("information_schema.tables as t")
+      .innerJoin("cols as c", (jb) =>
+        jb.onRef("c.TABLE_NAME", "=", "t.TABLE_NAME"),
+      )
+      .where("t.TABLE_SCHEMA", "=", database)
+      .where("t.TABLE_TYPE", "in", ["BASE TABLE", "VIEW"])
+      .select([
+        database.as("schema"),
+        "t.TABLE_NAME as name",
+        "t.TABLE_TYPE as type",
+        "c.autoincrement as column_autoincrement",
+        "c.computed as column_computed",
+        "c.datatype as column_datatype",
+        "c.default as column_default",
+        "c.fk_column as column_fk_column",
+        "c.fk_table as column_fk_table",
+        "c.name as column_name",
+        "c.nullable as column_nullable",
+        "c.pk as column_pk",
+        "c.position as column_position",
+      ])
+      .$narrowType<{ type: "BASE TABLE" | "VIEW" }>()
+      .orderBy("t.TABLE_SCHEMA")
+      .orderBy("t.TABLE_NAME")
+      .orderBy("t.TABLE_TYPE")
+      .orderBy("c.position"),
+  );
+}
+
+/**
+ * Groups the one-row-per-column result of {@link getMariaDBTablesQuery} into
+ * the aggregated {@link getTablesQuery} result shape.
+ */
+export function groupMariaDBTablesQueryResult(
+  rows: QueryResult<typeof getMariaDBTablesQuery>,
+): QueryResult<typeof getTablesQuery> {
+  const tables = new Map<string, QueryResult<typeof getTablesQuery>[number]>();
+
+  for (const row of rows) {
+    const key = JSON.stringify([row.schema, row.name, row.type]);
+
+    let table = tables.get(key);
+
+    if (!table) {
+      table = {
+        columns: [],
+        name: row.name,
+        schema: row.schema,
+        type: row.type,
+      };
+      tables.set(key, table);
+    }
+
+    table.columns.push({
+      autoincrement: row.column_autoincrement,
+      computed: row.column_computed,
+      datatype: row.column_datatype,
+      default: row.column_default,
+      fk_column: row.column_fk_column,
+      fk_table: row.column_fk_table,
+      name: row.column_name,
+      nullable: row.column_nullable,
+      pk: row.column_pk,
+      position: row.column_position,
+    });
+  }
+
+  return [...tables.values()];
+}
+
+/**
  * Normalizes the `columns` payload of a tables query result.
  *
- * On MariaDB the columns are aggregated into a JSON array string (see
- * {@link getTablesQuery}), and some transports also return `json_arrayagg`
- * results as strings instead of parsed arrays. This parses those string
- * payloads so downstream consumers always receive arrays.
+ * Some transports return `json_arrayagg` results as strings instead of parsed
+ * arrays. This parses those string payloads so downstream consumers always
+ * receive arrays.
  */
 export function normalizeTablesQueryResult(
   tables: QueryResult<typeof getTablesQuery>,

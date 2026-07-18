@@ -41,9 +41,11 @@ import {
 } from "./dml";
 import {
   detectMySQLServerFlavor,
+  getMariaDBTablesQuery,
   getServerVersionQuery,
   getTablesQuery,
   getTimezoneQuery,
+  groupMariaDBTablesQueryResult,
   mockTablesQuery,
   mockTimezoneQuery,
   type MySQLServerFlavor,
@@ -181,19 +183,53 @@ export function createMySQLAdapter(
     }
   }
 
+  /**
+   * Fetches table metadata using the tables query that matches the server
+   * flavor. MariaDB gets a one-row-per-column query grouped on the client, so
+   * results can never be truncated by `group_concat_max_len`.
+   */
+  async function fetchTables(
+    serverFlavor: MySQLServerFlavor,
+    options: Parameters<Adapter["introspect"]>[0],
+  ): Promise<{
+    query: Query;
+    result: Either<Error, QueryResult<typeof getTablesQuery>>;
+  }> {
+    if (serverFlavor === "mariadb") {
+      const query = getMariaDBTablesQuery(otherRequirements);
+      const [error, rows] = await executor.execute(query, options);
+
+      return {
+        query,
+        result: error ? [error] : [null, groupMariaDBTablesQueryResult(rows)],
+      };
+    }
+
+    const query = getTablesQuery(otherRequirements);
+    const [error, rows] = await executor.execute(query, options);
+
+    return {
+      query,
+      result: error ? [error] : [null, normalizeTablesQueryResult(rows)],
+    };
+  }
+
   async function introspectDatabase(
     options: Parameters<Adapter["introspect"]>[0],
   ): Promise<Either<AdapterError, AdapterIntrospectResult>> {
     try {
       const serverFlavor = await detectServerFlavor(options);
-      const tablesQuery = getTablesQuery(otherRequirements, serverFlavor);
       const timezoneQuery = getTimezoneQuery(otherRequirements);
 
-      const [[tablesError, tables], [timezoneError, timezones]] =
-        await Promise.all([
-          executor.execute(tablesQuery, options),
-          executor.execute(timezoneQuery, options),
-        ]);
+      const [tablesFetch, [timezoneError, timezones]] = await Promise.all([
+        fetchTables(serverFlavor, options),
+        executor.execute(timezoneQuery, options),
+      ]);
+
+      const {
+        query: tablesQuery,
+        result: [tablesError, tables],
+      } = tablesFetch;
 
       if (tablesError) {
         return createMySQLAdapterError({
@@ -208,11 +244,7 @@ export function createMySQLAdapter(
 
       return [
         null,
-        createIntrospection({
-          query: tablesQuery,
-          tables: normalizeTablesQueryResult(tables),
-          timezone,
-        }),
+        createIntrospection({ query: tablesQuery, tables, timezone }),
       ];
     } catch (error: unknown) {
       return createMySQLAdapterError({ error: error as Error });
