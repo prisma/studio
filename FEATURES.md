@@ -53,7 +53,7 @@ Table-name metadata is normalized into local TanStack DB state and queried live 
 ## Resizable Sidebar
 
 The sidebar width is user-resizable from a drag handle on its right edge, so long table and stream names stay fully readable instead of being cut off at a fixed width.
-The handle also supports keyboard resizing (`ArrowLeft` / `ArrowRight`, plus `Home` / `End` for the extremes), and the width is clamped to sane minimum and maximum bounds that keep both the sidebar and the main content usable.
+The handle also supports keyboard resizing (`ArrowLeft` / `ArrowRight`, plus `Home` / `End` for the extremes), and the width is clamped to a 192px minimum and a 520px maximum, additionally capped at 60% of the viewport width on narrow screens, so both the sidebar and the main content stay usable.
 The chosen width is persisted in local Studio UI state, so it survives navigation and reopening Studio; the default width is unchanged until the user resizes.
 
 ## Sidebar Table Name Search
