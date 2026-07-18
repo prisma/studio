@@ -56,6 +56,12 @@ Users can share links into a precise Studio state, and stale params are resolved
 The sidebar provides schema switching and active-table navigation so users can move through large databases quickly.
 Table-name metadata is normalized into local TanStack DB state and queried live for responsive list rendering.
 
+## Resizable Sidebar
+
+The sidebar width is user-resizable from a drag handle on its right edge, so long table and stream names stay fully readable instead of being cut off at a fixed width.
+The handle also supports keyboard resizing (`ArrowLeft` / `ArrowRight`, plus `Home` / `End` for the extremes), and the width is clamped to a 192px minimum and a 520px maximum, additionally capped at 60% of the viewport width on narrow screens, so both the sidebar and the main content stay usable.
+The chosen width is persisted in local Studio UI state, so it survives navigation and reopening Studio; the default width is unchanged until the user resizes.
+
 ## Sidebar Table Name Search
 
 Table filtering is available inline in the Tables header, so search is there when needed without permanent UI clutter.
@@ -69,7 +75,6 @@ Studio can optionally connect to a Prisma Streams server alongside the database 
 The list reuses the same compact navigation shell as table browsing, loads live stream names from the configured Streams base URL, and disappears entirely when Studio is embedded without Streams configured.
 Streams also reuse the same inline filter disclosure as tables, so the `Streams` header can open an in-place search field with the same keyboard flow, real-time local filtering, and `ArrowUp` / `ArrowDown` plus `Enter` selection behavior instead of introducing a second sidebar filtering pattern.
 That shared hover affordance also adds a stream-list refresh button beside search, so the current Streams server can be queried again on demand without opening the field first or adding permanent chrome to the sidebar header.
-The sidebar width is also user-resizable from a drag handle on its right edge, and that width is persisted in Studio UI state so wider stream names stay readable as you move around the app or reopen it later.
 
 ## Prisma WAL Table History
 
