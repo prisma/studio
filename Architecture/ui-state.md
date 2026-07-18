@@ -157,6 +157,9 @@ Command-palette action registrations are the one allowed React-context exception
 - Explicit user-triggered theme changes SHOULD use `document.startViewTransition` when available, with direct synchronous updates as the fallback, so Studio does not flash partially updated theme tokens during appearance switches.
 - Explicit `light` or `dark` choices MUST remain stable even if the embedding host mutates `document.documentElement.classList`.
 - Legacy persisted rows that only contain `isDarkMode` MUST normalize into explicit `themeMode` values during load so existing installs keep their preference.
+- The resolved theme MUST also sync to the document root (`color-scheme` and Studio's `--background` color on `<html>`, marked with `data-prisma-studio-theme`) so full-page shells get matching overscroll and behind-corner backgrounds, but ONLY when neither `<html>` nor `<body>` carries a host-authored background. Embedded hosts that style their own document MUST be left untouched.
+- Host ownership MUST be re-evaluated on every document-theme sync, ignoring the inline values Studio applied itself: if the host authors a document background (or overwrites Studio's inline properties) after Studio mounted, Studio MUST release the document theme and keep the host's values.
+- The pre-claim inline `<html>` values (including any host `color-scheme`) MUST be snapshotted when Studio first claims the document and restored when the claim is released. With multiple mounted Studio instances, the document theme MUST only be released when the last instance unmounts.
 
 ## Why This Architecture Is Better
 
