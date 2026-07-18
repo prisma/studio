@@ -299,6 +299,81 @@ describe("useTheme", () => {
     harness.cleanup();
   });
 
+  it("releases the document when the host authors a background after mount", async () => {
+    const harness = renderThemeHarness({
+      isDarkMode: true,
+    });
+
+    expect(
+      document.documentElement.getAttribute(STUDIO_DOCUMENT_THEME_ATTRIBUTE),
+    ).toBe("dark");
+
+    // The host starts styling its page after Studio mounted.
+    document.body.style.background = "#ffffff";
+
+    // Trigger a re-sync through the body mutation observer.
+    const mutationProbe = document.createElement("div");
+    document.body.appendChild(mutationProbe);
+
+    await flush();
+
+    expect(
+      document.documentElement.hasAttribute(STUDIO_DOCUMENT_THEME_ATTRIBUTE),
+    ).toBe(false);
+    expect(document.documentElement.style.colorScheme).toBe("");
+    expect(document.documentElement.style.backgroundColor).toBe("");
+
+    harness.cleanup();
+    mutationProbe.remove();
+  });
+
+  it("keeps the document theme until the last Studio instance unmounts", () => {
+    const firstHarness = renderThemeHarness({
+      isDarkMode: true,
+    });
+    const secondHarness = renderThemeHarness({
+      isDarkMode: true,
+    });
+
+    expect(
+      document.documentElement.getAttribute(STUDIO_DOCUMENT_THEME_ATTRIBUTE),
+    ).toBe("dark");
+
+    firstHarness.cleanup();
+
+    expect(
+      document.documentElement.getAttribute(STUDIO_DOCUMENT_THEME_ATTRIBUTE),
+    ).toBe("dark");
+    expect(document.documentElement.style.colorScheme).toBe("dark");
+
+    secondHarness.cleanup();
+
+    expect(
+      document.documentElement.hasAttribute(STUDIO_DOCUMENT_THEME_ATTRIBUTE),
+    ).toBe(false);
+    expect(document.documentElement.style.colorScheme).toBe("");
+  });
+
+  it("restores a pre-existing host inline color-scheme on release", () => {
+    document.documentElement.style.colorScheme = "light";
+
+    const harness = renderThemeHarness({
+      isDarkMode: true,
+    });
+
+    expect(
+      document.documentElement.getAttribute(STUDIO_DOCUMENT_THEME_ATTRIBUTE),
+    ).toBe("dark");
+    expect(document.documentElement.style.colorScheme).toBe("dark");
+
+    harness.cleanup();
+
+    expect(
+      document.documentElement.hasAttribute(STUDIO_DOCUMENT_THEME_ATTRIBUTE),
+    ).toBe(false);
+    expect(document.documentElement.style.colorScheme).toBe("light");
+  });
+
   it("clears the document-level theme when Studio unmounts", () => {
     const harness = renderThemeHarness({
       isDarkMode: true,
