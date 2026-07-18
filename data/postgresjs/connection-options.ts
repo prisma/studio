@@ -15,6 +15,24 @@ const SSL_FILE_PARAMETERS = [
 
 type SslFileParameter = (typeof SSL_FILE_PARAMETERS)[number];
 
+/**
+ * The `sslmode` values accepted by libpq.
+ */
+const SSL_MODES = [
+  "disable",
+  "allow",
+  "prefer",
+  "require",
+  "verify-ca",
+  "verify-full",
+] as const;
+
+type SslMode = (typeof SSL_MODES)[number];
+
+function isSslMode(value: string): value is SslMode {
+  return (SSL_MODES as readonly string[]).includes(value);
+}
+
 export interface PostgresJSSslOptions {
   ca?: string;
   cert?: string;
@@ -88,8 +106,28 @@ export function createPostgresJSConnectionConfig(
     parameters.delete(parameter);
   }
 
-  const sslMode = parameters.getAll("sslmode").at(-1) ?? null;
+  const rawSslMode = parameters.getAll("sslmode").at(-1) ?? null;
   parameters.delete("sslmode");
+
+  if (rawSslMode !== null && !isSslMode(rawSslMode)) {
+    throw new Error(
+      `Unsupported "sslmode" connection parameter value "${rawSslMode}". Expected one of: ${SSL_MODES.join(
+        ", ",
+      )}.`,
+    );
+  }
+
+  const sslMode: SslMode | null = rawSslMode;
+
+  const useSystemTrustStore = sslFileValues.get("sslrootcert") === "system";
+
+  if (useSystemTrustStore && sslMode !== null && sslMode !== "verify-full") {
+    // libpq rejects this combination with "weak sslmode disallowed with
+    // system CA" instead of silently weakening or strengthening verification.
+    throw new Error(
+      `Weak "sslmode" connection parameter value "${sslMode}" is disallowed with "sslrootcert=system". Use sslmode=verify-full.`,
+    );
+  }
 
   const remainingQuery = parameters.toString();
   const strippedConnectionString = remainingQuery
@@ -101,6 +139,17 @@ export function createPostgresJSConnectionConfig(
       connectionString: strippedConnectionString,
       options: { ssl: false },
     };
+  }
+
+  if (sslMode === "allow" || sslMode === "prefer") {
+    // libpq negotiates plaintext-first (allow) or TLS-with-plaintext-fallback
+    // (prefer). postgres.js only supports that negotiation for its built-in
+    // "allow"/"prefer" string modes, which cannot carry custom TLS options,
+    // so honoring the file parameters would silently force TLS on. Reject the
+    // combination instead of changing the negotiation behavior.
+    throw new Error(
+      `The "sslmode" connection parameter value "${sslMode}" cannot be combined with the client-side SSL file parameters (sslrootcert, sslcert, sslkey, sslpassword). Use sslmode=require, sslmode=verify-ca, or sslmode=verify-full.`,
+    );
   }
 
   const readSslFile = (parameter: SslFileParameter): string => {
@@ -118,10 +167,7 @@ export function createPostgresJSConnectionConfig(
 
   const ssl: PostgresJSSslOptions = {};
 
-  const sslRootCert = sslFileValues.get("sslrootcert");
-  const useSystemTrustStore = sslRootCert === "system";
-
-  if (sslRootCert !== undefined && !useSystemTrustStore) {
+  if (sslFileValues.has("sslrootcert") && !useSystemTrustStore) {
     ssl.ca = readSslFile("sslrootcert");
   }
 
@@ -147,7 +193,7 @@ export function createPostgresJSConnectionConfig(
     ssl.rejectUnauthorized = true;
     ssl.checkServerIdentity = () => undefined;
   } else {
-    // require/prefer/allow (or no sslmode): encrypt without verification.
+    // sslmode=require (or no sslmode): encrypt without verification.
     ssl.rejectUnauthorized = false;
   }
 

@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 import postgres from "postgres";
 import { describe, expect, it, vi } from "vitest";
 
@@ -217,6 +219,79 @@ describe("createPostgresJSConnectionConfig", () => {
     expect(ssl.checkServerIdentity).toBeUndefined();
   });
 
+  it("accepts sslmode=verify-full together with sslrootcert=system", () => {
+    const readFile = createReadFileMock({});
+
+    const config = createPostgresJSConnectionConfig(
+      "postgres://user@db.example.com/mydb?sslmode=verify-full&sslrootcert=system",
+      { readFile },
+    );
+
+    expect(config.connectionString).toBe("postgres://user@db.example.com/mydb");
+
+    const ssl = config.options.ssl as TlsSslOptions;
+
+    expect(ssl.ca).toBeUndefined();
+    expect(ssl.rejectUnauthorized).toBe(true);
+    expect(ssl.checkServerIdentity).toBeUndefined();
+  });
+
+  it.each(["disable", "allow", "prefer", "require", "verify-ca"] as const)(
+    "rejects sslrootcert=system combined with the weaker sslmode=%s",
+    (sslMode) => {
+      // libpq rejects this combination with "weak sslmode disallowed with
+      // system CA" instead of silently changing the verification behavior.
+      const readFile = createReadFileMock({});
+
+      expect(() =>
+        createPostgresJSConnectionConfig(
+          `postgres://user@db.example.com/mydb?sslmode=${sslMode}&sslrootcert=system`,
+          { readFile },
+        ),
+      ).toThrowError(
+        new RegExp(
+          `Weak "sslmode" connection parameter value "${sslMode}" is disallowed with "sslrootcert=system"`,
+        ),
+      );
+      expect(readFile).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["allow", "prefer"] as const)(
+    "rejects sslmode=%s combined with client-side ssl file parameters",
+    (sslMode) => {
+      // postgres.js cannot negotiate libpq's plaintext fallback while using
+      // custom TLS options, so the helper refuses to silently force TLS on.
+      const readFile = createReadFileMock({ "/certs/ca.pem": "CA-PEM" });
+
+      expect(() =>
+        createPostgresJSConnectionConfig(
+          `postgres://user@db.example.com/mydb?sslmode=${sslMode}&sslrootcert=/certs/ca.pem`,
+          { readFile },
+        ),
+      ).toThrowError(
+        new RegExp(
+          `The "sslmode" connection parameter value "${sslMode}" cannot be combined with the client-side SSL file parameters`,
+        ),
+      );
+      expect(readFile).not.toHaveBeenCalled();
+    },
+  );
+
+  it("throws a descriptive error for unrecognized sslmode values", () => {
+    const readFile = createReadFileMock({ "/certs/ca.pem": "CA-PEM" });
+
+    expect(() =>
+      createPostgresJSConnectionConfig(
+        "postgres://user@db.example.com/mydb?sslmode=verify-fulll&sslrootcert=/certs/ca.pem",
+        { readFile },
+      ),
+    ).toThrowError(
+      /Unsupported "sslmode" connection parameter value "verify-fulll"\. Expected one of: disable, allow, prefer, require, verify-ca, verify-full\./,
+    );
+    expect(readFile).not.toHaveBeenCalled();
+  });
+
   it("disables ssl entirely for sslmode=disable even when file parameters are present", () => {
     const readFile = createReadFileMock({});
 
@@ -262,7 +337,7 @@ describe("createPostgresJSConnectionConfig", () => {
   it("reads ssl files from disk by default", () => {
     const config = createPostgresJSConnectionConfig(
       `postgres://user@db.example.com/mydb?sslrootcert=${encodeURIComponent(
-        new URL("./connection-options.test.ts", import.meta.url).pathname,
+        fileURLToPath(import.meta.url),
       )}`,
     );
 
