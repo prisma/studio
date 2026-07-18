@@ -198,6 +198,13 @@ deriving mutation scope independently (for example from `usePagination`) makes
 `collection.update`/`collection.delete` silently miss rows loaded beyond the
 first batch.
 
+While a grown infinite-scroll window is still fetching, the grid keeps showing
+the previous settled window. During that transition the view MUST keep the
+mutation query props pinned to the settled window too:
+`resolveVisibleTableWindow` pairs the visible rows with the query props of the
+scope they were loaded from, and both swap to the grown window atomically once
+its query finishes.
+
 ## Lifecycle Rules
 
 Studio context owns collection lifecycle:

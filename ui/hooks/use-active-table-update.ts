@@ -1,17 +1,17 @@
 import { useMutation } from "@tanstack/react-query";
 
-import type {
-  AdapterUpdateDetails,
-  AdapterUpdateOptions,
-} from "../../data/adapter";
 import {
   useActiveTableQueryCollection,
   type UseActiveTableQueryProps,
 } from "./use-active-table-query";
 
+// Persistence is delegated to the rows collection's `onUpdate` handler, which
+// owns the `adapter.update` call. There is intentionally no per-call
+// `AdapterUpdateOptions` channel here: options passed at this level could not
+// reach the adapter and would be silently ignored.
 export interface UseActiveTableUpdateParams {
-  details: AdapterUpdateDetails;
-  options: AdapterUpdateOptions;
+  changes: Record<string, unknown>;
+  row: Record<string, unknown>;
 }
 
 export function useActiveTableUpdate(query: UseActiveTableQueryProps) {
@@ -25,14 +25,14 @@ export function useActiveTableUpdate(query: UseActiveTableQueryProps) {
 
   return useMutation({
     mutationFn: async (params: UseActiveTableUpdateParams) => {
-      const rowId = String(params.details.row.__ps_rowid ?? "");
+      const rowId = String(params.row.__ps_rowid ?? "");
 
       if (!collection || !activeTable || !rowId) {
         throw new Error("Active table collection is not available");
       }
 
       const transaction = collection.update(rowId, (draft) => {
-        Object.assign(draft, params.details.changes);
+        Object.assign(draft, params.changes);
       });
 
       await transaction.isPersisted.promise;
