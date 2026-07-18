@@ -1064,6 +1064,8 @@ export function DataGrid(props: DataGridProps) {
     leftPinnedWidth: 0,
     rightPinnedWidth: 0,
   });
+  const viewportMeasurableRef = useRef(false);
+  const [viewportReadyTick, setViewportReadyTick] = useState(0);
   const [contextMenuTarget, setContextMenuTarget] =
     useState<GridContextMenuTarget | null>(null);
   const [activeColumnDragState, setActiveColumnDragState] =
@@ -1206,9 +1208,11 @@ export function DataGrid(props: DataGridProps) {
   const rightPinnedWidth = table
     .getRightVisibleLeafColumns()
     .reduce((total, column) => total + column.getSize(), 0);
-  const centerVirtualizationInputsKey = `${centerVisibleLeafColumns
-    .map((column) => `${column.id}:${column.getSize()}`)
-    .join("|")}|left:${leftPinnedWidth}|right:${rightPinnedWidth}`;
+  const centerVirtualizationInputsKey = JSON.stringify([
+    centerVisibleLeafColumns.map((column) => [column.id, column.getSize()]),
+    leftPinnedWidth,
+    rightPinnedWidth,
+  ]);
 
   // Recomputes the center-column virtualization window from the live scroll
   // position. State only changes when the window itself changes, so plain
@@ -1218,6 +1222,19 @@ export function DataGrid(props: DataGridProps) {
 
     if (!scrollContainer) {
       return;
+    }
+
+    // Track when the grid gains a measurable viewport (e.g. a hidden tab
+    // becomes visible). Scrolling never changes this, so the tick only
+    // re-triggers effects on layout-readiness transitions.
+    const isViewportMeasurable = scrollContainer.clientWidth > 0;
+
+    if (isViewportMeasurable !== viewportMeasurableRef.current) {
+      viewportMeasurableRef.current = isViewportMeasurable;
+
+      if (isViewportMeasurable) {
+        setViewportReadyTick((current) => current + 1);
+      }
     }
 
     const inputs = centerVirtualizationInputsRef.current;
@@ -1807,16 +1824,13 @@ export function DataGrid(props: DataGridProps) {
       return;
     }
 
-    // Mark the focused cell as handled before scrolling so the auto-scroll
-    // runs at most once per focused-cell change. Retrying while the focused
-    // column is outside the virtualization window (its cell element is not
-    // rendered) would re-apply the computed scrollLeft on every scroll update
-    // and fight user-initiated scrolling.
-    autoScrolledFocusedCellRef.current = focusedCell;
-
     const tableElement = tableRef.current;
     const scrollContainer = tableElement?.parentElement;
 
+    // Leave the focused cell unhandled while its prerequisites are missing
+    // (no scroll container, unknown column, or a hidden/unmeasured grid), so
+    // the auto-scroll still runs once column and layout readiness re-trigger
+    // this effect.
     if (!(scrollContainer instanceof HTMLDivElement)) {
       return;
     }
@@ -1826,6 +1840,17 @@ export function DataGrid(props: DataGridProps) {
     if (!focusedColumn) {
       return;
     }
+
+    if (scrollContainer.clientWidth <= 0) {
+      return;
+    }
+
+    // Mark the focused cell as handled before scrolling so the auto-scroll
+    // runs at most once per focused-cell change. Retrying while the focused
+    // column is outside the virtualization window (its cell element is not
+    // rendered) would re-apply the computed scrollLeft on every scroll update
+    // and fight user-initiated scrolling.
+    autoScrolledFocusedCellRef.current = focusedCell;
 
     const currentLeftPinnedWidth = table
       .getLeftVisibleLeafColumns()
@@ -1889,7 +1914,10 @@ export function DataGrid(props: DataGridProps) {
       scrollContainer.scrollLeft = nextScrollLeft;
       scrollContainer.dispatchEvent(new Event("scroll"));
     }
-  }, [focusedCell, table]);
+    // centerVirtualizationInputsKey and viewportReadyTick re-trigger this
+    // effect when columns or the grid layout become ready; neither changes on
+    // plain scrolling, so user scrolling can never re-run the auto-scroll.
+  }, [centerVirtualizationInputsKey, focusedCell, table, viewportReadyTick]);
 
   useEffect(() => {
     const tableElement = tableRef.current;

@@ -788,6 +788,95 @@ describe("DataGrid interactions", () => {
     }
   });
 
+  it("runs the focused-cell auto-scroll once the grid becomes measurable after being hidden", async () => {
+    const clientWidthDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "clientWidth",
+    );
+    let mockedClientWidth = 0;
+
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+      configurable: true,
+      get() {
+        return mockedClientWidth;
+      },
+    });
+
+    let cleanupGrid: (() => void) | null = null;
+
+    try {
+      const columnIds = Array.from(
+        { length: 20 },
+        (_, index) => `col_${index}`,
+      );
+      const row: GridRow = { __ps_rowid: "row_1" };
+
+      for (const columnId of columnIds) {
+        row[columnId] = `${columnId} value`;
+      }
+
+      const { cleanup, container, setFocusedCell } = renderGrid({
+        columnDefs: createReadOnlyColumns({ columnIds }),
+        focusedCell: null,
+        manageFocusedCell: true,
+        rows: [row],
+      });
+      cleanupGrid = cleanup;
+
+      const scrollContainer = container.querySelector(
+        '[data-grid-scroll-container="true"]',
+      );
+
+      if (!(scrollContainer instanceof HTMLDivElement)) {
+        throw new Error("Could not find table scroll container");
+      }
+
+      await flushMicrotasks();
+
+      // Focus arrives while the grid is hidden (clientWidth 0), so the
+      // auto-scroll cannot run yet and must stay pending.
+      setFocusedCell({
+        columnId: "col_10",
+        rowIndex: 0,
+      });
+      await flushMicrotasks();
+
+      expect(scrollContainer.scrollLeft).toBe(0);
+
+      // The grid becomes visible and layout observers fire.
+      mockedClientWidth = 400;
+      act(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+      await flushMicrotasks();
+
+      // The pending focused-cell auto-scroll now runs exactly once:
+      // columnEnd (11 * 200) minus the 400px viewport.
+      expect(scrollContainer.scrollLeft).toBe(1800);
+
+      // Subsequent user scrolling still wins.
+      act(() => {
+        scrollContainer.scrollLeft = 2600;
+        scrollContainer.dispatchEvent(new Event("scroll"));
+      });
+      await flushMicrotasks();
+
+      expect(scrollContainer.scrollLeft).toBe(2600);
+    } finally {
+      cleanupGrid?.();
+
+      if (clientWidthDescriptor) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          "clientWidth",
+          clientWidthDescriptor,
+        );
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
+      }
+    }
+  });
+
   it("loads more rows when infinite scroll reaches the bottom threshold", async () => {
     const onLoadMoreRows = vi.fn();
     const { cleanup, container } = renderGrid({
