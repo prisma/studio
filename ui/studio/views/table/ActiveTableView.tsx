@@ -54,6 +54,7 @@ import { useSorting } from "../../../hooks/use-sorting";
 import { useStreams } from "../../../hooks/use-streams";
 import { useTableUiState } from "../../../hooks/use-table-ui-state";
 import { useUiState } from "../../../hooks/use-ui-state";
+import { randomUUID } from "../../../lib/random-uuid";
 import { cn } from "../../../lib/utils";
 import {
   Cell,
@@ -1856,7 +1857,7 @@ function createEditorCellKey(args: {
 
 function createEmptyStagedRowDraft(): Record<string, unknown> {
   return {
-    [STAGED_ROW_DRAFT_ID_KEY]: crypto.randomUUID(),
+    [STAGED_ROW_DRAFT_ID_KEY]: randomUUID(),
   };
 }
 
