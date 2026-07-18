@@ -35,8 +35,12 @@ export const SQLITE_AFFINITY_TO_METADATA: Record<
 /**
  * Declared types like `date`, `datetime`, or `timestamp` fall through SQLite's
  * affinity rules to NUMERIC, but their stored values are date/time strings.
+ *
+ * Only whole tokens count (`DATETIME(6)`, `TIMESTAMP WITH TIME ZONE`), so
+ * NUMERIC-affinity declared types that merely contain such a substring
+ * (`CANDIDATE`, `DATED`, `RUNTIME`) are not misclassified as date-like.
  */
-const DATE_LIKE_DECLARED_TYPE_REGEX = /DATE|TIME/;
+const DATE_LIKE_DECLARED_TYPE_REGEX = /\b(?:DATE|DATETIME|TIME|TIMESTAMP)\b/;
 
 /**
  * Resolves the affinity and Studio datatype metadata for a declared type.

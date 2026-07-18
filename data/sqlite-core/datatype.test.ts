@@ -70,6 +70,34 @@ describe("determineColumnMetadata", () => {
       expected: { affinity: "NUMERIC", group: "string" },
     },
     { datatype: "TIME", expected: { affinity: "NUMERIC", group: "string" } },
+    {
+      datatype: "DATETIME(6)",
+      expected: { affinity: "NUMERIC", group: "string" },
+    },
+    {
+      datatype: "TIMESTAMP WITH TIME ZONE",
+      expected: { affinity: "NUMERIC", group: "string" },
+    },
+
+    // NUMERIC-affinity declared types that merely contain a date/time
+    // substring are not date-like and stay numeric.
+    {
+      datatype: "CANDIDATE",
+      expected: { affinity: "NUMERIC", group: "numeric" },
+    },
+    { datatype: "DATED", expected: { affinity: "NUMERIC", group: "numeric" } },
+    {
+      datatype: "RUNTIME",
+      expected: { affinity: "NUMERIC", group: "numeric" },
+    },
+    {
+      datatype: "LIFETIME",
+      expected: { affinity: "NUMERIC", group: "numeric" },
+    },
+    {
+      datatype: "TIMES",
+      expected: { affinity: "NUMERIC", group: "numeric" },
+    },
 
     // other NUMERIC affinity declared types stay numeric.
     {
