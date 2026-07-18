@@ -2,7 +2,10 @@ import { startPrismaDevServer } from "@prisma/dev";
 import type { Sql } from "postgres";
 import postgres from "postgres";
 
-import { createPostgresJSExecutor } from "../../data/postgresjs";
+import {
+  createPostgresJSConnectionConfig,
+  createPostgresJSExecutor,
+} from "../../data/postgresjs";
 import {
   type DemoRuntimeOptions,
   hasExternalDatabaseUrl,
@@ -51,8 +54,15 @@ export async function startDemoRuntime(
   const cleanupCallbacks: Array<() => Promise<void> | void> = [];
   const createPostgresClient =
     dependencies.createPostgresClient ??
-    ((connectionString, clientOptions) =>
-      postgres(connectionString, clientOptions));
+    ((connectionString, clientOptions) => {
+      const connectionConfig =
+        createPostgresJSConnectionConfig(connectionString);
+
+      return postgres(connectionConfig.connectionString, {
+        ...clientOptions,
+        ...connectionConfig.options,
+      });
+    });
   const createExecutor =
     dependencies.createPostgresExecutor ?? createPostgresJSExecutor;
   const createSeededTimestamp =
