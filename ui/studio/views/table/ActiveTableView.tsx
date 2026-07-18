@@ -1766,6 +1766,7 @@ export function ActiveTableView(_props: ViewProps) {
         rowSelectionState={rowSelectionState}
         selectionScopeKey={selectionScopeKey}
         sortingState={sortingState}
+        totalRowCount={visibleData?.filteredRowCount}
       />
       <BinaryAlertDialog
         onOpenChange={setDeleteDialogOpen}

@@ -13,6 +13,7 @@ import type {
 } from "react";
 import { useEffect, useId, useState } from "react";
 
+import type { BigIntString, NumericString } from "@/data/type-utils";
 import { Button, buttonVariants } from "@/ui/components/ui/button";
 import {
   DropdownMenu,
@@ -33,6 +34,7 @@ export interface DataGridPaginationProps {
   onBlockedInteraction?: () => void;
   onInfiniteScrollEnabledChange?: (enabled: boolean) => void;
   table: Table<Record<string, unknown>>;
+  totalRowCount?: number | bigint | NumericString | BigIntString;
   variant?: "basic" | "numeric";
 }
 
@@ -45,11 +47,13 @@ export function DataGridPagination(props: DataGridPaginationProps) {
     onBlockedInteraction,
     onInfiniteScrollEnabledChange,
     table,
+    totalRowCount,
     variant = "basic",
   } = props;
 
   const { pageIndex, pageSize } = table.getState().pagination;
   const pageCount = table.getPageCount();
+  const rowCountLabel = getRowCountLabel(totalRowCount);
   const [pageDraft, setPageDraft] = useState(String(pageIndex + 1));
   const [isPageSizeMenuOpen, setIsPageSizeMenuOpen] = useState(false);
   const infiniteScrollControlId = useId();
@@ -465,9 +469,52 @@ export function DataGridPagination(props: DataGridPaginationProps) {
             </div>
           </div>
         )}
+        {rowCountLabel == null ? null : (
+          <span
+            className="shrink-0 px-1 font-sans text-xs font-medium text-muted-foreground tabular-nums"
+            data-testid="data-grid-row-count"
+          >
+            {rowCountLabel}
+          </span>
+        )}
       </div>
     </div>
   );
+}
+
+function getRowCountLabel(
+  totalRowCount: DataGridPaginationProps["totalRowCount"],
+): string | null {
+  if (totalRowCount == null) {
+    return null;
+  }
+
+  // A `number` above Number.MAX_SAFE_INTEGER has already lost precision
+  // before BigInt() could see it, so hide the label instead of showing a
+  // rounded total; exact large counts must arrive as bigint or string. This
+  // also covers `Infinity`, which adapters use when rows cannot be counted.
+  if (
+    typeof totalRowCount === "number" &&
+    !Number.isSafeInteger(totalRowCount)
+  ) {
+    return null;
+  }
+
+  let rowCount: bigint;
+
+  try {
+    rowCount = BigInt(totalRowCount);
+  } catch {
+    return null;
+  }
+
+  if (rowCount < BigInt(0)) {
+    return null;
+  }
+
+  const formattedRowCount = rowCount.toLocaleString("en-US");
+
+  return `${formattedRowCount} ${rowCount === BigInt(1) ? "row" : "rows"}`;
 }
 
 function parsePositiveInteger(value: string): number | null {

@@ -179,6 +179,11 @@ The footer keeps page navigation, a page jump field, a fixed rows-per-page dropd
 Rows-per-page and infinite-scroll preferences persist across tables through local storage, while the known filtered-row count keeps the footer stable during page transitions for the same filtered result set. Infinite scroll preloads before the hard bottom edge, always appends in fixed 25-row chunks regardless of the paginated page-size setting, keeps filling tall viewports until the grid is actually scrollable, and appends new rows in place without snapping the grid back to the top.
 Rapid sort and filter changes keep the latest request authoritative, and superseded table reads are aborted so a slower older result cannot overwrite the visible grid.
 
+## Table Row Count Display
+
+The grid footer shows the total number of rows in the current result set as a muted, thousands-separated label (for example `4,725 rows`), so users can gauge table size at a glance without paging to the end.
+The label uses the same filtered count that drives pagination, so it reflects active filters and row search, and it stays exact for counts beyond JavaScript's safe integer range. When the adapter cannot count rows, the label is hidden instead of showing a misleading number.
+
 ## PostgreSQL Stored Temporal Values
 
 When Studio reads PostgreSQL data through the `postgres.js` executor, `date` and `timestamp without time zone` values are normalized back to their stored wall-clock values before they reach the grid.
