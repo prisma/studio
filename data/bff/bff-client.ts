@@ -653,6 +653,6 @@ export function deserializeError(error: SerializedError): Error {
   }
 
   const regularError = new Error(error.message);
-  error.name = name;
+  regularError.name = name;
   return regularError;
 }
