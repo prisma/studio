@@ -14,6 +14,11 @@ type Updater<T> = T | ((previous: T) => T);
 
 export interface UseUiStateOptions {
   cleanupOnUnmount?: boolean;
+  /**
+   * When enabled, state is stored in the localStorage-backed persistent UI
+   * state collection so it survives page reloads.
+   */
+  persistent?: boolean;
 }
 
 const fallbackUiStateCollection = instrumentTanStackCollectionMutations(
@@ -98,15 +103,18 @@ export function useUiState<T>(
   initialValue: T,
   options: UseUiStateOptions = {},
 ) {
-  const { cleanupOnUnmount = false } = options;
+  const { cleanupOnUnmount = false, persistent = false } = options;
   const [volatileValue, setVolatileValue] = useState<T>(() =>
     cloneValue(initialValue),
   );
   const previousVolatileKeyRef = useRef<string | undefined>(key);
   const studioContext = useOptionalStudio();
   const uiLocalStateCollection =
-    (studioContext?.uiLocalStateCollection as typeof fallbackUiStateCollection) ??
-    fallbackUiStateCollection;
+    ((persistent
+      ? studioContext?.uiPersistentStateCollection
+      : studioContext?.uiLocalStateCollection) as
+      | typeof fallbackUiStateCollection
+      | undefined) ?? fallbackUiStateCollection;
 
   const { data: stateRow } = useLiveQuery(
     (q) => {

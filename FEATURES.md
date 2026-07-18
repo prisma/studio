@@ -150,7 +150,7 @@ Cards keep a fixed width inside their own horizontal scroller, the header toggle
 
 Studio includes a schema graph view with table nodes, column metadata, and detected foreign-key relationships labeled as 1:1 or 1:n.
 The visualizer now runs ELK auto-layout with component-aware spacing so disconnected tables do not collapse into the same visual band, and orthogonal step edges leave clearer corridors between nodes.
-Dragged node positions persist when you leave and return to the same schema view, and a header-level `Reset layout` action re-applies the current ELK baseline when you want to discard manual placement.
+Dragged node positions are remembered in localStorage-backed UI state scoped per schema, so a manual arrangement survives leaving the visualizer, switching views, and full page reloads; tables without a remembered position (for example newly created ones) fall back to ELK auto-layout. A header-level `Reset layout` action re-applies the current ELK baseline and forgets the stored manual placement.
 Users can pan/zoom, inspect key and nullable markers, and jump from a node directly to that table’s data view.
 
 ## Query Insights

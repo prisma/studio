@@ -13,6 +13,7 @@ const useOptionalStudioMock = vi.fn<
   () =>
     | {
         uiLocalStateCollection: ReturnType<typeof createUiCollection>;
+        uiPersistentStateCollection?: ReturnType<typeof createUiCollection>;
       }
     | undefined
 >();
@@ -27,10 +28,14 @@ vi.mock("../studio/context", () => {
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
+let collectionInstanceCounter = 0;
+
 function createUiCollection() {
+  collectionInstanceCounter += 1;
+
   return createCollection(
     localOnlyCollectionOptions<StudioLocalUiState>({
-      id: "use-ui-state-context-test",
+      id: `use-ui-state-context-test-${collectionInstanceCounter}`,
       getKey(item) {
         return item.id;
       },
@@ -80,6 +85,48 @@ describe("useUiState with Studio context collection", () => {
 
     expect(latestState?.[0]).toBe("beta");
     expect(uiCollection.get(key)?.value).toBe("beta");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("routes persistent state into the persistent ui collection", () => {
+    const persistentCollection = createUiCollection();
+
+    useOptionalStudioMock.mockReturnValue({
+      uiLocalStateCollection: uiCollection,
+      uiPersistentStateCollection: persistentCollection,
+    });
+
+    const key = "context-persistent-state";
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    let latestState: ReturnType<typeof useUiState<string>> | undefined;
+
+    function Harness() {
+      latestState = useUiState<string>(key, "alpha", { persistent: true });
+      return null;
+    }
+
+    act(() => {
+      root.render(<Harness />);
+    });
+
+    expect(latestState?.[0]).toBe("alpha");
+    expect(persistentCollection.get(key)?.value).toBe("alpha");
+    expect(uiCollection.has(key)).toBe(false);
+
+    act(() => {
+      latestState?.[1]("beta");
+    });
+
+    expect(latestState?.[0]).toBe("beta");
+    expect(persistentCollection.get(key)?.value).toBe("beta");
+    expect(uiCollection.has(key)).toBe(false);
 
     act(() => {
       root.unmount();

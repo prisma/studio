@@ -44,6 +44,7 @@ const STUDIO_UI_STATE_ID = "studio-ui-state";
 const STUDIO_UI_STORAGE_KEY = "prisma-studio-ui-state-v1";
 const SQL_EDITOR_STATE_ID = "studio-sql-editor-state";
 const SQL_EDITOR_STORAGE_KEY = "prisma-studio-sql-editor-state-v1";
+const UI_PERSISTENT_STATE_STORAGE_KEY = "prisma-studio-persistent-ui-state-v1";
 const DEFAULT_TABLE_PAGE_SIZE = 25;
 export const DEFAULT_NAVIGATION_WIDTH = 192;
 export const MIN_NAVIGATION_WIDTH = 192;
@@ -280,6 +281,7 @@ interface StudioContextValue {
   tableUiStateCollection: Collection<TableUiState, string | number>;
   tableQueryMetaCollection: Collection<TableQueryMetaState, string | number>;
   uiLocalStateCollection: Collection<StudioLocalUiState, string | number>;
+  uiPersistentStateCollection: Collection<StudioLocalUiState, string | number>;
   sqlEditorStateCollection: Collection<SqlEditorState, string | number>;
   navigationTableNamesCollection: Collection<
     NavigationTableNameState,
@@ -394,6 +396,20 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
       { collectionName: "studio-local-ui-state" },
     ),
   );
+  const uiPersistentStateCollectionRef = useRef(
+    instrumentTanStackCollectionMutations(
+      createCollection(
+        localStorageCollectionOptions<StudioLocalUiState>({
+          id: "studio-persistent-ui-state",
+          storageKey: UI_PERSISTENT_STATE_STORAGE_KEY,
+          getKey(item) {
+            return item.id;
+          },
+        }),
+      ),
+      { collectionName: "studio-persistent-ui-state" },
+    ),
+  );
   const sqlEditorStateCollectionRef = useRef(
     instrumentTanStackCollectionMutations(
       createCollection(
@@ -429,6 +445,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
   const tableUiStateCollection = tableUiStateCollectionRef.current;
   const tableQueryMetaCollection = tableQueryMetaCollectionRef.current;
   const uiLocalStateCollection = uiLocalStateCollectionRef.current;
+  const uiPersistentStateCollection = uiPersistentStateCollectionRef.current;
   const sqlEditorStateCollection = sqlEditorStateCollectionRef.current;
   const navigationTableNamesCollection =
     navigationTableNamesCollectionRef.current;
@@ -865,6 +882,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
           tableUiStateCollection,
           tableQueryMetaCollection,
           uiLocalStateCollection,
+          uiPersistentStateCollection,
           sqlEditorStateCollection,
           navigationTableNamesCollection,
           getOrCreateRowsCollection,
