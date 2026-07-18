@@ -485,7 +485,18 @@ export function DataGridPagination(props: DataGridPaginationProps) {
 function getRowCountLabel(
   totalRowCount: DataGridPaginationProps["totalRowCount"],
 ): string | null {
-  if (totalRowCount == null || totalRowCount === Infinity) {
+  if (totalRowCount == null) {
+    return null;
+  }
+
+  // A `number` above Number.MAX_SAFE_INTEGER has already lost precision
+  // before BigInt() could see it, so hide the label instead of showing a
+  // rounded total; exact large counts must arrive as bigint or string. This
+  // also covers `Infinity`, which adapters use when rows cannot be counted.
+  if (
+    typeof totalRowCount === "number" &&
+    !Number.isSafeInteger(totalRowCount)
+  ) {
     return null;
   }
 

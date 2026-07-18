@@ -237,6 +237,34 @@ describe("DataGridPagination", () => {
     container.remove();
   });
 
+  it("hides the row count for numbers that exceed the safe integer range", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <DataGridPagination
+          table={createMockTable()}
+          totalRowCount={Number.MAX_SAFE_INTEGER + 1}
+          variant="numeric"
+        />,
+      );
+    });
+
+    // A `number` above Number.MAX_SAFE_INTEGER has already lost precision
+    // before rendering, so no label is shown instead of a wrong total.
+    // Exact large counts must arrive as bigint or string.
+    expect(
+      container.querySelector('[data-testid="data-grid-row-count"]'),
+    ).toBeNull();
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it("hides the row count when no count is available", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
