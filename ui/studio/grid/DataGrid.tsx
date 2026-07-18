@@ -733,7 +733,19 @@ export function DataGrid(props: DataGridProps) {
   // Reset column order/pinning/sizing only when column identities change.
   // This avoids expensive state churn when parent components re-render with
   // new columnDef object references but equivalent column ids.
+  //
+  // The dependency list includes `defaultColumnPinning`, whose identity also
+  // changes when the pinned-column props change (e.g. after pinning or
+  // unpinning a column). Without the identity-key guard below, any pinning
+  // update would wipe user column widths and ordering (issue #1371).
+  const lastResetColumnIdentityKeyRef = useRef<string | null>(null);
+
   useEffect(() => {
+    if (lastResetColumnIdentityKeyRef.current === columnDefinitionIdentityKey) {
+      return;
+    }
+
+    lastResetColumnIdentityKeyRef.current = columnDefinitionIdentityKey;
     setColumnOrder(initialColumnOrder);
     setColumnPinning(defaultColumnPinning);
     setColumnSizing(DEFAULT_COLUMN_SIZING);
