@@ -8,6 +8,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "../../components/ui/tooltip";
+import { formatDatatypeName } from "../../lib/datatype-display";
 
 function HeaderTooltipIcon(props: { children: ReactNode; tooltip: ReactNode }) {
   const { children, tooltip } = props;
@@ -84,7 +85,7 @@ export function DataGridHeaderCell({ column }: { column: Column }) {
       )}
       <span className="min-w-0 truncate font-medium">{name}</span>
       <span className="min-w-0 truncate lowercase text-muted-foreground/70">
-        {datatype.affinity || datatype.name}
+        {datatype.affinity || formatDatatypeName(datatype)}
       </span>
     </div>
   );

@@ -199,6 +199,12 @@ Resize handles stay centered on the real column boundary with a forgiving full-h
 Column widths stay bounded to practical defaults, and long text or JSON values respect that same max width by clipping with a standard ellipsis instead of forcing the grid wider than the chosen size.
 Pinning and drag reordering now animate the affected header and visible cells with a short CSS transition, so column layout changes read as motion instead of abrupt jumps. Sticky header layering also keeps the top-left selector corner above the scrolling row-selector column, so the empty spacer cell stays visible while the grid moves underneath it.
 
+## Readable PostgreSQL Type Names
+
+Wherever Studio displays a column's datatype (table header cells, the filter column picker, and the schema visualizer), native PostgreSQL catalog names are shown as their common SQL aliases: `int8` appears as `bigint`, `int4` as `integer`, `int2` as `smallint`, `float8` as `double precision`, `float4` as `real`, `bool` as `boolean`, and `bpchar` as `char`, with array types keeping their `[]` suffix (`int8[]` shows as `bigint[]`).
+Short catalog names already in common use (such as `timestamptz` and `varchar`) stay as-is, and user-defined types and other dialects are untouched.
+The mapping is display-only, so filtering, editing, and SQL generation keep using the real catalog names.
+
 ## Inline Table Filters
 
 Table filtering starts from a simple column picker in the toolbar and renders filter pills inline in a fixed row above the grid headers.
