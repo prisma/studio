@@ -185,6 +185,26 @@ There is currently no `onInsert` optimistic handler in the rows collection. Do n
 - Views MUST use `useActiveTableDelete` for row deletion.
 - Views MUST NOT call adapter query/update/delete directly.
 
+### Mutation scope alignment
+
+Row mutation hooks (`useActiveTableUpdate`, `useActiveTableUpdateMany`,
+`useActiveTableDelete`, `useActiveTableInsert`) take the view's query props
+(`UseActiveTableQueryProps`) and resolve their collection through
+`useActiveTableQueryCollection`. The view MUST pass the exact same query props
+it uses for display, so mutations target the `queryScopeKey` that actually
+contains the visible rows. With infinite scroll enabled that scope is
+`pageIndex: 0` with the grown batch-window `pageSize`, not the paginated page —
+deriving mutation scope independently (for example from `usePagination`) makes
+`collection.update`/`collection.delete` silently miss rows loaded beyond the
+first batch.
+
+While a grown infinite-scroll window is still fetching, the grid keeps showing
+the previous settled window. During that transition the view MUST keep the
+mutation query props pinned to the settled window too:
+`resolveVisibleTableWindow` pairs the visible rows with the query props of the
+scope they were loaded from, and both swap to the grown window atomically once
+its query finishes.
+
 ## Lifecycle Rules
 
 Studio context owns collection lifecycle:

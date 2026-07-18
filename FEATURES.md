@@ -182,6 +182,7 @@ When the ledger has migrations but no contract snapshots to diff (a database wri
 Table data is shown in a grid with server-backed pagination, filtered-row counts, loading feedback, and explicit empty states.
 The footer keeps page navigation, a page jump field, a fixed rows-per-page dropdown, and infinite-scroll mode in one compact control group, so users can either jump directly to a page, switch page density from a known preset, or turn on lazy-loading without leaving the grid.
 Rows-per-page and infinite-scroll preferences persist across tables through local storage, while the known filtered-row count keeps the footer stable during page transitions for the same filtered result set. Infinite scroll preloads before the hard bottom edge, always appends in fixed 25-row chunks regardless of the paginated page-size setting, keeps filling tall viewports until the grid is actually scrollable, and appends new rows in place without snapping the grid back to the top.
+Row editing, deletion, and insertion operate on the same loaded row window the grid displays, so with infinite scroll enabled staged cell edits save correctly even for rows loaded beyond the first 25-row batch.
 Rapid sort and filter changes keep the latest request authoritative, and superseded table reads are aborted so a slower older result cannot overwrite the visible grid.
 
 ## Table Row Count Display
