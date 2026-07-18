@@ -56,7 +56,7 @@ export default defineConfig({
           environment: "node",
           exclude: [...configDefaults.exclude, ...localTestExcludes],
           fileParallelism: false,
-          include: ["data/**/*.test.ts"],
+          include: ["data/**/*.test.ts", "lib/**/*.test.ts"],
           name: "data",
         },
       },

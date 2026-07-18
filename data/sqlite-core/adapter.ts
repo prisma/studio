@@ -23,10 +23,7 @@ import {
 import { asQuery, type Query, type QueryResult } from "../query";
 import { createSqlEditorSchemaFromIntrospection } from "../sql-editor-schema";
 import type { Either } from "../type-utils";
-import {
-  determineColumnAffinity,
-  SQLITE_AFFINITY_TO_METADATA,
-} from "./datatype";
+import { determineColumnMetadata } from "./datatype";
 import {
   getDeleteQuery,
   getInsertQuery,
@@ -394,7 +391,7 @@ function createIntrospection(args: {
 
             maxPKSeen = Math.max(maxPKSeen, pk);
 
-            const affinity = determineColumnAffinity(datatype);
+            const metadata = determineColumnMetadata(datatype);
 
             /**
              * `INTEGER PRIMARY KEY` columns act as `rowid` alias. `rowid` columns
@@ -419,8 +416,7 @@ function createIntrospection(args: {
 
             columnsRecord[columnName] = {
               datatype: {
-                ...SQLITE_AFFINITY_TO_METADATA[affinity],
-                affinity,
+                ...metadata,
                 isArray: false,
                 isNative: true,
                 name: datatype,
