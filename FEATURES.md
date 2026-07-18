@@ -16,6 +16,7 @@ A standalone `sslmode` without SSL file parameters is left in the connection str
 Studio introspects connected databases to build schemas, tables, columns, relationships, filter operators, and timezone metadata.
 This gives users an accurate live model of the database and keeps table navigation grounded in current structure.
 A fresh Studio mount performs this discovery once, while actual adapter or database-availability changes invalidate cached metadata and load it again.
+The MySQL adapter detects MariaDB servers via `select version()` and switches to a MariaDB-compatible tables query that returns one row per column and groups the result on the client, so introspection works on all supported MariaDB versions where `json_arrayagg` or JSON casts are unavailable and cannot be truncated by `group_concat_max_len`.
 
 ## Deployable Prisma Postgres Demo
 

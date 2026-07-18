@@ -40,10 +40,16 @@ import {
   getUpdateRefetchQuery,
 } from "./dml";
 import {
+  detectMySQLServerFlavor,
+  getMariaDBTablesQuery,
+  getServerVersionQuery,
   getTablesQuery,
   getTimezoneQuery,
+  groupMariaDBTablesQueryResult,
   mockTablesQuery,
   mockTimezoneQuery,
+  type MySQLServerFlavor,
+  normalizeTablesQueryResult,
 } from "./introspection";
 import { lintMySQLWithExplainFallback } from "./sql-lint";
 
@@ -148,18 +154,82 @@ export function createMySQLAdapter(
     }
   }
 
+  let cachedServerFlavor: MySQLServerFlavor | null = null;
+
+  async function detectServerFlavor(
+    options: Parameters<Adapter["introspect"]>[0],
+  ): Promise<MySQLServerFlavor> {
+    if (cachedServerFlavor) {
+      return cachedServerFlavor;
+    }
+
+    try {
+      const [error, versions] = await executor.execute(
+        getServerVersionQuery(otherRequirements),
+        options,
+      );
+
+      if (error) {
+        // fall back to the MySQL introspection SQL without caching, so the
+        // next introspection retries the detection.
+        return "mysql";
+      }
+
+      cachedServerFlavor = detectMySQLServerFlavor(versions[0]?.version);
+
+      return cachedServerFlavor;
+    } catch {
+      return "mysql";
+    }
+  }
+
+  /**
+   * Fetches table metadata using the tables query that matches the server
+   * flavor. MariaDB gets a one-row-per-column query grouped on the client, so
+   * results can never be truncated by `group_concat_max_len`.
+   */
+  async function fetchTables(
+    serverFlavor: MySQLServerFlavor,
+    options: Parameters<Adapter["introspect"]>[0],
+  ): Promise<{
+    query: Query;
+    result: Either<Error, QueryResult<typeof getTablesQuery>>;
+  }> {
+    if (serverFlavor === "mariadb") {
+      const query = getMariaDBTablesQuery(otherRequirements);
+      const [error, rows] = await executor.execute(query, options);
+
+      return {
+        query,
+        result: error ? [error] : [null, groupMariaDBTablesQueryResult(rows)],
+      };
+    }
+
+    const query = getTablesQuery(otherRequirements);
+    const [error, rows] = await executor.execute(query, options);
+
+    return {
+      query,
+      result: error ? [error] : [null, normalizeTablesQueryResult(rows)],
+    };
+  }
+
   async function introspectDatabase(
     options: Parameters<Adapter["introspect"]>[0],
   ): Promise<Either<AdapterError, AdapterIntrospectResult>> {
     try {
-      const tablesQuery = getTablesQuery(otherRequirements);
+      const serverFlavor = await detectServerFlavor(options);
       const timezoneQuery = getTimezoneQuery(otherRequirements);
 
-      const [[tablesError, tables], [timezoneError, timezones]] =
-        await Promise.all([
-          executor.execute(tablesQuery, options),
-          executor.execute(timezoneQuery, options),
-        ]);
+      const [tablesFetch, [timezoneError, timezones]] = await Promise.all([
+        fetchTables(serverFlavor, options),
+        executor.execute(timezoneQuery, options),
+      ]);
+
+      const {
+        query: tablesQuery,
+        result: [tablesError, tables],
+      } = tablesFetch;
 
       if (tablesError) {
         return createMySQLAdapterError({
