@@ -57,6 +57,7 @@ import {
   getSupportedFilterOperatorsForColumn,
   isFilterOperator,
 } from "../../../hooks/filter-utils";
+import { formatDatatypeName } from "../../../lib/datatype-display";
 import { cn } from "../../../lib/utils";
 import {
   buildSqlFilterLintStatement,
@@ -132,7 +133,7 @@ interface SqlFilterLintSupport {
 }
 
 function getFilterColumnDatatypeLabel(tableColumn: Table["columns"][string]) {
-  return tableColumn.datatype.name;
+  return formatDatatypeName(tableColumn.datatype);
 }
 
 const SQL_FILTER_OPTION_LABEL = "SQL WHERE clause";

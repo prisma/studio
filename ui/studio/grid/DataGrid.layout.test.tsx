@@ -4,7 +4,7 @@ import type {
 } from "@tanstack/react-table";
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DataGrid } from "./DataGrid";
 import { createReadOnlyColumns, type GridRow } from "./test-utils";
@@ -13,10 +13,47 @@ import { createReadOnlyColumns, type GridRow } from "./test-utils";
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
+beforeEach(() => {
+  const localStorage = createLocalStorageMock();
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: localStorage,
+  });
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    value: localStorage,
+  });
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
   document.body.innerHTML = "";
 });
+
+function createLocalStorageMock(): Storage {
+  const entries = new Map<string, string>();
+
+  return {
+    get length() {
+      return entries.size;
+    },
+    clear() {
+      entries.clear();
+    },
+    getItem(key: string) {
+      return entries.get(key) ?? null;
+    },
+    key(index: number) {
+      return Array.from(entries.keys())[index] ?? null;
+    },
+    removeItem(key: string) {
+      entries.delete(key);
+    },
+    setItem(key: string, value: string) {
+      entries.set(key, value);
+    },
+  };
+}
 
 function renderGrid(rows: GridRow[]) {
   const container = document.createElement("div");
@@ -83,6 +120,24 @@ describe("DataGrid layout", () => {
 
     expect(table.style.width).toBe("435px");
     expect(table.style.minWidth).toBe("100%");
+
+    cleanup();
+  });
+
+  it("keeps the table wrapper as a plain overflow scroller for wide-grid horizontal scrolling", () => {
+    const { cleanup, table } = renderGrid([
+      {
+        __ps_rowid: "row_1",
+        long_text: "wide",
+        short_text: "Acme Labs",
+      },
+    ]);
+    const scrollContainer = table.parentElement;
+
+    expect(scrollContainer).toBeInstanceOf(HTMLDivElement);
+    expect(scrollContainer?.className).toContain("overflow-auto");
+    expect(scrollContainer?.className).toContain("min-w-0");
+    expect(scrollContainer?.className).not.toContain("flex");
 
     cleanup();
   });

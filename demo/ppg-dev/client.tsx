@@ -5,6 +5,7 @@ import { createStudioBFFClient } from "../../data/bff";
 import { createPostgresAdapter } from "../../data/postgres-core";
 import type { DemoConfig } from "./config";
 import { DemoApp } from "./DemoShell";
+import { createNoDatabaseAdapter } from "./no-database-adapter";
 
 const rootElement = document.getElementById("root");
 
@@ -34,17 +35,27 @@ async function bootstrap(): Promise<void> {
   }
 
   const config = (await configResponse.json()) as DemoConfig;
+  let adapter: Adapter;
 
-  const adapter: Adapter = createPostgresAdapter({
-    executor: createStudioBFFClient({
+  if (config.database.enabled) {
+    const bffClient = createStudioBFFClient({
+      queryInsights: config.queries.enabled === true,
       url: "/api/query",
-    }),
-  });
+    });
+
+    adapter = createPostgresAdapter({
+      executor: bffClient,
+      queryInsights: bffClient.queryInsights,
+    });
+  } else {
+    adapter = createNoDatabaseAdapter();
+  }
 
   root.render(
     <DemoApp
       adapter={adapter}
       bootId={config.bootId}
+      hasDatabase={config.database.enabled}
       seededAt={config.seededAt}
       aiEnabled={config.ai?.enabled === true}
       streamsUrl={config.streams?.url}
@@ -64,7 +75,7 @@ function LoadingState() {
         justifyContent: "center",
       }}
     >
-      Starting Prisma Postgres and seeding demo data...
+      Starting demo...
     </div>
   );
 }

@@ -1,10 +1,9 @@
 import { useIsMutating } from "@tanstack/react-query";
 import { type ColumnDef, type ColumnPinningState } from "@tanstack/react-table";
-import { ChevronDown, RefreshCw, Search } from "lucide-react";
+import { ChevronDown, History, RefreshCw } from "lucide-react";
 import {
   type Dispatch,
   type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent as ReactMouseEvent,
   type SetStateAction,
   useCallback,
   useEffect,
@@ -40,7 +39,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../../../components/ui/dropdown-menu";
-import { Input } from "../../../components/ui/input";
 import { TableHead } from "../../../components/ui/table";
 import { useActiveTableInsert } from "../../../hooks/use-active-table-insert";
 import { useActiveTableQuery } from "../../../hooks/use-active-table-query";
@@ -53,8 +51,10 @@ import { useNavigation } from "../../../hooks/use-navigation";
 import { usePagination } from "../../../hooks/use-pagination";
 import { useSelection } from "../../../hooks/use-selection";
 import { useSorting } from "../../../hooks/use-sorting";
+import { useStreams } from "../../../hooks/use-streams";
 import { useTableUiState } from "../../../hooks/use-table-ui-state";
 import { useUiState } from "../../../hooks/use-ui-state";
+import { randomUUID } from "../../../lib/random-uuid";
 import { cn } from "../../../lib/utils";
 import {
   Cell,
@@ -88,6 +88,7 @@ import {
   type GridSelectionMachineState,
   transitionGridSelectionMachine,
 } from "../../grid/selection-state-machine";
+import { ExpandableSearchControl } from "../../input/ExpandableSearchControl";
 import {
   type CellEditNavigationDirection,
   getInput,
@@ -106,6 +107,7 @@ import {
 import {
   getNextInfinitePageRowTarget,
   INFINITE_SCROLL_BATCH_SIZE,
+  resolveVisibleTableWindow,
 } from "./infinite-scroll";
 import {
   InlineTableFilterAddButton,
@@ -205,45 +207,71 @@ export function ActiveTableView(_props: ViewProps) {
       schemaVersion: sqlEditorSchema.version,
     };
   }, [adapter, sqlEditorSchema.dialect, sqlEditorSchema.version]);
+  // Single source of truth for the active table query scope — with infinite
+  // scroll enabled that is the grown `pageIndex: 0` window, not the paginated
+  // page. The row mutation hooks (update/insert/delete) receive the visible
+  // window's query props derived from this below, so they always target the
+  // rows collection the grid displays.
+  const activeTableQueryProps = useMemo(
+    () => ({
+      pageIndex: isInfiniteScrollEnabled ? 0 : paginationState.pageIndex,
+      pageSize: isInfiniteScrollEnabled
+        ? INFINITE_SCROLL_BATCH_SIZE * loadedInfinitePageCount
+        : paginationState.pageSize,
+      sortOrder: sortingState,
+      filter: appliedFilter,
+      searchScope: supportsFullTableSearch
+        ? ("row" as const)
+        : ("table" as const),
+      searchTerm: activeRowSearchTerm,
+    }),
+    [
+      activeRowSearchTerm,
+      appliedFilter,
+      isInfiniteScrollEnabled,
+      loadedInfinitePageCount,
+      paginationState.pageIndex,
+      paginationState.pageSize,
+      sortingState,
+      supportsFullTableSearch,
+    ],
+  );
   const {
     data,
     isFetching,
     refetch: refetchActiveTable,
-  } = useActiveTableQuery({
-    pageIndex: isInfiniteScrollEnabled ? 0 : paginationState.pageIndex,
-    pageSize: isInfiniteScrollEnabled
-      ? INFINITE_SCROLL_BATCH_SIZE * loadedInfinitePageCount
-      : paginationState.pageSize,
-    sortOrder: sortingState,
-    filter: appliedFilter,
-    searchScope: supportsFullTableSearch ? "row" : "table",
-    searchTerm: activeRowSearchTerm,
-  });
+  } = useActiveTableQuery(activeTableQueryProps);
   const [stableInfiniteData, setStableInfiniteData] = useState<{
     data: NonNullable<typeof data>;
     key: string;
+    queryProps: typeof activeTableQueryProps;
   } | null>(null);
-  const visibleData = useMemo(() => {
-    if (!isInfiniteScrollEnabled) {
-      return data;
-    }
-
-    if (
-      isFetching &&
-      (data == null || data.rows.length === 0) &&
-      stableInfiniteData?.key === infiniteScrollResetKey
-    ) {
-      return stableInfiniteData.data;
-    }
-
-    return data;
-  }, [
-    data,
-    infiniteScrollResetKey,
-    isFetching,
-    isInfiniteScrollEnabled,
-    stableInfiniteData,
-  ]);
+  // The visible window pairs the displayed rows with the query props of the
+  // scope they were loaded from. While a grown infinite-scroll window is
+  // fetching, both stay pinned to the previous settled window and swap over
+  // atomically once the grown query finishes, so saving or deleting during
+  // the transition still targets the collection holding the visible rows.
+  const visibleWindow = useMemo(
+    () =>
+      resolveVisibleTableWindow({
+        activeData: data,
+        activeQueryProps: activeTableQueryProps,
+        isFetching,
+        isInfiniteScrollEnabled,
+        resetKey: infiniteScrollResetKey,
+        stableWindow: stableInfiniteData,
+      }),
+    [
+      activeTableQueryProps,
+      data,
+      infiniteScrollResetKey,
+      isFetching,
+      isInfiniteScrollEnabled,
+      stableInfiniteData,
+    ],
+  );
+  const visibleData = visibleWindow.data;
+  const mutationQueryProps = visibleWindow.queryProps;
 
   useEffect(() => {
     if (!isInfiniteScrollEnabled || !data) {
@@ -269,9 +297,11 @@ export function ActiveTableView(_props: ViewProps) {
       return {
         data,
         key: infiniteScrollResetKey,
+        queryProps: activeTableQueryProps,
       };
     });
   }, [
+    activeTableQueryProps,
     data,
     infiniteScrollResetKey,
     isFetching,
@@ -284,7 +314,8 @@ export function ActiveTableView(_props: ViewProps) {
     isSelecting,
     rowSelectionState,
     setRowSelectionState,
-  } = useSelection(visibleData);
+  } = useSelection(visibleData, mutationQueryProps);
+  const { streams } = useStreams();
   const { tableUiState, updateTableUiState } = useTableUiState({
     editingFilter,
   });
@@ -354,6 +385,46 @@ export function ActiveTableView(_props: ViewProps) {
   const [isDeleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const selectedRowCount =
     Object.values(rowSelectionState).filter(Boolean).length;
+  const hasPrismaWalStream = useMemo(
+    () => streams.some((stream) => stream.name === "prisma-wal"),
+    [streams],
+  );
+  const selectedRowHistoryClause = useMemo(
+    () =>
+      resolveWalHistoryKeyClause({
+        columns: activeTable?.columns,
+        rows,
+        rowSelectionState,
+      }),
+    [activeTable?.columns, rowSelectionState, rows],
+  );
+  const tableHistoryUrl = useMemo(() => {
+    if (!activeTable || !hasPrismaWalStream) {
+      return null;
+    }
+
+    const tableClause = `table:${JSON.stringify(
+      `${activeTable.schema}.${activeTable.name}`,
+    )}`;
+    const searchParam = selectedRowHistoryClause
+      ? `${tableClause} AND ${selectedRowHistoryClause}`
+      : tableClause;
+
+    return createUrl({
+      searchParam,
+      streamParam: "prisma-wal",
+      viewParam: "stream",
+    });
+  }, [activeTable, createUrl, hasPrismaWalStream, selectedRowHistoryClause]);
+  const tableHistoryAriaLabel = useMemo(() => {
+    if (!activeTable || !hasPrismaWalStream) {
+      return null;
+    }
+
+    return selectedRowHistoryClause
+      ? `Open history for selected ${activeTable.schema}.${activeTable.name} row`
+      : `Open history for ${activeTable.schema}.${activeTable.name}`;
+  }, [activeTable, hasPrismaWalStream, selectedRowHistoryClause]);
   const cellSelectionRange = getCellSelectionRange(gridSelectionState);
   const hasSelectionExport = cellSelectionRange != null || selectedRowCount > 0;
   const deleteSelectionLabel = getDeleteSelectionLabel(selectedRowCount);
@@ -502,8 +573,8 @@ export function ActiveTableView(_props: ViewProps) {
     (column) => column.pkPosition != null,
   );
   const isInserting = useIsInserting();
-  const insert = useActiveTableInsert();
-  const updateMany = useActiveTableUpdateMany();
+  const insert = useActiveTableInsert(mutationQueryProps);
+  const updateMany = useActiveTableUpdateMany(mutationQueryProps);
   const pageCount = getPageCount(
     visibleData?.filteredRowCount ?? Infinity,
     paginationState.pageSize,
@@ -1510,26 +1581,40 @@ export function ActiveTableView(_props: ViewProps) {
           editingFilter.filters.length > 0 ? "border-b-0 pb-2" : undefined
         }
         endContent={
-          <Button
-            aria-label="Refresh table"
-            variant="outline"
-            size="icon"
-            onClick={() => void reload()}
-            disabled={isFetching}
-          >
-            <RefreshCw
-              data-icon="inline-start"
-              className={cn(isFetching && "animate-spin")}
-            />
-          </Button>
+          <>
+            {tableHistoryUrl ? (
+              <Button
+                aria-label={tableHistoryAriaLabel ?? "Open table history"}
+                variant="outline"
+                size="icon"
+                asChild
+              >
+                <a href={tableHistoryUrl}>
+                  <History data-icon="inline-start" />
+                </a>
+              </Button>
+            ) : null}
+            <Button
+              aria-label="Refresh table"
+              variant="outline"
+              size="icon"
+              onClick={() => void reload()}
+              disabled={isFetching}
+            >
+              <RefreshCw
+                data-icon="inline-start"
+                className={cn(isFetching && "animate-spin")}
+              />
+            </Button>
+          </>
         }
       >
         <div className="flex min-w-0 items-center gap-2">
-          <ActiveTableRowSearchControl
+          <ExpandableSearchControl
             disabled={hasStagedChanges}
             onBlockedInteraction={triggerDiscardButtonWiggle}
             rowSearch={rowSearch}
-            supportsFullTableSearch={supportsFullTableSearch}
+            supportsSearch={supportsFullTableSearch}
           />
         </div>
         <InlineTableFilterAddButton
@@ -1710,6 +1795,7 @@ export function ActiveTableView(_props: ViewProps) {
         rowSelectionState={rowSelectionState}
         selectionScopeKey={selectionScopeKey}
         sortingState={sortingState}
+        totalRowCount={visibleData?.filteredRowCount}
       />
       <BinaryAlertDialog
         onOpenChange={setDeleteDialogOpen}
@@ -1801,7 +1887,7 @@ function createEditorCellKey(args: {
 
 function createEmptyStagedRowDraft(): Record<string, unknown> {
   return {
-    [STAGED_ROW_DRAFT_ID_KEY]: crypto.randomUUID(),
+    [STAGED_ROW_DRAFT_ID_KEY]: randomUUID(),
   };
 }
 
@@ -1957,6 +2043,45 @@ function getDefaultTableColumnIds(args: {
       .map((column) => column.name),
     ...backRelationColumns.map((column) => column.name),
   ];
+}
+
+function resolveWalHistoryKeyClause(args: {
+  columns: Record<string, Column> | undefined;
+  rows: Record<string, unknown>[];
+  rowSelectionState: Record<string, boolean>;
+}): string | null {
+  const { columns, rows, rowSelectionState } = args;
+  const selectedRowIds = Object.entries(rowSelectionState)
+    .filter(([, isSelected]) => isSelected)
+    .map(([rowId]) => rowId);
+
+  if (selectedRowIds.length !== 1) {
+    return null;
+  }
+
+  const primaryKeyColumns = Object.values(columns ?? {})
+    .filter((column) => column.pkPosition != null)
+    .sort((left, right) => (left.pkPosition ?? 0) - (right.pkPosition ?? 0));
+
+  if (primaryKeyColumns.length !== 1) {
+    return null;
+  }
+
+  const selectedRow = rows.find(
+    (row) => String(row.__ps_rowid ?? "") === selectedRowIds[0],
+  );
+
+  if (!selectedRow) {
+    return null;
+  }
+
+  const primaryKeyValue = selectedRow[primaryKeyColumns[0]!.name];
+
+  if (primaryKeyValue == null) {
+    return null;
+  }
+
+  return `key:${JSON.stringify(String(primaryKeyValue))}`;
 }
 
 function BackRelationHeaderCell(props: { name: string }) {
@@ -2291,157 +2416,6 @@ function adapterSupportsSqlLint(adapter: Adapter): adapter is Adapter & {
   sqlLint: NonNullable<Adapter["sqlLint"]>;
 } {
   return typeof adapter.sqlLint === "function";
-}
-
-interface ActiveTableRowSearchControlProps {
-  disabled?: boolean;
-  onBlockedInteraction?: () => void;
-  rowSearch: ReturnType<typeof useActiveTableRowSearch>;
-  supportsFullTableSearch: boolean;
-}
-
-function ActiveTableRowSearchControl(props: ActiveTableRowSearchControlProps) {
-  const {
-    disabled = false,
-    onBlockedInteraction,
-    rowSearch,
-    supportsFullTableSearch,
-  } = props;
-  const {
-    closeRowSearch,
-    isRowSearchOpen,
-    openRowSearch,
-    rowSearchInputRef,
-    searchInput,
-    setSearchInput,
-  } = rowSearch;
-
-  useEffect(() => {
-    if (!disabled) {
-      return;
-    }
-
-    closeRowSearch();
-  }, [closeRowSearch, disabled]);
-
-  function handleBlockedInteraction() {
-    onBlockedInteraction?.();
-  }
-
-  function handleBlockedMouseDown(event: ReactMouseEvent<HTMLElement>) {
-    if (!disabled) {
-      return;
-    }
-
-    event.preventDefault();
-    handleBlockedInteraction();
-  }
-
-  if (!supportsFullTableSearch) {
-    return null;
-  }
-
-  return (
-    <div
-      className={cn(
-        "relative h-9 transition-[width] duration-200 ease-out",
-        isRowSearchOpen ? "w-56" : "w-9",
-      )}
-      data-row-search-open={isRowSearchOpen ? "true" : "false"}
-    >
-      <Button
-        aria-disabled={disabled || undefined}
-        aria-label="Global search"
-        variant="outline"
-        size="icon"
-        className={cn(
-          "absolute right-0 top-0 min-w-9 w-auto px-2 transition-opacity duration-200",
-          disabled && "opacity-70",
-          isRowSearchOpen && "opacity-0 pointer-events-none",
-        )}
-        onMouseDown={handleBlockedMouseDown}
-        onClick={() => {
-          if (disabled) {
-            handleBlockedInteraction();
-            return;
-          }
-
-          openRowSearch();
-        }}
-      >
-        <Search />
-      </Button>
-      <div
-        data-row-search-input-wrapper
-        className={cn(
-          "absolute right-0 top-1/2 -translate-y-1/2 origin-right transition-[opacity,transform] duration-200 ease-out will-change-transform w-56 z-10",
-          isRowSearchOpen
-            ? "opacity-100 scale-x-100"
-            : "opacity-0 scale-x-0 pointer-events-none",
-        )}
-      >
-        <Input
-          aria-disabled={disabled || undefined}
-          aria-label="Global search"
-          className={cn(
-            "h-9 w-full bg-background shadow-none",
-            disabled && "opacity-70",
-          )}
-          onMouseDown={handleBlockedMouseDown}
-          onBlur={(event) => {
-            if (disabled) {
-              return;
-            }
-
-            if (event.currentTarget.value.trim().length > 0) {
-              return;
-            }
-
-            closeRowSearch();
-          }}
-          onChange={(event) => {
-            if (disabled) {
-              handleBlockedInteraction();
-              return;
-            }
-
-            setSearchInput(event.currentTarget.value);
-          }}
-          onClick={() => {
-            if (disabled) {
-              handleBlockedInteraction();
-            }
-          }}
-          onFocus={(event) => {
-            if (!disabled) {
-              return;
-            }
-
-            handleBlockedInteraction();
-            event.currentTarget.blur();
-          }}
-          onKeyDown={(event) => {
-            if (disabled) {
-              handleBlockedInteraction();
-              event.preventDefault();
-              return;
-            }
-
-            if (event.key !== "Escape") {
-              return;
-            }
-
-            event.preventDefault();
-            closeRowSearch();
-          }}
-          placeholder="Global search"
-          ref={rowSearchInputRef}
-          readOnly={disabled}
-          value={searchInput}
-        />
-      </div>
-    </div>
-  );
 }
 
 function getPageCount(

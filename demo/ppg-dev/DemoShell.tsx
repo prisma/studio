@@ -51,10 +51,12 @@ function DemoFullscreenButton() {
       }}
       style={{
         alignItems: "center",
-        background: "rgba(255, 255, 255, 0.86)",
-        border: "1px solid rgba(15, 23, 42, 0.12)",
+        background:
+          "light-dark(rgba(255, 255, 255, 0.86), rgba(30, 41, 59, 0.86))",
+        border:
+          "1px solid light-dark(rgba(15, 23, 42, 0.12), rgba(148, 163, 184, 0.24))",
         borderRadius: "10px",
-        color: "#0f172a",
+        color: "light-dark(#0f172a, #e2e8f0)",
         cursor: "pointer",
         display: "inline-flex",
         height: "36px",
@@ -72,10 +74,12 @@ export function DemoApp(props: {
   adapter: Adapter;
   aiEnabled: boolean;
   bootId: string;
-  seededAt: string;
+  hasDatabase: boolean;
+  seededAt?: string;
   streamsUrl?: string;
 }) {
-  const { adapter, aiEnabled, bootId, seededAt, streamsUrl } = props;
+  const { adapter, aiEnabled, bootId, hasDatabase, seededAt, streamsUrl } =
+    props;
   const llm: StudioLlm | undefined = aiEnabled
     ? async (request) => {
         const response = await fetch("/api/ai", {
@@ -116,7 +120,7 @@ export function DemoApp(props: {
     <div
       style={{
         background:
-          "linear-gradient(165deg, #f8fafc 0%, #e2e8f0 40%, #dbeafe 100%)",
+          "linear-gradient(165deg, light-dark(#f8fafc, #0b1220) 0%, light-dark(#e2e8f0, #131c2e) 40%, light-dark(#dbeafe, #1a2440) 100%)",
         display: "grid",
         gridTemplateRows: "auto 1fr",
         height: "100vh",
@@ -127,9 +131,11 @@ export function DemoApp(props: {
         style={{
           alignItems: "center",
           backdropFilter: "blur(6px)",
-          background: "rgba(255, 255, 255, 0.86)",
-          borderBottom: "1px solid rgba(15, 23, 42, 0.1)",
-          color: "#0f172a",
+          background:
+            "light-dark(rgba(255, 255, 255, 0.86), rgba(15, 23, 42, 0.86))",
+          borderBottom:
+            "1px solid light-dark(rgba(15, 23, 42, 0.1), rgba(148, 163, 184, 0.2))",
+          color: "light-dark(#0f172a, #e2e8f0)",
           display: "flex",
           fontFamily:
             "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif",
@@ -142,7 +148,9 @@ export function DemoApp(props: {
       >
         <div style={{ display: "flex", gap: "12px", letterSpacing: "0.02em" }}>
           <strong>Studio + ppg demo</strong>
-          <span>seeded {new Date(seededAt).toLocaleString()}</span>
+          {seededAt ? (
+            <span>seeded {new Date(seededAt).toLocaleString()}</span>
+          ) : null}
         </div>
         <div style={{ alignItems: "center", display: "flex", gap: "10px" }}>
           <code style={{ opacity: 0.72 }}>boot: {bootId.slice(0, 8)}</code>
@@ -150,8 +158,21 @@ export function DemoApp(props: {
         </div>
       </header>
 
-      <main style={{ minHeight: 0, padding: "12px" }}>
-        <Studio adapter={adapter} llm={llm} streamsUrl={streamsUrl} />
+      <main
+        style={{
+          display: "flex",
+          minHeight: 0,
+          minWidth: 0,
+          overflow: "hidden",
+          padding: "12px",
+        }}
+      >
+        <Studio
+          adapter={adapter}
+          hasDatabase={hasDatabase}
+          llm={llm}
+          streamsUrl={streamsUrl}
+        />
       </main>
     </div>
   );

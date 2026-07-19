@@ -14,6 +14,11 @@ type Updater<T> = T | ((previous: T) => T);
 
 export interface UseUiStateOptions {
   cleanupOnUnmount?: boolean;
+  /**
+   * When enabled, state is stored in the localStorage-backed persistent UI
+   * state collection so it survives page reloads.
+   */
+  persistent?: boolean;
 }
 
 const fallbackUiStateCollection = instrumentTanStackCollectionMutations(
@@ -34,7 +39,47 @@ function cloneValue<T>(value: T): T {
     return value;
   }
 
-  return structuredClone(value);
+  try {
+    return structuredClone(value);
+  } catch (_error) {
+    return cloneProxyCompatibleValue(value);
+  }
+}
+
+function cloneProxyCompatibleValue<T>(
+  value: T,
+  seen = new WeakMap<object, unknown>(),
+): T {
+  if (typeof value !== "object" || value == null) {
+    return value;
+  }
+
+  if (value instanceof Date) {
+    return new Date(value.getTime()) as T;
+  }
+
+  if (Array.isArray(value)) {
+    const clonedEntries = value.map<unknown>((entry) =>
+      cloneProxyCompatibleValue(entry, seen),
+    );
+    return clonedEntries as T;
+  }
+
+  if (seen.has(value)) {
+    return seen.get(value) as T;
+  }
+
+  const clone = {} as Record<PropertyKey, unknown>;
+  seen.set(value, clone);
+
+  for (const key of Reflect.ownKeys(value)) {
+    clone[key] = cloneProxyCompatibleValue(
+      (value as Record<PropertyKey, unknown>)[key],
+      seen,
+    );
+  }
+
+  return clone as T;
 }
 
 function resolveUpdater<T>(previous: T, updater: Updater<T>): T {
@@ -58,15 +103,18 @@ export function useUiState<T>(
   initialValue: T,
   options: UseUiStateOptions = {},
 ) {
-  const { cleanupOnUnmount = false } = options;
+  const { cleanupOnUnmount = false, persistent = false } = options;
   const [volatileValue, setVolatileValue] = useState<T>(() =>
     cloneValue(initialValue),
   );
   const previousVolatileKeyRef = useRef<string | undefined>(key);
   const studioContext = useOptionalStudio();
   const uiLocalStateCollection =
-    (studioContext?.uiLocalStateCollection as typeof fallbackUiStateCollection) ??
-    fallbackUiStateCollection;
+    ((persistent
+      ? studioContext?.uiPersistentStateCollection
+      : studioContext?.uiLocalStateCollection) as
+      | typeof fallbackUiStateCollection
+      | undefined) ?? fallbackUiStateCollection;
 
   const { data: stateRow } = useLiveQuery(
     (q) => {
@@ -159,7 +207,7 @@ export function useUiState<T>(
       }
 
       uiLocalStateCollection.update(key, (draft) => {
-        const previous = draft.value as T;
+        const previous = cloneValue(draft.value as T);
         draft.value = cloneValue(resolveUpdater(previous, updater));
       });
     },

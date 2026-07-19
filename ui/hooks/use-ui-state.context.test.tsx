@@ -9,7 +9,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StudioLocalUiState } from "../studio/context";
 import { useUiState } from "./use-ui-state";
 
-const useOptionalStudioMock = vi.fn();
+const useOptionalStudioMock = vi.fn<
+  () =>
+    | {
+        uiLocalStateCollection: ReturnType<typeof createUiCollection>;
+        uiPersistentStateCollection?: ReturnType<typeof createUiCollection>;
+      }
+    | undefined
+>();
 
 vi.mock("../studio/context", () => {
   return {
@@ -21,10 +28,14 @@ vi.mock("../studio/context", () => {
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
+let collectionInstanceCounter = 0;
+
 function createUiCollection() {
+  collectionInstanceCounter += 1;
+
   return createCollection(
     localOnlyCollectionOptions<StudioLocalUiState>({
-      id: "use-ui-state-context-test",
+      id: `use-ui-state-context-test-${collectionInstanceCounter}`,
       getKey(item) {
         return item.id;
       },
@@ -81,6 +92,48 @@ describe("useUiState with Studio context collection", () => {
     container.remove();
   });
 
+  it("routes persistent state into the persistent ui collection", () => {
+    const persistentCollection = createUiCollection();
+
+    useOptionalStudioMock.mockReturnValue({
+      uiLocalStateCollection: uiCollection,
+      uiPersistentStateCollection: persistentCollection,
+    });
+
+    const key = "context-persistent-state";
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    let latestState: ReturnType<typeof useUiState<string>> | undefined;
+
+    function Harness() {
+      latestState = useUiState<string>(key, "alpha", { persistent: true });
+      return null;
+    }
+
+    act(() => {
+      root.render(<Harness />);
+    });
+
+    expect(latestState?.[0]).toBe("alpha");
+    expect(persistentCollection.get(key)?.value).toBe("alpha");
+    expect(uiCollection.has(key)).toBe(false);
+
+    act(() => {
+      latestState?.[1]("beta");
+    });
+
+    expect(latestState?.[0]).toBe("beta");
+    expect(persistentCollection.get(key)?.value).toBe("beta");
+    expect(uiCollection.has(key)).toBe(false);
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it("does not mutate the shared ui collection for cleanup-on-unmount state", () => {
     const key = "context-cleanup-state";
     const insertSpy = vi.spyOn(uiCollection, "insert");
@@ -122,5 +175,52 @@ describe("useUiState with Studio context collection", () => {
     expect(updateSpy).not.toHaveBeenCalled();
     expect(deleteSpy).not.toHaveBeenCalled();
     expect(uiCollection.has(key)).toBe(false);
+  });
+
+  it("passes a cloneable plain value into object updaters", () => {
+    const key = "context-object-state";
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    let latestState:
+      | ReturnType<typeof useUiState<Record<string, Array<"avg" | "p95">>>>
+      | undefined;
+
+    function Harness() {
+      latestState = useUiState<Record<string, Array<"avg" | "p95">>>(key, {});
+      return null;
+    }
+
+    act(() => {
+      root.render(<Harness />);
+    });
+
+    expect(() => {
+      act(() => {
+        latestState?.[1]((currentValue) => currentValue);
+      });
+    }).not.toThrow();
+
+    expect(() => {
+      act(() => {
+        latestState?.[1]((currentValue) => ({
+          ...currentValue,
+          "series-1": ["avg"],
+        }));
+      });
+    }).not.toThrow();
+
+    expect(latestState?.[0]).toEqual({
+      "series-1": ["avg"],
+    });
+    expect(uiCollection.get(key)?.value).toEqual({
+      "series-1": ["avg"],
+    });
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
   });
 });

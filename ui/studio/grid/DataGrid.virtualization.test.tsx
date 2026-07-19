@@ -10,7 +10,8 @@ import { computeColumnVirtualizationWindow } from "./column-virtualization";
 import { DataGrid } from "./DataGrid";
 import { createReadOnlyColumns, defaultRows } from "./test-utils";
 
-vi.mock("./column-virtualization", () => ({
+vi.mock("./column-virtualization", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./column-virtualization")>()),
   computeColumnVirtualizationWindow: vi.fn(),
 }));
 
@@ -164,6 +165,60 @@ describe("DataGrid column virtualization", () => {
       0,
     );
 
+    cleanup();
+  });
+
+  it("updates the virtualization window synchronously on scroll without animation frames", () => {
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation(() => 0);
+
+    vi.mocked(computeColumnVirtualizationWindow).mockImplementation(
+      ({ scrollLeft }) =>
+        scrollLeft >= 500
+          ? {
+              enabled: true,
+              startIndex: 2,
+              endIndex: 2,
+              hiddenStartCount: 2,
+              hiddenEndCount: 0,
+              hiddenStartWidth: 400,
+              hiddenEndWidth: 0,
+            }
+          : {
+              enabled: true,
+              startIndex: 0,
+              endIndex: 0,
+              hiddenStartCount: 0,
+              hiddenEndCount: 2,
+              hiddenStartWidth: 0,
+              hiddenEndWidth: 400,
+            },
+    );
+
+    const { cleanup, container, scrollContainer } = renderGrid();
+
+    expect(
+      container.querySelector('td[data-grid-column-id="id"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('td[data-grid-column-id="title"]'),
+    ).toBeNull();
+
+    act(() => {
+      scrollContainer.scrollLeft = 600;
+      scrollContainer.dispatchEvent(new Event("scroll"));
+    });
+
+    // The window must follow the scroll position even though no animation
+    // frame callback ever ran; deferring the update behind rAF lets fast
+    // scrolling outrun the rendered window.
+    expect(container.querySelector('td[data-grid-column-id="id"]')).toBeNull();
+    expect(
+      container.querySelector('td[data-grid-column-id="title"]'),
+    ).not.toBeNull();
+
+    requestAnimationFrameSpy.mockRestore();
     cleanup();
   });
 

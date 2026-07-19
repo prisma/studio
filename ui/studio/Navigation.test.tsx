@@ -17,7 +17,7 @@ interface NavigationMockValue {
   setSchemaParam: () => Promise<URLSearchParams>;
   setTableParam: () => Promise<URLSearchParams>;
   streamParam: string | null;
-  viewParam: "table" | "schema" | "console" | "sql" | "stream";
+  viewParam: "table" | "schema" | "queries" | "console" | "sql" | "stream";
 }
 
 interface IntrospectionMockValue {
@@ -41,6 +41,7 @@ interface StreamsMockValue {
   hasStreamsServer: boolean;
   isError: boolean;
   isLoading: boolean;
+  refetch?: () => Promise<unknown>;
   streams: Array<{
     createdAt: string;
     epoch: number;
@@ -52,10 +53,23 @@ interface StreamsMockValue {
   }>;
 }
 
+interface StudioMockValue {
+  hasDatabase: boolean;
+  isDarkMode: boolean;
+  hasQueryInsights: boolean;
+  navigationWidth: number;
+  setNavigationWidth: (width: number) => void;
+}
+
 const useNavigationMock = vi.fn<() => NavigationMockValue>();
 const useIntrospectionMock = vi.fn<() => IntrospectionMockValue>();
 const useStreamsMock = vi.fn<() => StreamsMockValue>();
+const useHasMigrationHistoryMock = vi.fn<() => boolean>(() => false);
+const useStudioMock = vi.fn<() => StudioMockValue>();
 const uiStateValues = new Map<string, unknown>();
+const setNavigationWidthMock = vi.fn<(width: number) => void>();
+const refetchIntrospectionMock = vi.fn<() => Promise<unknown>>();
+const refetchStreamsMock = vi.fn<() => Promise<unknown>>();
 
 vi.mock("../hooks/use-navigation", () => ({
   useNavigation: () => useNavigationMock(),
@@ -63,6 +77,10 @@ vi.mock("../hooks/use-navigation", () => ({
 
 vi.mock("../hooks/use-introspection", () => ({
   useIntrospection: () => useIntrospectionMock(),
+}));
+
+vi.mock("../hooks/use-migrations", () => ({
+  useHasMigrationHistory: () => useHasMigrationHistoryMock(),
 }));
 
 vi.mock("../hooks/use-streams", () => ({
@@ -131,9 +149,9 @@ vi.mock("../hooks/use-navigation-table-list", () => ({
 }));
 
 vi.mock("./context", () => ({
-  useStudio: () => ({
-    isDarkMode,
-  }),
+  MAX_NAVIGATION_WIDTH: 520,
+  MIN_NAVIGATION_WIDTH: 192,
+  useStudio: () => useStudioMock(),
 }));
 
 vi.mock("../hooks/use-ui-state", async () => {
@@ -199,9 +217,18 @@ function blur(element: Element) {
 }
 
 function inputText(element: HTMLInputElement, value: string) {
-  element.value = value;
+  Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )?.set?.call(element, value);
   element.dispatchEvent(
     new Event("input", {
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+  element.dispatchEvent(
+    new Event("change", {
       bubbles: true,
       cancelable: true,
     }),
@@ -218,9 +245,39 @@ function keyDown(element: Element, key: string) {
   );
 }
 
+function pointerEvent(type: string, options: { clientX: number }) {
+  return new PointerEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    clientX: options.clientX,
+  });
+}
+
+function getSearchBlock(
+  container: HTMLElement,
+  blockKey: "streams" | "tables",
+) {
+  return container.querySelector<HTMLElement>(
+    `[data-testid="navigation-search-block-${blockKey}"]`,
+  );
+}
+
 describe("Navigation", () => {
   beforeEach(() => {
     isDarkMode = false;
+    useHasMigrationHistoryMock.mockReturnValue(false);
+    setNavigationWidthMock.mockReset();
+    refetchIntrospectionMock.mockReset();
+    refetchStreamsMock.mockReset();
+    refetchIntrospectionMock.mockResolvedValue(undefined);
+    refetchStreamsMock.mockResolvedValue(undefined);
+    useStudioMock.mockImplementation(() => ({
+      hasDatabase: true,
+      hasQueryInsights: false,
+      isDarkMode,
+      navigationWidth: 192,
+      setNavigationWidth: setNavigationWidthMock,
+    }));
     useNavigationMock.mockReturnValue({
       createUrl(values: Record<string, string>) {
         return `#${Object.entries(values)
@@ -273,12 +330,13 @@ describe("Navigation", () => {
       hasResolvedIntrospection: true,
       isFetching: false,
       isRefetching: false,
-      refetch: vi.fn(() => Promise.resolve()),
+      refetch: refetchIntrospectionMock,
     });
     useStreamsMock.mockReturnValue({
       hasStreamsServer: true,
       isError: false,
       isLoading: false,
+      refetch: refetchStreamsMock,
       streams: [
         {
           createdAt: "2026-03-09T10:00:00.000Z",
@@ -377,6 +435,233 @@ describe("Navigation", () => {
     container.remove();
   });
 
+  it("hides schema and table navigation when the session has no database", () => {
+    useStudioMock.mockImplementation(() => ({
+      hasDatabase: false,
+      hasQueryInsights: false,
+      isDarkMode,
+      navigationWidth: 192,
+      setNavigationWidth: setNavigationWidthMock,
+    }));
+    useNavigationMock.mockReturnValue({
+      createUrl(values: Record<string, string>) {
+        return `#${Object.entries(values)
+          .map(([key, value]) => `${key}=${value}`)
+          .join("&")}`;
+      },
+      metadata: {
+        activeTable: { name: "organizations", schema: "public" },
+        isFetching: false,
+      },
+      schemaParam: "public",
+      setSchemaParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+      setTableParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+      streamParam: null,
+      viewParam: "stream",
+    });
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    expect(container.textContent).not.toContain("Tables");
+    expect(container.textContent).not.toContain("Visualizer");
+    expect(container.textContent).not.toContain("Queries");
+    expect(container.textContent).not.toContain("Console");
+    expect(container.textContent).not.toContain("SQL");
+    expect(container.querySelector('button[aria-label="Schema"]')).toBeNull();
+    expect(
+      container.querySelector('button[aria-label="Search tables"]'),
+    ).toBeNull();
+    expect(container.textContent).toContain("Streams");
+    expect(container.textContent).toContain("audit-log");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("shows Queries directly under Visualizer only when query insights are configured", () => {
+    const withoutQueriesContainer = document.createElement("div");
+    document.body.appendChild(withoutQueriesContainer);
+    const withoutQueriesRoot = createRoot(withoutQueriesContainer);
+
+    act(() => {
+      withoutQueriesRoot.render(<Navigation />);
+    });
+
+    expect(withoutQueriesContainer.textContent).toContain("Visualizer");
+    expect(withoutQueriesContainer.textContent).not.toContain("Queries");
+
+    act(() => {
+      withoutQueriesRoot.unmount();
+    });
+    withoutQueriesContainer.remove();
+
+    useStudioMock.mockImplementation(() => ({
+      hasDatabase: true,
+      hasQueryInsights: true,
+      isDarkMode,
+      navigationWidth: 192,
+      setNavigationWidth: setNavigationWidthMock,
+    }));
+    useNavigationMock.mockReturnValue({
+      createUrl(values: Record<string, string>) {
+        return `#${Object.entries(values)
+          .map(([key, value]) => `${key}=${value}`)
+          .join("&")}`;
+      },
+      metadata: {
+        activeTable: { name: "organizations", schema: "public" },
+        isFetching: false,
+      },
+      schemaParam: "public",
+      setSchemaParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+      setTableParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+      streamParam: null,
+      viewParam: "queries",
+    });
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const studioLinks = Array.from(
+      container.querySelectorAll<HTMLAnchorElement>(
+        'nav[aria-label="Studio"] a',
+      ),
+    ).map((link) => link.textContent?.trim());
+
+    expect(studioLinks.slice(0, 2)).toEqual(["Visualizer", "Queries"]);
+
+    const queriesLink = Array.from(container.querySelectorAll("a")).find(
+      (link) => link.textContent?.trim() === "Queries",
+    );
+
+    expect(queriesLink?.getAttribute("href")).toBe(
+      "#schemaParam=public&viewParam=queries",
+    );
+    expect(queriesLink?.getAttribute("data-active")).toBe("true");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("shows Migrations only when the ledger holds applied migrations", () => {
+    // useHasMigrationHistory resolves false for a missing prisma_contract
+    // schema, a missing ledger table, or an empty ledger — all three hide
+    // the item (mock default from beforeEach).
+    const withoutHistoryContainer = document.createElement("div");
+    document.body.appendChild(withoutHistoryContainer);
+    const withoutHistoryRoot = createRoot(withoutHistoryContainer);
+
+    act(() => {
+      withoutHistoryRoot.render(<Navigation />);
+    });
+
+    expect(withoutHistoryContainer.textContent).not.toContain("Migrations");
+
+    act(() => {
+      withoutHistoryRoot.unmount();
+    });
+    withoutHistoryContainer.remove();
+
+    useHasMigrationHistoryMock.mockReturnValue(true);
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const migrationsLink = container.querySelector(
+      '[data-testid="navigation-migrations-item"]',
+    );
+
+    expect(migrationsLink).not.toBeNull();
+    expect(migrationsLink?.getAttribute("href")).toBe(
+      "#schemaParam=public&viewParam=migrations",
+    );
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("preserves selected schema when navigating between Studio views", () => {
+    useStudioMock.mockImplementation(() => ({
+      hasDatabase: true,
+      hasQueryInsights: true,
+      isDarkMode,
+      navigationWidth: 192,
+      setNavigationWidth: setNavigationWidthMock,
+    }));
+    useNavigationMock.mockReturnValue({
+      createUrl(values: Record<string, string>) {
+        return `#${Object.entries(values)
+          .map(([key, value]) => `${key}=${value}`)
+          .join("&")}`;
+      },
+      metadata: {
+        activeTable: { name: "order_items", schema: "test_app" },
+        isFetching: false,
+      },
+      schemaParam: "test_app",
+      setSchemaParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+      setTableParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+      streamParam: null,
+      viewParam: "sql",
+    });
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const studioLinksByText = new Map(
+      Array.from(
+        container.querySelectorAll<HTMLAnchorElement>(
+          'nav[aria-label="Studio"] a',
+        ),
+      ).map((link) => [link.textContent?.trim(), link.getAttribute("href")]),
+    );
+
+    expect(studioLinksByText.get("Visualizer")).toBe(
+      "#schemaParam=test_app&viewParam=schema",
+    );
+    expect(studioLinksByText.get("Queries")).toBe(
+      "#schemaParam=test_app&viewParam=queries",
+    );
+    expect(studioLinksByText.get("Console")).toBe(
+      "#schemaParam=test_app&viewParam=console",
+    );
+    expect(studioLinksByText.get("SQL")).toBe(
+      "#schemaParam=test_app&viewParam=sql",
+    );
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it("closes table search on blur when the search input is empty", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -389,7 +674,7 @@ describe("Navigation", () => {
     const searchIcon = container.querySelector(
       'button[aria-label="Search tables"]',
     );
-    const tablesBlock = container.querySelector("[data-search-open]");
+    const tablesBlock = getSearchBlock(container, "tables");
     const searchInput = container.querySelector<HTMLInputElement>(
       'input[aria-label="Search tables"]',
     );
@@ -505,7 +790,7 @@ describe("Navigation", () => {
     const searchIcon = container.querySelector(
       'button[aria-label="Search tables"]',
     );
-    const tablesBlock = container.querySelector("[data-search-open]");
+    const tablesBlock = getSearchBlock(container, "tables");
     const searchInput = container.querySelector<HTMLInputElement>(
       'input[aria-label="Search tables"]',
     );
@@ -576,6 +861,7 @@ describe("Navigation", () => {
       hasStreamsServer: false,
       isError: false,
       isLoading: false,
+      refetch: refetchStreamsMock,
       streams: [],
     });
 
@@ -643,6 +929,125 @@ describe("Navigation", () => {
     container.remove();
   });
 
+  it("supports the same inline search flow for streams as for tables", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const searchIcon = container.querySelector(
+      'button[aria-label="Search streams"]',
+    );
+    const streamsBlock = getSearchBlock(container, "streams");
+    const searchInput = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Search streams"]',
+    );
+
+    expect(searchIcon).not.toBeNull();
+    expect(streamsBlock?.getAttribute("data-search-open")).toBe("false");
+    expect(searchInput).not.toBeNull();
+    if (!searchIcon || !searchInput || !streamsBlock) {
+      throw new Error("Expected stream search controls to be rendered");
+    }
+
+    act(() => {
+      click(searchIcon);
+      inputText(searchInput, "prisma");
+    });
+
+    expect(streamsBlock.getAttribute("data-search-open")).toBe("true");
+    const visibleStreamLinks = Array.from(
+      streamsBlock.querySelectorAll("a"),
+      (link) => link.textContent?.trim() ?? "",
+    );
+    expect(visibleStreamLinks).toContain("prisma-wal");
+    expect(visibleStreamLinks).not.toContain("audit-log");
+
+    act(() => {
+      keyDown(searchInput, "Enter");
+    });
+
+    expect(window.location.hash).toBe(
+      "#streamParam=prisma-wal&viewParam=stream",
+    );
+    expect(streamsBlock.getAttribute("data-search-open")).toBe("false");
+    expect(document.activeElement).not.toBe(searchInput);
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("refreshes table metadata from the header action without opening search", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const refreshButton = container.querySelector(
+      'button[aria-label="Refresh tables"]',
+    );
+
+    expect(refreshButton).not.toBeNull();
+    if (!refreshButton) {
+      throw new Error("Expected table refresh button to be rendered");
+    }
+
+    act(() => {
+      click(refreshButton);
+    });
+
+    expect(refetchIntrospectionMock).toHaveBeenCalledTimes(1);
+    expect(
+      getSearchBlock(container, "tables")?.getAttribute("data-search-open"),
+    ).toBe("false");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("refreshes streams from the header action without opening search", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const refreshButton = container.querySelector(
+      'button[aria-label="Refresh streams"]',
+    );
+
+    expect(refreshButton).not.toBeNull();
+    if (!refreshButton) {
+      throw new Error("Expected stream refresh button to be rendered");
+    }
+
+    act(() => {
+      click(refreshButton);
+    });
+
+    expect(refetchStreamsMock).toHaveBeenCalledTimes(1);
+    expect(
+      getSearchBlock(container, "streams")?.getAttribute("data-search-open"),
+    ).toBe("false");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it("uses transform-only animation classes for the table search wrapper", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -653,7 +1058,7 @@ describe("Navigation", () => {
     });
 
     const wrapper = container.querySelector(
-      "[data-table-search-input-wrapper]",
+      '[data-testid="navigation-search-input-wrapper-tables"]',
     );
 
     expect(wrapper).not.toBeNull();
@@ -680,7 +1085,7 @@ describe("Navigation", () => {
     const searchIcon = container.querySelector(
       'button[aria-label="Search tables"]',
     );
-    const tablesBlock = container.querySelector("[data-search-open]");
+    const tablesBlock = getSearchBlock(container, "tables");
     const searchInput = container.querySelector<HTMLInputElement>(
       'input[aria-label="Search tables"]',
     );
@@ -768,9 +1173,7 @@ describe("Navigation", () => {
       "#schemaParam=public&tableParam=team_members&viewParam=table",
     );
     expect(
-      container
-        .querySelector("[data-search-open]")
-        ?.getAttribute("data-search-open"),
+      getSearchBlock(container, "tables")?.getAttribute("data-search-open"),
     ).toBe("false");
     expect(document.activeElement).not.toBe(searchInput);
     expect(uiStateValues.get(TABLE_GRID_FOCUS_REQUEST_UI_STATE_KEY)).toEqual({
@@ -827,15 +1230,57 @@ describe("Navigation", () => {
       "#schemaParam=public&tableParam=team_members&viewParam=table",
     );
     expect(
-      container
-        .querySelector("[data-search-open]")
-        ?.getAttribute("data-search-open"),
+      getSearchBlock(container, "tables")?.getAttribute("data-search-open"),
     ).toBe("false");
     expect(document.activeElement).not.toBe(searchInput);
     expect(uiStateValues.get(TABLE_GRID_FOCUS_REQUEST_UI_STATE_KEY)).toEqual({
       requestId: 1,
       tableId: "public.team_members",
     });
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("lets the user resize the navigation width by dragging the edge", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const navigation = container.querySelector<HTMLElement>(
+      '[data-testid="studio-navigation"]',
+    );
+    const resizeHandle = container.querySelector<HTMLElement>(
+      '[data-testid="navigation-resize-handle"]',
+    );
+
+    expect(navigation?.style.width).toBe("192px");
+    expect(resizeHandle).not.toBeNull();
+    expect(resizeHandle?.childElementCount).toBe(0);
+
+    act(() => {
+      resizeHandle?.dispatchEvent(
+        pointerEvent("pointerdown", { clientX: 192 }),
+      );
+    });
+
+    act(() => {
+      window.dispatchEvent(pointerEvent("pointermove", { clientX: 320 }));
+    });
+
+    expect(navigation?.style.width).toBe("320px");
+
+    act(() => {
+      window.dispatchEvent(pointerEvent("pointerup", { clientX: 320 }));
+    });
+
+    expect(setNavigationWidthMock).toHaveBeenCalledWith(320);
 
     act(() => {
       root.unmount();

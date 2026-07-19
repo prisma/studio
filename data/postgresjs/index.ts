@@ -1,12 +1,20 @@
 import type { ReservedSql, Sql } from "postgres";
 
 import { AbortError, type Executor, getAbortResult } from "../executor";
+import { createPostgresSearchPath } from "../postgres-core/search-path";
 import {
   createLintDiagnosticsFromPostgresError,
   validateSqlForLint,
 } from "../postgres-core/sql-lint";
 import { getCancelQuery, getPIDQuery } from "../postgres-core/utility";
 import type { Query, QueryResult } from "../query";
+
+export {
+  createPostgresJSConnectionConfig,
+  type PostgresJSConnectionConfig,
+  type PostgresJSConnectionConfigDependencies,
+  type PostgresJSSslOptions,
+} from "./connection-options";
 
 const SQL_LINT_STATEMENT_TIMEOUT = "1000ms";
 const SQL_LINT_LOCK_TIMEOUT = "100ms";
@@ -21,14 +29,17 @@ type TemporalColumnKind = "date" | "timestamp";
 export function createPostgresJSExecutor(postgresjs: Sql): Executor {
   return {
     execute: async (query, options) => {
-      const { abortSignal } = options || {};
+      const { abortSignal, schema } = options || {};
+      const searchPath = createPostgresSearchPath(schema);
 
       if (!abortSignal) {
         try {
-          const result = await postgresjs.unsafe(
-            query.sql,
-            query.parameters as never,
-          );
+          const result = searchPath
+            ? await postgresjs.begin(async (tx) => {
+                await setPostgresSearchPath(tx, searchPath);
+                return await tx.unsafe(query.sql, query.parameters as never);
+              })
+            : await postgresjs.unsafe(query.sql, query.parameters as never);
 
           return [null, normalizeTemporalResult(result as never)];
         } catch (error: unknown) {
@@ -42,6 +53,7 @@ export function createPostgresJSExecutor(postgresjs: Sql): Executor {
 
       let abortListener: (() => void) | undefined;
       let connection: ReservedSql | undefined;
+      let transactionStarted = false;
 
       try {
         let aborted: () => void;
@@ -91,6 +103,12 @@ export function createPostgresJSExecutor(postgresjs: Sql): Executor {
           return getAbortResult();
         }
 
+        if (searchPath) {
+          await connection.unsafe("BEGIN");
+          transactionStarted = true;
+          await setPostgresSearchPath(connection, searchPath);
+        }
+
         const queryPromise = connection.unsafe(
           query.sql,
           query.parameters as never,
@@ -102,15 +120,29 @@ export function createPostgresJSExecutor(postgresjs: Sql): Executor {
           void Promise.allSettled([
             cancelQuery(postgresjs, pidResult!),
             queryPromise,
-          ]).finally(() => connection?.release());
+          ])
+            .then(async () => {
+              if (transactionStarted) {
+                await connection?.unsafe("ROLLBACK").catch(() => undefined);
+              }
+            })
+            .finally(() => connection?.release());
 
           return getAbortResult();
+        }
+
+        if (transactionStarted) {
+          await connection.unsafe("COMMIT");
+          transactionStarted = false;
         }
 
         connection.release();
 
         return [null, normalizeTemporalResult(queryResult as never)];
       } catch (error: unknown) {
+        if (transactionStarted) {
+          await connection?.unsafe("ROLLBACK").catch(() => undefined);
+        }
         connection?.release();
 
         return [error as Error];
@@ -155,6 +187,7 @@ export function createPostgresJSExecutor(postgresjs: Sql): Executor {
     },
 
     async lintSql(details, options) {
+      const searchPath = createPostgresSearchPath(details.schema);
       const validation = validateSqlForLint(details.sql);
 
       if (!validation.ok) {
@@ -178,6 +211,9 @@ export function createPostgresJSExecutor(postgresjs: Sql): Executor {
           await tx.unsafe(
             `set local idle_in_transaction_session_timeout = '${SQL_LINT_IDLE_IN_TRANSACTION_TIMEOUT}'`,
           );
+          if (searchPath) {
+            await setPostgresSearchPath(tx, searchPath);
+          }
           await tx.unsafe(`EXPLAIN (FORMAT JSON) ${statementSql}`);
         });
       };
@@ -259,6 +295,15 @@ export function createPostgresJSExecutor(postgresjs: Sql): Executor {
       }
     },
   };
+}
+
+async function setPostgresSearchPath(
+  client: Pick<Sql, "unsafe">,
+  searchPath: string,
+): Promise<void> {
+  await client.unsafe("select set_config('search_path', $1, true)", [
+    searchPath,
+  ] as never);
 }
 
 function normalizeTemporalResult<T>(

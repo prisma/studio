@@ -10,6 +10,8 @@ dist
 !.agents/skills/shadcn/
 .agents/skills/shadcn/*
 !.agents/skills/shadcn/SKILL.md
+!.agents/skills/impeccable/
+!.agents/skills/impeccable/**
 .playwright-cli/
 .env
 .env.local

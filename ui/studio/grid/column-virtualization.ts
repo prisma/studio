@@ -8,6 +8,32 @@ export interface ColumnVirtualizationWindow {
   hiddenEndWidth: number;
 }
 
+export const DISABLED_COLUMN_VIRTUALIZATION_WINDOW: ColumnVirtualizationWindow =
+  {
+    enabled: false,
+    startIndex: 0,
+    endIndex: -1,
+    hiddenStartCount: 0,
+    hiddenEndCount: 0,
+    hiddenStartWidth: 0,
+    hiddenEndWidth: 0,
+  };
+
+export function columnVirtualizationWindowsAreEqual(
+  left: ColumnVirtualizationWindow,
+  right: ColumnVirtualizationWindow,
+): boolean {
+  return (
+    left.enabled === right.enabled &&
+    left.startIndex === right.startIndex &&
+    left.endIndex === right.endIndex &&
+    left.hiddenStartCount === right.hiddenStartCount &&
+    left.hiddenEndCount === right.hiddenEndCount &&
+    left.hiddenStartWidth === right.hiddenStartWidth &&
+    left.hiddenEndWidth === right.hiddenEndWidth
+  );
+}
+
 export interface ComputeColumnVirtualizationWindowArgs {
   columnWidths: number[];
   minColumnCount: number;

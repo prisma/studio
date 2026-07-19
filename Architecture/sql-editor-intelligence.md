@@ -51,6 +51,9 @@ This architecture governs:
   - stale responses MUST be discarded via request id check
 - Diagnostics MUST be clamped to document bounds before returning to CodeMirror.
 - Empty SQL MUST short-circuit with no lint request.
+- SQL editor language configuration and lint requests MUST use the active URL
+  schema as the default schema so completions and diagnostics match the schema
+  selector.
 - Table-level SQL filter pills MAY reuse the same adapter `sqlLint` transport, but they MUST wrap raw `WHERE` fragments in a full `SELECT ... WHERE ...` statement before linting.
 - SQL filter-pill linting MUST run asynchronously in the background and MUST NOT block the initial filter apply interaction.
 - Table-level SQL filter-pill lint diagnostics are advisory UI state only and MUST NOT mutate the already-applied URL filter after the pill has been saved.
@@ -61,6 +64,8 @@ This architecture governs:
   - existing `customHeaders`
   - existing `customPayload`
 - Procedure name for linting is `sql-lint`.
+- Lint request payloads MAY include `schema`; when present, the backend MUST
+  plan unqualified identifiers against that schema.
 - New SQL-editor surfaces MUST NOT bypass BFF auth propagation.
 - Executor contract:
   - `Executor` MAY expose `lintSql(details, options)` as an optimized lint transport.
@@ -79,6 +84,7 @@ This architecture governs:
   - `statement_timeout = 1000ms`
   - `lock_timeout = 100ms`
   - `idle_in_transaction_session_timeout = 1000ms`
+- transaction-local `search_path` when a selected schema is provided
 
 On Postgres errors, diagnostics MUST include mapped position and SQLSTATE when available. Timeout diagnostics (`57014`) MUST be rewritten to a user-facing lint-timeout message.
 For multi-statement SQL text, diagnostics MUST map statement-relative positions back to full-editor offsets.

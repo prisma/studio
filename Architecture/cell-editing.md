@@ -95,6 +95,7 @@ Required semantics:
 - The inline editor popover MUST keep the cancel action but MUST NOT expose a per-cell save button once table-level staging is enabled.
 - Staging should only submit when value changed according to component rules.
 - Empty value semantics (`NULL`, default, empty string) MUST be explicit and type-aware per input component.
+- `NumericInput` (and numeric value coercion in paste/filter paths) MUST never stage `NaN`: input is only coerced to a number when it parses as one, otherwise the raw text is staged (SQLite NUMERIC-affinity columns store it as TEXT per affinity rules; stricter engines reject it with a clear error). SQLite columns with date-like declared types (`date`, `datetime`, `timestamp`) are introspected with group `string` so they edit as text in the first place.
 
 ## Focused-Cell Contract
 

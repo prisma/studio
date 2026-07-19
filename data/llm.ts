@@ -2,6 +2,7 @@ const LEGACY_OUTPUT_LIMIT_SIGNAL_PREFIX = "__PRISMA_STUDIO_AI_OUTPUT_LIMIT__:";
 
 export const STUDIO_LLM_TASKS = [
   "table-filter",
+  "query-insights",
   "sql-generation",
   "sql-visualization",
 ] as const;
@@ -77,7 +78,7 @@ export function isStudioLlmResponse(
     response.ok === false &&
     typeof response.message === "string" &&
     typeof response.code === "string" &&
-    STUDIO_LLM_ERROR_CODES.includes(response.code as StudioLlmErrorCode)
+    STUDIO_LLM_ERROR_CODES.includes(response.code)
   );
 }
 

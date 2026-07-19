@@ -1,23 +1,15 @@
 import { useMutation } from "@tanstack/react-query";
 
 import { useStudio } from "../studio/context";
-import { useActiveTableRowsCollection } from "./use-active-table-rows-collection";
-import { useFiltering } from "./use-filtering";
-import { usePagination } from "./use-pagination";
-import { useSorting } from "./use-sorting";
+import {
+  useActiveTableQueryCollection,
+  type UseActiveTableQueryProps,
+} from "./use-active-table-query";
 import { addRowIdToResult } from "./utils/add-row-id-to-result";
 
-export function useActiveTableInsert() {
+export function useActiveTableInsert(query: UseActiveTableQueryProps) {
   const { adapter, onEvent } = useStudio();
-  const { paginationState } = usePagination();
-  const { sortingState } = useSorting();
-  const { appliedFilter } = useFiltering();
-  const { activeTable, refetch } = useActiveTableRowsCollection({
-    pageIndex: paginationState.pageIndex,
-    pageSize: paginationState.pageSize,
-    sortOrder: sortingState,
-    filter: appliedFilter,
-  });
+  const { activeTable, refetch } = useActiveTableQueryCollection(query);
   const { schema = null, name: table = null } = activeTable ?? {};
 
   return useMutation({

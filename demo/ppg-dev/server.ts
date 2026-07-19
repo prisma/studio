@@ -2,10 +2,8 @@ import { existsSync, type FSWatcher, watch } from "node:fs";
 import { basename, extname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { startPrismaDevServer } from "@prisma/dev";
 import postcss, { type AcceptedPlugin } from "postcss";
 import type { Sql } from "postgres";
-import postgres from "postgres";
 
 import { serializeError, type StudioBFFRequest } from "../../data/bff";
 import {
@@ -14,11 +12,17 @@ import {
   type StudioLlmRequest,
   type StudioLlmResponse,
 } from "../../data/llm";
-import { createPostgresJSExecutor } from "../../data/postgresjs";
+import type { Query } from "../../data/query";
 import pkg from "../../package.json" with { type: "json" };
 import { AnthropicOutputLimitError, runAnthropicLlmRequest } from "./anthropic";
 import { buildDemoConfig, resolveDemoAiEnabled } from "./config";
-import { seedDatabase } from "./seed-database";
+import { createDemoQueryInsightsStore } from "./query-insights";
+import { type DemoRuntime, startDemoRuntime } from "./runtime";
+import {
+  formatDemoRuntimeUsage,
+  parseDemoRuntimeOptions,
+} from "./runtime-options";
+import { registerDemoShutdownHandlers } from "./shutdown";
 import { lintPostgresSql } from "./sql-lint";
 import {
   addDemoStartupFailureHint,
@@ -56,13 +60,12 @@ declare const Bun: {
   };
 };
 
-type PrismaDevServer = Awaited<ReturnType<typeof startPrismaDevServer>>;
 type BuiltAsset = {
   bytes: ArrayBuffer;
   contentType: string;
 };
 
-type PostgresExecutor = ReturnType<typeof createPostgresJSExecutor>;
+type PostgresExecutor = NonNullable<DemoRuntime["postgresExecutor"]>;
 
 // When the server is bundled by build-compute.ts, the virtual:prebuilt-assets
 // module is resolved at bundle time and provides the pre-built client JS, CSS,
@@ -137,10 +140,10 @@ const BUILD_DEFINE = {
   VERSION_INJECTED_AT_BUILD_TIME: JSON.stringify(pkg.version),
 };
 
-let prismaDevServer: PrismaDevServer | null = null;
 let postgresClient: Sql | null = null;
 let postgresExecutor: PostgresExecutor | null = null;
-let seededAt = "";
+let seededAt: string | null = null;
+let streamsServerUrl: string | null = null;
 let appScript = "";
 let appStyles = "";
 let builtAssets = new Map<string, BuiltAsset>();
@@ -152,6 +155,7 @@ let isBuildQueued = false;
 let rebuildTimer: ReturnType<typeof setTimeout> | undefined;
 const reloadClients = new Set<ReadableStreamDefaultController<string>>();
 let queryQueue = Promise.resolve();
+const queryInsightsStore = createDemoQueryInsightsStore();
 
 const cleanupCallbacks: Array<() => Promise<void> | void> = [];
 
@@ -247,25 +251,29 @@ function looksLikeProjectRoot(candidate: string): boolean {
 }
 
 async function main(): Promise<void> {
+  if (
+    process.argv
+      .slice(2)
+      .some((argument) => argument === "-h" || argument === "--help")
+  ) {
+    console.info(formatDemoRuntimeUsage());
+    return;
+  }
+
   await ensurePortAvailable({
     envVar: "STUDIO_DEMO_PORT",
     port: APP_PORT,
     serviceName: "Studio demo HTTP server",
   });
 
-  prismaDevServer = await startPrismaDevServer({
-    name: `studio-ppg-demo-${process.pid}`,
-  });
-  cleanupCallbacks.push(() => prismaDevServer?.close());
+  const runtimeOptions = parseDemoRuntimeOptions(process.argv.slice(2));
+  const runtime = await startDemoRuntime(runtimeOptions);
 
-  await seedDatabase(prismaDevServer.database.connectionString);
-  seededAt = new Date().toISOString();
-
-  postgresClient = postgres(prismaDevServer.database.connectionString, {
-    max: 1,
-  });
-  postgresExecutor = createPostgresJSExecutor(postgresClient);
-  cleanupCallbacks.push(() => postgresClient?.end({ timeout: 5 }));
+  cleanupCallbacks.push(...runtime.cleanupCallbacks);
+  postgresClient = runtime.postgresClient;
+  postgresExecutor = runtime.postgresExecutor;
+  seededAt = runtime.seededAt;
+  streamsServerUrl = runtime.streamsServerUrl;
 
   if (prebuiltAssets) {
     appScript = prebuiltAssets.appScript;
@@ -289,18 +297,39 @@ async function main(): Promise<void> {
   });
   cleanupCallbacks.push(() => server.stop(true));
 
-  registerShutdownHandlers();
+  registerDemoShutdownHandlers({
+    cleanupCallbacks,
+  });
 
   console.info(`[demo] Studio demo running at http://localhost:${APP_PORT}`);
-  console.info(
-    `[demo] direct tcp DB URL: ${prismaDevServer.database.connectionString}`,
-  );
-  console.info(
-    `[demo] streams server URL: ${prismaDevServer.experimental.streams.serverUrl}`,
-  );
-  console.info(
-    `[demo] streams proxy URL: http://localhost:${APP_PORT}${STREAMS_PROXY_BASE_PATH}`,
-  );
+
+  if (runtime.mode === "external") {
+    if (runtime.databaseConnectionString) {
+      console.info(
+        `[demo] external DB URL: ${runtime.databaseConnectionString}`,
+      );
+    } else {
+      console.info("[demo] database disabled; running in streams-only mode");
+    }
+
+    if (streamsServerUrl) {
+      console.info(`[demo] external streams server URL: ${streamsServerUrl}`);
+    }
+  } else {
+    console.info(
+      `[demo] direct tcp DB URL: ${runtime.databaseConnectionString}`,
+    );
+
+    if (streamsServerUrl) {
+      console.info(`[demo] streams server URL: ${streamsServerUrl}`);
+    }
+  }
+
+  if (streamsServerUrl) {
+    console.info(
+      `[demo] streams proxy URL: http://localhost:${APP_PORT}${STREAMS_PROXY_BASE_PATH}`,
+    );
+  }
 }
 
 async function handleRequest(request: Request): Promise<Response> {
@@ -317,8 +346,10 @@ async function handleRequest(request: Request): Promise<Response> {
       buildDemoConfig({
         aiEnabled: AI_ENABLED,
         bootId: BOOT_ID,
+        databaseEnabled: postgresExecutor != null,
+        queryInsightsEnabled: postgresExecutor != null,
         seededAt,
-        streamsUrl: STREAMS_PROXY_BASE_PATH,
+        streamsUrl: streamsServerUrl ? STREAMS_PROXY_BASE_PATH : undefined,
       }),
     );
   }
@@ -336,6 +367,15 @@ async function handleRequest(request: Request): Promise<Response> {
     url.pathname.startsWith(`${STREAMS_PROXY_BASE_PATH}/`)
   ) {
     return await handleStreamsProxyRequest(request, url);
+  }
+
+  if (url.pathname === "/favicon.ico") {
+    return new Response(null, {
+      headers: {
+        "Cache-Control": CACHE_CONTROL_STATIC,
+      },
+      status: 204,
+    });
   }
 
   if (!isProduction && url.pathname === "/__reload") {
@@ -423,9 +463,21 @@ async function handleBffQueryRequest(request: Request): Promise<Response> {
   }
 
   try {
+    if (payload.procedure === "query-insights") {
+      return Response.json([
+        null,
+        queryInsightsStore.getSnapshot({
+          limit: payload.limit,
+          since: payload.since,
+        }),
+      ]);
+    }
+
     if (payload.procedure === "query") {
       const [error, result] = await runSerializedQuery(() =>
-        executor.execute(payload.query),
+        executeAndRecordQuery(executor, payload.query, {
+          schema: payload.schema,
+        }),
       );
 
       return Response.json([error ? serializeError(error) : null, result]);
@@ -439,7 +491,7 @@ async function handleBffQueryRequest(request: Request): Promise<Response> {
       }
 
       const [firstError, firstResult] = await runSerializedQuery(() =>
-        executor.execute(firstQuery),
+        executeAndRecordQuery(executor, firstQuery),
       );
 
       if (firstError) {
@@ -447,7 +499,7 @@ async function handleBffQueryRequest(request: Request): Promise<Response> {
       }
 
       const [secondError, secondResult] = await runSerializedQuery(() =>
-        executor.execute(secondQuery),
+        executeAndRecordQuery(executor, secondQuery),
       );
 
       if (secondError) {
@@ -477,9 +529,33 @@ async function handleBffQueryRequest(request: Request): Promise<Response> {
         typeof executor.executeTransaction
       > = (queries, options) => executor.executeTransaction!(queries, options);
 
-      const [error, result] = await runSerializedQuery(() =>
-        executeTransaction(payload.queries),
-      );
+      const [error, result] = await runSerializedQuery(async () => {
+        const startedAt = performance.now();
+        const transactionResult = await executeTransaction(payload.queries);
+        const durationMs = Math.max(0, performance.now() - startedAt);
+
+        if (!transactionResult[0]) {
+          const [, results] = transactionResult;
+          const perQueryDurationMs =
+            payload.queries.length > 0
+              ? durationMs / payload.queries.length
+              : 0;
+
+          for (const [index, query] of payload.queries.entries()) {
+            const result = results[index];
+
+            if (result) {
+              queryInsightsStore.record({
+                durationMs: perQueryDurationMs,
+                query,
+                result,
+              });
+            }
+          }
+        }
+
+        return transactionResult;
+      });
 
       return Response.json([error ? serializeError(error) : null, result]);
     }
@@ -494,6 +570,7 @@ async function handleBffQueryRequest(request: Request): Promise<Response> {
       const result = await runSerializedQuery(() =>
         lintPostgresSql({
           postgresClient: lintPostgresClient,
+          schema: payload.schema,
           schemaVersion: payload.schemaVersion,
           sql: payload.sql,
         }),
@@ -506,6 +583,27 @@ async function handleBffQueryRequest(request: Request): Promise<Response> {
   } catch (error: unknown) {
     return Response.json([serializeError(error)]);
   }
+}
+
+async function executeAndRecordQuery(
+  executor: PostgresExecutor,
+  query: Query<unknown>,
+  options?: { schema?: string },
+): Promise<Awaited<ReturnType<PostgresExecutor["execute"]>>> {
+  const startedAt = performance.now();
+  const result = await executor.execute(query, { schema: options?.schema });
+  const durationMs = Math.max(0, performance.now() - startedAt);
+  const [error, rows] = result;
+
+  if (!error) {
+    queryInsightsStore.record({
+      durationMs,
+      query,
+      result: rows,
+    });
+  }
+
+  return result;
 }
 
 async function handleAiRequest(request: Request): Promise<Response> {
@@ -594,37 +692,43 @@ async function handleStreamsProxyRequest(
   if (request.method === "OPTIONS") {
     return new Response(null, {
       headers: {
-        Allow: "GET,HEAD,OPTIONS",
+        Allow: "GET,HEAD,POST,OPTIONS",
       },
       status: 204,
     });
   }
 
-  if (request.method !== "GET" && request.method !== "HEAD") {
+  if (
+    request.method !== "GET" &&
+    request.method !== "HEAD" &&
+    request.method !== "POST"
+  ) {
     return new Response("Method Not Allowed", {
       headers: {
-        Allow: "GET,HEAD,OPTIONS",
+        Allow: "GET,HEAD,POST,OPTIONS",
       },
       status: 405,
     });
   }
 
-  if (!prismaDevServer) {
+  if (!streamsServerUrl) {
     return new Response("Streams server is not ready", { status: 503 });
   }
 
-  const upstreamBaseUrl = prismaDevServer.experimental.streams.serverUrl;
   const proxyPathname = url.pathname.slice(STREAMS_PROXY_BASE_PATH.length);
   const normalizedPathname = proxyPathname.length > 0 ? proxyPathname : "/";
   const upstreamUrl = new URL(
     `${normalizedPathname}${url.search}`,
-    `${upstreamBaseUrl.replace(/\/+$/, "")}/`,
+    `${streamsServerUrl.replace(/\/+$/, "")}/`,
   );
   const headers = new Headers(request.headers);
+  const body =
+    request.method === "POST" ? await request.arrayBuffer() : undefined;
 
   headers.delete("host");
 
   const response = await fetch(upstreamUrl, {
+    body,
     headers,
     method: request.method,
     redirect: "manual",
@@ -696,7 +800,7 @@ function getHtmlDocument(): string {
     <title>Studio + ppg demo${isProduction ? "" : " (direct tcp)"}</title>
     <link rel="stylesheet" href="/app.css${bustSuffix}" />
   </head>
-  <body style="margin: 0; min-height: 100vh; background: #f3f4f6;">
+  <body style="margin: 0; min-height: 100vh;">
     <div id="root" style="height: 100vh;"></div>${liveReloadScript}
     <script type="module" src="/app.js${bustSuffix}"></script>
   </body>
@@ -870,36 +974,6 @@ async function buildAppStyles(): Promise<string> {
   );
 
   return result.css;
-}
-
-function registerShutdownHandlers(): void {
-  let isShuttingDown = false;
-
-  const shutdown = async (signal: string) => {
-    if (isShuttingDown) {
-      return;
-    }
-
-    isShuttingDown = true;
-
-    console.info(`[demo] shutting down (${signal})`);
-
-    for (const callback of cleanupCallbacks.reverse()) {
-      try {
-        await callback();
-      } catch (error: unknown) {
-        console.error(`[demo] cleanup failed: ${toErrorMessage(error)}`);
-      }
-    }
-
-    process.exit(0);
-  };
-
-  for (const signal of ["SIGINT", "SIGTERM", "SIGQUIT"] as const) {
-    process.on(signal, () => {
-      void shutdown(signal);
-    });
-  }
 }
 
 function getContentTypeForPath(path: string): string {

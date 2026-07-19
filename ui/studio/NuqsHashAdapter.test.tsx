@@ -97,4 +97,42 @@ describe("NuqsHashAdapter", () => {
     });
     container.remove();
   });
+
+  it("serializes the open aggregations flag without an explicit value", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    let setValueRef:
+      | ((value: string | null) => Promise<URLSearchParams>)
+      | undefined;
+
+    function Harness() {
+      const [value, setValue] = useQueryState("aggregations");
+      setValueRef = setValue;
+
+      return <button type="button">{value ?? "closed"}</button>;
+    }
+
+    act(() => {
+      root.render(
+        <NuqsHashAdapter>
+          <Harness />
+        </NuqsHashAdapter>,
+      );
+    });
+
+    await act(async () => {
+      await setValueRef?.("");
+    });
+
+    await waitFor(() => window.location.hash === "#aggregations");
+
+    expect(window.location.hash).toBe("#aggregations");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
 });
