@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildCellSelectionExportTable,
@@ -9,6 +9,10 @@ import {
 } from "./selection-export";
 
 describe("selection-export", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("builds cell selection export tables from the selected range", () => {
     expect(
       buildCellSelectionExportTable({
@@ -309,7 +313,9 @@ describe("selection-export", () => {
       format: "json",
     });
 
-    const blobArg = createObjectURL.mock.calls.at(-1)?.[0];
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+
+    const blobArg = createObjectURL.mock.calls[0]?.[0];
 
     if (!(blobArg instanceof Blob)) {
       throw new Error("Expected selection export download to use a Blob");
@@ -317,7 +323,7 @@ describe("selection-export", () => {
 
     expect(await blobArg.text()).toBe('[\n  {\n    "id": "org_acme"\n  }\n]');
     expect(blobArg.type).toBe("application/json;charset=utf-8");
-    expect(click.mock.calls.length).toBeGreaterThanOrEqual(1);
+    expect(click).toHaveBeenCalledTimes(1);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:selection-export");
   });
 });
