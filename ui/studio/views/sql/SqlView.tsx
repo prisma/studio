@@ -24,11 +24,11 @@ import { createSqlEditorSchemaFromIntrospection } from "../../../../data/sql-edi
 import { getTopLevelSqlStatementAtCursor } from "../../../../data/sql-statements";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
-import { cn } from "../../../lib/utils";
 import { TableHead, TableRow } from "../../../components/ui/table";
 import { useColumnPinning } from "../../../hooks/use-column-pinning";
 import { useIntrospection } from "../../../hooks/use-introspection";
 import { useNavigation } from "../../../hooks/use-navigation";
+import { cn } from "../../../lib/utils";
 import type { CellProps } from "../../cell/Cell";
 import { Cell } from "../../cell/Cell";
 import { getCell } from "../../cell/get-cell";
@@ -557,6 +557,8 @@ export function SqlView(_props: ViewProps) {
     resetKey: visualizationResetKey,
     rows: result?.rows ?? EMPTY_SQL_RESULT_ROWS,
   });
+  const hasResult = result != null;
+  const editorMaxHeight = hasResult ? "40vh" : undefined;
 
   async function runSqlRequest(args: {
     aiQueryRequest?: string | null;
@@ -877,9 +879,17 @@ export function SqlView(_props: ViewProps) {
       </StudioHeader>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden border-b border-border bg-background p-3">
+        <div
+          className={cn(
+            "flex min-h-0 flex-col gap-3 overflow-hidden border-b border-border bg-background p-3",
+            hasResult ? "flex-none" : "flex-1",
+          )}
+        >
           <div
-            className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border bg-background"
+            className={cn(
+              "flex min-h-0 flex-col overflow-hidden rounded-md border border-border bg-background",
+              hasResult ? "flex-none" : "flex-1",
+            )}
             data-testid="sql-editor-scroll-container"
           >
             <CodeMirror
@@ -894,8 +904,9 @@ export function SqlView(_props: ViewProps) {
                 "[&_.cm-line]:text-[15px] [&_.cm-scroller]:font-mono",
               ].join(" ")}
               extensions={sqlEditorExtensions}
-              height="100%"
+              height={hasResult ? undefined : "100%"}
               minHeight="128px"
+              maxHeight={editorMaxHeight}
               onCreateEditor={(view) => {
                 editorViewRef.current = view;
                 const cursorIndex = view.state.doc.length;
@@ -917,65 +928,65 @@ export function SqlView(_props: ViewProps) {
               value={editorValue}
             />
           </div>
-        {aiGenerationErrorMessage ? (
-          <div className="text-sm text-destructive">
-            <strong>AI SQL generation error:</strong> {aiGenerationErrorMessage}
-          </div>
-        ) : null}
-        {aiGenerationRationale ? (
-          <div className="text-xs text-muted-foreground">
-            <strong>AI rationale:</strong> {aiGenerationRationale}
-          </div>
-        ) : null}
-        {errorMessage ? (
-          <div className="text-sm text-destructive">
-            <strong>Query error:</strong> {errorMessage}
-          </div>
-        ) : null}
-        {result ? (
-          <div
-            className="flex items-center justify-between gap-3 text-xs text-muted-foreground"
-            data-testid="sql-result-summary"
-          >
-            <div>
-              {result.rowCount} row(s) returned in {result.durationMs}ms
+          {aiGenerationErrorMessage ? (
+            <div className="text-sm text-destructive">
+              <strong>AI SQL generation error:</strong> {aiGenerationErrorMessage}
             </div>
-            {hasAiSql ? (
-              <div className="flex min-w-0 items-center justify-end">
-                {visualization.state.status === "idle" &&
-                visualization.canGenerate ? (
-                  <Button
-                    className="h-auto rounded-none px-0 py-0 text-xs text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground"
-                    data-testid="sql-result-visualization-action"
-                    onClick={visualization.generateVisualization}
-                    size="sm"
-                    variant="ghost"
-                  >
-                    <Sparkles data-icon="inline-start" />
-                    Visualize data with AI
-                  </Button>
-                ) : null}
-                {visualization.state.status === "loading" ? (
-                  <div
-                    className="flex items-center gap-2 text-xs text-muted-foreground"
-                    data-testid="sql-result-visualization-action"
-                  >
-                    <Loader2 className="size-4 animate-spin" />
-                    Generating graph...
-                  </div>
-                ) : null}
-                {visualization.state.status === "error" ? (
-                  <div
-                    className="max-w-[32rem] text-right text-xs text-destructive"
-                    data-testid="sql-result-visualization-action"
-                  >
-                    {visualization.state.message}
-                  </div>
-                ) : null}
+          ) : null}
+          {aiGenerationRationale ? (
+            <div className="text-xs text-muted-foreground">
+              <strong>AI rationale:</strong> {aiGenerationRationale}
+            </div>
+          ) : null}
+          {errorMessage ? (
+            <div className="text-sm text-destructive">
+              <strong>Query error:</strong> {errorMessage}
+            </div>
+          ) : null}
+          {result ? (
+            <div
+              className="flex items-center justify-between gap-3 text-xs text-muted-foreground"
+              data-testid="sql-result-summary"
+            >
+              <div>
+                {result.rowCount} row(s) returned in {result.durationMs}ms
               </div>
-            ) : null}
-          </div>
-        ) : null}
+              {hasAiSql ? (
+                <div className="flex min-w-0 items-center justify-end">
+                  {visualization.state.status === "idle" &&
+                  visualization.canGenerate ? (
+                    <Button
+                      className="h-auto rounded-none px-0 py-0 text-xs text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground"
+                      data-testid="sql-result-visualization-action"
+                      onClick={visualization.generateVisualization}
+                      size="sm"
+                      variant="ghost"
+                    >
+                      <Sparkles data-icon="inline-start" />
+                      Visualize data with AI
+                    </Button>
+                  ) : null}
+                  {visualization.state.status === "loading" ? (
+                    <div
+                      className="flex items-center gap-2 text-xs text-muted-foreground"
+                      data-testid="sql-result-visualization-action"
+                    >
+                      <Loader2 className="size-4 animate-spin" />
+                      Generating graph...
+                    </div>
+                  ) : null}
+                  {visualization.state.status === "error" ? (
+                    <div
+                      className="max-w-[32rem] text-right text-xs text-destructive"
+                      data-testid="sql-result-visualization-action"
+                    >
+                      {visualization.state.message}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <div
