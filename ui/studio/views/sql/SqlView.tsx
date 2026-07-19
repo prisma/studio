@@ -16,6 +16,7 @@ import type {
   Adapter,
   AdapterError,
   AdapterRawResult,
+  AdapterSqlLintDiagnostic,
   Column,
   DataTypeGroup,
 } from "../../../../data/adapter";
@@ -38,19 +39,17 @@ import { DataGridDraggableHeaderCell } from "../../grid/DataGridDraggableHeaderC
 import { DataGridHeader } from "../../grid/DataGridHeader";
 import { StudioHeader } from "../../StudioHeader";
 import type { ViewProps } from "../View";
+import { resolveAiSqlGeneration } from "./sql-ai-generation";
 import {
   getCodeMirrorDialect,
   toCodeMirrorSqlNamespace,
 } from "./sql-editor-config";
 import { createSqlEditorKeybindings } from "./sql-editor-keybindings";
-import {
-  resolveAiSqlGeneration,
-} from "./sql-ai-generation";
+import { createSqlLintSource } from "./sql-lint-source";
 import {
   SqlResultVisualizationChart,
   useSqlResultVisualization,
 } from "./SqlResultVisualization";
-import { createSqlLintSource } from "./sql-lint-source";
 
 interface SqlResultState {
   aiQueryRequest: string | null;
@@ -90,6 +89,7 @@ const SQL_VIEW_GRID_SCOPE = "sql:view:grid";
 const SQL_VIEW_TABLE_NAME = "__sql_result__";
 const SQL_VIEW_SCHEMA = "__sql_result__";
 const EMPTY_SQL_RESULT_ROWS: Record<string, unknown>[] = [];
+const MAX_AI_SQL_VALIDATION_CORRECTIONS = 1;
 const DEFAULT_PAGINATION_STATE: PaginationState = {
   pageIndex: 0,
   pageSize: 25,
@@ -227,7 +227,7 @@ const SqlResultGrid = memo(function SqlResultGrid(props: SqlResultGridProps) {
                     colSpan={Math.max(table.getAllLeafColumns().length, 1)}
                   >
                     <div
-                      className="sticky left-0 box-border w-[100cqw] overflow-hidden border-b border-border bg-white px-4 pt-4 pb-5"
+                      className="sticky left-0 box-border w-[100cqw] overflow-hidden border-b border-border/70 bg-background px-4 pt-4 pb-5"
                       data-testid="sql-result-visualization-band"
                     >
                       <SqlResultVisualizationChart
@@ -274,8 +274,10 @@ export function SqlView(_props: ViewProps) {
     sqlEditorStateCollection,
   });
   const abortControllerRef = useRef<AbortController | null>(null);
+  const sqlValidationAbortControllerRef = useRef<AbortController | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
   const aiPromptInputRef = useRef<HTMLInputElement | null>(null);
+  const isMountedRef = useRef(true);
   const runCurrentSqlRef = useRef<() => void>(() => undefined);
   const persistedSqlDraftRef = useRef<string | null>(initialPersistedSqlDraft);
   const [editorValue, setEditorValue] = useState(() => {
@@ -293,10 +295,14 @@ export function SqlView(_props: ViewProps) {
   const [aiGenerationErrorMessage, setAiGenerationErrorMessage] = useState<
     string | null
   >(null);
+  const [aiCorrectionErrorMessage, setAiCorrectionErrorMessage] = useState<
+    string | null
+  >(null);
   const [aiGenerationRationale, setAiGenerationRationale] = useState<
     string | null
   >(null);
   const [isGeneratingSql, setIsGeneratingSql] = useState(false);
+  const [isCorrectingSql, setIsCorrectingSql] = useState(false);
   const [pendingAiSqlExecution, setPendingAiSqlExecution] =
     useState<PendingAiSqlExecutionState | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -357,7 +363,9 @@ export function SqlView(_props: ViewProps) {
       }
 
       setAiPromptHistory(nextHistory);
-      const existingState = sqlEditorStateCollection.get(SQL_AI_PROMPT_HISTORY_ID);
+      const existingState = sqlEditorStateCollection.get(
+        SQL_AI_PROMPT_HISTORY_ID,
+      );
 
       if (!existingState) {
         sqlEditorStateCollection.insert({
@@ -376,7 +384,7 @@ export function SqlView(_props: ViewProps) {
 
   const aiPromptHistoryPreview =
     aiPrompt.length === 0 && aiPromptHistoryPreviewIndex != null
-      ? aiPromptHistory[aiPromptHistoryPreviewIndex] ?? null
+      ? (aiPromptHistory[aiPromptHistoryPreviewIndex] ?? null)
       : null;
 
   const materializeAiPromptHistoryPreview = useCallback(() => {
@@ -431,6 +439,16 @@ export function SqlView(_props: ViewProps) {
   }, [aiPromptHistory]);
 
   useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+      sqlValidationAbortControllerRef.current?.abort();
+      sqlValidationAbortControllerRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!hasUserEditedEditorValueRef.current) {
       return;
     }
@@ -464,13 +482,17 @@ export function SqlView(_props: ViewProps) {
     };
   }, [persistEditorDraft]);
 
+  const activeSqlSchema = getActiveSqlSchema({
+    adapterDefaultSchema: adapter.defaultSchema,
+    schemaParam,
+  });
   const sqlEditorSchema = useMemo(() => {
     return createSqlEditorSchemaFromIntrospection({
-      defaultSchema: adapter.defaultSchema,
+      defaultSchema: activeSqlSchema,
       dialect: adapter.capabilities?.sqlDialect ?? "postgresql",
       introspection,
     });
-  }, [adapter.capabilities?.sqlDialect, adapter.defaultSchema, introspection]);
+  }, [adapter.capabilities?.sqlDialect, activeSqlSchema, introspection]);
   const sqlEditorNamespace = useMemo(() => {
     return toCodeMirrorSqlNamespace(sqlEditorSchema.namespace);
   }, [sqlEditorSchema.namespace]);
@@ -494,9 +516,10 @@ export function SqlView(_props: ViewProps) {
 
     return createSqlLintSource({
       lintSql: (details, options) => adapter.sqlLint(details, options),
+      schema: activeSqlSchema,
       schemaVersion: sqlEditorSchema.version,
     });
-  }, [adapter, sqlEditorSchema.version]);
+  }, [activeSqlSchema, adapter, sqlEditorSchema.version]);
 
   useEffect(() => {
     return () => {
@@ -528,7 +551,9 @@ export function SqlView(_props: ViewProps) {
     ];
   }, [sqlLanguageExtension, sqlLintExtensions]);
   const databaseEngine = useMemo(() => {
-    return getDatabaseEngineName(adapter.capabilities?.sqlDialect ?? "postgresql");
+    return getDatabaseEngineName(
+      adapter.capabilities?.sqlDialect ?? "postgresql",
+    );
   }, [adapter.capabilities?.sqlDialect]);
   const requestAiSqlGeneration = useCallback(
     async (prompt: string) => {
@@ -560,6 +585,128 @@ export function SqlView(_props: ViewProps) {
   const hasResult = result != null;
   const editorMaxHeight = hasResult ? "40vh" : undefined;
 
+  function applyAiSqlGenerationResult(args: {
+    aiQueryRequest: string;
+    rationale: string | null;
+    shouldGenerateVisualization: boolean;
+    sql: string;
+  }) {
+    flushSync(() => {
+      hasUserEditedEditorValueRef.current = true;
+      latestEditorValueRef.current = args.sql;
+      setEditorValue(args.sql);
+      setAiGenerationRationale(args.rationale);
+      setPendingAiSqlExecution({
+        aiQueryRequest: args.aiQueryRequest,
+        shouldAutoGenerateVisualization: args.shouldGenerateVisualization,
+        sql: args.sql,
+      });
+    });
+    focusSqlEditorAtEnd(args.sql);
+  }
+
+  async function resolveValidatedAiSqlGeneration(args: {
+    previousSql?: string;
+    queryErrorMessage?: string;
+    request: string;
+  }) {
+    const generationIntrospection = introspection;
+
+    if (!generationIntrospection) {
+      throw new Error(
+        "Schema metadata is still loading. Try again in a moment.",
+      );
+    }
+
+    let generation = await resolveAiSqlGeneration({
+      activeSchema: activeSqlSchema,
+      requestAiSqlGeneration,
+      dialect: adapter.capabilities?.sqlDialect ?? "postgresql",
+      introspection: generationIntrospection,
+      previousSql: args.previousSql,
+      queryErrorMessage: args.queryErrorMessage,
+      request: args.request,
+    });
+
+    for (
+      let correctionCount = 0;
+      correctionCount <= MAX_AI_SQL_VALIDATION_CORRECTIONS;
+      correctionCount += 1
+    ) {
+      const validationMessage = await validateGeneratedSqlBeforeDisplay(
+        generation.sql,
+      );
+
+      if (!validationMessage) {
+        return generation;
+      }
+
+      if (correctionCount === MAX_AI_SQL_VALIDATION_CORRECTIONS) {
+        throw new Error(
+          `AI-generated SQL did not pass validation: ${validationMessage}`,
+        );
+      }
+
+      generation = await resolveAiSqlGeneration({
+        activeSchema: activeSqlSchema,
+        requestAiSqlGeneration,
+        dialect: adapter.capabilities?.sqlDialect ?? "postgresql",
+        introspection: generationIntrospection,
+        previousSql: generation.sql,
+        queryErrorMessage: validationMessage,
+        request: args.request,
+      });
+    }
+
+    return generation;
+  }
+
+  async function validateGeneratedSqlBeforeDisplay(
+    sql: string,
+  ): Promise<string | null> {
+    if (
+      !adapter.capabilities?.sqlEditorLint ||
+      !adapterSupportsSqlLint(adapter)
+    ) {
+      return null;
+    }
+
+    const abortController = new AbortController();
+    sqlValidationAbortControllerRef.current = abortController;
+    const [error, result] = await adapter.sqlLint(
+      {
+        schema: activeSqlSchema,
+        schemaVersion: sqlEditorSchema.version,
+        sql,
+      },
+      { abortSignal: abortController.signal },
+    );
+
+    if (sqlValidationAbortControllerRef.current === abortController) {
+      sqlValidationAbortControllerRef.current = null;
+    }
+
+    if (!isMountedRef.current) {
+      return null;
+    }
+
+    if (error) {
+      throw new Error(`AI SQL validation failed: ${error.message}`);
+    }
+
+    const blockingDiagnostics = result.diagnostics.filter((diagnostic) => {
+      return diagnostic.severity === "error";
+    });
+
+    if (blockingDiagnostics.length === 0) {
+      return null;
+    }
+
+    return blockingDiagnostics
+      .map(formatSqlLintDiagnosticForAiCorrection)
+      .join("\n");
+  }
+
   async function runSqlRequest(args: {
     aiQueryRequest?: string | null;
     sql: string;
@@ -576,17 +723,29 @@ export function SqlView(_props: ViewProps) {
     abortControllerRef.current = abortController;
     setIsRunning(true);
     setErrorMessage(null);
+    setAiCorrectionErrorMessage(null);
     setVisualizationResetKey((currentValue) => currentValue + 1);
 
     const [error, rawResult] = await adapter.raw(
-      { sql },
+      {
+        schema: activeSqlSchema,
+        sql,
+      },
       { abortSignal: abortController.signal },
     );
 
     const durationMs =
       consumeBffRequestDurationMsForSignal(abortController.signal) ??
       Math.round(performance.now() - startedAt);
-    abortControllerRef.current = null;
+
+    if (abortControllerRef.current === abortController) {
+      abortControllerRef.current = null;
+    }
+
+    if (!isMountedRef.current) {
+      return null;
+    }
+
     setIsRunning(false);
 
     return {
@@ -644,6 +803,7 @@ export function SqlView(_props: ViewProps) {
     setRowSelectionState({});
     setPaginationState(DEFAULT_PAGINATION_STATE);
     setErrorMessage(null);
+    setAiCorrectionErrorMessage(null);
 
     if (reportEvents) {
       onEvent({
@@ -675,6 +835,14 @@ export function SqlView(_props: ViewProps) {
     }
 
     applySqlExecutionOutcome(outcome);
+
+    if (outcome.error && outcome.error.name !== "AbortError") {
+      await correctAiGeneratedSqlAfterQueryError({
+        aiQueryRequest: aiExecutionContext.aiQueryRequest,
+        failedSql: sql.trim(),
+        queryErrorMessage: outcome.error.message,
+      });
+    }
   }
 
   function getSqlForExecutionFromCursor(): string {
@@ -708,7 +876,7 @@ export function SqlView(_props: ViewProps) {
   }
 
   async function generateSqlFromPrompt() {
-    if (!hasAiSql || isGeneratingSql) {
+    if (!hasAiSql || isGeneratingSql || isCorrectingSql) {
       return;
     }
 
@@ -729,41 +897,92 @@ export function SqlView(_props: ViewProps) {
     setAiPromptHistoryPreviewIndex(null);
     setIsGeneratingSql(true);
     setAiGenerationErrorMessage(null);
+    setAiCorrectionErrorMessage(null);
     setAiGenerationRationale(null);
     setErrorMessage(null);
     setPendingAiSqlExecution(null);
     setResult(null);
 
     try {
-      const generation = await resolveAiSqlGeneration({
-        activeSchema: schemaParam ?? adapter.defaultSchema ?? "public",
-        requestAiSqlGeneration,
-        dialect: adapter.capabilities?.sqlDialect ?? "postgresql",
-        introspection,
+      const generation = await resolveValidatedAiSqlGeneration({
         request: trimmedPrompt,
       });
 
-      flushSync(() => {
-        hasUserEditedEditorValueRef.current = true;
-        latestEditorValueRef.current = generation.sql;
-        setEditorValue(generation.sql);
-        setAiGenerationRationale(generation.rationale);
-        setPendingAiSqlExecution({
-          aiQueryRequest: trimmedPrompt,
-          shouldAutoGenerateVisualization:
-            generation.shouldGenerateVisualization,
-          sql: generation.sql,
-        });
+      if (!isMountedRef.current) {
+        return;
+      }
+
+      applyAiSqlGenerationResult({
+        aiQueryRequest: trimmedPrompt,
+        rationale: generation.rationale,
+        shouldGenerateVisualization: generation.shouldGenerateVisualization,
+        sql: generation.sql,
       });
-      focusSqlEditorAtEnd(generation.sql);
     } catch (error) {
+      if (!isMountedRef.current) {
+        return;
+      }
+
       setAiGenerationErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "AI SQL generation failed.",
+        error instanceof Error ? error.message : "AI SQL generation failed.",
       );
     } finally {
-      setIsGeneratingSql(false);
+      if (isMountedRef.current) {
+        setIsGeneratingSql(false);
+      }
+    }
+  }
+
+  async function correctAiGeneratedSqlAfterQueryError(args: {
+    aiQueryRequest: string | null;
+    failedSql: string;
+    queryErrorMessage: string;
+  }) {
+    if (
+      !hasAiSql ||
+      !args.aiQueryRequest ||
+      args.failedSql.length === 0 ||
+      isCorrectingSql ||
+      !introspection
+    ) {
+      return;
+    }
+
+    setIsCorrectingSql(true);
+    setAiGenerationErrorMessage(null);
+    setAiCorrectionErrorMessage(null);
+
+    try {
+      const generation = await resolveValidatedAiSqlGeneration({
+        previousSql: args.failedSql,
+        queryErrorMessage: args.queryErrorMessage,
+        request: args.aiQueryRequest,
+      });
+
+      if (!isMountedRef.current) {
+        return;
+      }
+
+      setResult(null);
+      setErrorMessage(null);
+      applyAiSqlGenerationResult({
+        aiQueryRequest: args.aiQueryRequest,
+        rationale: generation.rationale,
+        shouldGenerateVisualization: generation.shouldGenerateVisualization,
+        sql: generation.sql,
+      });
+    } catch (error) {
+      if (!isMountedRef.current) {
+        return;
+      }
+
+      setAiCorrectionErrorMessage(
+        error instanceof Error ? error.message : "AI SQL correction failed.",
+      );
+    } finally {
+      if (isMountedRef.current) {
+        setIsCorrectingSql(false);
+      }
     }
   }
 
@@ -798,11 +1017,7 @@ export function SqlView(_props: ViewProps) {
       size="sm"
       variant={isRunning ? "outline" : "default"}
     >
-      {isRunning ? (
-        <Square className="size-4" />
-      ) : (
-        <Play className="size-4" />
-      )}
+      {isRunning ? <Square className="size-4" /> : <Play className="size-4" />}
       {isRunning ? "Cancel" : "Run SQL"}
     </Button>
   );
@@ -815,7 +1030,7 @@ export function SqlView(_props: ViewProps) {
             <Input
               aria-label="Generate SQL with AI"
               className="min-w-0 grow"
-              disabled={isGeneratingSql}
+              disabled={isGeneratingSql || isCorrectingSql}
               onMouseDown={() => {
                 void materializeAiPromptHistoryPreview();
               }}
@@ -860,7 +1075,11 @@ export function SqlView(_props: ViewProps) {
               value={aiPrompt}
             />
             <Button
-              disabled={aiPrompt.trim().length === 0 || isGeneratingSql}
+              disabled={
+                aiPrompt.trim().length === 0 ||
+                isGeneratingSql ||
+                isCorrectingSql
+              }
               onClick={() => {
                 void generateSqlFromPrompt();
               }}
@@ -878,13 +1097,68 @@ export function SqlView(_props: ViewProps) {
         ) : null}
       </StudioHeader>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div
-          className={cn(
-            "flex min-h-0 flex-col gap-3 overflow-hidden border-b border-border bg-background p-3",
-            hasResult ? "flex-none" : "flex-1",
-          )}
-        >
+      <div className="flex flex-col gap-3 p-3 border-b border-border bg-background">
+        <div className="rounded-md border border-border overflow-hidden bg-background">
+          <CodeMirror
+            aria-label="SQL editor"
+            basicSetup={{
+              foldGutter: false,
+            }}
+            className={[
+              "[&_.cm-editor]:!border-0 [&_.cm-editor]:font-mono",
+              "[&_.cm-gutters]:border-r [&_.cm-gutters]:border-border [&_.cm-gutters]:bg-muted/30",
+              "[&_.cm-line]:text-[15px] [&_.cm-scroller]:font-mono",
+            ].join(" ")}
+            extensions={sqlEditorExtensions}
+            minHeight="128px"
+            onCreateEditor={(view) => {
+              editorViewRef.current = view;
+              const cursorIndex = view.state.doc.length;
+              view.dispatch({
+                selection: {
+                  anchor: cursorIndex,
+                  head: cursorIndex,
+                },
+              });
+              view.focus();
+            }}
+            onChange={(value) => {
+              hasUserEditedEditorValueRef.current = true;
+              latestEditorValueRef.current = value;
+              setEditorValue(value);
+            }}
+            placeholder="Write SQL..."
+            theme={isDarkMode ? "dark" : "light"}
+            value={editorValue}
+          />
+        </div>
+        {aiGenerationErrorMessage ? (
+          <div className="text-sm text-destructive">
+            <strong>AI SQL generation error:</strong> {aiGenerationErrorMessage}
+          </div>
+        ) : null}
+        {isCorrectingSql ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            Correcting SQL with AI...
+          </div>
+        ) : null}
+        {aiCorrectionErrorMessage ? (
+          <div className="text-sm text-destructive">
+            <strong>AI SQL correction error:</strong> {aiCorrectionErrorMessage}
+          </div>
+        ) : null}
+        {aiGenerationRationale ? (
+          <div className="text-xs text-muted-foreground">
+            <strong>AI rationale:</strong> {aiGenerationRationale}
+          </div>
+        ) : null}
+        {errorMessage ? (
+          <div className="text-sm text-destructive">
+            <strong>Query error:</strong> {errorMessage}
+          </div>
+        ) : null}
+        {result ? (
           <div
             className={cn(
               "flex min-h-0 flex-col overflow-hidden rounded-md border border-border bg-background",
@@ -1046,7 +1320,9 @@ function getPendingAiSqlExecutionContext(args: {
     };
   }
 
-  if (normalizeSqlForAiExecutionContext(pendingAiSqlExecution.sql) !== trimmedSql) {
+  if (
+    normalizeSqlForAiExecutionContext(pendingAiSqlExecution.sql) !== trimmedSql
+  ) {
     return {
       aiQueryRequest: null,
       shouldAutoGenerateVisualization: false,
@@ -1155,6 +1431,20 @@ function adapterSupportsSqlLint(adapter: Adapter): adapter is Adapter & {
   return typeof adapter.sqlLint === "function";
 }
 
+function getActiveSqlSchema(args: {
+  adapterDefaultSchema?: string;
+  schemaParam: string | null | undefined;
+}): string {
+  return args.schemaParam ?? args.adapterDefaultSchema ?? "public";
+}
+
+function formatSqlLintDiagnosticForAiCorrection(
+  diagnostic: AdapterSqlLintDiagnostic,
+): string {
+  const code = diagnostic.code ? ` (${diagnostic.code})` : "";
+  return `${diagnostic.message}${code}`;
+}
+
 function getDatabaseEngineName(dialect: "postgresql" | "mysql" | "sqlite") {
   switch (dialect) {
     case "mysql":
@@ -1228,7 +1518,9 @@ function readPersistedSqlEditorStateRow(args: {
       return null;
     }
 
-    const draftRow = (parsedStorageState as Record<string, unknown>)[`s:${rowId}`];
+    const draftRow = (parsedStorageState as Record<string, unknown>)[
+      `s:${rowId}`
+    ];
 
     if (typeof draftRow !== "object" || draftRow == null) {
       return null;

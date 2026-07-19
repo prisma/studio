@@ -1,6 +1,5 @@
 import {
   type Adapter,
-  type AdapterUpdateDetails,
   type AdapterDeleteResult,
   type AdapterError,
   type AdapterInsertResult,
@@ -12,6 +11,7 @@ import {
   type AdapterSqlLintDetails,
   type AdapterSqlLintResult,
   type AdapterSqlSchemaResult,
+  type AdapterUpdateDetails,
   type AdapterUpdateManyResult,
   type AdapterUpdateResult,
   type Column,
@@ -49,7 +49,7 @@ export type PostgresAdapterRequirements = AdapterRequirements;
 export function createPostgresAdapter(
   requirements: PostgresAdapterRequirements,
 ): Adapter {
-  const { executor, ...otherRequirements } = requirements;
+  const { executor, queryInsights, ...otherRequirements } = requirements;
   const fullTableSearchState = createFullTableSearchExecutionState();
   let canUseExecutorLintTransport = typeof executor.lintSql === "function";
   const createPostgresAdapterError = (
@@ -155,6 +155,7 @@ export function createPostgresAdapter(
 
   return {
     defaultSchema: "public",
+    queryInsights,
     capabilities: {
       fullTableSearch: true,
       sqlDialect: "postgresql",
@@ -393,7 +394,10 @@ async function lintWithExplainFallback(
       const explainQuery = asQuery<Record<string, unknown>>(
         `EXPLAIN ${statement.statement}`,
       );
-      const [error] = await executor.execute(explainQuery, options);
+      const [error] = await executor.execute(explainQuery, {
+        ...options,
+        schema: details.schema,
+      });
 
       if (!error) {
         continue;
@@ -433,7 +437,10 @@ async function executeRawQuery(
 ): Promise<Either<AdapterError, AdapterRawResult>> {
   try {
     const query = asQuery<Record<string, unknown>>(details.sql);
-    const [error, rows] = await executor.execute(query, options);
+    const [error, rows] = await executor.execute(query, {
+      ...options,
+      schema: details.schema,
+    });
 
     if (error) {
       return createAdapterError({

@@ -39,7 +39,7 @@ function getQueryPreview(query: Query<unknown> | undefined): string | null {
 }
 
 export function useIntrospection() {
-  const { adapter, onEvent } = useStudio();
+  const { adapter, hasDatabase, onEvent } = useStudio();
   const hasEmittedLaunchEventRef = useRef(false);
 
   useEffect(() => {
@@ -47,6 +47,7 @@ export function useIntrospection() {
   }, [adapter]);
 
   const queryResult = useQuery<AdapterIntrospectResult, AdapterError>({
+    enabled: hasDatabase,
     queryKey: ["introspection"],
     queryFn: async ({ signal }) => {
       const [error, result] = await adapter.introspect({ abortSignal: signal });
@@ -102,8 +103,12 @@ export function useIntrospection() {
   const fallbackData = useMemo(() => {
     return createInitialIntrospectionResult(adapter.defaultSchema);
   }, [adapter.defaultSchema]);
-  const hasResolvedIntrospection = queryResult.data != null;
+  const hasResolvedIntrospection = !hasDatabase || queryResult.data != null;
   const errorState = useMemo<IntrospectionErrorState | null>(() => {
+    if (!hasDatabase) {
+      return null;
+    }
+
     if (!queryResult.error) {
       return null;
     }
@@ -122,6 +127,7 @@ export function useIntrospection() {
   }, [
     adapter.capabilities?.sqlDialect,
     adapter.defaultSchema,
+    hasDatabase,
     queryResult.error,
   ]);
 
@@ -131,6 +137,6 @@ export function useIntrospection() {
     errorState,
     hasResolvedIntrospection,
     isUsingLastKnownGoodData: queryResult.isError && queryResult.data != null,
-    isUsingPlaceholderData: queryResult.data == null,
+    isUsingPlaceholderData: hasDatabase && queryResult.data == null,
   };
 }

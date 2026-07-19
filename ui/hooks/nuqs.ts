@@ -17,9 +17,15 @@ import {
 export * from "nuqs";
 
 export type StateKey =
+  | "aggregations"
+  | "migration"
   | "pageIndex"
   | "pageSize"
   | "pin"
+  | "streamAggregationRange"
+  | "streamFollow"
+  | "streamObserve"
+  | "streamRoutingKey"
   | "stream"
   | "table"
   | "sort"

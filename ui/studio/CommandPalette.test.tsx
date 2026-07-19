@@ -54,6 +54,10 @@ vi.mock("../hooks/use-navigation", () => ({
   useNavigation: () => useNavigationMock(),
 }));
 
+vi.mock("../hooks/use-migrations", () => ({
+  useHasMigrationHistory: () => false,
+}));
+
 vi.mock("../hooks/use-introspection", () => ({
   useIntrospection: () => useIntrospectionMock(),
 }));
@@ -150,6 +154,8 @@ vi.mock("../hooks/use-ui-state", async () => {
 
 vi.mock("./context", () => ({
   useStudio: () => ({
+    hasDatabase: true,
+    hasQueryInsights: false,
     isDarkMode,
     isNavigationOpen,
     setThemeMode: setThemeModeMock,

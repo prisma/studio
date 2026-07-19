@@ -715,7 +715,7 @@ describe("sqlite-core/introspection", () => {
                       "date": {
                         "datatype": {
                           "affinity": "NUMERIC",
-                          "group": "numeric",
+                          "group": "string",
                           "isArray": false,
                           "isNative": true,
                           "name": "date",
@@ -738,7 +738,7 @@ describe("sqlite-core/introspection", () => {
                       "datetime": {
                         "datatype": {
                           "affinity": "NUMERIC",
-                          "group": "numeric",
+                          "group": "string",
                           "isArray": false,
                           "isNative": true,
                           "name": "datetime",

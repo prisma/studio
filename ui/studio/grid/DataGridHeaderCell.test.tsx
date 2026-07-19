@@ -58,6 +58,36 @@ describe("DataGridHeaderCell", () => {
     container.remove();
   });
 
+  it("shows the common alias for native PostgreSQL catalog type names", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <DataGridHeaderCell
+          column={
+            {
+              datatype: {
+                name: "int8",
+                schema: "pg_catalog",
+              },
+              name: "id",
+            } as Column
+          }
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain("bigint");
+    expect(container.textContent).not.toContain("int8");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it("wraps tooltip icons in trigger spans instead of rendering raw svg triggers", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

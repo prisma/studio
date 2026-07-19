@@ -4,7 +4,10 @@ import type {
   SortOrderItem,
   Table,
 } from "../../data/adapter";
-import { useActiveTableRowsCollection } from "./use-active-table-rows-collection";
+import {
+  type ActiveTableRowsCollectionState,
+  useActiveTableRowsCollection,
+} from "./use-active-table-rows-collection";
 import { useNavigation } from "./use-navigation";
 
 export interface UseActiveTableQueryProps {
@@ -27,9 +30,16 @@ export interface UseActiveTableQueryResult {
   refetch: () => Promise<void>;
 }
 
-export function useActiveTableQuery(
+/**
+ * Resolves the rows-collection state for the exact query scope described by
+ * `props`. Row mutation hooks must resolve their collection through this hook
+ * with the same query props the view uses for display, so mutations target the
+ * collection that actually contains the visible rows (for example the grown
+ * `pageIndex: 0` window used by infinite scroll).
+ */
+export function useActiveTableQueryCollection(
   props: UseActiveTableQueryProps,
-): UseActiveTableQueryResult {
+): ActiveTableRowsCollectionState {
   const { filter, pageIndex, pageSize, sortOrder } = props;
   const {
     metadata: { activeTable },
@@ -39,13 +49,20 @@ export function useActiveTableQuery(
     searchScope: props.searchScope ?? "table",
     searchTerm: props.searchTerm ?? "",
   });
-  const state = useActiveTableRowsCollection({
+
+  return useActiveTableRowsCollection({
     filter,
     fullTableSearchTerm,
     pageIndex,
     pageSize,
     sortOrder,
   });
+}
+
+export function useActiveTableQuery(
+  props: UseActiveTableQueryProps,
+): UseActiveTableQueryResult {
+  const state = useActiveTableQueryCollection(props);
 
   return {
     data: state.activeTable

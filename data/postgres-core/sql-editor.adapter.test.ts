@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AdapterSqlLintResult } from "../adapter";
 import type { Executor } from "../executor";
+import type { StudioQueryInsights } from "../query-insights";
 import { createPostgresAdapter } from "./adapter";
 import { mockTablesQuery, mockTimezoneQuery } from "./introspection";
 
@@ -59,6 +60,18 @@ describe("postgres-core/adapter sql-editor support", () => {
     expect(adapter.capabilities?.sqlEditorLint).toBe(true);
   });
 
+  it("preserves the optional query insights provider", () => {
+    const queryInsights: StudioQueryInsights = {
+      getSnapshot: vi.fn(),
+    };
+    const adapter = createPostgresAdapter({
+      executor: createExecutor(),
+      queryInsights,
+    });
+
+    expect(adapter.queryInsights).toBe(queryInsights);
+  });
+
   it("delegates sql lint to executor lintSql when available", async () => {
     const lintResult: AdapterSqlLintResult = {
       diagnostics: [
@@ -91,6 +104,44 @@ describe("postgres-core/adapter sql-editor support", () => {
     expect(result).toEqual(lintResult);
     expect(lintSql).toHaveBeenCalledWith(
       { sql: "select * from" },
+      { abortSignal: abortController.signal },
+    );
+  });
+
+  it("delegates selected schema context to executor lintSql", async () => {
+    const lintResult: AdapterSqlLintResult = {
+      diagnostics: [],
+      schemaVersion: "schema-v1",
+    };
+    const lintSql = vi.fn().mockResolvedValue([null, lintResult]);
+    const executorWithLint = {
+      ...createExecutor(),
+      lintSql,
+    } as Executor & {
+      lintSql: typeof lintSql;
+    };
+    const adapter = createPostgresAdapter({
+      executor: executorWithLint,
+    });
+    const abortController = new AbortController();
+
+    const [error, result] = await adapter.sqlLint!(
+      {
+        schema: "test_app",
+        schemaVersion: "schema-v1",
+        sql: "select * from order_items",
+      },
+      { abortSignal: abortController.signal },
+    );
+
+    expect(error).toBeNull();
+    expect(result).toEqual(lintResult);
+    expect(lintSql).toHaveBeenCalledWith(
+      {
+        schema: "test_app",
+        schemaVersion: "schema-v1",
+        sql: "select * from order_items",
+      },
       { abortSignal: abortController.signal },
     );
   });

@@ -65,6 +65,7 @@ describe("DemoApp", () => {
           adapter: {} as Adapter,
           aiEnabled: false,
           bootId: "boot-1234",
+          hasDatabase: true,
           seededAt: "2026-03-09T10:00:00.000Z",
           streamsUrl: "/api/streams",
         }),
@@ -79,6 +80,8 @@ describe("DemoApp", () => {
     expect(
       container.querySelector('[data-testid="studio-stub"]'),
     ).not.toBeNull();
+    expect(container.querySelector("main")?.style.display).toBe("flex");
+    expect(container.querySelector("main")?.style.overflow).toBe("hidden");
     expect(studioMock.mock.calls.at(-1)?.[0]).toEqual(
       expect.objectContaining({
         streamsUrl: "/api/streams",
@@ -96,6 +99,37 @@ describe("DemoApp", () => {
     expect(
       container.querySelector('button[aria-label="Enter demo fullscreen"]'),
     ).toBeNull();
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("omits the seeded badge when the demo is connected to external data sources", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        createElement(DemoApp, {
+          adapter: {} as Adapter,
+          aiEnabled: false,
+          bootId: "boot-1234",
+          hasDatabase: false,
+          streamsUrl: "/api/streams",
+        }),
+      );
+    });
+
+    expect(container.textContent).toContain("Studio + ppg demo");
+    expect(container.textContent).not.toContain("seeded");
+    expect(studioMock.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        hasDatabase: false,
+      }),
+    );
 
     act(() => {
       root.unmount();
@@ -130,6 +164,7 @@ describe("DemoApp", () => {
           adapter: {} as Adapter,
           aiEnabled: true,
           bootId: "boot-1234",
+          hasDatabase: true,
           seededAt: "2026-03-09T10:00:00.000Z",
           streamsUrl: "/api/streams",
         }),

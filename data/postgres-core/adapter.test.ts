@@ -485,7 +485,31 @@ describe("postgres-core/adapter", () => {
       expect(error).toBeNull();
       expect(result?.rowCount).toBe(2);
       expect(result?.rows).toEqual([{ one: 1 }, { one: 2 }]);
-      expect(result?.query.sql).toBe("select 1 as one union all select 2 as one");
+      expect(result?.query.sql).toBe(
+        "select 1 as one union all select 2 as one",
+      );
+    });
+
+    it("executes unqualified raw SQL against the selected schema", async () => {
+      await pglite.exec(`
+        insert into "zoo"."animals" ("name")
+        values ('otter')
+      `);
+
+      const [error, result] = await adapter.raw(
+        {
+          schema: "zoo",
+          sql: "select name from animals order by id desc limit 1",
+        },
+        { abortSignal: new AbortController().signal },
+      );
+
+      expect(error).toBeNull();
+      expect(result?.rowCount).toBe(1);
+      expect(result?.rows).toEqual([{ name: "otter" }]);
+      expect(result?.query.sql).toBe(
+        "select name from animals order by id desc limit 1",
+      );
     });
 
     it("returns adapter errors for invalid SQL", async () => {

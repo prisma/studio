@@ -9,6 +9,7 @@ import { useSchemaVisualization } from "../../../hooks/use-schema-visualization"
 import { StudioHeader } from "../../StudioHeader";
 import { ViewProps } from "../View";
 import {
+  createSchemaVisualizerPersistentStateScope,
   createSchemaVisualizerStateScope,
   createSchemaVisualizerUiStateKey,
   doSchemaNodePositionsDiffer,
@@ -32,9 +33,18 @@ export function SchemaView(_props: ViewProps) {
         .sort((left, right) => left.localeCompare(right)),
     [tables],
   );
+  const persistentStateScope = useMemo(
+    () => createSchemaVisualizerPersistentStateScope(activeSchema?.name),
+    [activeSchema?.name],
+  );
   const [nodePositions, setNodePositions] = useUiState<SchemaNodePositions>(
     createSchemaVisualizerUiStateKey(stateScope, "node-positions"),
     {},
+  );
+  const [, setManualNodePositions] = useUiState<SchemaNodePositions>(
+    createSchemaVisualizerUiStateKey(persistentStateScope, "node-positions"),
+    {},
+    { persistent: true },
   );
   const [autoLayoutPositions] = useUiState<SchemaNodePositions>(
     createSchemaVisualizerUiStateKey(stateScope, "auto-layout-node-positions"),
@@ -54,6 +64,7 @@ export function SchemaView(_props: ViewProps) {
       variant="outline"
       onClick={() => {
         setNodePositions(autoLayoutPositions);
+        setManualNodePositions({});
         setResetLayoutVersion((currentVersion) => currentVersion + 1);
       }}
     >

@@ -48,14 +48,53 @@ interface Database {
   };
 }
 
-export function getTablesQuery(
+/**
+ * The flavor of the connected MySQL-compatible server.
+ *
+ * MariaDB requires a different tables query ({@link getMariaDBTablesQuery}):
+ * `json_arrayagg` only exists on MariaDB >= 10.5 and `cast(... as json)` is
+ * invalid syntax there because JSON is an alias for LONGTEXT.
+ */
+export type MySQLServerFlavor = "mariadb" | "mysql";
+
+/**
+ * Detects the server flavor from a `select version()` result.
+ *
+ * MariaDB reports versions like `10.4.34-MariaDB`,
+ * `10.11.6-MariaDB-1:10.11.6+maria~ubu2204` or, behind replication-compatible
+ * setups, `5.5.5-10.5.23-MariaDB-log`. Anything else is treated as MySQL.
+ */
+export function detectMySQLServerFlavor(
+  version: string | null | undefined,
+): MySQLServerFlavor {
+  return typeof version === "string" &&
+    version.toLowerCase().includes("mariadb")
+    ? "mariadb"
+    : "mysql";
+}
+
+export function getServerVersionQuery(
+  requirements?: Omit<BuilderRequirements, "Adapter" | "QueryCompiler">,
+) {
+  const builder = getMySQLBuilder(requirements);
+
+  return compile(builder.selectNoFrom(sql<string>`version()`.as("version")));
+}
+
+export function mockServerVersionQuery() {
+  return [{ version: "8.0.40" }] as const satisfies QueryResult<
+    typeof getServerVersionQuery
+  >;
+}
+
+function getColumnsQuery(
   requirements?: Omit<BuilderRequirements, "Adapter" | "QueryCompiler">,
 ) {
   const database = sql<string>`database()`;
 
   const builder = getMySQLBuilder<Database>(requirements);
 
-  const columnsQuery = builder
+  return builder
     .selectFrom("information_schema.columns as c")
     .leftJoin("information_schema.KEY_COLUMN_USAGE as kcu", (jb) =>
       jb
@@ -93,6 +132,14 @@ export function getTablesQuery(
       ]).as("computed"),
       eb("c.IS_NULLABLE", "=", "YES").as("nullable"),
     ]);
+}
+
+export function getTablesQuery(
+  requirements?: Omit<BuilderRequirements, "Adapter" | "QueryCompiler">,
+) {
+  const database = sql<string>`database()`;
+
+  const columnsQuery = getColumnsQuery(requirements);
 
   return compile(
     getMySQLBuilder<Database>(requirements)
@@ -135,6 +182,132 @@ export function getTablesQuery(
       .orderBy("t.TABLE_NAME")
       .orderBy("t.TABLE_TYPE"),
   );
+}
+
+/**
+ * MariaDB-compatible variant of {@link getTablesQuery}.
+ *
+ * MariaDB has no `json_arrayagg` before 10.5 (#1511) and no JSON cast type at
+ * all (#1367), and any server-side string aggregation (`group_concat`,
+ * MariaDB's own `json_arrayagg`) silently truncates at the session's
+ * `group_concat_max_len`. This query therefore avoids aggregation entirely: it
+ * returns one row per column, and {@link groupMariaDBTablesQueryResult} groups
+ * the rows into the {@link getTablesQuery} result shape on the client.
+ */
+export function getMariaDBTablesQuery(
+  requirements?: Omit<BuilderRequirements, "Adapter" | "QueryCompiler">,
+) {
+  const database = sql<string>`database()`;
+
+  return compile(
+    getMySQLBuilder<Database>(requirements)
+      .with("cols", () => getColumnsQuery(requirements))
+      .selectFrom("information_schema.tables as t")
+      .innerJoin("cols as c", (jb) =>
+        jb.onRef("c.TABLE_NAME", "=", "t.TABLE_NAME"),
+      )
+      .where("t.TABLE_SCHEMA", "=", database)
+      .where("t.TABLE_TYPE", "in", ["BASE TABLE", "VIEW"])
+      .select([
+        database.as("schema"),
+        "t.TABLE_NAME as name",
+        "t.TABLE_TYPE as type",
+        "c.autoincrement as column_autoincrement",
+        "c.computed as column_computed",
+        "c.datatype as column_datatype",
+        "c.default as column_default",
+        "c.fk_column as column_fk_column",
+        "c.fk_table as column_fk_table",
+        "c.name as column_name",
+        "c.nullable as column_nullable",
+        "c.pk as column_pk",
+        "c.position as column_position",
+      ])
+      .$narrowType<{ type: "BASE TABLE" | "VIEW" }>()
+      .orderBy("t.TABLE_SCHEMA")
+      .orderBy("t.TABLE_NAME")
+      .orderBy("t.TABLE_TYPE")
+      .orderBy("c.position"),
+  );
+}
+
+/**
+ * Groups the one-row-per-column result of {@link getMariaDBTablesQuery} into
+ * the aggregated {@link getTablesQuery} result shape.
+ */
+export function groupMariaDBTablesQueryResult(
+  rows: QueryResult<typeof getMariaDBTablesQuery>,
+): QueryResult<typeof getTablesQuery> {
+  const tables = new Map<string, QueryResult<typeof getTablesQuery>[number]>();
+
+  for (const row of rows) {
+    const key = JSON.stringify([row.schema, row.name, row.type]);
+
+    let table = tables.get(key);
+
+    if (!table) {
+      table = {
+        columns: [],
+        name: row.name,
+        schema: row.schema,
+        type: row.type,
+      };
+      tables.set(key, table);
+    }
+
+    table.columns.push({
+      autoincrement: row.column_autoincrement,
+      computed: row.column_computed,
+      datatype: row.column_datatype,
+      default: row.column_default,
+      fk_column: row.column_fk_column,
+      fk_table: row.column_fk_table,
+      name: row.column_name,
+      nullable: row.column_nullable,
+      pk: row.column_pk,
+      position: row.column_position,
+    });
+  }
+
+  return [...tables.values()];
+}
+
+/**
+ * Normalizes the `columns` payload of a tables query result.
+ *
+ * Some transports return `json_arrayagg` results as strings instead of parsed
+ * arrays. This parses those string payloads so downstream consumers always
+ * receive arrays.
+ */
+export function normalizeTablesQueryResult(
+  tables: QueryResult<typeof getTablesQuery>,
+): QueryResult<typeof getTablesQuery> {
+  return tables.map((table) => {
+    const { columns } = table;
+
+    if (typeof columns !== "string") {
+      return table;
+    }
+
+    let parsed: unknown;
+
+    try {
+      parsed = JSON.parse(columns);
+    } catch (error: unknown) {
+      throw new Error(
+        `Failed to parse introspected columns for table "${table.name}".`,
+        { cause: error },
+      );
+    }
+
+    if (!Array.isArray(parsed)) {
+      throw new Error(
+        `Expected introspected columns for table "${table.name}" to be an array.`,
+      );
+    }
+
+    return { ...table, columns: parsed };
+  });
 }
 
 export function mockTablesQuery() {

@@ -9,6 +9,7 @@ export function packPackage(cwd = process.cwd()) {
     encoding: "utf8",
     env: {
       ...process.env,
+      COREPACK_ENABLE_STRICT: "0",
       npm_config_dry_run: "false",
     },
   });
@@ -46,6 +47,10 @@ export function runExportCheck(cwd = process.cwd()) {
       ],
       {
         cwd,
+        env: {
+          ...process.env,
+          COREPACK_ENABLE_STRICT: "0",
+        },
         stdio: "inherit",
       },
     );

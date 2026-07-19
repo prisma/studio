@@ -10,18 +10,23 @@ function cloneMockValue<T>(value: T): T {
   return structuredClone(value);
 }
 
-const { uiStateStore, useNavigationMock, useSchemaVisualizationMock } =
-  vi.hoisted(() => ({
-    uiStateStore: new Map<string, unknown>(),
-    useNavigationMock: vi.fn<
-      () => {
-        metadata: {
-          activeSchema: { name: string };
-        };
-      }
-    >(),
-    useSchemaVisualizationMock: vi.fn<() => SchemaVisualizationData>(),
-  }));
+const {
+  persistentUiStateStore,
+  uiStateStore,
+  useNavigationMock,
+  useSchemaVisualizationMock,
+} = vi.hoisted(() => ({
+  persistentUiStateStore: new Map<string, unknown>(),
+  uiStateStore: new Map<string, unknown>(),
+  useNavigationMock: vi.fn<
+    () => {
+      metadata: {
+        activeSchema: { name: string };
+      };
+    }
+  >(),
+  useSchemaVisualizationMock: vi.fn<() => SchemaVisualizationData>(),
+}));
 
 vi.mock("@/ui/hooks/use-navigation", () => ({
   useNavigation: useNavigationMock,
@@ -31,15 +36,20 @@ vi.mock("@/ui/hooks/use-ui-state", async () => {
   const React = await vi.importActual<typeof import("react")>("react");
 
   return {
-    useUiState: <T,>(key: string, initialValue: T) => {
+    useUiState: <T,>(
+      key: string,
+      initialValue: T,
+      options?: { persistent?: boolean },
+    ) => {
+      const store = options?.persistent ? persistentUiStateStore : uiStateStore;
+
       const [value, setValue] = React.useState<T>(() => {
-        if (!uiStateStore.has(key)) {
-          uiStateStore.set(key, cloneMockValue(initialValue));
+        if (!store.has(key)) {
+          store.set(key, cloneMockValue(initialValue));
         }
 
         return (
-          (uiStateStore.get(key) as T | undefined) ??
-          cloneMockValue(initialValue)
+          (store.get(key) as T | undefined) ?? cloneMockValue(initialValue)
         );
       });
 
@@ -51,11 +61,11 @@ vi.mock("@/ui/hooks/use-ui-state", async () => {
                 ? (updater as (previous: T) => T)(previous)
                 : updater;
 
-            uiStateStore.set(key, cloneMockValue(nextValue));
+            store.set(key, cloneMockValue(nextValue));
             return cloneMockValue(nextValue);
           });
         },
-        [key],
+        [key, store],
       );
 
       return [value, setSharedValue] as const;
@@ -93,6 +103,7 @@ vi.mock("./Visualiser", () => ({
 describe("SchemaView", () => {
   beforeEach(() => {
     uiStateStore.clear();
+    persistentUiStateStore.clear();
     useNavigationMock.mockReturnValue({
       metadata: {
         activeSchema: { name: "public" },
@@ -157,6 +168,12 @@ describe("SchemaView", () => {
       "schema-visualizer:public:posts|users:reset-layout-version",
       0,
     );
+    persistentUiStateStore.set(
+      "schema-visualizer:public:manual-layout:node-positions",
+      {
+        users: { x: 333, y: 444 },
+      },
+    );
 
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -190,6 +207,11 @@ describe("SchemaView", () => {
         "schema-visualizer:public:posts|users:reset-layout-version",
       ),
     ).toBe(1);
+    expect(
+      persistentUiStateStore.get(
+        "schema-visualizer:public:manual-layout:node-positions",
+      ),
+    ).toEqual({});
     expect(container.textContent).not.toContain("Reset layout");
 
     act(() => {

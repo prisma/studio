@@ -6,6 +6,8 @@ This repository supports two release paths. Both publish from `main`, use npm tr
 
 Configure `@prisma/studio-core` in npm as a trusted publisher for the `prisma/studio` GitHub repository and the publish workflow. The workflow does not use `NPM_TOKEN`.
 
+Keep `package.json` `repository.url` set to `https://github.com/prisma/studio`. npm validates that package metadata against the GitHub Actions provenance bundle during trusted publishing.
+
 ## Path 1: Changesets Release PR
 
 Use this path for normal releases.

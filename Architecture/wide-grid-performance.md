@@ -60,6 +60,31 @@ Expected impact: lower baseline render cost.
 
 Expected impact: prevents future regressions.
 
+## Column Virtualization Update Model (implemented)
+
+Center-column virtualization is driven by scroll events, not render-time state:
+
+- The virtualization window (`computeColumnVirtualizationWindow`) is computed
+  inside the scroll/resize handlers from the live `scrollLeft`/`clientWidth`
+  of the grid scroll container, synchronously and without an animation-frame
+  hop. Deferring the window behind `requestAnimationFrame` plus a raw
+  scroll-position state update let fast scrolling outrun the overscan area and
+  caused blank columns and jumpy repaints.
+- Only the resolved window (`startIndex`/`endIndex`/spacer widths) is stored
+  in React state, and state is only updated when the window actually changes.
+  Plain scrolling inside the overscan area therefore never re-renders the
+  grid.
+- The window is computed in center-column coordinates. Left-pinned columns
+  occupy the start of the scrollable row and overlay the same amount of
+  viewport width (they are sticky), so the container `scrollLeft` maps 1:1
+  onto center-column offsets and must not be shifted by the pinned width.
+- Focused-cell auto-scroll runs at most once per focused-cell change. The
+  focused column can be outside the mounted window (its cell element does not
+  exist), so retrying until the element appears would re-apply the computed
+  scroll position on every scroll update and fight user scrolling. Vertical
+  reveal falls back to any rendered cell of the focused row because rows are
+  never virtualized.
+
 ## Rollout Plan
 
 1. Implement column virtualization for center (non-pinned) columns.

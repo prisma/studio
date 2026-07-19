@@ -67,7 +67,9 @@ describe("packPackage", () => {
     try {
       const tarballPath = packPackage(directory);
 
-      expect(tarballPath).toBe(join(directory, "release-fixture-dry-run-4.5.6.tgz"));
+      expect(tarballPath).toBe(
+        join(directory, "release-fixture-dry-run-4.5.6.tgz"),
+      );
       expect(existsSync(tarballPath)).toBe(true);
 
       cleanupPackedTarball(tarballPath);
@@ -78,6 +80,48 @@ describe("packPackage", () => {
         delete process.env.npm_config_dry_run;
       } else {
         process.env.npm_config_dry_run = previousDryRun;
+      }
+    }
+  });
+
+  it("creates a tarball for pnpm-managed packages", () => {
+    const directory = mkdtempSync(join(tmpdir(), "studio-release-pnpm-"));
+    tempDirectories.push(directory);
+
+    writeFileSync(
+      join(directory, "package.json"),
+      JSON.stringify(
+        {
+          files: ["index.js"],
+          name: "release-fixture-pnpm",
+          packageManager: "pnpm@8.15.9",
+          version: "7.8.9",
+        },
+        null,
+        2,
+      ),
+    );
+    writeFileSync(join(directory, "index.js"), "module.exports = 1;\n");
+
+    const previousCorepackStrict = process.env.COREPACK_ENABLE_STRICT;
+    process.env.COREPACK_ENABLE_STRICT = "1";
+
+    try {
+      const tarballPath = packPackage(directory);
+
+      expect(tarballPath).toBe(
+        join(directory, "release-fixture-pnpm-7.8.9.tgz"),
+      );
+      expect(existsSync(tarballPath)).toBe(true);
+
+      cleanupPackedTarball(tarballPath);
+
+      expect(existsSync(tarballPath)).toBe(false);
+    } finally {
+      if (previousCorepackStrict === undefined) {
+        delete process.env.COREPACK_ENABLE_STRICT;
+      } else {
+        process.env.COREPACK_ENABLE_STRICT = previousCorepackStrict;
       }
     }
   });

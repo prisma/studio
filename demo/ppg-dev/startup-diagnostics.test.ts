@@ -138,4 +138,16 @@ describe("addDemoStartupFailureHint", () => {
 
     expect(message).toBe("Error: boom");
   });
+
+  it("adds a targeted hint for the legacy interpreter bootstrap error", () => {
+    const message = addDemoStartupFailureHint({
+      appPort: 4310,
+      errorMessage:
+        'Error: Failed to configure prisma-wal: HTTP 400 {"error":{"code":"bad_request","message":"schemaUpdate.interpreter is not supported"}}',
+    });
+
+    expect(message).toContain("profile-based WAL setup");
+    expect(message).toContain("pnpm streams:use-local");
+    expect(message).toContain("team-expansion");
+  });
 });

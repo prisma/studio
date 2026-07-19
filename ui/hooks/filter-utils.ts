@@ -216,7 +216,7 @@ const TEXT_MATCH_OPERATORS = new Set<FilterOperator>([
   "not like",
 ]);
 const UUID_PATTERN =
-  /^[\da-f]{8}-[\da-f]{4}-[1-5][\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i;
+  /^[\da-f]{8}-[\da-f]{4}-[1-8][\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i;
 
 type ColumnSyntaxKind =
   | "array"

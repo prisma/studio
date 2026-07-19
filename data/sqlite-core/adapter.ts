@@ -1,6 +1,5 @@
 import {
   type Adapter,
-  type AdapterUpdateDetails,
   type AdapterDeleteResult,
   type AdapterError,
   type AdapterInsertResult,
@@ -10,6 +9,7 @@ import {
   type AdapterRequirements,
   type AdapterSqlLintResult,
   type AdapterSqlSchemaResult,
+  type AdapterUpdateDetails,
   type AdapterUpdateManyResult,
   type AdapterUpdateResult,
   createAdapterError,
@@ -23,10 +23,7 @@ import {
 import { asQuery, type Query, type QueryResult } from "../query";
 import { createSqlEditorSchemaFromIntrospection } from "../sql-editor-schema";
 import type { Either } from "../type-utils";
-import {
-  determineColumnAffinity,
-  SQLITE_AFFINITY_TO_METADATA,
-} from "./datatype";
+import { determineColumnMetadata } from "./datatype";
 import {
   getDeleteQuery,
   getInsertQuery,
@@ -56,7 +53,7 @@ const filterOperators = [
 export function createSQLiteAdapter(
   requirements: SQLIteAdapterRequirements,
 ): Adapter {
-  const { executor, ...otherRequirements } = requirements;
+  const { executor, queryInsights, ...otherRequirements } = requirements;
   const fullTableSearchState = createFullTableSearchExecutionState();
   let canUseExecutorLintTransport = typeof executor.lintSql === "function";
   const createSQLiteAdapterError = (
@@ -153,6 +150,7 @@ export function createSQLiteAdapter(
 
   return {
     defaultSchema: schema,
+    queryInsights,
     capabilities: {
       fullTableSearch: true,
       sqlDialect: "sqlite",
@@ -393,7 +391,7 @@ function createIntrospection(args: {
 
             maxPKSeen = Math.max(maxPKSeen, pk);
 
-            const affinity = determineColumnAffinity(datatype);
+            const metadata = determineColumnMetadata(datatype);
 
             /**
              * `INTEGER PRIMARY KEY` columns act as `rowid` alias. `rowid` columns
@@ -418,8 +416,7 @@ function createIntrospection(args: {
 
             columnsRecord[columnName] = {
               datatype: {
-                ...SQLITE_AFFINITY_TO_METADATA[affinity],
-                affinity,
+                ...metadata,
                 isArray: false,
                 isNative: true,
                 name: datatype,

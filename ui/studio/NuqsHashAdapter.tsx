@@ -9,6 +9,12 @@ import { useUiState } from "../hooks/use-ui-state";
 
 const HASH_STATE_KEY = "nuqs-hash";
 
+function serializeHashSearchParams(params: URLSearchParams) {
+  return params
+    .toString()
+    .replace(/(^|&)aggregations=(?=&|$)/g, "$1aggregations");
+}
+
 /**
  * Simple debounce utility
  */
@@ -46,7 +52,7 @@ function useHashAdapter() {
   // write new state back into the hash fragment
   function updateUrl(updated: URLSearchParams, { history }: AdapterOptions) {
     const { pathname, search } = window.location;
-    const nextRawHash = updated.toString();
+    const nextRawHash = serializeHashSearchParams(updated);
     const url = `${pathname}${search}#${nextRawHash}`;
 
     if (history === "push") {

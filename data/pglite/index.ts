@@ -3,6 +3,7 @@ import type { PGlite } from "@electric-sql/pglite";
 import type { Adapter } from "../adapter";
 import { AbortError, type Executor, getAbortResult } from "../executor";
 import { createPostgresAdapter } from "../postgres-core";
+import { createPostgresSearchPath } from "../postgres-core/search-path";
 import {
   createLintDiagnosticsFromPostgresError,
   validateSqlForLint,
@@ -33,7 +34,8 @@ export function createPGLiteExecutor(
   const { addDelay = 0, logging = false } = options ?? {};
 
   const executeQuery: Executor["execute"] = async (query, options) => {
-    const { abortSignal } = options || {};
+    const { abortSignal, schema } = options || {};
+    const searchPath = createPostgresSearchPath(schema);
 
     let abort: (reason?: unknown) => void;
     const abortionPromise = new Promise<never>((_, reject) => (abort = reject));
@@ -47,10 +49,35 @@ export function createPGLiteExecutor(
     const addedDelay =
       typeof addDelay === "function" ? addDelay(query) : addDelay;
 
-    const queryPGLite = () =>
-      pglite.query(query.sql, query.parameters as never[], {
-        rowMode: "object",
-      });
+    const queryPGLite = async () => {
+      if (!searchPath) {
+        return await pglite.query(query.sql, query.parameters as never[], {
+          rowMode: "object",
+        });
+      }
+
+      await pglite.query("BEGIN");
+
+      try {
+        await pglite.query(
+          "select set_config('search_path', $1, true)",
+          [searchPath],
+          { rowMode: "object" },
+        );
+        const result = await pglite.query(
+          query.sql,
+          query.parameters as never[],
+          {
+            rowMode: "object",
+          },
+        );
+        await pglite.query("COMMIT");
+        return result;
+      } catch (error: unknown) {
+        await pglite.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      }
+    };
 
     const queryPGLitePossiblyDelayed =
       addedDelay > 0
@@ -117,9 +144,13 @@ export function createPGLiteExecutor(
             throw new AbortError();
           }
 
-          const result = await pglite.query(query.sql, query.parameters as never[], {
-            rowMode: "object",
-          });
+          const result = await pglite.query(
+            query.sql,
+            query.parameters as never[],
+            {
+              rowMode: "object",
+            },
+          );
           results.push(result.rows as never);
         }
 
@@ -152,7 +183,7 @@ export function createPGLiteExecutor(
       for (const statement of validation.statements) {
         const [error] = await executeQuery(
           asQuery(`EXPLAIN (FORMAT JSON) ${statement.statement}`),
-          options,
+          { ...options, schema: details.schema },
         );
 
         if (!error) {

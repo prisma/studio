@@ -76,6 +76,36 @@ describe("sql-lint-source", () => {
     ]);
   });
 
+  it("passes selected schema context to lint requests", async () => {
+    const lintSql = vi.fn<LintSqlRunner>().mockResolvedValue([
+      null,
+      {
+        diagnostics: [],
+        schemaVersion: "schema-v1",
+      },
+    ]);
+    const { source } = createSqlLintSource({
+      lintSql,
+      schema: "test_app",
+      schemaVersion: "schema-v1",
+    });
+
+    await expect(
+      source(createView("select * from order_items") as never),
+    ).resolves.toEqual([]);
+
+    expect(lintSql).toHaveBeenCalledWith(
+      {
+        schema: "test_app",
+        schemaVersion: "schema-v1",
+        sql: "select * from order_items",
+      },
+      expect.objectContaining({
+        abortSignal: expect.any(AbortSignal) as AbortSignal,
+      }),
+    );
+  });
+
   it("keeps only one active lint request and drops stale responses", async () => {
     const first = createDeferred<[null, { diagnostics: [] }]>();
     const second = createDeferred<[null, { diagnostics: [] }]>();

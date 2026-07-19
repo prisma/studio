@@ -33,6 +33,39 @@ export const SQLITE_AFFINITY_TO_METADATA: Record<
 };
 
 /**
+ * Declared types like `date`, `datetime`, or `timestamp` fall through SQLite's
+ * affinity rules to NUMERIC, but their stored values are date/time strings.
+ *
+ * Only whole tokens count (`DATETIME(6)`, `TIMESTAMP WITH TIME ZONE`), so
+ * NUMERIC-affinity declared types that merely contain such a substring
+ * (`CANDIDATE`, `DATED`, `RUNTIME`) are not misclassified as date-like.
+ */
+const DATE_LIKE_DECLARED_TYPE_REGEX = /\b(?:DATE|DATETIME|TIME|TIMESTAMP)\b/;
+
+/**
+ * Resolves the affinity and Studio datatype metadata for a declared type.
+ *
+ * Date-like declared types (`date`, `datetime`, `timestamp`, ...) keep their
+ * NUMERIC affinity but are grouped as strings: their values are date/time
+ * text, and treating them as numbers would coerce edits to `NaN`.
+ */
+export function determineColumnMetadata(
+  declaredDataType: string | null,
+): Pick<DataType, "format" | "group"> & { affinity: SQLiteAffinity } {
+  const affinity = determineColumnAffinity(declaredDataType);
+
+  if (
+    affinity === "NUMERIC" &&
+    declaredDataType &&
+    DATE_LIKE_DECLARED_TYPE_REGEX.test(declaredDataType.toUpperCase())
+  ) {
+    return { affinity, group: "string" };
+  }
+
+  return { affinity, ...SQLITE_AFFINITY_TO_METADATA[affinity] };
+}
+
+/**
  * https://sqlite.org/datatype3.html#determination_of_column_affinity
  *
  * DO NOT CHANGE THE ORDER OF THE CHECKS IN THIS FUNCTION!

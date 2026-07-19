@@ -87,6 +87,7 @@ Failure diagnostics MUST include:
 
 Changes to this subsystem MUST include tests for:
 
+- a single initial introspection without mount-time cancellation or refetch
 - failed initial introspection without automatic retry
 - stale-data preservation after a failed refetch
 - startup recovery UI rendering

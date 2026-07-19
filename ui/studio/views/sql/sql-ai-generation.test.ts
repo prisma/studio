@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { AdapterIntrospectResult } from "@/data";
 
 import {
-  buildAiSqlGenerationPrompt,
   buildAiSqlGenerationContext,
+  buildAiSqlGenerationPrompt,
   resolveAiSqlGeneration,
 } from "./sql-ai-generation";
 
@@ -104,9 +104,48 @@ describe("sql-ai-generation", () => {
     });
 
     expect(prompt).toContain("Database engine: PostgreSQL");
-    expect(prompt).toContain("Use only functions, operators, and casts supported by PostgreSQL.");
+    expect(prompt).toContain(
+      "Use only functions, operators, and casts supported by PostgreSQL.",
+    );
     expect(prompt).toContain('"shouldGenerateVisualization":true');
-    expect(prompt).toContain("Decide whether the resulting dataset would make an interesting chart.");
+    expect(prompt).toContain(
+      "Decide whether the resulting dataset would make an interesting chart.",
+    );
+  });
+
+  it("includes failed SQL and database errors when correcting generated SQL", async () => {
+    const aiGenerateSql = vi
+      .fn<(prompt: string) => Promise<string>>()
+      .mockResolvedValue(
+        JSON.stringify({
+          rationale: "Uses the correct grouped expression.",
+          sql: "select o.name, skill, count(*) from public.organizations o left join public.team_members tm on o.id = tm.organization_id cross join lateral unnest(tm.skills) as skill group by o.id, o.name, skill;",
+          shouldGenerateVisualization: true,
+        }),
+      );
+
+    await resolveAiSqlGeneration({
+      activeSchema: "public",
+      requestAiSqlGeneration: aiGenerateSql,
+      dialect: "postgresql",
+      introspection: createIntrospectionFixture(),
+      previousSql:
+        "select tm.skills, count(*) from public.team_members tm group by skill;",
+      queryErrorMessage:
+        'column "tm.skills" must appear in the GROUP BY clause or be used in an aggregate function',
+      request: "show team members by skill",
+    });
+
+    expect(aiGenerateSql).toHaveBeenCalledTimes(1);
+    expect(aiGenerateSql.mock.calls[0]?.[0]).toContain(
+      "Correct the previous SQL so it runs successfully",
+    );
+    expect(aiGenerateSql.mock.calls[0]?.[0]).toContain(
+      "Previous SQL statement: select tm.skills, count(*) from public.team_members tm group by skill;",
+    );
+    expect(aiGenerateSql.mock.calls[0]?.[0]).toContain(
+      'Database error from that SQL: column "tm.skills" must appear in the GROUP BY clause or be used in an aggregate function',
+    );
   });
 
   it("retries once when the AI response is not valid JSON and then returns parsed SQL", async () => {
@@ -186,7 +225,9 @@ describe("sql-ai-generation", () => {
     });
 
     expect(aiGenerateSql).toHaveBeenCalledTimes(1);
-    expect(result.sql).toBe("select id, name from public.organizations limit 5;");
+    expect(result.sql).toBe(
+      "select id, name from public.organizations limit 5;",
+    );
     expect(result.rationale).toBe("Counts by organization chart well.");
     expect(result.shouldGenerateVisualization).toBe(true);
   });

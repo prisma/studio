@@ -1,9 +1,9 @@
 import { useMutation } from "@tanstack/react-query";
 
-import { useActiveTableRowsCollection } from "./use-active-table-rows-collection";
-import { useFiltering } from "./use-filtering";
-import { usePagination } from "./use-pagination";
-import { useSorting } from "./use-sorting";
+import {
+  useActiveTableQueryCollection,
+  type UseActiveTableQueryProps,
+} from "./use-active-table-query";
 
 export interface UseActiveTableUpdateManyParams {
   updates: Array<{
@@ -12,16 +12,8 @@ export interface UseActiveTableUpdateManyParams {
   }>;
 }
 
-export function useActiveTableUpdateMany() {
-  const { paginationState } = usePagination();
-  const { sortingState } = useSorting();
-  const { appliedFilter } = useFiltering();
-  const { activeTable, collection } = useActiveTableRowsCollection({
-    pageIndex: paginationState.pageIndex,
-    pageSize: paginationState.pageSize,
-    sortOrder: sortingState,
-    filter: appliedFilter,
-  });
+export function useActiveTableUpdateMany(query: UseActiveTableQueryProps) {
+  const { activeTable, collection } = useActiveTableQueryCollection(query);
   const queryKeyPrefix = [
     "schema",
     activeTable?.schema ?? null,

@@ -6,12 +6,16 @@ type QueryRows = {
 };
 
 import { useActiveTableDelete } from "./use-active-table-delete";
+import type { UseActiveTableQueryProps } from "./use-active-table-query";
 import { usePagination } from "./use-pagination";
 import { useTableUiState } from "./use-table-ui-state";
 
-export function useSelection(data: QueryRows | undefined) {
+export function useSelection(
+  data: QueryRows | undefined,
+  query: UseActiveTableQueryProps,
+) {
   const { paginationState } = usePagination();
-  const { mutate } = useActiveTableDelete();
+  const { mutate } = useActiveTableDelete(query);
   const { scopeKey, tableUiState, updateTableUiState } = useTableUiState();
   const rowSelectionState = useMemo(
     () => tableUiState?.rowSelectionState ?? {},

@@ -3,9 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Table } from "../../../hooks/use-schema-visualization";
 import {
+  createSchemaVisualizerPersistentStateScope,
+  createSchemaVisualizerUiStateKey,
   doSchemaNodePositionsDiffer,
   getAutoLayoutedSchemaNodes,
   type LayoutEngine,
+  mergeSchemaNodePositions,
 } from "./schema-layout";
 
 function createTable(name: string, fieldCount: number): Table {
@@ -107,5 +110,45 @@ describe("schema-layout", () => {
         },
       ),
     ).toBe(false);
+  });
+
+  it("prefers saved positions over auto layout when merging", () => {
+    expect(
+      mergeSchemaNodePositions(
+        {
+          posts: { x: 300, y: 140 },
+          users: { x: 0, y: 0 },
+        },
+        {
+          users: { x: 333, y: 444 },
+        },
+      ),
+    ).toEqual({
+      posts: { x: 300, y: 140 },
+      users: { x: 333, y: 444 },
+    });
+  });
+
+  it("scopes persistent layout state by schema name", () => {
+    const publicKey = createSchemaVisualizerUiStateKey(
+      createSchemaVisualizerPersistentStateScope("public"),
+      "node-positions",
+    );
+    const otherKey = createSchemaVisualizerUiStateKey(
+      createSchemaVisualizerPersistentStateScope("analytics"),
+      "node-positions",
+    );
+    const unknownKey = createSchemaVisualizerUiStateKey(
+      createSchemaVisualizerPersistentStateScope(undefined),
+      "node-positions",
+    );
+
+    expect(publicKey).toBe(
+      "schema-visualizer:public:manual-layout:node-positions",
+    );
+    expect(publicKey).not.toBe(otherKey);
+    expect(unknownKey).toBe(
+      "schema-visualizer:__unknown__:manual-layout:node-positions",
+    );
   });
 });

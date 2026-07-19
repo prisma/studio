@@ -33,6 +33,12 @@ export function addDemoStartupFailureHint(args: {
 }): string {
   const { appPort, errorMessage } = args;
 
+  if (errorMessage.includes("schemaUpdate.interpreter is not supported")) {
+    return `${errorMessage}
+[demo] hint: Your local Streams checkout now expects the profile-based WAL setup. Studio should be linked to the sibling local \`@prisma/dev\` package from \`team-expansion\`, not the published npm package.
+[demo] next step: rerun \`pnpm streams:use-local\` so Studio reinstalls local \`@prisma/dev\` and local Streams together, then retry \`pnpm demo:ppg\`.`;
+  }
+
   if (!errorMessage.includes("startLocalDurableStreamsServer")) {
     return errorMessage;
   }

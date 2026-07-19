@@ -1,6 +1,7 @@
 import type { Sql } from "postgres";
 
 import type { StudioBFFSqlLintResult } from "../../data/bff";
+import { createPostgresSearchPath } from "../../data/postgres-core/search-path";
 import {
   createLintDiagnosticsFromPostgresError,
   validateSqlForLint,
@@ -12,10 +13,12 @@ const SQL_LINT_IDLE_IN_TRANSACTION_TIMEOUT = "1000ms";
 
 export async function lintPostgresSql(args: {
   postgresClient: Sql;
+  schema?: string;
   schemaVersion?: string;
   sql: string;
 }): Promise<StudioBFFSqlLintResult> {
-  const { postgresClient, schemaVersion, sql } = args;
+  const { postgresClient, schema, schemaVersion, sql } = args;
+  const searchPath = createPostgresSearchPath(schema);
   const validation = validateSqlForLint(sql);
 
   if (!validation.ok) {
@@ -37,6 +40,11 @@ export async function lintPostgresSql(args: {
         await tx.unsafe(
           `set local idle_in_transaction_session_timeout = '${SQL_LINT_IDLE_IN_TRANSACTION_TIMEOUT}'`,
         );
+        if (searchPath) {
+          await tx.unsafe("select set_config('search_path', $1, true)", [
+            searchPath,
+          ] as never);
+        }
         await tx.unsafe(`EXPLAIN (FORMAT JSON) ${statement.statement}`);
       });
     } catch (error: unknown) {

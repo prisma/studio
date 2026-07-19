@@ -693,6 +693,190 @@ describe("DataGrid interactions", () => {
     }
   });
 
+  it("auto-scrolls once and never fights user scrolling when the focused column is outside the virtualization window", async () => {
+    const clientWidthDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "clientWidth",
+    );
+
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+      configurable: true,
+      get() {
+        return 400;
+      },
+    });
+
+    let cleanupGrid: (() => void) | null = null;
+
+    try {
+      const columnIds = Array.from(
+        { length: 20 },
+        (_, index) => `col_${index}`,
+      );
+      const row: GridRow = { __ps_rowid: "row_1" };
+
+      for (const columnId of columnIds) {
+        row[columnId] = `${columnId} value`;
+      }
+
+      const { cleanup, container, setFocusedCell } = renderGrid({
+        columnDefs: createReadOnlyColumns({ columnIds }),
+        focusedCell: null,
+        manageFocusedCell: true,
+        rows: [row],
+      });
+      cleanupGrid = cleanup;
+
+      const scrollContainer = container.querySelector(
+        '[data-grid-scroll-container="true"]',
+      );
+
+      if (!(scrollContainer instanceof HTMLDivElement)) {
+        throw new Error("Could not find table scroll container");
+      }
+
+      await flushMicrotasks();
+
+      // The virtualization window at scrollLeft 0 with a 400px viewport only
+      // renders the first few 200px columns, so col_10 has no cell element.
+      expect(
+        container.querySelector('td[data-grid-column-id="col_10"]'),
+      ).toBeNull();
+
+      // Focus a cell whose element never renders: the column sits outside
+      // the virtualization window and the visual row index is not on the
+      // current page.
+      setFocusedCell({
+        columnId: "col_10",
+        rowIndex: 5,
+      });
+      await flushMicrotasks();
+
+      // Focusing the off-window column auto-scrolls once to reveal it:
+      // columnEnd (11 * 200) minus the 400px viewport.
+      expect(scrollContainer.scrollLeft).toBe(1800);
+
+      act(() => {
+        scrollContainer.scrollLeft = 2600;
+        scrollContainer.dispatchEvent(new Event("scroll"));
+      });
+      await flushMicrotasks();
+
+      // Subsequent user scrolling must win even though the focused cell was
+      // not rendered when the auto-scroll ran.
+      expect(scrollContainer.scrollLeft).toBe(2600);
+
+      act(() => {
+        scrollContainer.scrollLeft = 3600;
+        scrollContainer.dispatchEvent(new Event("scroll"));
+      });
+      await flushMicrotasks();
+
+      expect(scrollContainer.scrollLeft).toBe(3600);
+    } finally {
+      cleanupGrid?.();
+
+      if (clientWidthDescriptor) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          "clientWidth",
+          clientWidthDescriptor,
+        );
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
+      }
+    }
+  });
+
+  it("runs the focused-cell auto-scroll once the grid becomes measurable after being hidden", async () => {
+    const clientWidthDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "clientWidth",
+    );
+    let mockedClientWidth = 0;
+
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+      configurable: true,
+      get() {
+        return mockedClientWidth;
+      },
+    });
+
+    let cleanupGrid: (() => void) | null = null;
+
+    try {
+      const columnIds = Array.from(
+        { length: 20 },
+        (_, index) => `col_${index}`,
+      );
+      const row: GridRow = { __ps_rowid: "row_1" };
+
+      for (const columnId of columnIds) {
+        row[columnId] = `${columnId} value`;
+      }
+
+      const { cleanup, container, setFocusedCell } = renderGrid({
+        columnDefs: createReadOnlyColumns({ columnIds }),
+        focusedCell: null,
+        manageFocusedCell: true,
+        rows: [row],
+      });
+      cleanupGrid = cleanup;
+
+      const scrollContainer = container.querySelector(
+        '[data-grid-scroll-container="true"]',
+      );
+
+      if (!(scrollContainer instanceof HTMLDivElement)) {
+        throw new Error("Could not find table scroll container");
+      }
+
+      await flushMicrotasks();
+
+      // Focus arrives while the grid is hidden (clientWidth 0), so the
+      // auto-scroll cannot run yet and must stay pending.
+      setFocusedCell({
+        columnId: "col_10",
+        rowIndex: 0,
+      });
+      await flushMicrotasks();
+
+      expect(scrollContainer.scrollLeft).toBe(0);
+
+      // The grid becomes visible and layout observers fire.
+      mockedClientWidth = 400;
+      act(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+      await flushMicrotasks();
+
+      // The pending focused-cell auto-scroll now runs exactly once:
+      // columnEnd (11 * 200) minus the 400px viewport.
+      expect(scrollContainer.scrollLeft).toBe(1800);
+
+      // Subsequent user scrolling still wins.
+      act(() => {
+        scrollContainer.scrollLeft = 2600;
+        scrollContainer.dispatchEvent(new Event("scroll"));
+      });
+      await flushMicrotasks();
+
+      expect(scrollContainer.scrollLeft).toBe(2600);
+    } finally {
+      cleanupGrid?.();
+
+      if (clientWidthDescriptor) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          "clientWidth",
+          clientWidthDescriptor,
+        );
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
+      }
+    }
+  });
+
   it("loads more rows when infinite scroll reaches the bottom threshold", async () => {
     const onLoadMoreRows = vi.fn();
     const { cleanup, container } = renderGrid({

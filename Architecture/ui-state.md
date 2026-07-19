@@ -22,6 +22,7 @@ Studio context provides the canonical stores in [`ui/studio/context.tsx`](../ui/
 - `studioUiCollection` (`localStorageCollectionOptions`)
   - Persisted user-level UI preferences:
   - `isNavigationOpen`
+  - `navigationWidth`
   - `themeMode` (`light` | `dark` | `system`)
   - `isDarkMode` (resolved effective theme for the current render)
   - `tablePageSize`
@@ -39,6 +40,10 @@ Studio context provides the canonical stores in [`ui/studio/context.tsx`](../ui/
   - `filteredRowCount`
 - `uiLocalStateCollection` (`localOnlyCollectionOptions`)
   - General scoped UI state (for example DataGrid selection machine state).
+- `uiPersistentStateCollection` (`localStorageCollectionOptions`)
+  - General scoped UI state that must survive page reloads, accessed through
+    `useUiState` with `{ persistent: true }` (for example the schema
+    visualizer's manually arranged node positions).
 - `sqlEditorStateCollection` (`localStorageCollectionOptions`)
   - Persisted SQL editor draft state:
   - `queryText`
@@ -107,6 +112,7 @@ const studioUiState =
 The following are valid examples of UI state and where they belong:
 
 - Navigation open/closed: `studioUiCollection.isNavigationOpen`
+- Navigation width: `studioUiCollection.navigationWidth`
 - Theme preference: `studioUiCollection.themeMode`
 - Effective dark-mode flag for rendering: `studioUiCollection.isDarkMode`
 - Shared table rows-per-page preference: `studioUiCollection.tablePageSize`
@@ -127,11 +133,15 @@ The following are valid examples of UI state and where they belong:
   - Prompt-history browsing MAY use local transient preview state while the
     actual persisted history list remains in the collection as the source of truth.
 - Navigation table-name search term/open state: `uiLocalStateCollection` via `useUiState`
+- Navigation stream-name search term/open state: `uiLocalStateCollection` via `useUiState`
 - Navigation table-selection grid-focus request: `uiLocalStateCollection` via `useUiState`
 - Navigation table-name source rows: `navigationTableNamesCollection`
 - Schema visualizer node positions and layout state: `uiLocalStateCollection` via `useUiState`
   - Scoped by active schema plus the current visualized table set so returning to the same schema graph restores dragged positions without leaking across schemas.
   - Includes the stored ELK baseline positions and reset-layout request token used by the header action.
+- Schema visualizer manually arranged node positions: `uiPersistentStateCollection` via `useUiState({ persistent: true })`
+  - Scoped by active schema name (`schema-visualizer:${schema}:manual-layout:node-positions`) with per-table entries, so manual layouts survive reloads, new tables fall back to the ELK auto-layout, and different schemas do not collide.
+  - The header `Reset layout` action clears this store in addition to re-applying the ELK baseline.
 - Command-palette `x more...` handoff into table browsing: the same navigation table-name search `useUiState` entry, not a second command-palette-specific table-filter store
 
 If new UI state is shared across components, it MUST be assigned to one of these stores (or a new TanStack DB collection added in Studio context).
@@ -147,6 +157,9 @@ Command-palette action registrations are the one allowed React-context exception
 - Explicit user-triggered theme changes SHOULD use `document.startViewTransition` when available, with direct synchronous updates as the fallback, so Studio does not flash partially updated theme tokens during appearance switches.
 - Explicit `light` or `dark` choices MUST remain stable even if the embedding host mutates `document.documentElement.classList`.
 - Legacy persisted rows that only contain `isDarkMode` MUST normalize into explicit `themeMode` values during load so existing installs keep their preference.
+- The resolved theme MUST also sync to the document root (`color-scheme` and Studio's `--background` color on `<html>`, marked with `data-prisma-studio-theme`) so full-page shells get matching overscroll and behind-corner backgrounds, but ONLY when neither `<html>` nor `<body>` carries a host-authored background. Embedded hosts that style their own document MUST be left untouched.
+- Host ownership MUST be re-evaluated on every document-theme sync, ignoring the inline values Studio applied itself: if the host authors a document background (or overwrites Studio's inline properties) after Studio mounted, Studio MUST release the document theme and keep the host's values.
+- The pre-claim inline `<html>` values (including any host `color-scheme`) MUST be snapshotted when Studio first claims the document and restored when the claim is released. With multiple mounted Studio instances, the document theme MUST only be released when the last instance unmounts.
 
 ## Why This Architecture Is Better
 

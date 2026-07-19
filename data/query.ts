@@ -385,11 +385,35 @@ function transformValue(
     return supportsDefaultKeyword ? sql`default` : eb.lit(null);
   }
 
+  if (datatype.isArray && Array.isArray(value)) {
+    return eb.cast(
+      getArrayValueExpression(value),
+      getArrayTypeCastTarget(datatype),
+    );
+  }
+
   if (!datatype.isNative) {
     return eb.cast(eb.val(value), getUserDefinedTypeCastTarget(datatype));
   }
 
   return eb.val(value);
+}
+
+function getArrayValueExpression(value: unknown[]): Expression<any> {
+  return sql`array[${sql.join(
+    value.map((item) =>
+      Array.isArray(item) ? getArrayValueExpression(item) : sql`${item}`,
+    ),
+    sql`, `,
+  )}]`;
+}
+
+function getArrayTypeCastTarget(datatype: DataType): Expression<any> {
+  if (!datatype.isNative) {
+    return getUserDefinedTypeCastTarget(datatype);
+  }
+
+  return sql.raw(datatype.name);
 }
 
 function getUserDefinedTypeCastTarget(datatype: DataType): Expression<any> {

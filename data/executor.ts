@@ -36,9 +36,17 @@ export interface SequenceExecutor extends Executor {
 
 export interface ExecuteOptions {
   abortSignal?: AbortSignal;
+  /**
+   * Schema to use as the default namespace for unqualified identifiers.
+   */
+  schema?: string;
 }
 
 export interface SqlLintDetails {
+  /**
+   * Schema to use as the default namespace for unqualified identifiers.
+   */
+  schema?: string;
   schemaVersion?: string;
   sql: string;
 }

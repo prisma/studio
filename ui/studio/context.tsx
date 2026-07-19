@@ -44,7 +44,11 @@ const STUDIO_UI_STATE_ID = "studio-ui-state";
 const STUDIO_UI_STORAGE_KEY = "prisma-studio-ui-state-v1";
 const SQL_EDITOR_STATE_ID = "studio-sql-editor-state";
 const SQL_EDITOR_STORAGE_KEY = "prisma-studio-sql-editor-state-v1";
+const UI_PERSISTENT_STATE_STORAGE_KEY = "prisma-studio-persistent-ui-state-v1";
 const DEFAULT_TABLE_PAGE_SIZE = 25;
+export const DEFAULT_NAVIGATION_WIDTH = 192;
+export const MIN_NAVIGATION_WIDTH = 192;
+export const MAX_NAVIGATION_WIDTH = 520;
 const SYSTEM_THEME_MEDIA_QUERY = "(prefers-color-scheme: dark)";
 const REDUCED_MOTION_MEDIA_QUERY = "(prefers-reduced-motion: reduce)";
 
@@ -133,6 +137,7 @@ export interface StudioUiState {
   isNavigationOpen: boolean;
   isDarkMode: boolean;
   themeMode: StudioThemeMode;
+  navigationWidth: number;
   tablePageSize: number;
   isInfiniteScrollEnabled: boolean;
 }
@@ -191,9 +196,25 @@ function getDefaultStudioUiState(): StudioUiState {
     isNavigationOpen: true,
     isDarkMode: getSystemDarkMode(),
     themeMode: "system",
+    navigationWidth: DEFAULT_NAVIGATION_WIDTH,
     tablePageSize: DEFAULT_TABLE_PAGE_SIZE,
     isInfiniteScrollEnabled: false,
   };
+}
+
+function normalizeNavigationWidth(width: unknown): number {
+  if (
+    typeof width === "number" &&
+    Number.isFinite(width) &&
+    Number.isSafeInteger(Math.round(width))
+  ) {
+    return Math.min(
+      MAX_NAVIGATION_WIDTH,
+      Math.max(MIN_NAVIGATION_WIDTH, Math.round(width)),
+    );
+  }
+
+  return DEFAULT_NAVIGATION_WIDTH;
 }
 
 function normalizeTablePageSize(pageSize: unknown): number {
@@ -222,6 +243,7 @@ function normalizeStudioUiState(
     ...state,
     isDarkMode,
     themeMode,
+    navigationWidth: normalizeNavigationWidth(state?.navigationWidth),
     tablePageSize: normalizeTablePageSize(state?.tablePageSize),
     isInfiniteScrollEnabled: state?.isInfiniteScrollEnabled ?? false,
   };
@@ -232,10 +254,14 @@ function normalizeStudioUiState(
  */
 interface StudioContextValue {
   adapter: Adapter;
+  hasDatabase: boolean;
   llm?: StudioLlm;
+  queryInsights?: Adapter["queryInsights"];
   streamsUrl?: string;
   hasAiFilter: boolean;
+  hasAiQueryRecommendations: boolean;
   hasAiSql: boolean;
+  hasQueryInsights: boolean;
   requestLlm: (request: StudioLlmRequest) => Promise<string>;
   onEvent: (event: StudioEventBase) => void;
   operationEvents: StudioOperationEvent[];
@@ -244,6 +270,8 @@ interface StudioContextValue {
   isDarkMode: boolean;
   themeMode: StudioThemeMode;
   setThemeMode: (themeMode: StudioThemeMode) => void;
+  navigationWidth: number;
+  setNavigationWidth: (width: number) => void;
   tablePageSize: number;
   setTablePageSize: (pageSize: number) => void;
   isInfiniteScrollEnabled: boolean;
@@ -253,13 +281,16 @@ interface StudioContextValue {
   tableUiStateCollection: Collection<TableUiState, string | number>;
   tableQueryMetaCollection: Collection<TableQueryMetaState, string | number>;
   uiLocalStateCollection: Collection<StudioLocalUiState, string | number>;
+  uiPersistentStateCollection: Collection<StudioLocalUiState, string | number>;
   sqlEditorStateCollection: Collection<SqlEditorState, string | number>;
   navigationTableNamesCollection: Collection<
     NavigationTableNameState,
     string | number
   >;
   getOrCreateRowsCollection<T>(key: string, factory: () => T): T;
-  getOrCreateTableQueryExecutionState: (key: string) => TableQueryExecutionState;
+  getOrCreateTableQueryExecutionState: (
+    key: string,
+  ) => TableQueryExecutionState;
 }
 
 /**
@@ -269,6 +300,7 @@ const StudioContext = createContext<StudioContextValue | undefined>(undefined);
 
 export type StudioContextProviderProps = PropsWithChildren<{
   adapter: Adapter;
+  hasDatabase?: boolean;
   llm?: StudioLlm;
   onEvent?: (event: StudioEvent) => void;
   streamsUrl?: string;
@@ -280,12 +312,14 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
     children,
     onEvent: emitEvent,
     adapter,
+    hasDatabase = true,
     llm,
     streamsUrl,
     theme,
   } = props;
 
   const queryClientRef = useRef(new QueryClient());
+  const previousDatabaseConfigRef = useRef({ adapter, hasDatabase });
   const signatureRef = useRef(shortUUID.generate());
   const rowsCollectionCacheRef = useRef(new Map<string, unknown>());
   const tableQueryExecutionStateCacheRef = useRef(
@@ -362,6 +396,20 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
       { collectionName: "studio-local-ui-state" },
     ),
   );
+  const uiPersistentStateCollectionRef = useRef(
+    instrumentTanStackCollectionMutations(
+      createCollection(
+        localStorageCollectionOptions<StudioLocalUiState>({
+          id: "studio-persistent-ui-state",
+          storageKey: UI_PERSISTENT_STATE_STORAGE_KEY,
+          getKey(item) {
+            return item.id;
+          },
+        }),
+      ),
+      { collectionName: "studio-persistent-ui-state" },
+    ),
+  );
   const sqlEditorStateCollectionRef = useRef(
     instrumentTanStackCollectionMutations(
       createCollection(
@@ -397,6 +445,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
   const tableUiStateCollection = tableUiStateCollectionRef.current;
   const tableQueryMetaCollection = tableQueryMetaCollectionRef.current;
   const uiLocalStateCollection = uiLocalStateCollectionRef.current;
+  const uiPersistentStateCollection = uiPersistentStateCollectionRef.current;
   const sqlEditorStateCollection = sqlEditorStateCollectionRef.current;
   const navigationTableNamesCollection =
     navigationTableNamesCollectionRef.current;
@@ -495,7 +544,17 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
   }, [studioUiCollection]);
 
   useEffect(() => {
-    // if the adapter has been changed, then we need to reload
+    const previousDatabaseConfig = previousDatabaseConfigRef.current;
+    previousDatabaseConfigRef.current = { adapter, hasDatabase };
+
+    if (
+      previousDatabaseConfig.adapter === adapter &&
+      previousDatabaseConfig.hasDatabase === hasDatabase
+    ) {
+      return;
+    }
+
+    // If the database configuration changed, then we need to reload.
     for (const state of tableQueryExecutionStateCacheRef.current.values()) {
       state.activeController?.abort();
     }
@@ -503,7 +562,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
     tableQueryExecutionStateCacheRef.current.clear();
     clearRowsCollections();
     void queryClient.resetQueries({ exact: false, queryKey: [] });
-  }, [adapter, clearRowsCollections, queryClient]);
+  }, [adapter, clearRowsCollections, hasDatabase, queryClient]);
 
   // Watch for changes to the HTML element's class attribute.
   useEffect(() => {
@@ -734,6 +793,17 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
     [updateStudioUiState],
   );
 
+  const setNavigationWidth = useCallback(
+    (width: number) => {
+      const normalizedWidth = normalizeNavigationWidth(width);
+
+      updateStudioUiState((draft) => {
+        draft.navigationWidth = normalizedWidth;
+      });
+    },
+    [updateStudioUiState],
+  );
+
   const setInfiniteScrollEnabled = useCallback(
     (enabled: boolean) => {
       updateStudioUiState((draft) => {
@@ -774,7 +844,10 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
   );
 
   const hasAiFilter = typeof llm === "function";
+  const hasAiQueryRecommendations = typeof llm === "function";
   const hasAiSql = typeof llm === "function";
+  const queryInsights = adapter.queryInsights;
+  const hasQueryInsights = typeof queryInsights?.getSnapshot === "function";
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -782,10 +855,14 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
       <StudioContext.Provider
         value={{
           adapter,
+          hasDatabase,
           llm,
+          queryInsights,
           streamsUrl,
           hasAiFilter,
+          hasAiQueryRecommendations,
           hasAiSql,
+          hasQueryInsights,
           requestLlm,
           onEvent,
           operationEvents,
@@ -794,6 +871,8 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
           isDarkMode: studioUiState.isDarkMode,
           themeMode: studioUiState.themeMode,
           setThemeMode,
+          navigationWidth: studioUiState.navigationWidth,
+          setNavigationWidth,
           tablePageSize: studioUiState.tablePageSize,
           setTablePageSize,
           isInfiniteScrollEnabled: studioUiState.isInfiniteScrollEnabled,
@@ -803,6 +882,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
           tableUiStateCollection,
           tableQueryMetaCollection,
           uiLocalStateCollection,
+          uiPersistentStateCollection,
           sqlEditorStateCollection,
           navigationTableNamesCollection,
           getOrCreateRowsCollection,

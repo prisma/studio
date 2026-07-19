@@ -52,7 +52,17 @@ export function coerceToValue(
   }
 
   if (dataTypeGroup === "numeric") {
-    return value === "" ? null : Number(value);
+    if (value === "") {
+      return null;
+    }
+
+    const parsed = Number(value);
+
+    // Only coerce input that actually parses as a number. Non-numeric text is
+    // kept as-is (never NaN) so e.g. date strings in SQLite NUMERIC-affinity
+    // columns survive, matching SQLite's own affinity semantics where
+    // non-numeric text is stored as TEXT.
+    return Number.isNaN(parsed) ? value : parsed;
   }
 
   return value;

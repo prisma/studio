@@ -44,10 +44,12 @@ import {
   createSchemaEdges,
   createSchemaLayoutSignature,
   createSchemaNodePositions,
+  createSchemaVisualizerPersistentStateScope,
   createSchemaVisualizerStateScope,
   createSchemaVisualizerUiStateKey,
   getAutoLayoutedSchemaNodes,
   hasSchemaNodePositionsForAllNodes,
+  mergeSchemaNodePositions,
   type SchemaNodeData,
   type SchemaNodePositions,
 } from "./schema-layout";
@@ -238,6 +240,7 @@ export function SchemaVisualization({
     metadata: { activeSchema },
   } = useNavigation();
   const nodePositionsRef = useRef<SchemaNodePositions>({});
+  const manualNodePositionsRef = useRef<SchemaNodePositions>({});
   const reactFlowInstanceRef = useRef<ReactFlowInstance<SchemaNodeData> | null>(
     null,
   );
@@ -273,10 +276,20 @@ export function SchemaVisualization({
     () => createSchemaLayoutSignature(baseNodes, initialEdges),
     [baseNodes, initialEdges],
   );
+  const persistentStateScope = useMemo(
+    () => createSchemaVisualizerPersistentStateScope(activeSchema?.name),
+    [activeSchema?.name],
+  );
   const [nodePositions, setNodePositions] = useUiState<SchemaNodePositions>(
     createSchemaVisualizerUiStateKey(stateScope, "node-positions"),
     {},
   );
+  const [manualNodePositions, setManualNodePositions] =
+    useUiState<SchemaNodePositions>(
+      createSchemaVisualizerUiStateKey(persistentStateScope, "node-positions"),
+      {},
+      { persistent: true },
+    );
   const [_autoLayoutPositions, setAutoLayoutPositions] =
     useUiState<SchemaNodePositions>(
       createSchemaVisualizerUiStateKey(
@@ -307,6 +320,10 @@ export function SchemaVisualization({
   useEffect(() => {
     nodePositionsRef.current = nodePositions;
   }, [nodePositions]);
+
+  useEffect(() => {
+    manualNodePositionsRef.current = manualNodePositions;
+  }, [manualNodePositions]);
 
   const scheduleFitView = useCallback(() => {
     if (typeof window === "undefined") {
@@ -346,7 +363,12 @@ export function SchemaVisualization({
           createSchemaNodePositions(layoutedNodes);
 
         setAutoLayoutPositions(nextAutoLayoutPositions);
-        setNodePositions(nextAutoLayoutPositions);
+        setNodePositions(
+          mergeSchemaNodePositions(
+            nextAutoLayoutPositions,
+            manualNodePositionsRef.current,
+          ),
+        );
       } catch {
         if (cancelled) {
           return;
@@ -355,7 +377,12 @@ export function SchemaVisualization({
         const fallbackPositions = createSchemaNodePositions(baseNodes);
 
         setAutoLayoutPositions(fallbackPositions);
-        setNodePositions(fallbackPositions);
+        setNodePositions(
+          mergeSchemaNodePositions(
+            fallbackPositions,
+            manualNodePositionsRef.current,
+          ),
+        );
       }
 
       setHasAutoLayout(true);
@@ -418,8 +445,12 @@ export function SchemaVisualization({
         ...nodePositionsRef.current,
         ...nextPositions,
       });
+      setManualNodePositions({
+        ...manualNodePositionsRef.current,
+        ...nextPositions,
+      });
     },
-    [setNodePositions],
+    [setManualNodePositions, setNodePositions],
   );
 
   const controlStyles = cn(

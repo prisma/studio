@@ -1,0 +1,37 @@
+# https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/configuring-issue-templates-for-your-repository
+name: Feature request
+description: Suggest an improvement to Prisma Studio (@prisma/studio-core)
+labels: ['kind/feature']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        🙏 Thanks for taking the time to suggest an improvement!
+
+        Please search existing issues first to avoid duplicates. Feature requests for the Prisma ORM or CLI (rather than the Studio UI) belong in [prisma/prisma](https://github.com/prisma/prisma/issues).
+
+        💡 If your idea isn't fully formed yet, discuss it on our [Discord server](https://pris.ly/discord) first.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem are you trying to solve? Describe a real situation where Prisma Studio falls short today.
+      placeholder: 'Example: When browsing a table with millions of rows, I cannot ...'
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How should this work in Prisma Studio? A rough sketch of your ideal outcome is enough.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Workarounds you use today, or other approaches you considered.
+    validations:
+      required: false

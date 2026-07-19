@@ -10,6 +10,7 @@ export {
 } from "./llm";
 export type * from "./llm";
 export { applyInferredRowFilters, type Query, type QueryResult } from "./query";
+export type * from "./query-insights";
 export * from "./sql-editor-schema";
 export * from "./sql-statements";
 export type * from "./type-utils";

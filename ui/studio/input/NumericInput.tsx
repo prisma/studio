@@ -10,7 +10,7 @@ export interface NumericInputProps {
   column: Column;
   context: "edit" | "insert";
   onNavigate?: (direction: CellEditNavigationDirection) => void;
-  onSubmit: (value: number | null | undefined) => void;
+  onSubmit: (value: number | string | null | undefined) => void;
   readonly: boolean;
   showSaveAction?: boolean;
   value: unknown;
@@ -54,7 +54,19 @@ export function NumericInput(props: NumericInputProps) {
           : currentValue;
 
       if (currentValueForComparison !== valueAsString) {
-        onSubmit(currentValue === "" ? emptyValue : Number(currentValue));
+        if (currentValue === "") {
+          onSubmit(emptyValue);
+
+          return true;
+        }
+
+        const parsed = Number(currentValue);
+
+        // Never submit NaN: non-numeric input is passed through as text. For
+        // SQLite NUMERIC-affinity columns (e.g. declared `decimal`) this
+        // matches SQLite semantics, and elsewhere the database rejects the
+        // value with a clear error instead of silently storing NaN.
+        onSubmit(Number.isNaN(parsed) ? currentValue : parsed);
 
         return true;
       }

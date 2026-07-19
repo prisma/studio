@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { computeColumnVirtualizationWindow } from "./column-virtualization";
+import {
+  columnVirtualizationWindowsAreEqual,
+  computeColumnVirtualizationWindow,
+  DISABLED_COLUMN_VIRTUALIZATION_WINDOW,
+} from "./column-virtualization";
 
 describe("computeColumnVirtualizationWindow", () => {
   it("returns an empty disabled window when there are no columns", () => {
@@ -181,5 +185,76 @@ describe("computeColumnVirtualizationWindow", () => {
       hiddenStartWidth: 0,
       hiddenEndWidth: 100,
     });
+  });
+});
+
+describe("computeColumnVirtualizationWindow at the maximum scroll position", () => {
+  it("keeps the last column inside the window so the end of the grid is reachable", () => {
+    const columnWidths = Array.from({ length: 61 }, () => 200);
+    const totalWidth = 61 * 200;
+    const viewportWidth = 1027;
+
+    const window = computeColumnVirtualizationWindow({
+      columnWidths,
+      minColumnCount: 16,
+      overscanPx: 320,
+      scrollLeft: totalWidth - viewportWidth,
+      viewportWidth,
+    });
+
+    expect(window.endIndex).toBe(60);
+    expect(window.hiddenEndCount).toBe(0);
+    expect(window.hiddenEndWidth).toBe(0);
+    expect(
+      window.hiddenStartWidth + 200 * (window.endIndex - window.startIndex + 1),
+    ).toBe(totalWidth);
+  });
+});
+
+describe("columnVirtualizationWindowsAreEqual", () => {
+  it("returns true for identical windows", () => {
+    const window = {
+      enabled: true,
+      startIndex: 2,
+      endIndex: 8,
+      hiddenStartCount: 2,
+      hiddenEndCount: 4,
+      hiddenStartWidth: 400,
+      hiddenEndWidth: 800,
+    };
+
+    expect(columnVirtualizationWindowsAreEqual(window, { ...window })).toBe(
+      true,
+    );
+    expect(
+      columnVirtualizationWindowsAreEqual(
+        DISABLED_COLUMN_VIRTUALIZATION_WINDOW,
+        { ...DISABLED_COLUMN_VIRTUALIZATION_WINDOW },
+      ),
+    ).toBe(true);
+  });
+
+  it("returns false when any window field differs", () => {
+    const window = {
+      enabled: true,
+      startIndex: 2,
+      endIndex: 8,
+      hiddenStartCount: 2,
+      hiddenEndCount: 4,
+      hiddenStartWidth: 400,
+      hiddenEndWidth: 800,
+    };
+
+    for (const key of Object.keys(window) as (keyof typeof window)[]) {
+      const changed = { ...window };
+
+      if (key === "enabled") {
+        changed.enabled = !changed.enabled;
+      } else {
+        changed[key] = changed[key] + 1;
+      }
+
+      expect(columnVirtualizationWindowsAreEqual(window, changed)).toBe(false);
+    }
   });
 });

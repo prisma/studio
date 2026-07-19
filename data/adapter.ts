@@ -1,10 +1,12 @@
 import type { Executor } from "./executor";
 import type { Query } from "./query";
+import type { StudioQueryInsights } from "./query-insights";
 import type { BigIntString, Either, NumericString } from "./type-utils";
 
 export interface AdapterRequirements {
   executor: Executor;
   noParameters?: boolean;
+  queryInsights?: StudioQueryInsights;
 }
 
 export interface AdapterCapabilities {
@@ -41,6 +43,14 @@ export interface Adapter {
    * Optional adapter feature flags used by the UI.
    */
   readonly capabilities?: Partial<AdapterCapabilities>;
+
+  /**
+   * Optional live query-insights provider.
+   *
+   * Embedders that can observe SQL execution outside Studio should inject
+   * snapshots here, usually through the Studio BFF bridge.
+   */
+  readonly queryInsights?: StudioQueryInsights;
 
   /**
    * Introspects the database and returns structured information about the schemas, tables, etc.
@@ -370,6 +380,10 @@ export interface AdapterQueryResult {
 }
 
 export interface AdapterRawDetails {
+  /**
+   * Schema to use as the default namespace for unqualified identifiers.
+   */
+  schema?: string;
   sql: string;
 }
 
@@ -390,6 +404,10 @@ export interface AdapterSqlSchemaResult {
 }
 
 export interface AdapterSqlLintDetails {
+  /**
+   * Schema to use as the default namespace for unqualified identifiers.
+   */
+  schema?: string;
   schemaVersion?: string;
   sql: string;
 }

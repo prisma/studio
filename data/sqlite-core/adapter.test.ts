@@ -226,7 +226,7 @@ describe("sqlite-core/adapter", () => {
                       "date": {
                         "datatype": {
                           "affinity": "NUMERIC",
-                          "group": "numeric",
+                          "group": "string",
                           "isArray": false,
                           "isNative": true,
                           "name": "date",
@@ -249,7 +249,7 @@ describe("sqlite-core/adapter", () => {
                       "datetime": {
                         "datatype": {
                           "affinity": "NUMERIC",
-                          "group": "numeric",
+                          "group": "string",
                           "isArray": false,
                           "isNative": true,
                           "name": "datetime",
@@ -936,6 +936,64 @@ describe("sqlite-core/adapter", () => {
           },
         ]
       `);
+    });
+  });
+
+  describe("update", () => {
+    it("stores date-like strings as text in NUMERIC-affinity date columns", async () => {
+      database.exec('DELETE FROM "animals" WHERE "id" = 201');
+      database.exec(`
+        INSERT INTO "animals" ("id", "name", "datetime")
+        VALUES (201, 'capybara', '2021-11-01 21:30:00')
+      `);
+
+      const [introspectionError, introspection] = await adapter.introspect({});
+
+      expect(introspectionError).toBeNull();
+
+      const table = introspection?.schemas.main?.tables?.animals;
+
+      if (!table) {
+        throw new Error("Expected main.animals table in introspection");
+      }
+
+      // date-like declared types are edited as text, not numbers.
+      expect(table.columns.datetime?.datatype).toMatchObject({
+        affinity: "NUMERIC",
+        group: "string",
+      });
+
+      try {
+        const [error, result] = await adapter.update(
+          {
+            changes: { datetime: "2021-11-01 22:30:00" },
+            row: { id: 201 },
+            table,
+          },
+          {},
+        );
+
+        expect(error).toBeNull();
+        expect(result?.row).toEqual(
+          expect.objectContaining({
+            datetime: "2021-11-01 22:30:00",
+            id: 201,
+          }),
+        );
+
+        const stored = database
+          .prepare(
+            'SELECT "datetime", typeof("datetime") as "type" FROM "animals" WHERE "id" = 201',
+          )
+          .get() as { datetime: string; type: string };
+
+        expect(stored).toEqual({
+          datetime: "2021-11-01 22:30:00",
+          type: "text",
+        });
+      } finally {
+        database.exec('DELETE FROM "animals" WHERE "id" = 201');
+      }
     });
   });
 

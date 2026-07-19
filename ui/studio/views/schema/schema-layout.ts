@@ -453,6 +453,22 @@ export function createSchemaVisualizerUiStateKey(
   return `schema-visualizer:${stateScope}:${key}`;
 }
 
+export function createSchemaVisualizerPersistentStateScope(
+  schemaName: string | undefined,
+): string {
+  return `${schemaName ?? "__unknown__"}:manual-layout`;
+}
+
+export function mergeSchemaNodePositions(
+  autoLayoutPositions: SchemaNodePositions,
+  savedPositions: SchemaNodePositions,
+): SchemaNodePositions {
+  return {
+    ...autoLayoutPositions,
+    ...savedPositions,
+  };
+}
+
 export function createSchemaNodePositions(
   nodes: Pick<SchemaNode, "id" | "position">[],
 ): SchemaNodePositions {
