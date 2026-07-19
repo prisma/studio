@@ -2,11 +2,11 @@ import type { RowSelectionState } from "@tanstack/react-table";
 
 import type { GridSelectionRange } from "../../grid/cell-selection";
 
-export type SelectionExportFormat = "csv" | "markdown";
+export type SelectionExportFormat = "csv" | "json" | "markdown";
 
 export interface SelectionExportTable {
   columnIds: string[];
-  rows: string[][];
+  rows: unknown[][];
 }
 
 export function buildCellSelectionExportTable(args: {
@@ -16,7 +16,7 @@ export function buildCellSelectionExportTable(args: {
 }): SelectionExportTable {
   const { columnIds, range, rows } = args;
   const selectedColumnIds: string[] = [];
-  const selectedRows: string[][] = [];
+  const selectedRows: unknown[][] = [];
 
   for (
     let columnIndex = range.columnStart;
@@ -47,9 +47,7 @@ export function buildCellSelectionExportTable(args: {
     }
 
     selectedRows.push(
-      selectedColumnIds.map((columnId) =>
-        stringifySelectionExportValue(row[columnId]),
-      ),
+      selectedColumnIds.map((columnId) => row[columnId]),
     );
   }
 
@@ -79,9 +77,7 @@ export function buildRowSelectionExportTable(args: {
 
       return typeof rowId === "string" && rowSelectionState[rowId] === true;
     })
-    .map((row) =>
-      columnIds.map((columnId) => stringifySelectionExportValue(row[columnId])),
-    );
+    .map((row) => columnIds.map((columnId) => row[columnId]));
 
   return {
     columnIds: [...columnIds],
@@ -104,6 +100,10 @@ export function serializeSelectionExport(args: {
     return serializeSelectionExportCsv({ includeColumnHeader, table });
   }
 
+  if (format === "json") {
+    return serializeSelectionExportJson(table);
+  }
+
   return serializeSelectionExportMarkdown({ includeColumnHeader, table });
 }
 
@@ -112,7 +112,8 @@ export function buildSelectionExportFilename(args: {
   table: string;
   format: SelectionExportFormat;
 }): string {
-  const extension = args.format === "csv" ? "csv" : "md";
+  const extension =
+    args.format === "csv" ? "csv" : args.format === "json" ? "json" : "md";
 
   return `${args.schema}-${args.table}-selection.${extension}`;
 }
@@ -128,6 +129,8 @@ export function downloadSelectionExport(args: {
     type:
       format === "csv"
         ? "text/csv;charset=utf-8"
+        : format === "json"
+          ? "application/json;charset=utf-8"
         : "text/markdown;charset=utf-8",
   });
   const objectUrl = URL.createObjectURL(blob);
@@ -143,6 +146,19 @@ export function downloadSelectionExport(args: {
   URL.revokeObjectURL(objectUrl);
 }
 
+function serializeSelectionExportJson(table: SelectionExportTable): string {
+  const records = table.rows.map((row) =>
+    Object.fromEntries(
+      row.map((value, index) => [
+        table.columnIds[index],
+        normalizeSelectionExportJsonValue(value),
+      ]),
+    ),
+  );
+
+  return JSON.stringify(records.length === 1 ? records[0] : records, null, 2);
+}
+
 function serializeSelectionExportCsv(args: {
   table: SelectionExportTable;
   includeColumnHeader: boolean;
@@ -155,7 +171,7 @@ function serializeSelectionExportCsv(args: {
   }
 
   for (const row of table.rows) {
-    lines.push(serializeCsvRow(row));
+    lines.push(serializeCsvRow(row.map(stringifySelectionExportValue)));
   }
 
   return lines.join("\n");
@@ -186,7 +202,7 @@ function serializeSelectionExportMarkdown(args: {
   }
 
   for (const row of table.rows) {
-    lines.push(serializeMarkdownRow(row));
+    lines.push(serializeMarkdownRow(row.map(stringifySelectionExportValue)));
   }
 
   return lines.join("\n");
@@ -203,6 +219,35 @@ function escapeMarkdownValue(value: string): string {
     .replaceAll("\r\n", "<br />")
     .replaceAll("\n", "<br />")
     .replaceAll("\r", "<br />");
+}
+
+function normalizeSelectionExportJsonValue(value: unknown): unknown {
+  if (value === undefined) {
+    return null;
+  }
+
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(normalizeSelectionExportJsonValue);
+  }
+
+  if (value instanceof Date) {
+    return value.toJSON();
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entryValue]) => [
+        key,
+        normalizeSelectionExportJsonValue(entryValue),
+      ]),
+    );
+  }
+
+  return value;
 }
 
 function stringifySelectionExportValue(value: unknown): string {

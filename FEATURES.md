@@ -293,8 +293,9 @@ Paste operations map matrix values into selected writable cells, enabling spread
 
 ## Selection Export Formats
 
-When rows or cell ranges are selected, the table toolbar adds a compact `copy as` menu for exporting the current selection as Markdown or CSV.
-Exports can copy directly to the clipboard or save to disk, include column headers by default, and reuse the current grid column order and pinned-column layout so the exported shape matches what users are working with.
+When rows or cell ranges are selected, the table toolbar adds a compact `copy as` menu for exporting the current selection as Markdown, CSV, or JSON.
+Markdown and CSV exports can copy directly to the clipboard or save to disk with optional column headers, while JSON exports keep the selected visible columns as keyed objects.
+All export formats reuse the current grid column order and pinned-column layout so the exported shape matches what users are working with.
 
 ## Typed Cell Editing
 
