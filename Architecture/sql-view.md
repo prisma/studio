@@ -47,6 +47,7 @@ SQL result visualization is governed by:
 - SQL result grid MUST keep column pinning enabled and URL-backed using existing `pin` navigation state.
 - SQL execution MUST remain cancellable via `AbortController`.
 - SQL editor lines MUST soft-wrap within the available editor width instead of forcing page-level horizontal overflow while typing long queries.
+- When SQL results are visible, the editor pane MUST stay content-sized up to a bounded height and then scroll internally, rather than splitting the viewport evenly with the result grid.
 
 ## Result Rendering Contract
 
@@ -103,3 +104,4 @@ Changes to SQL view MUST include tests for:
 - read-only grid rendering (pin control present, sorting controls disabled)
 - absence of history UI
 - absence of pagination controls in SQL result grid
+- bounded editor height when results are visible

@@ -18,6 +18,9 @@ const setPinnedColumnIdsMock = vi.fn();
 let mockEditorCursorHead = 0;
 let mockEditorDocLength = 0;
 let mockEditorDocText = "";
+let mockCodeMirrorProps:
+  | { height?: string; maxHeight?: string; minHeight?: string }
+  | undefined;
 let mockCodeMirrorOnChange: ((value: string) => void) | undefined;
 let mockCodeMirrorExtensions: unknown[] = [];
 const mockEditorDispatch = vi.fn((transaction: unknown) => {
@@ -107,7 +110,10 @@ vi.mock("../../../hooks/use-navigation", () => ({
 vi.mock("@uiw/react-codemirror", () => ({
   default: (props: {
     "aria-label"?: string;
+    height?: string;
     extensions?: unknown[];
+    maxHeight?: string;
+    minHeight?: string;
     onCreateEditor?: (view: {
       dispatch: (transaction: unknown) => void;
       focus: () => void;
@@ -119,6 +125,11 @@ vi.mock("@uiw/react-codemirror", () => ({
     onChange?: (value: string) => void;
     value?: string;
   }) => {
+    mockCodeMirrorProps = {
+      height: props.height,
+      maxHeight: props.maxHeight,
+      minHeight: props.minHeight,
+    };
     mockCodeMirrorOnChange = props.onChange;
     mockCodeMirrorExtensions = props.extensions ?? [];
     mockEditorDocLength = (props.value ?? "").length;
@@ -415,6 +426,7 @@ afterEach(() => {
   mockEditorDocText = "";
   mockCodeMirrorOnChange = undefined;
   mockCodeMirrorExtensions = [];
+  mockCodeMirrorProps = undefined;
 });
 
 beforeEach(() => {
@@ -1736,6 +1748,76 @@ describe("SqlView", () => {
     const harness = renderSqlView();
 
     expect(mockCodeMirrorExtensions).toContain(EditorView.lineWrapping);
+
+    harness.cleanup();
+  });
+
+  it("keeps the SQL editor in a bounded scroll region for long scripts", () => {
+    const { adapter } = createAdapterMock();
+    const studio = createStudioMock(adapter);
+    useStudioMock.mockReturnValue(studio);
+
+    const harness = renderSqlView();
+
+    const scrollRegion = harness.container.querySelector(
+      '[data-testid="sql-editor-scroll-container"]',
+    );
+    expect(scrollRegion).toBeTruthy();
+    expect(scrollRegion?.className).toContain("min-h-0");
+    expect(scrollRegion?.className).toContain("overflow-hidden");
+
+    harness.cleanup();
+  });
+
+  it("keeps the editor content-sized until results are shown, then caps it", async () => {
+    const { adapter } = createAdapterMock();
+    const studio = createStudioMock(adapter);
+    useStudioMock.mockReturnValue(studio);
+
+    const harness = renderSqlView();
+
+    expect(
+      harness.container
+        .querySelector('[data-testid="sql-editor-scroll-container"]')
+        ?.className,
+    ).toContain("flex-1");
+    expect(mockCodeMirrorProps).toMatchObject({
+      height: "100%",
+      maxHeight: undefined,
+    });
+
+    const runButton = [...harness.container.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Run SQL"),
+    );
+
+    if (!runButton) {
+      throw new Error("SQL view run control not rendered");
+    }
+
+    act(() => {
+      runButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitFor(() => {
+      return (
+        harness.container.textContent?.includes("1 row(s) returned") ?? false
+      );
+    });
+
+    expect(
+      harness.container
+        .querySelector('[data-testid="sql-editor-scroll-container"]')
+        ?.className,
+    ).toContain("flex-none");
+    expect(
+      harness.container
+        .querySelector('[data-testid="sql-result-grid-container"]')
+        ?.className,
+    ).toContain("flex-1");
+    expect(mockCodeMirrorProps).toMatchObject({
+      height: undefined,
+      maxHeight: "40vh",
+    });
 
     harness.cleanup();
   });
