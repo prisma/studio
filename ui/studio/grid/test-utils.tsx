@@ -2,9 +2,10 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { act } from "react";
 import { type Mock, vi } from "vitest";
 
-import { CheckboxTable } from "../../components/ui/checkbox-table";
 import { TableHead } from "../../components/ui/table";
 import { Cell, type CellProps } from "../cell/Cell";
+import { SelectHeaderCell } from "../cell/SelectHeaderCell";
+import { SelectRowCell } from "../cell/SelectRowCell";
 
 export type GridRow = Record<string, unknown>;
 export type GridColumnDef = ColumnDef<GridRow>;
@@ -62,24 +63,14 @@ export function createReadOnlyColumns(args?: {
     header({ table }) {
       return (props: Omit<CellProps, "children" | "ref">) => (
         <TableHead {...props} aria-label="Row selection spacer">
-          <div className="flex items-center justify-center h-full w-full">
-            <CheckboxTable
-              checked={table.getIsAllRowsSelected()}
-              className="pointer-events-none h-4 w-4"
-            />
-          </div>
+          <SelectHeaderCell table={table} />
         </TableHead>
       );
     },
     cell({ row }) {
       return (props: Omit<CellProps, "children" | "ref">) => (
         <Cell data-select="true" {...props}>
-          <div className="flex items-center justify-center h-full w-full">
-            <CheckboxTable
-              checked={row.getIsSelected()}
-              className="pointer-events-none h-4 w-4"
-            />
-          </div>
+          <SelectRowCell row={row} />
         </Cell>
       );
     },
