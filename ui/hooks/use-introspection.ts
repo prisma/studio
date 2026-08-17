@@ -102,6 +102,7 @@ export function useIntrospection() {
     // "refresh schema" + write-error self-heal) re-introspect the live DB.
     // `retry`/`retryOnMount`/`refetchOnReconnect` stay off to preserve the
     // no-automatic-retry-loop contract from the introspection architecture.
+    staleTime: 30_000,
     refetchOnReconnect: false,
     refetchOnWindowFocus: true,
     retry: false,
