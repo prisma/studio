@@ -1,4 +1,8 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  focusManager,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,6 +23,7 @@ const useStudioMock = vi.hoisted(() =>
       adapter: Adapter;
       hasDatabase: boolean;
       onEvent: (event: StudioEventBase) => void;
+      queryClient: QueryClient;
     }
   >(),
 );
@@ -121,6 +126,7 @@ function renderHarness(args: {
     adapter,
     hasDatabase: true,
     onEvent,
+    queryClient,
   });
 
   let latestState: ReturnType<typeof useIntrospection> | undefined;
@@ -273,6 +279,66 @@ describe("useIntrospection", () => {
         ([event]: [StudioEventBase]) => event.name === "studio_launched",
       ),
     ).toHaveLength(1);
+
+    harness.cleanup();
+  });
+
+  it("re-introspects when the window regains focus (staleTime is not Infinity)", async () => {
+    // Reproduces the stale-introspection bug: with staleTime: Infinity and
+    // refetchOnWindowFocus: false the schema never refreshed on focus. The
+    // fix drops staleTime and enables refetchOnWindowFocus, so a focus event
+    // must trigger a second introspection.
+    const introspect = vi
+      .fn<NonNullable<Adapter["introspect"]>>()
+      .mockResolvedValue([null, createIntrospectionResult()] as [
+        null,
+        AdapterIntrospectResult,
+      ]);
+    const harness = renderHarness({
+      adapter: createAdapterMock({ introspect }),
+    });
+
+    await waitFor(
+      () =>
+        harness.getLatestState()?.isSuccess === true &&
+        introspect.mock.calls.length === 1,
+    );
+
+    await act(async () => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => introspect.mock.calls.length === 2);
+    expect(introspect.mock.calls.length).toBe(2);
+
+    harness.cleanup();
+  });
+
+  it("refreshSchema invalidates and triggers an introspection refetch", async () => {
+    const introspect = vi
+      .fn<NonNullable<Adapter["introspect"]>>()
+      .mockResolvedValue([null, createIntrospectionResult()] as [
+        null,
+        AdapterIntrospectResult,
+      ]);
+    const harness = renderHarness({
+      adapter: createAdapterMock({ introspect }),
+    });
+
+    await waitFor(
+      () =>
+        harness.getLatestState()?.isSuccess === true &&
+        introspect.mock.calls.length === 1,
+    );
+
+    await act(async () => {
+      await harness.getLatestState()?.refreshSchema();
+    });
+
+    await waitFor(() => introspect.mock.calls.length === 2);
+    expect(introspect.mock.calls.length).toBe(2);
 
     harness.cleanup();
   });

@@ -1,9 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import type { AdapterError, AdapterIntrospectResult } from "../../data/adapter";
 import type { Query } from "../../data/query";
 import { useStudio } from "../studio/context";
+import {
+  INTROSPECTION_QUERY_KEY,
+  refreshIntrospection,
+} from "./refresh-introspection";
 
 export interface IntrospectionErrorState {
   adapterSource: string;
@@ -39,7 +43,7 @@ function getQueryPreview(query: Query<unknown> | undefined): string | null {
 }
 
 export function useIntrospection() {
-  const { adapter, hasDatabase, onEvent } = useStudio();
+  const { adapter, hasDatabase, onEvent, queryClient } = useStudio();
   const hasEmittedLaunchEventRef = useRef(false);
 
   useEffect(() => {
@@ -48,7 +52,7 @@ export function useIntrospection() {
 
   const queryResult = useQuery<AdapterIntrospectResult, AdapterError>({
     enabled: hasDatabase,
-    queryKey: ["introspection"],
+    queryKey: INTROSPECTION_QUERY_KEY,
     queryFn: async ({ signal }) => {
       const [error, result] = await adapter.introspect({ abortSignal: signal });
 
@@ -93,12 +97,24 @@ export function useIntrospection() {
 
       return result;
     },
+    // Refreshable schema contract: the cached introspection is allowed to go
+    // stale so that window-focus refetches and explicit invalidations (manual
+    // "refresh schema" + write-error self-heal) re-introspect the live DB.
+    // `retry`/`retryOnMount`/`refetchOnReconnect` stay off to preserve the
+    // no-automatic-retry-loop contract from the introspection architecture.
     refetchOnReconnect: false,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
     retry: false,
     retryOnMount: false,
-    staleTime: Infinity,
   });
+
+  // Single shared "refresh schema" action used by the toolbar button and by
+  // the write-error self-heal path (see `refresh-introspection.ts`). It
+  // invalidates the introspection cache and refetches the active observer.
+  const refreshSchema = useCallback(
+    () => refreshIntrospection(queryClient),
+    [queryClient],
+  );
 
   const fallbackData = useMemo(() => {
     return createInitialIntrospectionResult(adapter.defaultSchema);
@@ -138,5 +154,6 @@ export function useIntrospection() {
     hasResolvedIntrospection,
     isUsingLastKnownGoodData: queryResult.isError && queryResult.data != null,
     isUsingPlaceholderData: hasDatabase && queryResult.data == null,
+    refreshSchema,
   };
 }
