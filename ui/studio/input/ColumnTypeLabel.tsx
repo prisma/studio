@@ -44,7 +44,6 @@ export function ColumnTypeLabel(
             <TooltipTrigger asChild>
               <button
                 type="button"
-                tabIndex={-1}
                 aria-label={`Column type: ${typeName}`}
                 className="inline-flex items-center gap-1 rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
