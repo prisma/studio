@@ -100,11 +100,20 @@ export function useIntrospection() {
     // Refreshable schema contract: the cached introspection is allowed to go
     // stale so that window-focus refetches and explicit invalidations (manual
     // "refresh schema" + write-error self-heal) re-introspect the live DB.
+    //
+    // The 30s `staleTime` throttles background refetches after the initial
+    // load, while `refetchOnWindowFocus: "always"` forces a refetch whenever
+    // the window regains focus even when the cached data is still fresh.
+    // React Query v5 treats a plain `true` here as "refetch only stale
+    // queries", which would skip the focus refetch while data is fresh and
+    // break the focus-refetch test; the explicit `"always"` string opts
+    // into always-refetch-on-focus so the editor re-renders with the live
+    // column type after schema drift.
     // `retry`/`retryOnMount`/`refetchOnReconnect` stay off to preserve the
     // no-automatic-retry-loop contract from the introspection architecture.
     staleTime: 30_000,
     refetchOnReconnect: false,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: "always",
     retry: false,
     retryOnMount: false,
   });

@@ -286,8 +286,9 @@ describe("useIntrospection", () => {
   it("re-introspects when the window regains focus (staleTime is not Infinity)", async () => {
     // Reproduces the stale-introspection bug: with staleTime: Infinity and
     // refetchOnWindowFocus: false the schema never refreshed on focus. The
-    // fix drops staleTime and enables refetchOnWindowFocus, so a focus event
-    // must trigger a second introspection.
+    // fix keeps a 30s staleTime throttle and sets refetchOnWindowFocus to
+    // "always", so even while data is fresh a focus event must trigger a
+    // second introspection.
     const introspect = vi
       .fn<NonNullable<Adapter["introspect"]>>()
       .mockResolvedValue([null, createIntrospectionResult()] as [

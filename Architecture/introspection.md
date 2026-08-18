@@ -31,10 +31,10 @@ The query MUST use:
 - `retry: false`
 - `retryOnMount: false`
 - `refetchOnReconnect: false`
-- `refetchOnWindowFocus: true`
-- no `staleTime: Infinity` (the default `staleTime` is used so cached introspection is allowed to go stale)
+- `refetchOnWindowFocus: "always"`
+- `staleTime: 30_000` (30s)
 
-Automatic retry loops are forbidden for introspection because they can spam operation events, repeat expensive metadata work, and hide the real startup failure state from the user. `refetchOnWindowFocus` is not a retry loop: it re-introspects at most once each time the user returns to Studio, which is the intent of the refreshable schema contract below.
+Automatic retry loops are forbidden for introspection because they can spam operation events, repeat expensive metadata work, and hide the real startup failure state from the user. `refetchOnWindowFocus` is not a retry loop: `refetchOnWindowFocus: "always"` refires on every window focus even while data is still fresh — React Query v5 would normally treat plain `true` as "refetch only stale queries" and skip the focus refetch while data is fresh, hence the explicit `"always"` string. Combined with the 30s `staleTime` (which throttles background refetches otherwise), a focus event in practice re-introspects at most once each time the user returns to Studio, which is the intent of the refreshable schema contract below.
 
 ## Refreshable Schema Contract
 
@@ -49,7 +49,7 @@ Three call sites share it:
 
 - `useIntrospection().refreshSchema` — backs the toolbar "Refresh schema" button.
 - the write-error self-heal path (see Self-Heal Contract below).
-- window-focus refetch (React Query built-in, enabled by `refetchOnWindowFocus: true` + non-`Infinity` `staleTime`).
+- window-focus refetch (React Query built-in, enabled by `refetchOnWindowFocus: "always"` + `staleTime: 30_000`).
 
 The "Refresh schema" button MUST be a ShadCN `Button` with a ShadCN `Tooltip`, an `aria-label`, and a loading/disabled state while refetching.
 
@@ -118,7 +118,7 @@ Changes to this subsystem MUST include tests for:
 - startup recovery UI rendering
 - adapter partial-success fallback when timezone lookup fails
 - single-emission behavior for `studio_launched`
-- introspection refetching when the window regains focus (proves `staleTime` is not `Infinity` and `refetchOnWindowFocus` is enabled)
+- introspection refetching when the window regains focus (proves `staleTime` is the 30s throttle and `refetchOnWindowFocus: "always"` refetches even while fresh data is still cached)
 - `refreshSchema` invalidating and triggering an introspection refetch
 - self-heal on a Postgres type-mismatch write error (SQLSTATE `42804` / `22P02`) without swallowing the user-facing error
 

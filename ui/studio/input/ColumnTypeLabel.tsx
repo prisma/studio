@@ -45,6 +45,11 @@ export function ColumnTypeLabel(
               <button
                 type="button"
                 aria-label={`Column type: ${typeName}`}
+                // Keep this label out of the tab order: PopoverCellContent does
+                // not override `onOpenAutoFocus` and no editor input uses
+                // `autoFocus`, so Radix focuses the first tabbable element on
+                // popover open and would steal focus from the editor input.
+                tabIndex={-1}
                 className="inline-flex items-center gap-1 rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
                 <Info size={11} className="text-muted-foreground/70" />
