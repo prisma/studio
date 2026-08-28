@@ -43,41 +43,41 @@ proposals: on
 
 ## Local gates
 
-The command chain that must be green before any PR flips ready:
+**This repo's gates run in CI, not in your job.** The `ci` workflow
+(`.github/workflows/ci.yml`) runs the full chain on every pull request and on every push
+to a `bot/**` branch:
 
+```sh
+pnpm typecheck && pnpm lint && pnpm test && pnpm build && pnpm check:exports
 ```
-pnpm install --frozen-lockfile
-pnpm typecheck && pnpm lint && CI=1 pnpm test && pnpm build && pnpm check:exports
-```
+
+Your job holds credentials; CI holds none. That split is deliberate and it is the
+security boundary of this factory, so:
+
+- **Never execute repository code in your job.** No `pnpm install`, no `pnpm test`, no
+  `pnpm build`, no `bun …`, no `node …` against repo files, no scripts from
+  `package.json`. Read, edit, commit, push. The run image intentionally ships without
+  `pnpm` or `bun`; do not install them.
+- **"Are the gates green?" means "is the `ci` workflow green at this head?"** Read it
+  with `gh pr checks <n>` (or `gh run list --branch <branch>`). The checks are named
+  `typecheck`, `lint`, `test`, and `build`. All four must pass at the current head SHA —
+  a pending or failed check is not green, and a check from an older commit doesn't count.
+- **Builder:** commit and push at logical points; before flipping a PR ready, wait for CI
+  on the final commit and act on what it reports. Where the loop prompt says "run the
+  local gates", read: push and wait for `ci`.
+- **Reviewer:** the hard gate's "required CI checks" are these four. Never run the
+  chain yourself.
+- A red check is a finding to fix by editing code, never by touching `ci.yml`,
+  `vitest.config.ts`, lint config, or test expectations to make it pass (policy § The
+  safety floor).
 
 Notes on the gates:
 
-- `CI=1 pnpm test` runs every vitest project (checkpoint, data, demo, release, ui, e2e)
-  once. Vitest only enters watch mode when `CI` is unset — Actions sets it, a local
-  shell may not, hence the explicit `CI=1`.
-  The MySQL integration suites in `data/mysql-core/` self-skip unless
-  `STUDIO_MYSQL_TEST_URL` is set — there is no MySQL/Vitess in the run image, so they are
-  expected to skip. Never set that variable to something fake to force them.
-- Two heavyweight suites are excluded by default (see `vitest.config.ts`,
-  `STUDIO_INCLUDE_HEAVY_LOCAL_TESTS`). Leave that as is.
-- `pnpm check:exports` needs `dist/` — run it after `pnpm build`.
-- `pnpm lint:fix` exists; use it for formatting, then re-run `pnpm lint` to confirm.
-- Always run `pnpm test`, never `bun test` — the repo's tests are vitest.
-
-### CI on this repo, and what "CI green" means here
-
-This repo has no CI workflow that runs the gate chain. The only check that runs on a PR
-is **`compute preview`** (`.github/workflows/compute-preview.yml`): it installs, runs
-`pnpm build:deploy`, and deploys a preview — i.e. it proves the build succeeds, nothing
-more. So for the reviewer's hard gate, "all required checks green" means that one check.
-
-Because CI proves so little here, **the local gate chain above is the real verification,
-and it runs on both sides:**
-
-- **Builder:** run the full chain before flipping the PR ready (as the loop prompt says).
-- **Reviewer:** before posting `✅ review clean at <sha>`, run the full chain yourself in
-  your cold worktree of the PR head. A red chain is a finding — fix it or ask, never mark
-  clean. Don't trust the builder's claim that it passed; re-run it.
+- The MySQL integration suites in `data/mysql-core/` self-skip in CI (no
+  `STUDIO_MYSQL_TEST_URL`); two heavyweight suites are excluded by default (see
+  `vitest.config.ts`). Both are expected.
+- `pnpm lint:fix` exists but is a local-machine convenience — you can't run it. Fix lint
+  findings by hand from the CI log.
 
 ## Project pointers
 
@@ -96,8 +96,9 @@ style:
   adapters, and integration story. Update it when the public surface changes.
 - `RELEASE.md` and `.changeset/` — releases are changeset-driven. **A PR that changes
   the published package (anything under `data/`, `ui/`, `lib/`, or the `exports` map)
-  must include a changeset** (`pnpm changeset`, or write the `.changeset/*.md` file by
-  hand: frontmatter `"@prisma/studio-core": patch|minor`, then a one-line summary).
+  must include a changeset** — write the `.changeset/<name>.md` file by hand:
+  frontmatter `"@prisma/studio-core": patch|minor`, then a one-line summary (you can't
+  run `pnpm changeset`).
   Never bump `package.json` version or edit `CHANGELOG.md` by hand — the `version
   packages` workflow owns those.
 - `.agents/skills/` — repo-local skills (ShadCN).
@@ -121,4 +122,7 @@ against them:
   (public API surface — a mistake ships to every consumer);
 - `.github/workflows/publish.yml`, `version-packages.yml`, `compute-preview.yml` and
   `scripts/release/` (release pipeline);
-- `pnpm-lock.yaml` beyond what a requested dependency change strictly needs.
+- `pnpm-lock.yaml`. You cannot run `pnpm` in your job, so you cannot regenerate the
+  lockfile — which means **you cannot add, remove, or bump a dependency.** If an issue
+  needs one, stop and ask (`agent:needs-reply`): say which package and why, and let a
+  human land the dependency change first. Never hand-edit the lockfile.
