@@ -1,0 +1,175 @@
+# The factory's entire runtime. GitHub receives these events natively — there is no
+# server, no webhook receiver, no cron host, and nothing to deploy.
+#
+# Events give latency; the scheduled sweep gives correctness. A concurrency group holds
+# at most one running + one pending job per loop — a burst of events can drop a pending
+# run, and that's fine: all state lives in GitHub, so the next event or sweep picks up
+# exactly where things stand. Fork-PR events carry no secrets and are skipped here; the
+# sweep covers fork PRs labeled bot:review.
+name: factory
+
+on:
+  issues:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+  pull_request:
+    types: [labeled, ready_for_review, synchronize]
+  pull_request_review_comment:
+    types: [created]
+  check_suite:
+    types: [completed] # CI settling on a PR head — the moment the reviewer's gate becomes decidable
+  schedule:
+    - cron: "*/15 * * * *" # the backstop sweep; events do the fast path
+  workflow_dispatch:
+
+# The GITHUB_TOKEN is only used to pull the container image. All git/GitHub work runs on
+# a per-job App installation token — App-authored pushes and PRs DO trigger CI and these
+# workflows, which the default GITHUB_TOKEN deliberately would not.
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  preflight:
+    # Secrets aren't visible to job-level `if` expressions, so this small job decides
+    # whether the factory is actually configured: App credentials, a Claude credential,
+    # and the container image in ghcr. Until setup completes (SETUP.md) — e.g. right
+    # after copying these files into a repo — every run skips green here instead of
+    # failing red at the image pull.
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - id: check
+        env:
+          APP_ID: ${{ secrets.FACTORY_APP_ID }}
+          APP_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ghcr.io/${{ github.repository }}/factory:latest
+        run: |
+          ready=true
+          if [ -z "$APP_ID" ] || [ -z "$APP_KEY" ]; then
+            echo "::warning::factory is not configured: FACTORY_APP_ID / FACTORY_APP_PRIVATE_KEY secrets are missing (see SETUP.md) — skipping"
+            ready=false
+          fi
+          if [ -z "$API_KEY" ] && [ -z "$OAUTH" ]; then
+            echo "::warning::factory is not configured: set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN (see SETUP.md) — skipping"
+            ready=false
+          fi
+          if [ "$ready" = true ]; then
+            echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null 2>&1
+            if ! docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
+              echo "::warning::$IMAGE does not exist — run the factory-image workflow once to build it — skipping"
+              ready=false
+            fi
+          fi
+          echo "ready=$ready" >>"$GITHUB_OUTPUT"
+
+  builder:
+    # Wake on: a maintainer labeling an issue bot:build (build) or bot:idea (shape), a
+    # write-access comment on an issue (a reply to a parked question, or steering), the
+    # sweep, or a manual kick. route.sh re-checks everything cheaply and exits fast when
+    # there's nothing to do.
+    needs: preflight
+    if: >
+      needs.preflight.outputs.ready == 'true' && (
+      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' &&
+        (github.event.label.name == 'bot:build' || github.event.label.name == 'bot:idea')) ||
+      (github.event_name == 'issue_comment' && !github.event.issue.pull_request &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)))
+    runs-on: ubuntu-latest
+    concurrency:
+      group: factory-builder
+      cancel-in-progress: false
+    container:
+      image: ghcr.io/${{ github.repository }}/factory:latest
+      # The package is private by default; GITHUB_TOKEN is the pull secret.
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        id: app
+        with:
+          app-id: ${{ secrets.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+
+      # Always the DEFAULT branch — even on PR events — so the prompts and route script
+      # are the human-merged versions. A PR can never rewrite the agent's instructions.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.repository.default_branch || github.ref }}
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+
+      - name: Route
+        run: .factory/route.sh builder
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          FACTORY_BOT_LOGIN: ${{ steps.app.outputs.app-slug }}[bot]
+          # Set one. CLAUDE_CODE_OAUTH_TOKEN uses a Claude subscription.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Optional model pin (repo variable). Empty means the CLI default.
+          ANTHROPIC_MODEL: ${{ vars.FACTORY_MODEL }}
+
+  reviewer:
+    # Wake on: a PR labeled bot:review, the bot's PRs flipping ready, new commits on a
+    # watched bot:review PR, CI settling on a PR head (the moment the hard gate becomes
+    # decidable), write-access comments on PRs (conversation and inline review threads),
+    # the sweep, or a manual kick. Deliberately NOT the bot's own fix-pushes: the cold
+    # re-review after a fix waits for CI to complete on the new head, which keeps the
+    # clean-cycle rule's independence temporal as well as contextual. Same-repo PR heads
+    # only — fork events have no secrets.
+    needs: preflight
+    if: >
+      needs.preflight.outputs.ready == 'true' && (
+      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        ((github.event.action == 'labeled' && github.event.label.name == 'bot:review') ||
+         (github.event.action == 'ready_for_review' && endsWith(github.event.pull_request.user.login, '[bot]')) ||
+         (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'bot:review')))) ||
+      (github.event_name == 'check_suite' &&
+        github.event.check_suite.pull_requests[0] &&
+        github.event.check_suite.head_branch != github.event.repository.default_branch) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
+      (github.event_name == 'pull_request_review_comment' &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)))
+    runs-on: ubuntu-latest
+    concurrency:
+      group: factory-reviewer
+      cancel-in-progress: false
+    container:
+      image: ghcr.io/${{ github.repository }}/factory:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        id: app
+        with:
+          app-id: ${{ secrets.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.repository.default_branch || github.ref }}
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+
+      - name: Route
+        run: .factory/route.sh reviewer
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          FACTORY_BOT_LOGIN: ${{ steps.app.outputs.app-slug }}[bot]
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_MODEL: ${{ vars.FACTORY_MODEL }}
