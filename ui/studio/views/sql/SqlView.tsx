@@ -29,6 +29,7 @@ import { TableHead, TableRow } from "../../../components/ui/table";
 import { useColumnPinning } from "../../../hooks/use-column-pinning";
 import { useIntrospection } from "../../../hooks/use-introspection";
 import { useNavigation } from "../../../hooks/use-navigation";
+import { cn } from "../../../lib/utils";
 import type { CellProps } from "../../cell/Cell";
 import { Cell } from "../../cell/Cell";
 import { getCell } from "../../cell/get-cell";
@@ -581,6 +582,8 @@ export function SqlView(_props: ViewProps) {
     resetKey: visualizationResetKey,
     rows: result?.rows ?? EMPTY_SQL_RESULT_ROWS,
   });
+  const hasResult = result != null;
+  const editorMaxHeight = hasResult ? "40vh" : undefined;
 
   function applyAiSqlGenerationResult(args: {
     aiQueryRequest: string;
@@ -1157,67 +1160,130 @@ export function SqlView(_props: ViewProps) {
         ) : null}
         {result ? (
           <div
-            className="flex items-center justify-between gap-3 text-xs text-muted-foreground"
-            data-testid="sql-result-summary"
+            className={cn(
+              "flex min-h-0 flex-col overflow-hidden rounded-md border border-border bg-background",
+              hasResult ? "flex-none" : "flex-1",
+            )}
+            data-testid="sql-editor-scroll-container"
           >
-            <div>
-              {result.rowCount} row(s) returned in {result.durationMs}ms
-            </div>
-            {hasAiSql ? (
-              <div className="flex min-w-0 items-center justify-end">
-                {visualization.state.status === "idle" &&
-                visualization.canGenerate ? (
-                  <Button
-                    className="h-auto rounded-none px-0 py-0 text-xs text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground"
-                    data-testid="sql-result-visualization-action"
-                    onClick={visualization.generateVisualization}
-                    size="sm"
-                    variant="ghost"
-                  >
-                    <Sparkles data-icon="inline-start" />
-                    Visualize data with AI
-                  </Button>
-                ) : null}
-                {visualization.state.status === "loading" ? (
-                  <div
-                    className="flex items-center gap-2 text-xs text-muted-foreground"
-                    data-testid="sql-result-visualization-action"
-                  >
-                    <Loader2 className="size-4 animate-spin" />
-                    Generating graph...
-                  </div>
-                ) : null}
-                {visualization.state.status === "error" ? (
-                  <div
-                    className="max-w-[32rem] text-right text-xs text-destructive"
-                    data-testid="sql-result-visualization-action"
-                  >
-                    {visualization.state.message}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
+            <CodeMirror
+              aria-label="SQL editor"
+              basicSetup={{
+                foldGutter: false,
+              }}
+              className={[
+                "min-h-0 flex-1",
+                "[&_.cm-editor]:!border-0 [&_.cm-editor]:font-mono",
+                "[&_.cm-gutters]:border-r [&_.cm-gutters]:border-border [&_.cm-gutters]:bg-muted/30",
+                "[&_.cm-line]:text-[15px] [&_.cm-scroller]:font-mono",
+              ].join(" ")}
+              extensions={sqlEditorExtensions}
+              height={hasResult ? undefined : "100%"}
+              minHeight="128px"
+              maxHeight={editorMaxHeight}
+              onCreateEditor={(view) => {
+                editorViewRef.current = view;
+                const cursorIndex = view.state.doc.length;
+                view.dispatch({
+                  selection: {
+                    anchor: cursorIndex,
+                    head: cursorIndex,
+                  },
+                });
+                view.focus();
+              }}
+              onChange={(value) => {
+                hasUserEditedEditorValueRef.current = true;
+                latestEditorValueRef.current = value;
+                setEditorValue(value);
+              }}
+              placeholder="Write SQL..."
+              theme={isDarkMode ? "dark" : "light"}
+              value={editorValue}
+            />
           </div>
-        ) : null}
-      </div>
+          {aiGenerationErrorMessage ? (
+            <div className="text-sm text-destructive">
+              <strong>AI SQL generation error:</strong> {aiGenerationErrorMessage}
+            </div>
+          ) : null}
+          {aiGenerationRationale ? (
+            <div className="text-xs text-muted-foreground">
+              <strong>AI rationale:</strong> {aiGenerationRationale}
+            </div>
+          ) : null}
+          {errorMessage ? (
+            <div className="text-sm text-destructive">
+              <strong>Query error:</strong> {errorMessage}
+            </div>
+          ) : null}
+          {result ? (
+            <div
+              className="flex items-center justify-between gap-3 text-xs text-muted-foreground"
+              data-testid="sql-result-summary"
+            >
+              <div>
+                {result.rowCount} row(s) returned in {result.durationMs}ms
+              </div>
+              {hasAiSql ? (
+                <div className="flex min-w-0 items-center justify-end">
+                  {visualization.state.status === "idle" &&
+                  visualization.canGenerate ? (
+                    <Button
+                      className="h-auto rounded-none px-0 py-0 text-xs text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground"
+                      data-testid="sql-result-visualization-action"
+                      onClick={visualization.generateVisualization}
+                      size="sm"
+                      variant="ghost"
+                    >
+                      <Sparkles data-icon="inline-start" />
+                      Visualize data with AI
+                    </Button>
+                  ) : null}
+                  {visualization.state.status === "loading" ? (
+                    <div
+                      className="flex items-center gap-2 text-xs text-muted-foreground"
+                      data-testid="sql-result-visualization-action"
+                    >
+                      <Loader2 className="size-4 animate-spin" />
+                      Generating graph...
+                    </div>
+                  ) : null}
+                  {visualization.state.status === "error" ? (
+                    <div
+                      className="max-w-[32rem] text-right text-xs text-destructive"
+                      data-testid="sql-result-visualization-action"
+                    >
+                      {visualization.state.message}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
 
-      <div
-        data-testid="sql-result-grid-container"
-        className="grow min-h-0 flex flex-col"
-      >
-        {result == null ? null : (
-          <SqlResultGrid
-            isRunning={isRunning}
-            paginationState={paginationState}
-            pinnedColumnIds={pinnedColumnIds}
-            result={result}
-            rowSelectionState={rowSelectionState}
-            setPaginationState={setPaginationState}
-            setPinnedColumnIds={setPinnedColumnIds}
-            setRowSelectionState={setRowSelectionState}
-            visualizationState={visualization.state}
-          />
-        )}
+        <div
+          data-testid="sql-result-grid-container"
+          className={cn(
+            "flex min-h-0 flex-col",
+            result != null ? "flex-1" : "flex-none",
+          )}
+        >
+          {result == null ? null : (
+            <SqlResultGrid
+              isRunning={isRunning}
+              paginationState={paginationState}
+              pinnedColumnIds={pinnedColumnIds}
+              result={result}
+              rowSelectionState={rowSelectionState}
+              setPaginationState={setPaginationState}
+              setPinnedColumnIds={setPinnedColumnIds}
+              setRowSelectionState={setRowSelectionState}
+              visualizationState={visualization.state}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
