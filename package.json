@@ -1,6 +1,6 @@
 {
   "name": "@prisma/studio-core",
-  "version": "0.33.0",
+  "version": "0.34.0",
   "description": "Modular Prisma Studio components",
   "repository": {
     "type": "git",

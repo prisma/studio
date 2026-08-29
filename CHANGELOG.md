@@ -1,5 +1,35 @@
 # @prisma/studio-core
 
+## 0.34.0
+
+### Minor Changes
+
+- dc44731: Remember the schema visualizer's manual table layout. Dragged node positions are now stored in localStorage-backed UI state scoped per schema, so a manual arrangement survives leaving the visualizer and full page reloads. Tables without a remembered position (for example newly created ones) fall back to ELK auto-layout, and the `Reset layout` action clears the remembered layout.
+- 1fbd26b: Show the total row count of the current result set in the data grid footer. The count uses the same filtered total that drives pagination, so it respects active filters and row search, formats with thousands separators, and hides when the adapter cannot count rows.
+
+### Patch Changes
+
+- 1b72949: Fix white page background around Studio in dark mode. When Studio runs in a full-page shell whose document has no host-authored background, the resolved theme now syncs to the document root (`color-scheme` plus Studio's background color), so overscroll areas and the space behind Studio's rounded corners match the active theme. Host pages that style their own `<html>`/`<body>` background are left untouched.
+- 6415faf: Fix PostgreSQL enum array cell updates failing with "Update Operation failed" by always writing array values as explicit `array[...]` expressions with an array-type cast instead of relying on driver-specific array parameter serialization. Also preserve the original error name when errors are deserialized from the Studio BFF transport.
+- 3e1c902: # Support libpq SSL parameters in Postgres connection strings
+
+  Consume `sslrootcert`, `sslcert`, `sslkey`, `sslpassword`, and `sslmode` client-side when building the postgres.js client instead of forwarding them to the server, which rejected connections with `unrecognized configuration parameter "sslrootcert"`. The new `createPostgresJSConnectionConfig` helper in `@prisma/studio-core/data/postgresjs` translates a connection string into a stripped connection string plus TLS options (reading certificate files from disk) for `postgres()`.
+
+- 3f4d84c: Fix grid column widths being reset when columns are pinned or unpinned. Resizing a column and then changing any column's pin state (which round-trips through the URL-backed `pinnedColumnIds` prop) wiped all user column widths and custom column ordering back to defaults. The reset now only happens when the set of columns itself changes.
+- df3f210: Fix MySQL introspection failing on MariaDB. The adapter now detects MariaDB via `select version()` and uses a dedicated tables query that returns one row per column and groups the result on the client, avoiding `json_arrayagg` (missing before MariaDB 10.5), JSON casts (invalid syntax on MariaDB), and any server-side string aggregation that would be truncated at `group_concat_max_len`. Introspection also parses string-encoded `json_arrayagg` payloads returned by some MySQL transports.
+- f6b4652: Fix `TypeError: crypto.randomUUID is not a function` when Studio is served over plain HTTP on a non-localhost host (non-secure context, e.g. `http://192.168.x.x:5555`). UUID generation now falls back to a UUIDv4 built from `crypto.getRandomValues` when `crypto.randomUUID` is unavailable.
+- 9eeb555: # Show common PostgreSQL type aliases
+
+  Display native PostgreSQL catalog type names by their common SQL aliases (`int8` -> `bigint`, `int4` -> `integer`, `int2` -> `smallint`, `float8` -> `double precision`, `float4` -> `real`, `bool` -> `boolean`, `bpchar` -> `char`) in the table header, filter column picker, and schema visualizer, including array types (`int8[]` -> `bigint[]`).
+
+- 6c9e625: Fix broken horizontal scrolling in wide data tables. The column virtualization window now follows scrolling synchronously and only re-renders the grid when the set of mounted columns changes, so scrolling no longer jumps between columns and the last column is reachable. Focused-cell auto-scroll now runs at most once per focus change, so clicking a cell to edit no longer snaps the viewport back and off-screen focus targets no longer fight user scrolling. Also corrects the virtualization window offset when columns are pinned.
+- cb4f6d5: # Fix SQLite date-like column edits producing NaN
+
+  SQLite columns declared as `date`, `datetime`, or `timestamp` get NUMERIC affinity, so Studio treated their date-string values as numbers and coerced edits to `NaN`. Date-like declared types are now edited as text and stored as-is, and numeric cell edits, pastes, and filters only coerce input to a number when it actually parses as one — non-numeric text is kept as text, matching SQLite's NUMERIC-affinity semantics, so `NaN` is never written.
+
+- 3fec72a: Fix saving staged cell edits silently failing for rows loaded beyond the first batch when infinite scroll is enabled. Row update, delete, and insert mutations now target the same rows-collection scope the grid displays instead of the paginated first page.
+- 099b7da: Allow UUID v6–v8 values in column filters.
+
 ## 0.33.0
 
 ### Minor Changes
