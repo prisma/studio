@@ -4,18 +4,17 @@ import { CheckboxTable } from "@/ui/components/ui/checkbox-table";
 
 export interface SelectRowCellProps {
   row: Row<Record<string, unknown>>;
-  readonly: boolean;
 }
 
 export function SelectRowCell(props: SelectRowCellProps) {
-  const { row, readonly } = props;
+  const { row } = props;
 
   return (
-    <CheckboxTable
-      checked={row.getIsSelected()}
-      disabled={!row.getCanSelect() || readonly}
-      onCheckedChange={row.getToggleSelectedHandler()}
-      className="w-full h-full rounded-none border-none"
-    />
+    <div className="flex items-center justify-center h-full w-full">
+      <CheckboxTable
+        checked={row.getIsSelected()}
+        className="pointer-events-none h-4 w-4"
+      />
+    </div>
   );
 }

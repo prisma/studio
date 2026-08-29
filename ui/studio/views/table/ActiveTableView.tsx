@@ -65,6 +65,8 @@ import {
 } from "../../cell/Cell";
 import { getCell } from "../../cell/get-cell";
 import { Link, RelationLink } from "../../cell/Link";
+import { SelectHeaderCell } from "../../cell/SelectHeaderCell";
+import { SelectRowCell } from "../../cell/SelectRowCell";
 import { WriteableCell } from "../../cell/WriteableCell";
 import { useRegisterCommandPaletteActions } from "../../CommandPalette";
 import { type TableUiState, useStudio } from "../../context";
@@ -1546,15 +1548,21 @@ export function ActiveTableView(_props: ViewProps) {
       size: 35,
       minSize: 35,
       header({ table }) {
-        void table;
         return (props: Omit<CellProps, "children" | "ref">) => {
-          return <TableHead {...props} aria-label="Row selection spacer" />;
+          return (
+            <TableHead {...props} aria-label="Row selection spacer">
+              <SelectHeaderCell table={table} />
+            </TableHead>
+          );
         };
       },
       cell({ row }) {
-        void row;
         return (props: Omit<CellProps, "children" | "ref">) => {
-          return <Cell data-select="true" {...props} />;
+          return (
+            <Cell data-select="true" {...props}>
+              <SelectRowCell row={row} />
+            </Cell>
+          );
         };
       },
     },

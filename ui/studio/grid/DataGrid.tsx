@@ -687,6 +687,7 @@ export function DataGrid(props: DataGridProps) {
   } | null>(null);
   const rowSelectionAnchorRef = useRef<number | null>(null);
   const rowSelectionDragRef = useRef(false);
+  const rowSelectionDragBaseRef = useRef<RowSelectionState>({});
   const previousSelectionScopeKeyRef = useRef<string | undefined>(
     selectionScopeKey,
   );
@@ -1470,6 +1471,7 @@ export function DataGrid(props: DataGridProps) {
     const handleMouseUp = (event: MouseEvent) => {
       rowSelectionDragRef.current = false;
       rowSelectionAnchorRef.current = null;
+      rowSelectionDragBaseRef.current = {};
 
       const pointerSelection = pointerSelectionRef.current;
 
@@ -1660,6 +1662,7 @@ export function DataGrid(props: DataGridProps) {
   const resetRowSelectionInteractionState = useCallback(() => {
     rowSelectionAnchorRef.current = null;
     rowSelectionDragRef.current = false;
+    rowSelectionDragBaseRef.current = {};
   }, []);
 
   const resetSelectionInteractionState = useCallback(() => {
@@ -2029,7 +2032,9 @@ export function DataGrid(props: DataGridProps) {
     (fromRowIndex: number, toRowIndex: number) => {
       const start = Math.min(fromRowIndex, toRowIndex);
       const end = Math.max(fromRowIndex, toRowIndex);
-      const nextSelection: RowSelectionState = {};
+      const nextSelection: RowSelectionState = {
+        ...rowSelectionDragBaseRef.current,
+      };
       const rowModel = table.getRowModel().rows;
 
       for (let index = start; index <= end; index++) {
@@ -2118,29 +2123,33 @@ export function DataGrid(props: DataGridProps) {
         return;
       }
 
-      if (isPrimaryButton) {
-        event.preventDefault();
-      }
+      event.preventDefault();
       event.stopPropagation();
+      clearNativeTextSelection();
+      clearCellSelectionState();
 
-      if (event.shiftKey) {
-        clearNativeTextSelection();
-        clearCellSelectionState();
-        const nextSelection = { ...rowSelectionState };
+      const previousSelection = rowSelectionState;
+      const isSelecting = previousSelection[rowId] !== true;
+      const nextSelection = { ...previousSelection };
 
-        if (nextSelection[rowId] === true) {
-          delete nextSelection[rowId];
-        } else {
-          nextSelection[rowId] = true;
-        }
-
-        setRowSelection(nextSelection);
-        rowSelectionDragRef.current = false;
-        rowSelectionAnchorRef.current = rowIndex;
-        return;
+      if (isSelecting) {
+        nextSelection[rowId] = true;
+      } else {
+        delete nextSelection[rowId];
       }
 
-      selectSingleRowMode({ rowId, rowIndex, drag: isPrimaryButton });
+      setRowSelection(nextSelection);
+      rowSelectionAnchorRef.current = rowIndex;
+
+      // Shift+click toggles a single row without starting a drag-range
+      // selection; deselecting a row also skips arming the drag so a tiny
+      // mouse movement afterward doesn't re-select it via mouseenter.
+      if (isSelecting && !event.shiftKey) {
+        rowSelectionDragBaseRef.current = previousSelection;
+        rowSelectionDragRef.current = true;
+      } else {
+        rowSelectionDragRef.current = false;
+      }
     },
     [
       clearCellSelectionState,

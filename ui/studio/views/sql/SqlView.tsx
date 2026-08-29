@@ -32,6 +32,8 @@ import { useNavigation } from "../../../hooks/use-navigation";
 import type { CellProps } from "../../cell/Cell";
 import { Cell } from "../../cell/Cell";
 import { getCell } from "../../cell/get-cell";
+import { SelectHeaderCell } from "../../cell/SelectHeaderCell";
+import { SelectRowCell } from "../../cell/SelectRowCell";
 import { useStudio } from "../../context";
 import { DataGrid, type DataGridProps } from "../../grid/DataGrid";
 import { DataGridDraggableHeaderCell } from "../../grid/DataGridDraggableHeaderCell";
@@ -103,15 +105,21 @@ const SQL_ROW_SELECTION_COLUMN_DEF = {
   size: 35,
   minSize: 35,
   header({ table }) {
-    void table;
     return (props: Omit<CellProps, "children" | "ref">) => {
-      return <TableHead {...props} aria-label="Row selection spacer" />;
+      return (
+        <TableHead {...props} aria-label="Row selection spacer">
+          <SelectHeaderCell table={table} />
+        </TableHead>
+      );
     };
   },
   cell({ row }) {
-    void row;
     return (props: Omit<CellProps, "children" | "ref">) => {
-      return <Cell data-select="true" {...props} />;
+      return (
+        <Cell data-select="true" {...props}>
+          <SelectRowCell row={row} />
+        </Cell>
+      );
     };
   },
 } satisfies ColumnDef<Record<string, unknown>>;
