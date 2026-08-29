@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 
 import { useStudio } from "../studio/context";
+import { selfHealOnWriteError } from "./refresh-introspection";
 import {
   useActiveTableQueryCollection,
   type UseActiveTableQueryProps,
@@ -8,7 +9,7 @@ import {
 import { addRowIdToResult } from "./utils/add-row-id-to-result";
 
 export function useActiveTableInsert(query: UseActiveTableQueryProps) {
-  const { adapter, onEvent } = useStudio();
+  const { adapter, onEvent, queryClient } = useStudio();
   const { activeTable, refetch } = useActiveTableQueryCollection(query);
   const { schema = null, name: table = null } = activeTable ?? {};
 
@@ -33,6 +34,12 @@ export function useActiveTableInsert(query: UseActiveTableQueryProps) {
             error,
           },
         });
+
+        // Schema drift can surface as a Postgres type-mismatch on insert.
+        // Invalidate cached introspection so the editor can re-render with
+        // the correct column type, then still throw so the user-facing error
+        // is preserved.
+        selfHealOnWriteError({ error, queryClient });
 
         throw error;
       }
