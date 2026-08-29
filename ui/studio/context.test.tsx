@@ -26,6 +26,21 @@ vi.mock("../../checkpoint", () => ({
   check: vi.fn(() => Promise.resolve()),
 }));
 
+// std-env evaluates `isCI` once at import time from the environment, so telemetry
+// tests can't control it through process.env. Pin it here (off by default) so the
+// suite behaves the same on a developer machine and on CI.
+const stdEnvState = vi.hoisted(() => ({ isCI: false }));
+
+vi.mock("std-env", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("std-env")>();
+  return {
+    ...actual,
+    get isCI() {
+      return stdEnvState.isCI;
+    },
+  };
+});
+
 vi.mock("./NuqsHashAdapter", () => ({
   NuqsHashAdapter: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
@@ -192,6 +207,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
   delete process.env.CHECKPOINT_DISABLE;
+  stdEnvState.isCI = false;
   delete (globalThis as { VERSION_INJECTED_AT_BUILD_TIME?: string })
     .VERSION_INJECTED_AT_BUILD_TIME;
 });
@@ -439,6 +455,24 @@ describe("StudioContextProvider telemetry opt-out", () => {
         product: "prisma-studio-embedded",
       }),
     );
+
+    harness.cleanup();
+  });
+
+  it("skips launch telemetry on CI", () => {
+    stdEnvState.isCI = true;
+    const harness = renderHarness();
+
+    act(() => {
+      harness.getLatestStudio()?.onEvent({
+        name: "studio_launched",
+        payload: {
+          tableCount: 3,
+        },
+      });
+    });
+
+    expect(check).not.toHaveBeenCalled();
 
     harness.cleanup();
   });
