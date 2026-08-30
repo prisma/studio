@@ -39,10 +39,15 @@ function parseOptionalBooleanEnv(
 }
 
 export function resolveDemoAiEnabled(args: {
-  anthropicApiKey: string;
+  anthropicApiKey?: string;
   envValue?: string;
+  orcaRouterApiKey?: string;
 }): boolean {
-  if (args.anthropicApiKey.trim().length === 0) {
+  const hasConfiguredProvider =
+    (args.anthropicApiKey?.trim().length ?? 0) > 0 ||
+    (args.orcaRouterApiKey?.trim().length ?? 0) > 0;
+
+  if (!hasConfiguredProvider) {
     return false;
   }
 

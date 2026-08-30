@@ -24,6 +24,12 @@ The local `ppg-dev` demo can be packaged into a Compute-ready artifact instead o
 The deploy builder precompiles the browser JS/CSS, injects those assets into the bundled server, copies Prisma Dev's PGlite runtime assets into the bundle with stable filenames, and bundles the Prisma Streams worker into `touch/` so the Compute artifact can boot and keep WAL-to-stream syncing alive outside the repo checkout.
 The same demo entrypoint can also run against external development infrastructure through `pnpm demo:ppg -- --database-url <postgres-url> --streams-server-url <streams-url>`, or in streams-only mode through `pnpm demo:ppg -- --streams-server-url <streams-url>`. In those modes, Studio keeps serving the local shell and `/api/streams` proxy, but skips local Prisma Dev startup, local Streams startup, WAL wiring, and local seeding so you can point the demo at an already-running backend stack.
 
+## OrcaRouter Demo AI Provider
+
+The `ppg-dev` demo can route all Studio AI flows (table filtering, SQL generation, SQL result visualization, and Query Insights recommendations) through OrcaRouter's OpenAI-compatible endpoint by setting `ORCAROUTER_API_KEY`.
+OrcaRouter exposes a provider/model namespace across many models behind one endpoint, and when both `ANTHROPIC_API_KEY` and `ORCAROUTER_API_KEY` are present the demo prefers OrcaRouter.
+The shared `llm` hook contract is unchanged, so the rest of the demo and the embeddable Studio surface are unaffected.
+
 ## Streams-Only Studio Shell
 
 Studio can run without a database connection when a Streams server is configured, which makes it usable as a focused event-log and stream-search tool.
