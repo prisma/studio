@@ -4,6 +4,7 @@ import { Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import type {
   ColumnDef,
+  ColumnPinningState,
   PaginationState,
   RowSelectionState,
 } from "@tanstack/react-table";
@@ -29,6 +30,7 @@ import { TableHead, TableRow } from "../../../components/ui/table";
 import { useColumnPinning } from "../../../hooks/use-column-pinning";
 import { useIntrospection } from "../../../hooks/use-introspection";
 import { useNavigation } from "../../../hooks/use-navigation";
+import { useUiState } from "../../../hooks/use-ui-state";
 import type { CellProps } from "../../cell/Cell";
 import { Cell } from "../../cell/Cell";
 import { getCell } from "../../cell/get-cell";
@@ -36,6 +38,15 @@ import { useStudio } from "../../context";
 import { DataGrid, type DataGridProps } from "../../grid/DataGrid";
 import { DataGridDraggableHeaderCell } from "../../grid/DataGridDraggableHeaderCell";
 import { DataGridHeader } from "../../grid/DataGridHeader";
+import { getSelectionExportColumnIds } from "../../grid/selection-export";
+import {
+  getCellSelectionRange,
+  getSelectedRowIds,
+  GRID_SELECTION_MACHINE_INITIAL_STATE,
+  type GridSelectionMachineState,
+  rowIdsToRowSelectionState,
+} from "../../grid/selection-state-machine";
+import { SelectionExportMenu } from "../../grid/SelectionExportMenu";
 import { StudioHeader } from "../../StudioHeader";
 import type { ViewProps } from "../View";
 import { resolveAiSqlGeneration } from "./sql-ai-generation";
@@ -88,6 +99,11 @@ const SQL_VIEW_GRID_SCOPE = "sql:view:grid";
 const SQL_VIEW_TABLE_NAME = "__sql_result__";
 const SQL_VIEW_SCHEMA = "__sql_result__";
 const EMPTY_SQL_RESULT_ROWS: Record<string, unknown>[] = [];
+const EMPTY_SQL_RESULT_COLUMN_ORDER: string[] = [];
+const EMPTY_SQL_RESULT_COLUMN_PINNING: ColumnPinningState = {
+  left: [],
+  right: [],
+};
 const MAX_AI_SQL_VALIDATION_CORRECTIONS = 1;
 const DEFAULT_PAGINATION_STATE: PaginationState = {
   pageIndex: 0,
@@ -116,6 +132,81 @@ const SQL_ROW_SELECTION_COLUMN_DEF = {
   },
 } satisfies ColumnDef<Record<string, unknown>>;
 
+function buildSqlGridRows(resultRows: Record<string, unknown>[]): SqlGridRow[] {
+  return resultRows.map((row, index) => {
+    return {
+      ...row,
+      __ps_rowid: `sql-row-${index}`,
+    };
+  });
+}
+
+function getSqlResultColumnIds(
+  resultRows: Record<string, unknown>[],
+): string[] {
+  const ids: string[] = [];
+  const seenIds = new Set<string>();
+
+  for (const row of resultRows) {
+    for (const key of Object.keys(row)) {
+      if (seenIds.has(key)) {
+        continue;
+      }
+
+      seenIds.add(key);
+      ids.push(key);
+    }
+  }
+
+  return ids;
+}
+
+/**
+ * Owns the selection subscription so that selecting rows or cells never
+ * rerenders the SQL editor below the toolbar.
+ */
+const SqlSelectionExportMenu = memo(function SqlSelectionExportMenu(props: {
+  resultRows: Record<string, unknown>[];
+}) {
+  const { resultRows } = props;
+  const [gridSelectionState] = useUiState<GridSelectionMachineState>(
+    `datagrid:${SQL_VIEW_GRID_SCOPE}:selection-state`,
+    GRID_SELECTION_MACHINE_INITIAL_STATE,
+  );
+  const [gridColumnOrder] = useUiState<string[]>(
+    `datagrid:${SQL_VIEW_GRID_SCOPE}:column-order`,
+    EMPTY_SQL_RESULT_COLUMN_ORDER,
+  );
+  const [gridColumnPinning] = useUiState<ColumnPinningState>(
+    `datagrid:${SQL_VIEW_GRID_SCOPE}:column-pinning`,
+    EMPTY_SQL_RESULT_COLUMN_PINNING,
+  );
+  const rows = useMemo(() => buildSqlGridRows(resultRows), [resultRows]);
+  const columnIds = useMemo(
+    () =>
+      getSelectionExportColumnIds({
+        columnOrder: gridColumnOrder,
+        columnPinning: gridColumnPinning,
+        defaultColumnIds: getSqlResultColumnIds(resultRows),
+      }),
+    [gridColumnOrder, gridColumnPinning, resultRows],
+  );
+  const rowSelectionState = useMemo(
+    () => rowIdsToRowSelectionState(getSelectedRowIds(gridSelectionState)),
+    [gridSelectionState],
+  );
+
+  return (
+    <SelectionExportMenu
+      cellSelectionRange={getCellSelectionRange(gridSelectionState)}
+      columnIds={columnIds}
+      filenameBase="sql-result"
+      rows={rows}
+      rowSelectionState={rowSelectionState}
+    />
+  );
+});
+
 interface SqlResultGridProps {
   isRunning: boolean;
   paginationState: DataGridProps["paginationState"];
@@ -141,31 +232,14 @@ const SqlResultGrid = memo(function SqlResultGrid(props: SqlResultGridProps) {
     visualizationState,
   } = props;
   const resultRows = useMemo(() => result.rows, [result]);
-  const rows = useMemo<SqlGridRow[]>(() => {
-    return resultRows.map((row, index) => {
-      return {
-        ...row,
-        __ps_rowid: `sql-row-${index}`,
-      };
-    });
-  }, [resultRows]);
-  const resultColumnIds = useMemo(() => {
-    const ids: string[] = [];
-    const seenIds = new Set<string>();
-
-    for (const row of resultRows) {
-      for (const key of Object.keys(row)) {
-        if (seenIds.has(key)) {
-          continue;
-        }
-
-        seenIds.add(key);
-        ids.push(key);
-      }
-    }
-
-    return ids;
-  }, [resultRows]);
+  const rows = useMemo<SqlGridRow[]>(
+    () => buildSqlGridRows(resultRows),
+    [resultRows],
+  );
+  const resultColumnIds = useMemo(
+    () => getSqlResultColumnIds(resultRows),
+    [resultRows],
+  );
   const columnMetadataById = useMemo<Record<string, Column>>(() => {
     const metadata: Record<string, Column> = {};
 
@@ -1018,10 +1092,18 @@ export function SqlView(_props: ViewProps) {
       {isRunning ? "Cancel" : "Run SQL"}
     </Button>
   );
+  const sqlToolbarActions = (
+    <>
+      <SqlSelectionExportMenu
+        resultRows={result?.rows ?? EMPTY_SQL_RESULT_ROWS}
+      />
+      {runSqlButton}
+    </>
+  );
 
   return (
     <div className="flex flex-1 min-h-0 flex-col h-full overflow-hidden">
-      <StudioHeader endContent={runSqlButton}>
+      <StudioHeader endContent={sqlToolbarActions}>
         {hasAiSql ? (
           <div className="flex min-w-0 grow items-center gap-2">
             <Input
