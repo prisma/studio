@@ -143,8 +143,11 @@ export function getSelectionExportColumnIds(args: {
   // Same order as the grid renders: left-pinned, then the visible order, then
   // right-pinned.
   const orderedColumnIds = [
-    ...columnOrder.filter((columnId) => validColumnIds.has(columnId)),
-    ...defaultColumnIds.filter((columnId) => !columnOrder.includes(columnId)),
+    ...columnOrder.filter(isExportableColumnId),
+    ...defaultColumnIds.filter(
+      (columnId) =>
+        isExportableColumnId(columnId) && !columnOrder.includes(columnId),
+    ),
   ].filter((columnId) => !pinnedColumnIds.has(columnId));
   const seen = new Set<string>();
 

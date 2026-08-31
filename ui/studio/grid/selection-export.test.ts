@@ -165,6 +165,16 @@ describe("selection-export", () => {
     ).toEqual(["created_at", "email", "id"]);
   });
 
+  it("never exports the row selection column, whatever the query returns", () => {
+    expect(
+      getSelectionExportColumnIds({
+        columnOrder: ["__ps_select", "id"],
+        columnPinning: {},
+        defaultColumnIds: ["__ps_select", "id"],
+      }),
+    ).toEqual(["id"]);
+  });
+
   it("ignores column order entries that are not part of the result", () => {
     expect(
       getSelectionExportColumnIds({
