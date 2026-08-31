@@ -1,6 +1,6 @@
 import { useIsMutating } from "@tanstack/react-query";
 import { type ColumnDef, type ColumnPinningState } from "@tanstack/react-table";
-import { ChevronDown, History, RefreshCw } from "lucide-react";
+import { History, RefreshCw } from "lucide-react";
 import {
   type Dispatch,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -31,14 +31,6 @@ import {
   AlertDialogTitle,
 } from "../../../components/ui/alert-dialog";
 import { Button, type ButtonProps } from "../../../components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "../../../components/ui/dropdown-menu";
 import { TableHead } from "../../../components/ui/table";
 import { useActiveTableInsert } from "../../../hooks/use-active-table-insert";
 import { useActiveTableQuery } from "../../../hooks/use-active-table-query";
@@ -81,6 +73,7 @@ import {
   type GridFocusedCell,
   moveFocusedCell,
 } from "../../grid/focused-cell";
+import { getSelectionExportColumnIds } from "../../grid/selection-export";
 import {
   getCellSelectionAnchor,
   getCellSelectionRange,
@@ -88,6 +81,7 @@ import {
   type GridSelectionMachineState,
   transitionGridSelectionMachine,
 } from "../../grid/selection-state-machine";
+import { SelectionExportMenu } from "../../grid/SelectionExportMenu";
 import { ExpandableSearchControl } from "../../input/ExpandableSearchControl";
 import {
   type CellEditNavigationDirection,
@@ -113,14 +107,6 @@ import {
   InlineTableFilterAddButton,
   InlineTableFiltersHeaderRow,
 } from "./InlineTableFilters";
-import {
-  buildCellSelectionExportTable,
-  buildRowSelectionExportTable,
-  buildSelectionExportFilename,
-  downloadSelectionExport,
-  type SelectionExportFormat,
-  serializeSelectionExport,
-} from "./selection-export";
 import { StagedRows } from "./StagedRows";
 import { applyAiTableFilterRequest } from "./table-ai-filter";
 import { useActiveTableRowSearch } from "./use-active-table-row-search";
@@ -376,9 +362,6 @@ export function ActiveTableView(_props: ViewProps) {
   );
   const [aiFocusRequestKey, setAiFocusRequestKey] = useState(0);
   const [gridFocusRequestId, setGridFocusRequestId] = useState(0);
-  const [isSelectionExportOpen, setSelectionExportOpen] = useState(false);
-  const [includeSelectionExportHeader, setIncludeSelectionExportHeader] =
-    useState(true);
   const [discardWiggleCount, setDiscardWiggleCount] = useState(0);
   const [isSaveDialogOpen, setSaveDialogOpen] = useState(false);
   const [isDiscardDialogOpen, setDiscardDialogOpen] = useState(false);
@@ -426,7 +409,6 @@ export function ActiveTableView(_props: ViewProps) {
       : `Open history for ${activeTable.schema}.${activeTable.name}`;
   }, [activeTable, hasPrismaWalStream, selectedRowHistoryClause]);
   const cellSelectionRange = getCellSelectionRange(gridSelectionState);
-  const hasSelectionExport = cellSelectionRange != null || selectedRowCount > 0;
   const deleteSelectionLabel = getDeleteSelectionLabel(selectedRowCount);
   const deleteConfirmationPrompt =
     getDeleteConfirmationPrompt(selectedRowCount);
@@ -563,12 +545,6 @@ export function ActiveTableView(_props: ViewProps) {
     isSaveDialogOpen,
   ]);
 
-  useEffect(() => {
-    if (!hasSelectionExport && isSelectionExportOpen) {
-      setSelectionExportOpen(false);
-    }
-  }, [hasSelectionExport, isSelectionExportOpen]);
-
   const readonly = !Object.values(activeTable?.columns ?? {}).some(
     (column) => column.pkPosition != null,
   );
@@ -639,33 +615,6 @@ export function ActiveTableView(_props: ViewProps) {
       }),
     [fallbackSelectionExportColumnIds, gridColumnOrder, gridColumnPinning],
   );
-  const selectionExportTable = useMemo(() => {
-    const exportRows = displayRows;
-
-    if (cellSelectionRange) {
-      return buildCellSelectionExportTable({
-        columnIds: selectionExportColumnIds,
-        range: cellSelectionRange,
-        rows: exportRows,
-      });
-    }
-
-    if (selectedRowCount > 0) {
-      return buildRowSelectionExportTable({
-        columnIds: selectionExportColumnIds,
-        rowSelectionState,
-        rows: exportRows,
-      });
-    }
-
-    return null;
-  }, [
-    cellSelectionRange,
-    displayRows,
-    rowSelectionState,
-    selectedRowCount,
-    selectionExportColumnIds,
-  ]);
   const editableColumnIds = useMemo(
     () => getEditableColumnIds(activeTable?.columns, readonly),
     [activeTable?.columns, readonly],
@@ -909,58 +858,6 @@ export function ActiveTableView(_props: ViewProps) {
   function confirmDeleteSelection() {
     deleteSelection();
     setDeleteDialogOpen(false);
-  }
-
-  function buildSerializedSelectionExport(
-    format: SelectionExportFormat,
-  ): string {
-    if (!selectionExportTable) {
-      return "";
-    }
-
-    return serializeSelectionExport({
-      table: selectionExportTable,
-      format,
-      includeColumnHeader: includeSelectionExportHeader,
-    });
-  }
-
-  function handleCopySelectionExport(format: SelectionExportFormat) {
-    const content = buildSerializedSelectionExport(format);
-
-    setSelectionExportOpen(false);
-
-    if (!content || typeof navigator.clipboard?.writeText !== "function") {
-      return;
-    }
-
-    void navigator.clipboard.writeText(content).catch((error) => {
-      console.error("Failed to copy selection export:", error);
-    });
-  }
-
-  function handleSaveSelectionExport(format: SelectionExportFormat) {
-    if (!activeTable) {
-      return;
-    }
-
-    const content = buildSerializedSelectionExport(format);
-
-    setSelectionExportOpen(false);
-
-    if (!content) {
-      return;
-    }
-
-    downloadSelectionExport({
-      content,
-      filename: buildSelectionExportFilename({
-        format,
-        schema: activeTable.schema,
-        table: activeTable.name,
-      }),
-      format,
-    });
   }
 
   const commandPaletteActions = useMemo(
@@ -1637,80 +1534,13 @@ export function ActiveTableView(_props: ViewProps) {
         >
           Insert row
         </Button>
-        {hasSelectionExport && (
-          <DropdownMenu
-            open={isSelectionExportOpen}
-            onOpenChange={(open) => {
-              setSelectionExportOpen(open);
-
-              if (open) {
-                setIncludeSelectionExportHeader(true);
-              }
-            }}
-          >
-            <DropdownMenuTrigger asChild>
-              <Button
-                aria-expanded={isSelectionExportOpen}
-                aria-label="Copy selection as"
-                variant="outline"
-                className={cn(
-                  "h-9 shrink-0 gap-1.5 px-3 font-sans",
-                  isSelectionExportOpen && "bg-accent text-accent-foreground",
-                )}
-              >
-                <span>copy as</span>
-                <ChevronDown className="size-3.5 text-muted-foreground" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              side="bottom"
-              className="w-[220px] max-w-[calc(100vw-2rem)] overflow-hidden p-1 font-sans"
-            >
-              <DropdownMenuCheckboxItem
-                checked={includeSelectionExportHeader}
-                className="rounded-lg font-sans text-sm font-medium"
-                onCheckedChange={(checked) =>
-                  setIncludeSelectionExportHeader(checked === true)
-                }
-                onSelect={(event) => {
-                  event.preventDefault();
-                }}
-              >
-                include column header
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuSeparator />
-              <div className="p-0.5">
-                {[
-                  {
-                    action: () => handleCopySelectionExport("markdown"),
-                    label: "copy markdown",
-                  },
-                  {
-                    action: () => handleCopySelectionExport("csv"),
-                    label: "copy csv",
-                  },
-                  {
-                    action: () => handleSaveSelectionExport("markdown"),
-                    label: "save markdown",
-                  },
-                  {
-                    action: () => handleSaveSelectionExport("csv"),
-                    label: "save csv",
-                  },
-                ].map((item) => (
-                  <DropdownMenuItem
-                    key={item.label}
-                    className="rounded-lg font-sans text-sm font-medium"
-                    onSelect={item.action}
-                  >
-                    {item.label}
-                  </DropdownMenuItem>
-                ))}
-              </div>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+        <SelectionExportMenu
+          cellSelectionRange={cellSelectionRange}
+          columnIds={selectionExportColumnIds}
+          filenameBase={`${activeTable.schema}-${activeTable.name}`}
+          rows={displayRows}
+          rowSelectionState={rowSelectionState}
+        />
         {hasStagedChanges && (
           <>
             <Button
@@ -1839,32 +1669,6 @@ function getDeleteSelectionLabel(selectedRowCount: number) {
 
 function getDeleteConfirmationPrompt(selectedRowCount: number) {
   return `Do you want to delete ${selectedRowCount} ${selectedRowCount === 1 ? "row" : "rows"}?`;
-}
-
-function getSelectionExportColumnIds(args: {
-  defaultColumnIds: string[];
-  columnOrder: string[];
-  columnPinning: ColumnPinningState;
-}) {
-  const { columnOrder, columnPinning, defaultColumnIds } = args;
-  const validColumnIds = new Set(defaultColumnIds);
-  const orderedColumnIds = [
-    ...columnOrder.filter((columnId) => validColumnIds.has(columnId)),
-    ...defaultColumnIds.filter((columnId) => !columnOrder.includes(columnId)),
-  ];
-  const pinnedColumnIds = (columnPinning.left ?? []).filter(
-    (columnId) => columnId !== "__ps_select" && validColumnIds.has(columnId),
-  );
-  const seen = new Set<string>();
-
-  return [...pinnedColumnIds, ...orderedColumnIds].filter((columnId) => {
-    if (seen.has(columnId)) {
-      return false;
-    }
-
-    seen.add(columnId);
-    return true;
-  });
 }
 
 type EditableRowKind = "insert" | "persisted";
