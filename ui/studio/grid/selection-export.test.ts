@@ -152,6 +152,19 @@ describe("selection-export", () => {
     ).toEqual(["created_at", "email", "id"]);
   });
 
+  it("keeps right-pinned columns last, as the grid renders them", () => {
+    expect(
+      getSelectionExportColumnIds({
+        columnOrder: ["id", "email", "created_at"],
+        columnPinning: {
+          left: ["__ps_select", "created_at"],
+          right: ["id"],
+        },
+        defaultColumnIds: ["id", "email", "created_at"],
+      }),
+    ).toEqual(["created_at", "email", "id"]);
+  });
+
   it("ignores column order entries that are not part of the result", () => {
     expect(
       getSelectionExportColumnIds({
