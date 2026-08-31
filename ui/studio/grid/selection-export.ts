@@ -1,6 +1,11 @@
-import type { RowSelectionState } from "@tanstack/react-table";
+import type {
+  ColumnPinningState,
+  RowSelectionState,
+} from "@tanstack/react-table";
 
-import type { GridSelectionRange } from "../../grid/cell-selection";
+import type { GridSelectionRange } from "./cell-selection";
+
+const ROW_SELECTION_COLUMN_ID = "__ps_select";
 
 export type SelectionExportFormat = "csv" | "markdown";
 
@@ -108,13 +113,39 @@ export function serializeSelectionExport(args: {
 }
 
 export function buildSelectionExportFilename(args: {
-  schema: string;
-  table: string;
+  base: string;
   format: SelectionExportFormat;
 }): string {
   const extension = args.format === "csv" ? "csv" : "md";
 
-  return `${args.schema}-${args.table}-selection.${extension}`;
+  return `${args.base}-selection.${extension}`;
+}
+
+export function getSelectionExportColumnIds(args: {
+  defaultColumnIds: string[];
+  columnOrder: string[];
+  columnPinning: ColumnPinningState;
+}): string[] {
+  const { columnOrder, columnPinning, defaultColumnIds } = args;
+  const validColumnIds = new Set(defaultColumnIds);
+  const orderedColumnIds = [
+    ...columnOrder.filter((columnId) => validColumnIds.has(columnId)),
+    ...defaultColumnIds.filter((columnId) => !columnOrder.includes(columnId)),
+  ];
+  const pinnedColumnIds = (columnPinning.left ?? []).filter(
+    (columnId) =>
+      columnId !== ROW_SELECTION_COLUMN_ID && validColumnIds.has(columnId),
+  );
+  const seen = new Set<string>();
+
+  return [...pinnedColumnIds, ...orderedColumnIds].filter((columnId) => {
+    if (seen.has(columnId)) {
+      return false;
+    }
+
+    seen.add(columnId);
+    return true;
+  });
 }
 
 export function downloadSelectionExport(args: {
