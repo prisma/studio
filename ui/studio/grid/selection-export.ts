@@ -128,17 +128,31 @@ export function getSelectionExportColumnIds(args: {
 }): string[] {
   const { columnOrder, columnPinning, defaultColumnIds } = args;
   const validColumnIds = new Set(defaultColumnIds);
+  const isExportableColumnId = (columnId: string) =>
+    columnId !== ROW_SELECTION_COLUMN_ID && validColumnIds.has(columnId);
+  const leftPinnedColumnIds = (columnPinning.left ?? []).filter(
+    isExportableColumnId,
+  );
+  const rightPinnedColumnIds = (columnPinning.right ?? []).filter(
+    isExportableColumnId,
+  );
+  const pinnedColumnIds = new Set([
+    ...leftPinnedColumnIds,
+    ...rightPinnedColumnIds,
+  ]);
+  // Same order as the grid renders: left-pinned, then the visible order, then
+  // right-pinned.
   const orderedColumnIds = [
     ...columnOrder.filter((columnId) => validColumnIds.has(columnId)),
     ...defaultColumnIds.filter((columnId) => !columnOrder.includes(columnId)),
-  ];
-  const pinnedColumnIds = (columnPinning.left ?? []).filter(
-    (columnId) =>
-      columnId !== ROW_SELECTION_COLUMN_ID && validColumnIds.has(columnId),
-  );
+  ].filter((columnId) => !pinnedColumnIds.has(columnId));
   const seen = new Set<string>();
 
-  return [...pinnedColumnIds, ...orderedColumnIds].filter((columnId) => {
+  return [
+    ...leftPinnedColumnIds,
+    ...orderedColumnIds,
+    ...rightPinnedColumnIds,
+  ].filter((columnId) => {
     if (seen.has(columnId)) {
       return false;
     }
