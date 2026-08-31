@@ -64,6 +64,7 @@ SQL result visualization is governed by:
   include client-side render/layout time.
 - The idle AI-visualization affordance MUST render on the same summary row as the `"row(s) returned in Xms"` text, right-aligned from the row-count copy.
 - SQL result rows MUST be adapted with a stable synthetic `__ps_rowid` for shared grid row identity.
+- SQL result selections MUST expose the shared selection-export menu in the view toolbar, and its selection subscription MUST live in an isolated component so selecting rows or cells never rerenders the SQL editor.
 - Result columns are dynamic and derived from query output keys.
 - SQL headers/cells MUST reuse table-view header/cell components (`DataGridHeader`, `getCell`) with synthetic column metadata.
 - Any mounted AI visualization chart for SQL results MUST live inside the shared scrollable grid header region, so it scrolls with the same container as the result rows.
