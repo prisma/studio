@@ -1,0 +1,34 @@
+# Builds the factory run environment (.factory/Dockerfile) and pushes it to ghcr, where
+# every factory job pulls it. Rebuilds when the Dockerfile changes, weekly for security
+# updates, or on demand.
+name: factory-image
+
+on:
+  push:
+    branches: [main] # adjust if your default branch is named differently
+    paths: [.factory/Dockerfile]
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .factory
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/factory:latest
+            ghcr.io/${{ github.repository }}/factory:${{ github.sha }}
