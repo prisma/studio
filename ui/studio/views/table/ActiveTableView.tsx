@@ -1,6 +1,6 @@
 import { useIsMutating } from "@tanstack/react-query";
 import { type ColumnDef, type ColumnPinningState } from "@tanstack/react-table";
-import { ChevronDown, History, RefreshCw } from "lucide-react";
+import { ChevronDown, DatabaseZap, History, RefreshCw } from "lucide-react";
 import {
   type Dispatch,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -40,6 +40,12 @@ import {
   DropdownMenuTrigger,
 } from "../../../components/ui/dropdown-menu";
 import { TableHead } from "../../../components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../../../components/ui/tooltip";
 import { useActiveTableInsert } from "../../../hooks/use-active-table-insert";
 import { useActiveTableQuery } from "../../../hooks/use-active-table-query";
 import { useActiveTableUpdateMany } from "../../../hooks/use-active-table-update-many";
@@ -181,8 +187,12 @@ export function ActiveTableView(_props: ViewProps) {
     ],
   );
 
-  const { data: introspection, refetch: refetchIntrospection } =
-    useIntrospection();
+  const {
+    data: introspection,
+    isRefetching: isIntrospectionRefetching,
+    refreshSchema,
+    refetch: refetchIntrospection,
+  } = useIntrospection();
   const sqlEditorSchema = useMemo(() => {
     return createSqlEditorSchemaFromIntrospection({
       defaultSchema: adapter.defaultSchema,
@@ -1594,6 +1604,29 @@ export function ActiveTableView(_props: ViewProps) {
                 </a>
               </Button>
             ) : null}
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    aria-label="Refresh schema"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => void refreshSchema()}
+                    disabled={isIntrospectionRefetching}
+                  >
+                    <DatabaseZap
+                      data-icon="inline-start"
+                      className={cn(
+                        isIntrospectionRefetching && "animate-spin",
+                      )}
+                    />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" align="end">
+                  Refresh schema
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             <Button
               aria-label="Refresh table"
               variant="outline"

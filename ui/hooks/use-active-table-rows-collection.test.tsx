@@ -170,11 +170,13 @@ function createAdapterMock(options?: {
             parameters: [],
             sql: "update-many",
           })),
-          rows: details.updates.map((update: AdapterUpdateManyDetails["updates"][number]) => ({
-            ...update.row,
-            ...update.changes,
-            __ps_updated_at__: new Date().toISOString(),
-          })),
+          rows: details.updates.map(
+            (update: AdapterUpdateManyDetails["updates"][number]) => ({
+              ...update.row,
+              ...update.changes,
+              __ps_updated_at__: new Date().toISOString(),
+            }),
+          ),
         },
       ];
     }),
@@ -497,8 +499,14 @@ describe("useActiveTableRowsCollection", () => {
       await tx.isPersisted.promise;
     });
 
-    expect((adapter as Adapter & { updateMany: ReturnType<typeof vi.fn> }).updateMany).toHaveBeenCalledTimes(1);
-    expect((adapter as Adapter & { updateMany: ReturnType<typeof vi.fn> }).updateMany).toHaveBeenCalledWith(
+    expect(
+      (adapter as Adapter & { updateMany: ReturnType<typeof vi.fn> })
+        .updateMany,
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      (adapter as Adapter & { updateMany: ReturnType<typeof vi.fn> })
+        .updateMany,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         table: createActiveTable(),
         updates: [
@@ -705,21 +713,201 @@ describe("useActiveTableRowsCollection", () => {
       },
     });
 
-    await waitFor(() => (adapter.query as ReturnType<typeof vi.fn>).mock.calls.length === 1);
+    await waitFor(
+      () => (adapter.query as ReturnType<typeof vi.fn>).mock.calls.length === 1,
+    );
 
-    const firstQueryOptions = (adapter.query as ReturnType<typeof vi.fn>).mock.calls[0]?.[1];
+    const firstQueryOptions = (adapter.query as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[1];
 
     rerender({
       sortOrder: [{ column: "name", direction: "desc" }],
     });
 
-    await waitFor(() => (adapter.query as ReturnType<typeof vi.fn>).mock.calls.length === 2);
+    await waitFor(
+      () => (adapter.query as ReturnType<typeof vi.fn>).mock.calls.length === 2,
+    );
 
     expect(firstQueryOptions?.abortSignal).toBeInstanceOf(AbortSignal);
     expect(firstQueryOptions?.abortSignal.aborted).toBe(true);
 
     releaseFirstQuery?.();
 
+    cleanup();
+  });
+
+  it("self-heals introspection on a Postgres type-mismatch updateMany error (SQLSTATE 42804)", async () => {
+    const invalidateSpy = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+    const { adapter, cleanup, getLatestState, onEvent } = renderHookHarness();
+
+    await waitFor(() => (getLatestState()?.rows.length ?? 0) === 2);
+
+    const collection = getLatestState()?.collection;
+
+    if (!collection) {
+      throw new Error("Rows collection was not created");
+    }
+
+    const rowIds = [...collection.keys()].map(String);
+
+    const typeMismatchError = new Error(
+      "argument of type boolean does not match column type varchar",
+    ) as Error & { code?: string; query?: unknown };
+    typeMismatchError.code = "42804";
+    typeMismatchError.query = { parameters: [], sql: "update-many" };
+
+    // Persistently return the error so the self-heal fires regardless of
+    // whether the collection batches the two rows into one updateMany call
+    // or falls back to per-row adapter.update calls.
+    (
+      adapter as Adapter & { updateMany: ReturnType<typeof vi.fn> }
+    ).updateMany.mockResolvedValue([typeMismatchError]);
+    (adapter.update as ReturnType<typeof vi.fn>).mockResolvedValue([
+      typeMismatchError,
+    ]);
+
+    let caught: unknown;
+
+    await act(async () => {
+      try {
+        const tx = collection.update(rowIds, (drafts) => {
+          drafts[0]!.name = "Drifted";
+        });
+        await tx.isPersisted.promise;
+      } catch (error) {
+        caught = error;
+      }
+    });
+
+    expect(caught).toBe(typeMismatchError);
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: ["introspection"] }),
+    );
+    expect(
+      onEvent.mock.calls.some((call: unknown[]) => {
+        const event = call[0] as {
+          name: string;
+          payload: { operation: string };
+        };
+        return (
+          event.name === "studio_operation_error" &&
+          event.payload.operation === "update"
+        );
+      }),
+    ).toBe(true);
+
+    invalidateSpy.mockRestore();
+    cleanup();
+  });
+
+  it("self-heals introspection on a single-update type-mismatch error (SQLSTATE 22P02)", async () => {
+    const invalidateSpy = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+    const { adapter, cleanup, getLatestState } = renderHookHarness({
+      withoutUpdateMany: true,
+    });
+
+    await waitFor(() => (getLatestState()?.rows.length ?? 0) === 2);
+
+    const collection = getLatestState()?.collection;
+
+    if (!collection) {
+      throw new Error("Rows collection was not created");
+    }
+
+    const rowId = String([...collection.keys()][0] ?? "");
+
+    const invalidTextError = new Error(
+      'invalid input syntax for type bigint: "true"',
+    ) as Error & { code?: string; query?: unknown };
+    invalidTextError.code = "22P02";
+    invalidTextError.query = { parameters: [], sql: "update" };
+
+    (adapter.update as ReturnType<typeof vi.fn>).mockResolvedValue([
+      invalidTextError,
+    ]);
+
+    let caught: unknown;
+
+    await act(async () => {
+      try {
+        const tx = collection.update(rowId, (draft) => {
+          draft.name = "Drifted";
+        });
+        await tx.isPersisted.promise;
+      } catch (error) {
+        caught = error;
+      }
+    });
+
+    expect(caught).toBe(invalidTextError);
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: ["introspection"] }),
+    );
+
+    invalidateSpy.mockRestore();
+    cleanup();
+  });
+
+  it("does not self-heal introspection on a non-type-mismatch update error", async () => {
+    const invalidateSpy = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+    const { adapter, cleanup, getLatestState, onEvent } = renderHookHarness();
+
+    await waitFor(() => (getLatestState()?.rows.length ?? 0) === 2);
+
+    const collection = getLatestState()?.collection;
+
+    if (!collection) {
+      throw new Error("Rows collection was not created");
+    }
+
+    const rowIds = [...collection.keys()].map(String);
+
+    const unrelatedError = new Error("relation does not exist") as Error & {
+      code?: string;
+      query?: unknown;
+    };
+    unrelatedError.code = "42P01";
+    unrelatedError.query = { parameters: [], sql: "update-many" };
+
+    (
+      adapter as Adapter & { updateMany: ReturnType<typeof vi.fn> }
+    ).updateMany.mockResolvedValue([unrelatedError]);
+    (adapter.update as ReturnType<typeof vi.fn>).mockResolvedValue([
+      unrelatedError,
+    ]);
+
+    let caught: unknown;
+
+    await act(async () => {
+      try {
+        const tx = collection.update(rowIds, (drafts) => {
+          drafts[0]!.name = "Drifted";
+        });
+        await tx.isPersisted.promise;
+      } catch (error) {
+        caught = error;
+      }
+    });
+
+    expect(caught).toBe(unrelatedError);
+    expect(invalidateSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: ["introspection"] }),
+    );
+    // The original error is still surfaced to the user.
+    expect(
+      onEvent.mock.calls.some((call: unknown[]) => {
+        const event = call[0] as {
+          name: string;
+          payload: { operation: string };
+        };
+        return (
+          event.name === "studio_operation_error" &&
+          event.payload.operation === "update"
+        );
+      }),
+    ).toBe(true);
+
+    invalidateSpy.mockRestore();
     cleanup();
   });
 });

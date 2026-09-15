@@ -16,6 +16,7 @@ A standalone `sslmode` without SSL file parameters is left in the connection str
 Studio introspects connected databases to build schemas, tables, columns, relationships, filter operators, and timezone metadata.
 This gives users an accurate live model of the database and keeps table navigation grounded in current structure.
 A fresh Studio mount performs this discovery once, while actual adapter or database-availability changes invalidate cached metadata and load it again.
+Introspection is refreshable, not frozen: cached schema is allowed to go stale and is re-introspected when the user returns to Studio (window focus), when the user clicks "Refresh schema", or when a row write fails with a PostgreSQL type-mismatch error.
 The MySQL adapter detects MariaDB servers via `select version()` and switches to a MariaDB-compatible tables query that returns one row per column and groups the result on the client, so introspection works on all supported MariaDB versions where `json_arrayagg` or JSON casts are unavailable and cannot be truncated by `group_concat_max_len`.
 
 ## Deployable Prisma Postgres Demo
@@ -46,6 +47,21 @@ destroys the preview service when the branch is deleted.
 
 Startup introspection failures show retryable diagnostics in both the sidebar and the main table panel instead of pretending the database has no tables.
 Studio keeps the last successful schema snapshot visible when a refresh fails, disables automatic retry loops for introspection, and falls back to `UTC` when PostgreSQL or MySQL timezone metadata is unavailable but table metadata succeeded.
+
+## Refreshable Schema
+
+Studio re-introspects the database schema when the user returns to the window, and a dedicated "Refresh schema" toolbar button (next to "Refresh table") triggers an explicit refresh with a loading state and tooltip.
+All refresh paths share one React Query key and a single `refreshIntrospection` helper, so the toolbar button, the write-error self-heal path, and window-focus refetch all invalidate the same cached introspection and refetch the active observer.
+
+## Self-Healing Editor on Type-Mismatch Write Errors
+
+When an insert or update fails with a PostgreSQL type-mismatch error (SQLSTATE `42804` datatype_mismatch or `22P02` invalid_text_representation), Studio invalidates cached introspection and refetches so the cell editor re-renders with the correct column type.
+The original error is still surfaced to the user via the normal operation-error toast and Console; the self-heal only additionally triggers a background schema refresh.
+
+## Cell Editor DB Type Label
+
+The cell editor popover shows the DB column type Studio believes the column has (for example "type: varchar"), with a tooltip explaining what to do if it no longer matches the live schema.
+This makes schema drift visible to the user instead of producing a silently wrong widget, and it stays accurate once the refresh/self-heal paths reload introspection.
 
 ## URL-Driven Navigation and Deep Linking
 

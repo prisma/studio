@@ -31,10 +31,35 @@ The query MUST use:
 - `retry: false`
 - `retryOnMount: false`
 - `refetchOnReconnect: false`
-- `refetchOnWindowFocus: false`
-- `staleTime: Infinity`
+- `refetchOnWindowFocus: "always"`
+- `staleTime: 30_000` (30s)
 
-Automatic retry loops are forbidden for introspection because they can spam operation events, repeat expensive metadata work, and hide the real startup failure state from the user.
+Automatic retry loops are forbidden for introspection because they can spam operation events, repeat expensive metadata work, and hide the real startup failure state from the user. `refetchOnWindowFocus` is not a retry loop: `refetchOnWindowFocus: "always"` refires on every window focus even while data is still fresh — React Query v5 would normally treat plain `true` as "refetch only stale queries" and skip the focus refetch while data is fresh, hence the explicit `"always"` string. Combined with the 30s `staleTime` (which throttles background refetches otherwise), a focus event in practice re-introspects at most once each time the user returns to Studio, which is the intent of the refreshable schema contract below.
+
+## Refreshable Schema Contract
+
+Introspection is cached but MUST be refreshable so the cell editor re-renders with the correct column type when the live DB schema drifts (e.g. a column changed from boolean to varchar after Studio loaded).
+
+All refresh paths go through one shared mechanism in `ui/hooks/refresh-introspection.ts`:
+
+- `INTROSPECTION_QUERY_KEY` is the single React Query key for introspection.
+- `refreshIntrospection(queryClient)` invalidates the introspection cache and refetches any active observer.
+
+Three call sites share it:
+
+- `useIntrospection().refreshSchema` — backs the toolbar "Refresh schema" button.
+- the write-error self-heal path (see Self-Heal Contract below).
+- window-focus refetch (React Query built-in, enabled by `refetchOnWindowFocus: "always"` + `staleTime: 30_000`).
+
+The "Refresh schema" button MUST be a ShadCN `Button` with a ShadCN `Tooltip`, an `aria-label`, and a loading/disabled state while refetching.
+
+## Self-Heal Contract
+
+When a row write (insert/update) fails with a PostgreSQL type-mismatch error, Studio MUST additionally invalidate cached introspection and trigger a refetch so the editor can re-render with the correct column type.
+
+- Detection: `data/postgres-core/postgres-error.ts` matches SQLSTATE `42804` (`datatype_mismatch`) and `22P02` (`invalid_text_representation`) by reading the string `code` property carried on the `AdapterError` (the Postgres driver attaches the server `SqlState` there, and `createAdapterError` preserves it on the same object).
+- Wiring: `ui/hooks/refresh-introspection.ts` exports `selfHealOnWriteError({ error, queryClient })`, called from the row mutation error paths in `ui/hooks/use-active-table-rows-collection.ts` (`onUpdate`) and `ui/hooks/use-active-table-insert.ts`.
+- Non-swallowing: the original error MUST still be surfaced to the user (the `studio_operation_error` event and resulting toast still fire). The self-heal only additionally triggers a background introspection refetch.
 
 ## Data Fallback Contract
 
@@ -93,3 +118,10 @@ Changes to this subsystem MUST include tests for:
 - startup recovery UI rendering
 - adapter partial-success fallback when timezone lookup fails
 - single-emission behavior for `studio_launched`
+- introspection refetching when the window regains focus (proves `staleTime` is the 30s throttle and `refetchOnWindowFocus: "always"` refetches even while fresh data is still cached)
+- `refreshSchema` invalidating and triggering an introspection refetch
+- self-heal on a Postgres type-mismatch write error (SQLSTATE `42804` / `22P02`) without swallowing the user-facing error
+
+## Cell Editor Type Label
+
+The cell editor MUST surface the DB column type Studio believes a column has (via `ui/studio/input/ColumnTypeLabel.tsx`, composed around the input by `ui/studio/input/get-input.tsx`). This makes schema drift visible to the user instead of producing a silently wrong widget. The readable type string comes from `ui/lib/datatype-display.ts` (`formatDatatypeName`), which maps internal catalog names to common SQL aliases. The label uses standard ShadCN `Tooltip` composition; no non-standard UI is introduced.

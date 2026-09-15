@@ -72,6 +72,8 @@ Selection rules MUST remain centralized here:
 
 Do not duplicate datatype branching in callers.
 
+Every dispatched input MUST be wrapped by `ColumnTypeLabel` so the DB column type Studio believes the column has is surfaced inside the editor popover (see `Architecture/introspection.md` → "Cell Editor Type Label"). This makes schema drift visible instead of producing a silently wrong widget.
+
 ## Readonly And Writeability Rules
 
 A cell is editable only when both are true:

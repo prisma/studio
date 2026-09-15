@@ -3,6 +3,7 @@ import { isObjectType } from "remeda";
 
 import type { Column } from "../../../data/adapter";
 import { BooleanInput } from "./BooleanInput";
+import { ColumnTypeLabel } from "./ColumnTypeLabel";
 import { DateInput } from "./DateInput";
 import { EnumInput } from "./EnumInput";
 import { JsonInput } from "./JsonInput";
@@ -28,8 +29,15 @@ export interface GetInputProps {
 }
 
 export function getInput(props: GetInputProps) {
-  const { cell, column, context, onNavigate, onSubmit, showSaveAction } =
-    props;
+  return (
+    <ColumnTypeLabel column={props.column}>
+      {resolveInput(props)}
+    </ColumnTypeLabel>
+  );
+}
+
+function resolveInput(props: GetInputProps) {
+  const { cell, column, context, onNavigate, onSubmit, showSaveAction } = props;
   const { datatype, isAutoincrement, isComputed, nullable } = column;
   const { format, group, isArray, options } = datatype;
 

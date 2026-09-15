@@ -19,6 +19,7 @@ import type {
 } from "../../data/adapter";
 import { AbortError } from "../../data/executor";
 import { useStudio } from "../studio/context";
+import { selfHealOnWriteError } from "./refresh-introspection";
 import { useNavigation } from "./use-navigation";
 import { addRowIdToResult } from "./utils/add-row-id-to-result";
 
@@ -325,6 +326,12 @@ export function useActiveTableRowsCollection(
                     },
                   });
 
+                  // Schema drift can surface as a Postgres type-mismatch on
+                  // write. Invalidate cached introspection so the editor can
+                  // re-render with the correct column type, then still throw
+                  // so the user-facing error is preserved.
+                  selfHealOnWriteError({ error, queryClient });
+
                   throw error;
                 }
 
@@ -371,6 +378,12 @@ export function useActiveTableRowsCollection(
                       error,
                     },
                   });
+
+                  // Schema drift can surface as a Postgres type-mismatch on
+                  // write. Invalidate cached introspection so the editor can
+                  // re-render with the correct column type, then still throw
+                  // so the user-facing error is preserved.
+                  selfHealOnWriteError({ error, queryClient });
 
                   throw error;
                 }
