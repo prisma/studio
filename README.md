@@ -592,8 +592,8 @@ pnpm demo:ppg
 
 Then open [http://localhost:4310](http://localhost:4310).
 
-To enable the demo's AI flows, copy `.env.example` to `.env` and set `ANTHROPIC_API_KEY`.
-The demo reads that key server-side and calls Anthropic Haiku 4.5 directly over HTTP through one shared `llm` hook used by table filtering, SQL generation, SQL result visualization, and Query Insights recommendations. Set `STUDIO_DEMO_AI_ENABLED=false` to hide all AI affordances without removing the key. `STUDIO_DEMO_AI_FILTERING_ENABLED` is still accepted as a legacy alias. `.env` and `.env.local` are gitignored.
+To enable the demo's AI flows, copy `.env.example` to `.env` and set `ANTHROPIC_API_KEY` or `ORCAROUTER_API_KEY` (when both are set, the demo prefers OrcaRouter).
+The demo reads the key server-side and calls the chosen provider directly over HTTP through one shared `llm` hook used by table filtering, SQL generation, SQL result visualization, and Query Insights recommendations. Set `STUDIO_DEMO_AI_ENABLED=false` to hide all AI affordances without removing the key. `STUDIO_DEMO_AI_FILTERING_ENABLED` is still accepted as a legacy alias. `.env` and `.env.local` are gitignored.
 
 The demo:
 

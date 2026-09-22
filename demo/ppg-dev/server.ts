@@ -16,6 +16,10 @@ import type { Query } from "../../data/query";
 import pkg from "../../package.json" with { type: "json" };
 import { AnthropicOutputLimitError, runAnthropicLlmRequest } from "./anthropic";
 import { buildDemoConfig, resolveDemoAiEnabled } from "./config";
+import {
+  OrcaRouterOutputLimitError,
+  runOrcaRouterLlmRequest,
+} from "./orcarouter";
 import { createDemoQueryInsightsStore } from "./query-insights";
 import { type DemoRuntime, startDemoRuntime } from "./runtime";
 import {
@@ -90,11 +94,13 @@ const isProduction = prebuiltAssets !== null;
 
 const APP_PORT = Number.parseInt(process.env.STUDIO_DEMO_PORT ?? "4310", 10);
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY ?? "";
+const ORCAROUTER_API_KEY = process.env.ORCAROUTER_API_KEY ?? "";
 const AI_ENABLED = resolveDemoAiEnabled({
   anthropicApiKey: ANTHROPIC_API_KEY,
   envValue:
     process.env.STUDIO_DEMO_AI_ENABLED ??
     process.env.STUDIO_DEMO_AI_FILTERING_ENABLED,
+  orcaRouterApiKey: ORCAROUTER_API_KEY,
 });
 const BOOT_ID = crypto.randomUUID();
 const STREAMS_PROXY_BASE_PATH = "/api/streams";
@@ -664,19 +670,32 @@ async function handleAiRequest(request: Request): Promise<Response> {
   }
 
   try {
-    const text = await runAnthropicLlmRequest({
-      apiKey: ANTHROPIC_API_KEY,
-      request: {
-        prompt,
-        task,
-      },
-    });
+    // When an OrcaRouter key is configured, the demo routes Studio's shared
+    // llm hook through OrcaRouter's OpenAI-compatible endpoint; otherwise it
+    // falls back to the Anthropic Messages API.
+    const text =
+      ORCAROUTER_API_KEY.trim().length > 0
+        ? await runOrcaRouterLlmRequest({
+            apiKey: ORCAROUTER_API_KEY,
+            request: {
+              prompt,
+              task,
+            },
+          })
+        : await runAnthropicLlmRequest({
+            apiKey: ANTHROPIC_API_KEY,
+            request: {
+              prompt,
+              task,
+            },
+          });
 
     return createAiSuccessResponse(text);
   } catch (error) {
     return createAiErrorResponse({
       code:
-        error instanceof AnthropicOutputLimitError
+        error instanceof AnthropicOutputLimitError ||
+        error instanceof OrcaRouterOutputLimitError
           ? "output-limit-exceeded"
           : "request-failed",
       message: error instanceof Error ? error.message : String(error),
