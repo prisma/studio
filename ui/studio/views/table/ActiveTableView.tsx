@@ -58,8 +58,10 @@ import { usePagination } from "../../../hooks/use-pagination";
 import { useSelection } from "../../../hooks/use-selection";
 import { useSorting } from "../../../hooks/use-sorting";
 import { useStreams } from "../../../hooks/use-streams";
+import { useTableReload } from "../../../hooks/use-table-reload";
 import { useTableUiState } from "../../../hooks/use-table-ui-state";
 import { useUiState } from "../../../hooks/use-ui-state";
+import { getQueryPreview } from "../../../hooks/utils/get-query-preview";
 import { randomUUID } from "../../../lib/random-uuid";
 import { cn } from "../../../lib/utils";
 import {
@@ -99,6 +101,7 @@ import {
   type CellEditNavigationDirection,
   getInput,
 } from "../../input/get-input";
+import { IntrospectionStatusNotice } from "../../IntrospectionStatusNotice";
 import {
   TABLE_GRID_FOCUS_REQUEST_UI_STATE_KEY,
   type TableGridFocusRequestUiState,
@@ -249,6 +252,7 @@ export function ActiveTableView(_props: ViewProps) {
   const {
     data,
     isFetching,
+    queryScopeKey,
     refetch: refetchActiveTable,
   } = useActiveTableQuery(activeTableQueryProps);
   const [stableInfiniteData, setStableInfiniteData] = useState<{
@@ -887,10 +891,14 @@ export function ActiveTableView(_props: ViewProps) {
     });
   }
 
-  const reload = useCallback(async () => {
-    await refetchIntrospection();
-    await refetchActiveTable();
-  }, [refetchActiveTable, refetchIntrospection]);
+  const { reload, reloadError } = useTableReload({
+    refetchActiveTable,
+    refetchIntrospection,
+    resetKey: queryScopeKey,
+  });
+  // A table refresh re-introspects the schema before refetching rows, so the
+  // busy state must cover both awaits — not just the rows collection fetch.
+  const isRefreshingTable = isFetching || isIntrospectionRefetching;
 
   const newStagedRow = useCallback(() => {
     // TODO: the new object should have some things set to null if they're nullable or have a default value?
@@ -1632,11 +1640,11 @@ export function ActiveTableView(_props: ViewProps) {
               variant="outline"
               size="icon"
               onClick={() => void reload()}
-              disabled={isFetching}
+              disabled={isRefreshingTable}
             >
               <RefreshCw
                 data-icon="inline-start"
-                className={cn(isFetching && "animate-spin")}
+                className={cn(isRefreshingTable && "animate-spin")}
               />
             </Button>
           </>
@@ -1789,6 +1797,21 @@ export function ActiveTableView(_props: ViewProps) {
         sqlFilterLint={sqlFilterLint}
         table={activeTable}
       />
+      {reloadError ? (
+        <IntrospectionStatusNotice
+          className="mb-2"
+          compact
+          description="Showing the last successfully loaded rows."
+          isRetrying={isRefreshingTable}
+          message={reloadError.message}
+          onRetry={() => void reload()}
+          queryPreview={getQueryPreview(reloadError.query)}
+          source={
+            reloadError.adapterSource ?? adapter.defaultSchema ?? "unknown"
+          }
+          title="Table refresh failed"
+        />
+      ) : null}
       <DataGrid
         areRowsInViewActionsLocked={hasStagedChanges}
         canWriteToCell={canWriteToCell}

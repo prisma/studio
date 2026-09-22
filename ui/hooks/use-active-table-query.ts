@@ -27,6 +27,12 @@ export interface ActiveTableQueryData {
 export interface UseActiveTableQueryResult {
   data: ActiveTableQueryData | undefined;
   isFetching: boolean;
+  /**
+   * Identity of the query scope the rows were loaded from. Consumers that
+   * need to reset per-scope state (for example the table reload error) can
+   * use it as a reset key.
+   */
+  queryScopeKey: string;
   refetch: () => Promise<void>;
 }
 
@@ -72,6 +78,7 @@ export function useActiveTableQuery(
         }
       : undefined,
     isFetching: state.isFetching,
+    queryScopeKey: state.queryScopeKey,
     refetch: state.refetch,
   };
 }
