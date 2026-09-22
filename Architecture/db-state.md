@@ -21,6 +21,7 @@ Database state architecture is implemented by these modules:
 
 - [`ui/hooks/use-active-table-rows-collection.ts`](../ui/hooks/use-active-table-rows-collection.ts)
 - [`ui/hooks/use-active-table-query.ts`](../ui/hooks/use-active-table-query.ts)
+- [`ui/hooks/use-table-reload.ts`](../ui/hooks/use-table-reload.ts)
 - [`ui/hooks/use-active-table-update.ts`](../ui/hooks/use-active-table-update.ts)
 - [`ui/hooks/use-active-table-delete.ts`](../ui/hooks/use-active-table-delete.ts)
 - [`ui/studio/context.tsx`](../ui/studio/context.tsx)
@@ -119,6 +120,10 @@ Manual refetch is done with:
 - `collection.utils.refetch({ throwOnError: true })`
 
 `isFetching` for UI MUST come from collection/query state (`collection.utils.isFetching` or live-query loading fallback), not local booleans.
+
+The busy state for the "Refresh table" action is derived the same way, never stored locally: the view binds the refresh button to `isFetching || isIntrospectionRefetching`, because a table refresh re-introspects the schema before refetching rows.
+
+`collection.utils.refetch({ throwOnError: true })` rejections are caught by the view (through `useTableReload`) and shown inline as a refresh-failure notice; the rows collection keeps the last successfully loaded rows, so a failed refresh never clears the grid.
 
 ### Metadata cache
 

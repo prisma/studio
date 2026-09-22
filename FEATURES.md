@@ -53,6 +53,11 @@ Studio keeps the last successful schema snapshot visible when a refresh fails, d
 Studio re-introspects the database schema when the user returns to the window, and a dedicated "Refresh schema" toolbar button (next to "Refresh table") triggers an explicit refresh with a loading state and tooltip.
 All refresh paths share one React Query key and a single `refreshIntrospection` helper, so the toolbar button, the write-error self-heal path, and window-focus refetch all invalidate the same cached introspection and refetch the active observer.
 
+## Refresh Table Feedback and Errors
+
+Clicking "Refresh table" gives immediate feedback: the button spins and stays disabled for the entire refresh, covering both the schema re-introspection and the row refetch it performs, so the UI always reacts the moment the action starts.
+When a refresh fails, the last successfully loaded rows stay visible in the grid and an inline notice above it explains what failed — the adapter error message, its source, and a preview of the failed SQL — with a Retry action.
+
 ## Self-Healing Editor on Type-Mismatch Write Errors
 
 When an insert or update fails with a PostgreSQL type-mismatch error (SQLSTATE `42804` datatype_mismatch or `22P02` invalid_text_representation), Studio invalidates cached introspection and refetches so the cell editor re-renders with the correct column type.

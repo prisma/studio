@@ -680,6 +680,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
               window.location.hash = createUrl({ viewParam: "console" });
             },
           },
+          description: payload.error.message,
         });
       }
 

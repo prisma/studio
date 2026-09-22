@@ -6,8 +6,22 @@ import { process } from "std-env";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { check } from "../../checkpoint";
-import type { Adapter } from "../../data/adapter";
+import { type Adapter, AdapterError } from "../../data/adapter";
 import { StudioContextProvider, useStudio } from "./context";
+
+const { toastErrorMock } = vi.hoisted(() => ({
+  toastErrorMock: vi.fn(),
+}));
+
+// The operation-error path under test reports through sonner toasts. Mock the
+// module (including the `Toaster` component rendered by the provider) so the
+// toast arguments can be asserted directly.
+vi.mock("sonner", () => ({
+  Toaster: () => null,
+  toast: {
+    error: toastErrorMock,
+  },
+}));
 
 vi.mock("../hooks/use-navigation", () => ({
   NavigationContextProvider: ({ children }: { children: ReactNode }) => (
@@ -492,6 +506,59 @@ describe("StudioContextProvider telemetry opt-out", () => {
     });
 
     expect(check).not.toHaveBeenCalled();
+
+    harness.cleanup();
+  });
+});
+
+describe("StudioContextProvider operation error toasts", () => {
+  it("surfaces the operation error message as the toast description", () => {
+    const harness = renderHarness();
+
+    const adapterError = new AdapterError("relation does not exist");
+    adapterError.adapterSource = "postgresql";
+    adapterError.query = { parameters: [], sql: "select 1" };
+
+    act(() => {
+      harness.getLatestStudio()?.onEvent({
+        name: "studio_operation_error",
+        payload: {
+          operation: "query",
+          query: adapterError.query,
+          error: adapterError,
+        },
+      });
+    });
+
+    expect(toastErrorMock).toHaveBeenCalledTimes(1);
+    expect(toastErrorMock).toHaveBeenCalledWith(
+      '"query" operation failed',
+      expect.objectContaining({
+        description: "relation does not exist",
+      }),
+    );
+
+    harness.cleanup();
+  });
+
+  it("does not toast for aborted operations", () => {
+    const harness = renderHarness();
+
+    const abortError = new AdapterError("The operation was aborted");
+    abortError.name = "AbortError";
+
+    act(() => {
+      harness.getLatestStudio()?.onEvent({
+        name: "studio_operation_error",
+        payload: {
+          operation: "query",
+          query: undefined,
+          error: abortError,
+        },
+      });
+    });
+
+    expect(toastErrorMock).not.toHaveBeenCalled();
 
     harness.cleanup();
   });
