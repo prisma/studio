@@ -4,6 +4,8 @@ import { type Mock, vi } from "vitest";
 
 import { TableHead } from "../../components/ui/table";
 import { Cell, type CellProps } from "../cell/Cell";
+import { SelectHeaderCell } from "../cell/SelectHeaderCell";
+import { SelectRowCell } from "../cell/SelectRowCell";
 
 export type GridRow = Record<string, unknown>;
 export type GridColumnDef = ColumnDef<GridRow>;
@@ -58,14 +60,18 @@ export function createReadOnlyColumns(args?: {
     enableSorting: false,
     size: 35,
     minSize: 35,
-    header() {
+    header({ table }) {
       return (props: Omit<CellProps, "children" | "ref">) => (
-        <TableHead {...props} aria-label="Row selection spacer" />
+        <TableHead {...props} aria-label="Row selection spacer">
+          <SelectHeaderCell table={table} />
+        </TableHead>
       );
     },
-    cell() {
+    cell({ row }) {
       return (props: Omit<CellProps, "children" | "ref">) => (
-        <Cell data-select="true" {...props} />
+        <Cell data-select="true" {...props}>
+          <SelectRowCell row={row} />
+        </Cell>
       );
     },
   };

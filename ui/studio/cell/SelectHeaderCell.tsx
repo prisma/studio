@@ -4,18 +4,23 @@ import { CheckboxTable } from "@/ui/components/ui/checkbox-table";
 
 export interface SelectHeaderCellProps {
   table: Table<Record<string, unknown>>;
-  readonly: boolean;
 }
 
 export function SelectHeaderCell(props: SelectHeaderCellProps) {
-  const { table, readonly } = props;
+  const { table } = props;
 
   return (
-    <CheckboxTable
-      checked={table.getIsAllRowsSelected()}
-      onCheckedChange={(value) => table.toggleAllRowsSelected(!!value)}
-      disabled={readonly}
-      className="w-full h-full rounded-none border-none"
-    />
+    <div className="flex items-center justify-center h-full w-full">
+      <CheckboxTable
+        checked={
+          table.getIsAllRowsSelected()
+            ? true
+            : table.getIsSomeRowsSelected()
+              ? "indeterminate"
+              : false
+        }
+        className="pointer-events-none h-4 w-4"
+      />
+    </div>
   );
 }

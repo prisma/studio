@@ -1095,6 +1095,105 @@ describe("DataGrid interactions", () => {
     cleanup();
   });
 
+  it("renders a checkbox in the row selection column that reflects selection state", () => {
+    createSelection({ isCollapsed: true });
+
+    const { cleanup, getCell } = renderGrid({
+      columnDefs: createReadOnlyColumns({ includeRowSelector: true }),
+    });
+
+    const checkbox = getCell(0, "__ps_select").querySelector(
+      '[role="checkbox"]',
+    );
+
+    expect(checkbox).not.toBeNull();
+    expect(checkbox?.getAttribute("data-state")).toBe("unchecked");
+
+    dispatchMouse(getCell(0, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(window, "mouseup");
+
+    expect(
+      getCell(0, "__ps_select")
+        .querySelector('[role="checkbox"]')
+        ?.getAttribute("data-state"),
+    ).toBe("checked");
+
+    cleanup();
+  });
+
+  it("shows an indeterminate header checkbox when only some rows are selected", () => {
+    createSelection({ isCollapsed: true });
+
+    const { cleanup, container, getCell } = renderGrid({
+      columnDefs: createReadOnlyColumns({ includeRowSelector: true }),
+    });
+
+    dispatchMouse(getCell(0, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(window, "mouseup");
+
+    const headerCheckbox = container.querySelector(
+      'th[aria-label="Row selection spacer"] [role="checkbox"]',
+    );
+
+    expect(headerCheckbox?.getAttribute("data-state")).toBe("indeterminate");
+
+    cleanup();
+  });
+
+  it("preserves existing row selection when drag-selecting a different range", () => {
+    createSelection({ isCollapsed: true });
+
+    const { cleanup, getCell, getSelectedRowCount } = renderGrid({
+      columnDefs: createReadOnlyColumns({ includeRowSelector: true }),
+    });
+
+    dispatchMouse(getCell(0, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(window, "mouseup");
+
+    expect(getSelectedRowCount()).toBe(1);
+
+    dispatchMouse(getCell(2, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(getCell(1, "__ps_select"), "mouseover", { button: 0 });
+    dispatchMouse(window, "mouseup");
+
+    expect(getSelectedRowCount()).toBe(3);
+    expect(getCell(0, "__ps_select").closest("tr")?.dataset.rowSelected).toBe(
+      "true",
+    );
+    expect(getCell(1, "__ps_select").closest("tr")?.dataset.rowSelected).toBe(
+      "true",
+    );
+    expect(getCell(2, "__ps_select").closest("tr")?.dataset.rowSelected).toBe(
+      "true",
+    );
+
+    cleanup();
+  });
+
+  it("does not re-select a row from a stray mouse movement after a deselecting click", () => {
+    createSelection({ isCollapsed: true });
+
+    const { cleanup, getCell, getSelectedRowCount } = renderGrid({
+      columnDefs: createReadOnlyColumns({ includeRowSelector: true }),
+    });
+
+    dispatchMouse(getCell(0, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(window, "mouseup");
+
+    expect(getSelectedRowCount()).toBe(1);
+
+    dispatchMouse(getCell(0, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(getCell(1, "__ps_select"), "mouseover", { button: 0 });
+    dispatchMouse(window, "mouseup");
+
+    expect(getSelectedRowCount()).toBe(0);
+    expect(
+      getCell(1, "__ps_select").closest("tr")?.dataset.rowSelected,
+    ).toBeUndefined();
+
+    cleanup();
+  });
+
   it("selects all rows when clicking the top-left spacer header cell", () => {
     createSelection({ isCollapsed: true });
 
