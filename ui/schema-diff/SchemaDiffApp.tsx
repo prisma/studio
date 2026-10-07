@@ -88,7 +88,7 @@ export function SchemaDiffApp() {
       ) : (
         <div
           role="status"
-          className="flex h-full items-center justify-center bg-background p-6 text-center text-sm text-muted-foreground"
+          className="flex h-full items-center justify-center bg-background p-6 text-center font-sans text-sm text-muted-foreground"
         >
           {error ? "Could not connect to the app host." : message}
         </div>

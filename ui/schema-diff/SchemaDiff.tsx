@@ -148,7 +148,7 @@ export function SchemaDiff({
       className={cn(scoped && "ps", className)}
       style={{ height: "100%", minHeight: 0, minWidth: 0 }}
     >
-      <div className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background">
+      <div className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background font-sans">
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border/60 bg-background/80 px-4 py-2 backdrop-blur-md [&>*]:pointer-events-auto">
           <h1
             className="max-w-64 truncate text-sm font-semibold capitalize text-foreground"
