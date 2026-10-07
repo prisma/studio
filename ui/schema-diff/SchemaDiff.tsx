@@ -74,10 +74,11 @@ export function SchemaDiff({
   const setDetailsPanelHeight =
     onDetailsPanelHeightChange ?? setLocalPanelHeight;
   const showAllModelsId = useId();
-  const contractDataMissing = before == null && after == null;
+  const baseline = mode === "schema" ? after : before;
+  const contractDataMissing = baseline == null && after == null;
   const selectedStats = useMemo(
-    () => summarizeDiff(diffContracts(before, after).stats),
-    [before, after],
+    () => summarizeDiff(diffContracts(baseline, after).stats),
+    [baseline, after],
   );
   const [draftPanelHeight, setDraftPanelHeight] = useState<number | null>(null);
   const [isPanelResizing, setIsPanelResizing] = useState(false);
@@ -256,7 +257,7 @@ export function SchemaDiff({
           ) : (
             <div className="absolute inset-0">
               <SchemaDiffCanvas
-                before={before}
+                before={baseline}
                 after={after}
                 showAllModels={showAllModels}
               />
@@ -313,7 +314,7 @@ export function SchemaDiff({
               ) : (
                 <SchemaDiffSchemaPanel
                   mode={mode}
-                  before={before}
+                  before={baseline}
                   after={after}
                 />
               )}

@@ -77,7 +77,7 @@ The per-migration header (title, hash edge, diff-stat chips, view controls) floa
 Two mutually exclusive collapsible panels sit under the canvas in a shared container whose height is user-resizable from a drag handle on its top edge (pointer drag plus ArrowUp/ArrowDown, clamped 120–640px, persisted UI state):
 
 - **SQL** renders the ledger row's operation envelopes verbatim — labels, operation classes, and executed statements.
-- **Schema** renders a Prisma-schema-style diff. `psl-schema.ts` projects each contract snapshot into PSL-shaped text (model/enum blocks, mapped field types, defaults, relations, `@@index`/`@@unique`/`@@map`) and diffs the two texts line-by-line with the `diff` (jsdiff) package, collapsing long unchanged runs. The projection favors diff stability (fixed field ordering, no column alignment padding) over exact `prisma format` output. jsdiff was chosen over `@pierre/diffs` because the latter hard-depends on shiki, which is too heavy for the published bundle; the renderer is isolated in `MigrationSchemaPanel` so it can be swapped.
+- **Schema** renders a Prisma-schema-style diff. `psl-schema.ts` projects each contract snapshot into PSL-shaped text (model/enum blocks, mapped field types, defaults, relations, `@@index`/`@@unique`/`@@map`) and diffs the two texts line-by-line with the `diff` (jsdiff) package, collapsing long unchanged runs. The projection favors diff stability (fixed field ordering, no column alignment padding) over exact `prisma format` output. jsdiff was chosen over `@pierre/diffs` because the latter hard-depends on shiki, which is too heavy for the published bundle; the renderer is isolated in `SchemaDiffSchemaPanel` (`ui/schema-diff/SchemaDiffDetails.tsx`) so it can be swapped.
 
 ## Embedding the migration UI
 

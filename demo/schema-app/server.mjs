@@ -42,7 +42,7 @@ window.addEventListener('message', (event) => {
 document.querySelector('#light').onclick = () => send('ui/notifications/host-context-changed', {theme:'light'});
 document.querySelector('#dark').onclick = () => send('ui/notifications/host-context-changed', {theme:'dark'});
 document.querySelector('#branch').onclick = () => result(schema);
-document.querySelector('#main').onclick = () => result({...schema,mode:'schema',before:schema.after,fromLabel:'Recorded schema',toLabel:'main'});
+document.querySelector('#main').onclick = () => result({...schema,mode:'schema',before:null,fromLabel:'Recorded schema',toLabel:'main'});
 document.querySelector('#missing').onclick = () => result({...schema,status:'unavailable',message:'The database on main has no current contract snapshot. Compare is unavailable.'});
 frame.srcdoc = ${json(schemaDiffAppHtml)};
 </script></body></html>`;

@@ -2,11 +2,31 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 
+import type { MigrationDiffNode } from "./diff-layout";
 import { SchemaDiff } from "./SchemaDiff";
 
 vi.mock("reactflow", () => ({
-  default: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
+  default: ({
+    children,
+    nodes,
+  }: {
+    children: React.ReactNode;
+    nodes: MigrationDiffNode[];
+  }) => (
+    <div>
+      {nodes.map((node) => (
+        <span
+          key={node.id}
+          data-testid="schema-model-status"
+          data-status={
+            "model" in node.data
+              ? node.data.model.status
+              : node.data.enumDiff.status
+          }
+        />
+      ))}
+      {children}
+    </div>
   ),
   Background: () => null,
   Controls: () => null,
@@ -53,7 +73,7 @@ it("renders a branch comparison without Studio providers or SQL controls", async
     storage: { namespaces: {} },
   };
   try {
-    await act(async () =>
+    await act(async () => {
       root.render(
         <SchemaDiff
           before={null}
@@ -62,13 +82,16 @@ it("renders a branch comparison without Studio providers or SQL controls", async
           fromLabel="main"
           toLabel="feat/users"
         />,
-      ),
-    );
+      );
+      await Promise.resolve();
+    });
     expect(container.textContent).toContain("feat/users");
+    expect(container.textContent).toContain("+1 model");
+    expect(container.querySelector('[data-status="added"]')).not.toBeNull();
     expect(
       container.querySelector('[data-testid="migration-panel-sql"]'),
     ).toBeNull();
-    await act(async () =>
+    act(() =>
       (
         container.querySelector(
           '[data-testid="migration-panel-schema"]',
@@ -77,24 +100,40 @@ it("renders a branch comparison without Studio providers or SQL controls", async
     );
     expect(container.textContent).toContain("model User");
     expect(container.textContent).toContain("email");
-    await act(async () =>
-      root.render(<SchemaDiff before={after} after={after} mode="schema" />),
-    );
+    await act(async () => {
+      root.render(<SchemaDiff before={null} after={after} mode="schema" />);
+      await Promise.resolve();
+    });
     expect(container.textContent).toContain("model User");
     expect(container.textContent).not.toContain("No schema changes.");
-    await act(async () => root.unmount());
+    act(() => root.unmount());
     root = createRoot(container);
-    await act(async () =>
-      root.render(<SchemaDiff before={after} after={after} mode="schema" />),
-    );
+    await act(async () => {
+      root.render(<SchemaDiff before={null} after={after} mode="schema" />);
+      await Promise.resolve();
+    });
+    expect(container.textContent).not.toContain("+1 model");
+    expect(container.querySelector('[data-status="added"]')).toBeNull();
+    expect(container.querySelector('[data-status="unchanged"]')).not.toBeNull();
     const schemaButton = container.querySelector<HTMLButtonElement>(
       '[data-testid="migration-panel-schema"]',
     );
     expect(schemaButton).not.toBeNull();
-    await act(async () => schemaButton?.click());
+    act(() => schemaButton?.click());
     expect(container.textContent).toContain("model User");
+    act(() =>
+      root.render(<SchemaDiff before={after} after={null} mode="schema" />),
+    );
+    expect(
+      container.querySelector(
+        '[data-testid="migration-contract-upgrade-notice"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="migration-panel-schema"]'),
+    ).toBeNull();
   } finally {
-    await act(async () => root.unmount());
+    act(() => root.unmount());
     container.remove();
   }
 });
