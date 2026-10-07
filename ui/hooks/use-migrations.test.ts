@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { parseLedgerProbeRows, parseLedgerRows } from "./use-migrations";
+import { parseLedgerRows } from "../../data/migrations";
+import { parseLedgerProbeRows } from "./use-migrations";
 
 function ledgerRow(
   overrides: Record<string, unknown>,

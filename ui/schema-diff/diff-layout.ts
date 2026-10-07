@@ -1,10 +1,7 @@
-import ELK from "elkjs/lib/elk.bundled.js";
 import type { Edge, Node } from "reactflow";
 import { Position } from "reactflow";
 
 import type { EnumDiff, MigrationDiff, ModelDiff } from "./contract-diff";
-
-const elk = new ELK();
 
 const ELK_LAYOUT_OPTIONS = {
   "elk.algorithm": "layered",
@@ -244,7 +241,8 @@ export async function layoutMigrationDiffNodes(
   }
 
   try {
-    const layouted = await elk.layout({
+    const { default: ELK } = await import("elkjs/lib/elk.bundled.js");
+    const layouted = await new ELK().layout({
       id: "root",
       layoutOptions: { ...ELK_LAYOUT_OPTIONS },
       children: nodes.map((node) => ({
