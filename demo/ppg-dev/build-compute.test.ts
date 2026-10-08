@@ -298,20 +298,17 @@ describe("build-compute", () => {
       expect(typeof payload.seededAt).toBe("string");
       expect(payload.streams).toBeUndefined();
 
-      const queryResponse = await fetch(
-        `http://127.0.0.1:${port}/api/query`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            procedure: "query",
-            query: {
-              sql: "select count(*)::int as count from organizations",
-              parameters: [],
-            },
-          }),
-        },
-      );
+      const queryResponse = await fetch(`http://127.0.0.1:${port}/api/query`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          procedure: "query",
+          query: {
+            sql: "select count(*)::int as count from organizations",
+            parameters: [],
+          },
+        }),
+      });
       expect(await queryResponse.json()).toEqual([null, [{ count: 12 }]]);
 
       const faviconResponse = await fetch(
