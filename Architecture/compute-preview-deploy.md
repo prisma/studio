@@ -39,6 +39,11 @@ by `prisma git connect https://github.com/prisma/studio` connects it to the Comp
 app and workflow already in the repository. No generic root `start` script or
 automatically scaffolded deployment workflow is required.
 
+The CLI connection MUST be used for this setup. Console's Connect GitHub button
+also runs the framework importer and can reject the library repository before
+connecting it. CLI authentication MUST target the workspace containing the empty
+project; the browser's current workspace does not change an existing CLI session.
+
 ## Branch Identity and Triggering
 
 - Deploys MUST run on branch pushes and MAY be rerun manually. Opening a PR alone

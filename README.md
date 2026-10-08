@@ -691,6 +691,11 @@ script, create an **empty project** named `studio` instead, with the **Singapore
 region. The Composer declaration and workflow in this repository already define
 how to build and launch the hosted demo; no root `start` script is needed.
 
+Use the **CLI** to connect that empty project. Console's **Connect GitHub** button
+also runs framework detection and generates a setup PR, so it can report the same
+missing-`start` error. `prisma git connect` only registers the repository connection;
+it does not detect a framework or scaffold deployment files.
+
 From the repository root, authenticate in the project's workspace and connect it:
 
 ```sh
@@ -703,6 +708,10 @@ Install the Prisma GitHub App for this repository if prompted. The local project
 link is stored in gitignored `.prisma/local.json`. The Composer app name MUST match
 the connected project's name. The configured `ap-southeast-1` region applies when
 creating a project; an existing project keeps its region.
+
+During CLI sign-in, select the workspace containing the empty `studio` project.
+Use `pnpm exec prisma auth whoami` to check the active workspace before linking;
+the browser's selected workspace and an existing CLI session can differ.
 
 GitHub Actions authenticates through OIDC with `id-token: write`; no Prisma token
 secret or workspace-ID variable is used by the workflow. A missing connection fails
