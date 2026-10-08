@@ -18,6 +18,10 @@ import app from "../../module";
 import studio from "./compute-service";
 
 describe("Studio Composer app", () => {
+  it("targets the connected studio project", () => {
+    expect(app.name).toBe("studio");
+  });
+
   it("resolves the app's configured HTTP port through Composer", () => {
     const graph = Load(app);
     const service = graph.nodes.find(({ node }) => node.kind === "service");

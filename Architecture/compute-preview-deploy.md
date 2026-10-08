@@ -79,17 +79,18 @@ The bundled server MUST read its HTTP port from `service.port()` through the
 prebuilt-assets module and bind `0.0.0.0`. The root Module MUST bind its reserved
 port parameter to `8080`, which Composer also uses for Compute's HTTP mapping.
 The bundled server MUST rely on its actual `Bun.serve` bind to detect port
-conflicts. A TCP connection probe can reach Compute's forwarding layer before
-the app is listening and incorrectly report a busy port. The source demo's
+conflicts. A successful TCP connection probe does not establish whether this
+process can bind its listener. The source demo's
 local port diagnostic remains enabled and continues to use
 `STUDIO_DEMO_PORT` (default `4310`). There is no fixed-port Compute wrapper.
 
 The workflow MUST fail when the deploy action skips for missing credentials rather
 than silently reporting success. A skipped action MUST NOT post a success comment.
 After deployment, the workflow MUST verify the public `/api/config` endpoint with
-bounded startup retries and require a boot identifier plus the `/api/streams`
+up to three minutes of startup retries and require a boot identifier plus the `/api/streams`
 proxy configuration. A failed startup MUST fail the job before posting a preview
-comment; successful artifact upload alone is insufficient.
+comment; successful artifact upload alone is insufficient. An absent URL MUST
+fail explicitly before making a request.
 
 ## Teardown and PR Feedback
 

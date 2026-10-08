@@ -264,8 +264,8 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Compute can accept a TCP probe through its forwarding layer before the
-  // app binds the port. The actual Bun listener owns the deployment check.
+  // The bundled app validates its port with the actual Bun listener; a TCP
+  // connection probe does not establish whether this process can bind it.
   if (!isProduction) {
     await ensurePortAvailable({
       envVar: "STUDIO_DEMO_PORT",

@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
@@ -29,6 +30,38 @@ describe("buildPreviewCommentBody", () => {
 });
 
 describe("Composer preview workflow", () => {
+  it("rejects a missing deployment URL before attempting a request", async () => {
+    const workflow = await readFile(
+      new URL("../../.github/workflows/compute-preview.yml", import.meta.url),
+      "utf8",
+    );
+    const startupStep = workflow.split("- name: Verify demo startup")[1];
+    const script = startupStep
+      ?.split("run: |\n")[1]
+      ?.split("\n      - name:")[0]
+      ?.replace(/^ {10}/gm, "");
+
+    expect(script).toBeDefined();
+    const result = spawnSync(
+      "bash",
+      [
+        "-e",
+        "-o",
+        "pipefail",
+        "-c",
+        `curl() { echo "Unexpected request" >&2; return 1; }\n${script}`,
+      ],
+      {
+        env: { ...process.env, PREVIEW_SERVICE_URL: "" },
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("::error::Deploy action returned no URL.");
+    expect(result.stderr).not.toContain("Unexpected request");
+  });
+
   it("deploys branch pushes with OIDC and lets the action select production or the exact preview stage", async () => {
     const workflow = await readFile(
       new URL("../../.github/workflows/compute-preview.yml", import.meta.url),

@@ -60,8 +60,13 @@ jobs:
         env:
           PREVIEW_SERVICE_URL: ${{ steps.deploy.outputs.url }}
         run: |
-          curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 --max-time 10 \
-            "${PREVIEW_SERVICE_URL}/api/config" | node --input-type=module -e '
+          if [ -z "${PREVIEW_SERVICE_URL}" ]; then
+            echo "::error::Deploy action returned no URL."
+            exit 1
+          fi
+          config="$(curl --fail --silent --show-error --retry 36 --retry-all-errors --retry-delay 5 --retry-max-time 180 --max-time 10 \
+            "${PREVIEW_SERVICE_URL}/api/config")"
+          printf '%s' "$config" | node --input-type=module -e '
               import { readFileSync } from "node:fs";
               const config = JSON.parse(readFileSync(0, "utf8"));
               if (typeof config.bootId !== "string" || config.streams?.url !== "/api/streams") {
