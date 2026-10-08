@@ -264,11 +264,15 @@ async function main(): Promise<void> {
     return;
   }
 
-  await ensurePortAvailable({
-    envVar: "STUDIO_DEMO_PORT",
-    port: APP_PORT,
-    serviceName: "Studio demo HTTP server",
-  });
+  // Compute can accept a TCP probe through its forwarding layer before the
+  // app binds the port. The actual Bun listener owns the deployment check.
+  if (!isProduction) {
+    await ensurePortAvailable({
+      envVar: "STUDIO_DEMO_PORT",
+      port: APP_PORT,
+      serviceName: "Studio demo HTTP server",
+    });
+  }
 
   const runtimeOptions = parseDemoRuntimeOptions(process.argv.slice(2));
   const runtime = await startDemoRuntime(runtimeOptions);

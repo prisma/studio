@@ -231,6 +231,18 @@ describe("build-compute", () => {
 
     const port = await getAvailablePort();
     const bootstrapSource = [
+      'import { Socket } from "node:net";',
+      // Compute's mapped port can accept a connection probe before the app
+      // binds it. Only the server's actual listen operation establishes
+      // whether that port is available to the application.
+      "const connect = Socket.prototype.connect;",
+      "Socket.prototype.connect = function (...args) {",
+      `  if (args[0] === ${port}) {`,
+      '    queueMicrotask(() => this.emit("connect"));',
+      "    return this;",
+      "  }",
+      "  return Reflect.apply(connect, this, args);",
+      "};",
       `import { bootstrapService } from ${JSON.stringify(new URL("../../node_modules/@prisma/composer-prisma-cloud/dist/testing.mjs", import.meta.url).href)};`,
       `import service from ${JSON.stringify(new URL("./compute-service.ts", import.meta.url).href)};`,
       `await bootstrapService(service, { deps: {}, service: { port: ${port} } }, async () => {`,
@@ -276,6 +288,10 @@ describe("build-compute", () => {
         `http://127.0.0.1:${port}/favicon.ico`,
       );
       expect(faviconResponse.status).toBe(204);
+    } catch (error) {
+      throw new Error(`Bundled demo failed to respond:\n${stderr}`, {
+        cause: error,
+      });
     } finally {
       serverProcess.kill("SIGTERM");
       if (

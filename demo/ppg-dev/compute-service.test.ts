@@ -18,7 +18,7 @@ import app from "../../module";
 import studio from "./compute-service";
 
 describe("Studio Composer app", () => {
-  it("binds an HTTP port outside Compute's occupied port 3000", () => {
+  it("resolves the app's configured HTTP port through Composer", () => {
     const graph = Load(app);
     const service = graph.nodes.find(({ node }) => node.kind === "service");
 

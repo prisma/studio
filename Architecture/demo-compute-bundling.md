@@ -32,8 +32,11 @@ Composer node build with `dependencies: "bundled"`, retaining the database and
 Streams assets at their relative paths. Composer supplies the process bootstrap
 and runtime configuration; Studio MUST NOT generate a fixed-port Compute entrypoint. Source-mode `pnpm demo:ppg`
 continues to use `STUDIO_DEMO_PORT` and defaults to `4310`.
-The root Module binds the hosted service's Composer port parameter to `8080` to
-avoid Compute's existing listener on `3000`; the server still reads `service.port()`.
+The root Module binds the hosted service's Composer port parameter to `8080`;
+the server still reads `service.port()`. Bundled mode MUST let `Bun.serve`
+perform the port binding without a preceding TCP probe, since Compute's
+forwarding layer can accept that probe before the application is listening.
+The source demo retains its local port diagnostic.
 
 Assembly MUST copy the self-contained directory without tracing host files.
 Prisma Dev reads operating-system metadata and temporary files at runtime; those

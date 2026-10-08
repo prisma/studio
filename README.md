@@ -673,8 +673,8 @@ pnpm exec prisma deploy module.ts --stage <branch-name>
 
 `module.ts` declares the `studio` Composer app. Its one `studio` service
 packages the whole demo, including the seeded ephemeral database and Streams.
-The root Module binds its Composer port parameter to 8080 to avoid Compute's
-existing listener on 3000; the bundled server reads this through `service.port()`.
+The root Module binds its Composer port parameter to 8080 for the app and
+Compute's HTTP mapping; the bundled server reads this through `service.port()`.
 The Composer packages are development tools; consumers of the Studio npm library
 need no Composer dependency or deployment configuration.
 
