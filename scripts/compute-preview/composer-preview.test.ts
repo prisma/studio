@@ -70,4 +70,21 @@ describe("Composer preview workflow", () => {
     expect(workflow).toContain("PREVIEW_BRANCH_NAME: ${{ github.ref_name }}");
     expect(workflow).not.toContain("PREVIEW_PR_NUMBER:");
   });
+
+  it("requires the deployed demo to start before reporting its preview URL", async () => {
+    const workflow = await readFile(
+      new URL("../../.github/workflows/compute-preview.yml", import.meta.url),
+      "utf8",
+    );
+    const startupStep = workflow.indexOf("- name: Verify demo startup");
+    const commentStep = workflow.indexOf("- name: Comment preview URL on PR");
+
+    expect(startupStep).toBeGreaterThan(0);
+    expect(commentStep).toBeGreaterThan(startupStep);
+    expect(workflow).toContain("--fail");
+    expect(workflow).toContain("--retry-all-errors");
+    expect(workflow).toContain('${PREVIEW_SERVICE_URL}/api/config');
+    expect(workflow).toContain('typeof config.bootId !== "string"');
+    expect(workflow).toContain('config.streams?.url !== "/api/streams"');
+  });
 });

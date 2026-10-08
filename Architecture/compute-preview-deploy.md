@@ -79,6 +79,10 @@ prebuilt-assets module and bind `0.0.0.0`. The source demo continues to use
 
 The workflow MUST fail when the deploy action skips for missing credentials rather
 than silently reporting success. A skipped action MUST NOT post a success comment.
+After deployment, the workflow MUST verify the public `/api/config` endpoint with
+bounded startup retries and require a boot identifier plus the `/api/streams`
+proxy configuration. A failed startup MUST fail the job before posting a preview
+comment; successful artifact upload alone is insufficient.
 
 ## Teardown and PR Feedback
 

@@ -52,6 +52,20 @@ jobs:
           echo "::error::Studio was not deployed. Connect prisma/studio to the Prisma project and grant this workflow OIDC access."
           exit 1
 
+      - name: Verify demo startup
+        if: steps.deploy.outputs.outcome == 'succeeded'
+        env:
+          PREVIEW_SERVICE_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 --max-time 10 \
+            "${PREVIEW_SERVICE_URL}/api/config" | node --input-type=module -e '
+              import { readFileSync } from "node:fs";
+              const config = JSON.parse(readFileSync(0, "utf8"));
+              if (typeof config.bootId !== "string" || config.streams?.url !== "/api/streams") {
+                throw new Error("The deployed Studio demo did not return its database and Streams configuration.");
+              }
+            '
+
       - name: Comment preview URL on PR
         if: steps.deploy.outputs.outcome == 'succeeded' && github.ref_name != github.event.repository.default_branch
         env:
