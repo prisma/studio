@@ -11,9 +11,12 @@ Composer MUST stay in dev dependencies and MUST NOT enter the published library 
 
 The service MUST use Composer's directory build adapter with
 `dependencies: "bundled"` to include the complete `deploy/` artifact, with
-`bundle/server.bundle.js` as its entry. Prisma Dev and
-Streams remain inside that service so each environment starts with its own ephemeral,
-seeded database and event streams. Query execution MUST remain direct TCP.
+`bundle/server.bundle.js` as its entry. Each environment MUST start with its own
+ephemeral, seeded database. Hosted deployments MUST disable Streams and its
+WAL sidecar. `compute-runtime.ts` MUST use Prisma Dev's stateless database
+lifecycle directly, since the public starter always launches Streams and writes
+its state into the application's read-only home. Query execution MUST remain
+direct TCP. Source-mode `pnpm demo:ppg` continues to run the complete Streams demo.
 
 `prisma.config.ts` MUST register `prismaCloud()`, `nodeBuild()`, and `prismaState()`
 in its `composer` section. Hosted state lets a fresh CI checkout converge the same
@@ -67,8 +70,10 @@ project; the browser's current workspace does not change an existing CLI session
 The workflow MUST use the pinned official `prisma/cloud-deploy-action` with
 `install-command: pnpm install --frozen-lockfile` and `module: module.ts`.
 Its build command MUST run `pnpm build:deploy` followed by the Composer assembly
-regression test and the assembled database/Streams bundle boot test on Linux,
+regression test and the assembled database bundle boot test on Linux,
 before deployment. The action runs the installed Prisma CLI under Bun.
+The boot test MUST reproduce Linux's read-only application data directory,
+verify seeded rows through the BFF, and require Streams to be absent from config.
 
 Composer MUST copy the self-contained build without a runtime dependency trace.
 Tracing Prisma Dev's operating-system and temp-file reads would incorrectly stage
@@ -87,8 +92,9 @@ local port diagnostic remains enabled and continues to use
 The workflow MUST fail when the deploy action skips for missing credentials rather
 than silently reporting success. A skipped action MUST NOT post a success comment.
 After deployment, the workflow MUST verify the public `/api/config` endpoint with
-up to three minutes of startup retries and require a boot identifier plus the `/api/streams`
-proxy configuration. A failed startup MUST fail the job before posting a preview
+up to three minutes of startup retries and require a boot identifier, an enabled
+database, a seeded timestamp, and no Streams configuration. A failed startup
+MUST fail the job before posting a preview
 comment; successful artifact upload alone is insufficient. An absent URL MUST
 fail explicitly before making a request.
 

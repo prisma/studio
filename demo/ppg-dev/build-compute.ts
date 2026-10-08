@@ -218,6 +218,7 @@ function generateAssetsModule(
 
   return [
     `import service from ${JSON.stringify(join(studioRoot, "demo/ppg-dev/compute-service.ts"))};`,
+    `export { startComputeRuntime as startRuntime } from ${JSON.stringify(join(studioRoot, "demo/ppg-dev/compute-runtime.ts"))};`,
     "export const appPort = service.port();",
     `export const appScript = ${JSON.stringify(script)};`,
     `export const appStyles = ${JSON.stringify(styles)};`,

@@ -649,8 +649,8 @@ Postgres dev working. For a source-free Compute artifact, use `pnpm build:deploy
 that path prebuilds the browser JS/CSS, injects those assets into the server
 bundle, and copies Prisma Dev's runtime assets into `deploy/bundle/` with
 stable filenames so the deployed demo does not need the repo checkout at
-runtime. It also Bun-bundles the Prisma Streams local worker into `deploy/touch/`
-so Compute can keep Prisma Dev's WAL-to-stream sidecar alive in the source-free artifact.
+runtime. The hosted runtime starts only Prisma Dev's in-memory database and TCP
+listener, avoiding Streams' lock and SQLite writes to Compute's read-only home.
 
 Run the built preview through Composer locally (Node 22.18+ and Bun 1.3.10+):
 
@@ -672,7 +672,8 @@ pnpm exec prisma deploy module.ts --stage <branch-name>
 ## Compute Preview Deploys
 
 `module.ts` declares the `studio` Composer app. Its one `studio` service
-packages the whole demo, including the seeded ephemeral database and Streams.
+packages the seeded ephemeral database. Streams is disabled in hosted previews;
+the source demo started with `pnpm demo:ppg` includes Streams.
 The root Module binds its Composer port parameter to 8080 for the app and
 Compute's HTTP mapping; the bundled server reads this through `service.port()`.
 The Composer packages are development tools; consumers of the Studio npm library

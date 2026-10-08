@@ -78,6 +78,7 @@ type PrebuiltAssets = {
   appScript: string;
   appStyles: string;
   builtAssets: Map<string, BuiltAsset>;
+  startRuntime(): Promise<DemoRuntime>;
 };
 
 let prebuiltAssets: PrebuiltAssets | null = null;
@@ -275,7 +276,9 @@ async function main(): Promise<void> {
   }
 
   const runtimeOptions = parseDemoRuntimeOptions(process.argv.slice(2));
-  const runtime = await startDemoRuntime(runtimeOptions);
+  const runtime = prebuiltAssets
+    ? await prebuiltAssets.startRuntime()
+    : await startDemoRuntime(runtimeOptions);
 
   cleanupCallbacks.push(...runtime.cleanupCallbacks);
   postgresClient = runtime.postgresClient;

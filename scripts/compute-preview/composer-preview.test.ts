@@ -120,6 +120,7 @@ describe("Composer preview workflow", () => {
     expect(workflow).toContain("--retry-all-errors");
     expect(workflow).toContain("${PREVIEW_SERVICE_URL}/api/config");
     expect(workflow).toContain('typeof config.bootId !== "string"');
-    expect(workflow).toContain('config.streams?.url !== "/api/streams"');
+    expect(workflow).toContain("config.database?.enabled !== true");
+    expect(workflow).toContain("config.streams !== undefined");
   });
 });

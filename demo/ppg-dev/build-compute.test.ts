@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -143,7 +143,7 @@ afterAll(async () => {
 });
 
 describe("build-compute", () => {
-  it("copies stable Prisma dev runtime assets next to the bundled server entrypoint", async () => {
+  it("boots the seeded hosted database without Streams or a writable home", async () => {
     const bunVersion = await getBunVersion();
 
     if (!bunVersion) {
@@ -229,8 +229,15 @@ describe("build-compute", () => {
       cwd: assemblyCwd,
     });
 
+    const readOnlyHome = join(assemblyCwd, "read-only-home");
+    await mkdir(readOnlyHome);
+    await chmod(readOnlyHome, 0o555);
+
     const port = await getAvailablePort();
     const bootstrapSource = [
+      // Compute uses Linux XDG paths, and its application home is read-only.
+      // Exercise those paths even when this test runs on a developer's Mac.
+      'Object.defineProperty(process, "platform", { value: "linux" });',
       'import { Socket } from "node:net";',
       // Compute's mapped port can accept a connection probe before the app
       // binds it. Only the server's actual listen operation establishes
@@ -257,6 +264,10 @@ describe("build-compute", () => {
         // The bundled preview must use Composer's port, even when a local
         // demo override exists in the shell launching it.
         STUDIO_DEMO_PORT: "1",
+        XDG_DATA_HOME: join(readOnlyHome, ".local/share"),
+        XDG_CONFIG_HOME: join(readOnlyHome, ".config"),
+        XDG_CACHE_HOME: join(readOnlyHome, ".cache"),
+        XDG_STATE_HOME: join(readOnlyHome, ".local/state"),
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -275,14 +286,33 @@ describe("build-compute", () => {
       const response = await waitForHttp(`http://127.0.0.1:${port}/api/config`);
       const payload = (await response.json()) as {
         bootId?: unknown;
+        database?: { enabled?: unknown };
+        seededAt?: unknown;
         streams?: {
           url?: unknown;
         };
       };
 
       expect(typeof payload.bootId).toBe("string");
-      expect(typeof payload.streams?.url).toBe("string");
-      expect(payload.streams?.url).toBe("/api/streams");
+      expect(payload.database?.enabled).toBe(true);
+      expect(typeof payload.seededAt).toBe("string");
+      expect(payload.streams).toBeUndefined();
+
+      const queryResponse = await fetch(
+        `http://127.0.0.1:${port}/api/query`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            procedure: "query",
+            query: {
+              sql: "select count(*)::int as count from organizations",
+              parameters: [],
+            },
+          }),
+        },
+      );
+      expect(await queryResponse.json()).toEqual([null, [{ count: 12 }]]);
 
       const faviconResponse = await fetch(
         `http://127.0.0.1:${port}/favicon.ico`,
@@ -302,6 +332,7 @@ describe("build-compute", () => {
           serverProcess.once("close", () => resolve());
         });
       }
+      await chmod(readOnlyHome, 0o755);
     }
 
     expect(normalizeBundledServerStderr(stderr)).toBe("");

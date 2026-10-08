@@ -69,8 +69,9 @@ jobs:
           printf '%s' "$config" | node --input-type=module -e '
               import { readFileSync } from "node:fs";
               const config = JSON.parse(readFileSync(0, "utf8"));
-              if (typeof config.bootId !== "string" || config.streams?.url !== "/api/streams") {
-                throw new Error("The deployed Studio demo did not return its database and Streams configuration.");
+              if (typeof config.bootId !== "string" || config.database?.enabled !== true ||
+                  typeof config.seededAt !== "string" || config.streams !== undefined) {
+                throw new Error("The deployed Studio demo did not return its seeded database configuration without Streams.");
               }
             '
 

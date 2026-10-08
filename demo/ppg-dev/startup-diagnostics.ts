@@ -33,6 +33,11 @@ export function addDemoStartupFailureHint(args: {
 }): string {
   const { appPort, errorMessage } = args;
 
+  if (errorMessage.includes("EACCES:") || errorMessage.includes("EROFS:")) {
+    return `${errorMessage}
+[demo] hint: Prisma Dev could not write its runtime files. Its data directory must be writable.`;
+  }
+
   if (errorMessage.includes("schemaUpdate.interpreter is not supported")) {
     return `${errorMessage}
 [demo] hint: Your local Streams checkout now expects the profile-based WAL setup. Studio should be linked to the sibling local \`@prisma/dev\` package from \`team-expansion\`, not the published npm package.
