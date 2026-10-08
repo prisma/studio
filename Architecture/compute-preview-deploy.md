@@ -65,8 +65,10 @@ project; the browser's current workspace does not change an existing CLI session
 ## Build and Deploy
 
 The workflow MUST use the pinned official `prisma/cloud-deploy-action` with
-`install-command: pnpm install --frozen-lockfile`, `build-command: pnpm build:deploy`,
-and `module: module.ts`. The action runs the installed Prisma CLI under Bun.
+`install-command: pnpm install --frozen-lockfile` and `module: module.ts`.
+Its build command MUST run `pnpm build:deploy` followed by the Composer assembly
+regression test and the assembled database/Streams bundle boot test on Linux,
+before deployment. The action runs the installed Prisma CLI under Bun.
 
 Composer MUST copy the self-contained build without a runtime dependency trace.
 Tracing Prisma Dev's operating-system and temp-file reads would incorrectly stage

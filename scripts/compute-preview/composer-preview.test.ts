@@ -42,7 +42,9 @@ describe("Composer preview workflow", () => {
     expect(workflow).toContain("  push:");
     expect(workflow).toContain("id-token: write");
     expect(workflow).not.toContain("          stage:");
-    expect(workflow).toContain("build-command: pnpm build:deploy");
+    expect(workflow).toContain("pnpm build:deploy &&");
+    expect(workflow).toContain("demo/ppg-dev/compute-service.test.ts");
+    expect(workflow).toContain("demo/ppg-dev/build-compute.test.ts");
     expect(workflow).toContain(
       "install-command: pnpm install --frozen-lockfile",
     );
@@ -83,7 +85,7 @@ describe("Composer preview workflow", () => {
     expect(commentStep).toBeGreaterThan(startupStep);
     expect(workflow).toContain("--fail");
     expect(workflow).toContain("--retry-all-errors");
-    expect(workflow).toContain('${PREVIEW_SERVICE_URL}/api/config');
+    expect(workflow).toContain("${PREVIEW_SERVICE_URL}/api/config");
     expect(workflow).toContain('typeof config.bootId !== "string"');
     expect(workflow).toContain('config.streams?.url !== "/api/streams"');
   });

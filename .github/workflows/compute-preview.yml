@@ -45,7 +45,10 @@ jobs:
         with:
           module: module.ts
           install-command: pnpm install --frozen-lockfile
-          build-command: pnpm build:deploy
+          build-command: >-
+            pnpm build:deploy &&
+            STUDIO_INCLUDE_HEAVY_LOCAL_TESTS=1 pnpm exec vitest run --project demo
+            demo/ppg-dev/compute-service.test.ts demo/ppg-dev/build-compute.test.ts
       - name: Require a completed deployment
         if: steps.deploy.outputs.outcome != 'succeeded'
         run: |
