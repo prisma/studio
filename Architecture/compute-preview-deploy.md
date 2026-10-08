@@ -76,7 +76,10 @@ build-machine files and fail Linux assembly. Generated Composer and Alchemy
 directories MUST be gitignored and excluded from lint/typecheck.
 
 The bundled server MUST read its HTTP port from `service.port()` through the
-prebuilt-assets module and bind `0.0.0.0`. The source demo continues to use
+prebuilt-assets module and bind `0.0.0.0`. The root Module MUST bind its reserved
+port parameter to `8080`, which Composer also uses for Compute's HTTP mapping.
+Compute's runtime already occupies `3000`, so the default port cannot be used
+for this demo. The source demo continues to use
 `STUDIO_DEMO_PORT` (default `4310`). There is no fixed-port Compute wrapper.
 
 The workflow MUST fail when the deploy action skips for missing credentials rather

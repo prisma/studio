@@ -39,7 +39,7 @@ That override stays opt-in, rebuilds from the sibling repos by default, and can 
 
 Pushing `main` publishes the stable seeded Studio demo; other branches deploy isolated Prisma Composer stages in the `studio` Compute project.
 The exact Git branch name identifies each preview. GitHub OIDC supplies deployment credentials, and preview pushes update sticky URL comments on already-open PRs after the public demo passes its startup check.
-The Git connection removes previews when branches are deleted. The complete database and Streams runtime travel with the bundle, and Composer supplies its HTTP port without adding deployment dependencies to the published library.
+The Git connection removes previews when branches are deleted. The complete database and Streams runtime travel with the bundle, and Composer maps the configured port 8080 without adding deployment dependencies to the published library.
 
 ## Introspection Recovery and Retry
 

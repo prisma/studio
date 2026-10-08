@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { Load } from "@prisma/composer";
+import { buildConfig } from "@prisma/composer/deploy";
 import { assemble } from "@prisma/composer/node/control";
 import { describe, expect, it } from "vitest";
 
@@ -17,6 +18,24 @@ import app from "../../module";
 import studio from "./compute-service";
 
 describe("Studio Composer app", () => {
+  it("binds an HTTP port outside Compute's occupied port 3000", () => {
+    const graph = Load(app);
+    const service = graph.nodes.find(({ node }) => node.kind === "service");
+
+    if (!service || service.node.kind !== "service") {
+      throw new Error("The Studio app must contain a service.");
+    }
+    const config = buildConfig(
+      service.node,
+      service.id,
+      graph,
+      new Map(),
+      new Map(),
+    );
+
+    expect(config.service.port).toBe(8080);
+  });
+
   it("declares one service with the complete database and Streams artifact", () => {
     const graph = Load(app);
     const services = graph.nodes.filter(({ node }) => node.kind === "service");
