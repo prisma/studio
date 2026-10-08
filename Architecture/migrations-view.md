@@ -95,6 +95,7 @@ not represent one executed migration. A constrained parent must provide a
 height so the canvas can measure its viewport.
 
 `@prisma/studio-core/data/migrations` exports `readRecordedSchema(executor)`.
+The reader requires a PostgreSQL executor.
 It probes the tables and reads the newest `app` ledger destination with its
 stored contract in a bounded query. Missing tables, an empty ledger, and a
 missing current snapshot have distinct statuses. The reader never substitutes

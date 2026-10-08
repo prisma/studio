@@ -385,5 +385,5 @@ When Studio runs in a full-page shell whose document has no host-authored backgr
 
 `SchemaDiff` exposes the Migrations view's model cards, relation canvas, and schema panel without Studio providers or navigation.
 Hosts can show a complete recorded contract or compare two applied snapshots; SQL appears only when migration operations are provided.
-`readRecordedSchema` reads the latest Prisma 8 app contract from the ledger and reports missing snapshots explicitly.
-The same UI ships as a self-contained MCP Apps resource for ChatGPT plugins, with host theme updates and no database credentials in the browser.
+`readRecordedSchema` reads the latest Prisma 8 app contract through a PostgreSQL executor and reports missing snapshots explicitly.
+The self-contained MCP Apps resource supports ChatGPT plugins, host themes, and host messages for missing snapshots. It needs no database credentials in the browser.

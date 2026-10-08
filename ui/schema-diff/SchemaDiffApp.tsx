@@ -84,7 +84,11 @@ export function SchemaDiffApp() {
       style={{ height: 600 }}
     >
       {schema?.status === "available" ? (
-        <SchemaDiff {...schema} scoped={false} />
+        <SchemaDiff
+          {...schema}
+          missingSnapshotsMessage={schema.message}
+          scoped={false}
+        />
       ) : (
         <div
           role="status"

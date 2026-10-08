@@ -2,6 +2,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 
+import { SchemaDiff } from "./SchemaDiff";
 import { SchemaDiffApp } from "./SchemaDiffApp";
 
 const bridge = vi.hoisted(() => ({
@@ -17,8 +18,10 @@ vi.mock("@modelcontextprotocol/ext-apps/react", () => ({
   },
 }));
 vi.mock("./SchemaDiff", () => ({
-  SchemaDiff: ({ title, className }: { title: string; className?: string }) => (
-    <div className={className}>{title}</div>
+  SchemaDiff: vi.fn(
+    ({ title, className }: { title: string; className?: string }) => (
+      <div className={className}>{title}</div>
+    ),
   ),
 }));
 (
@@ -66,6 +69,40 @@ it("clears old schemas on a new request and renders only valid successful tool r
     expect(container.textContent).toContain("could not be loaded");
     act(() => bridge.ontoolcancelled());
     expect(container.textContent).toContain("cancelled");
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+  }
+});
+
+it("passes the host message to the schema view when snapshots are missing", () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const message = "The database on main has no current contract snapshot.";
+  try {
+    act(() => root.render(<SchemaDiffApp />));
+    act(() =>
+      bridge.ontoolresult({
+        structuredContent: {
+          schema: {
+            status: "available",
+            title: "Catalog schema",
+            fromLabel: "main",
+            toLabel: "branch",
+            mode: "diff",
+            before: null,
+            after: null,
+            message,
+          },
+        },
+      }),
+    );
+    expect(vi.mocked(SchemaDiff).mock.lastCall?.[0]).toMatchObject({
+      before: null,
+      after: null,
+      missingSnapshotsMessage: message,
+    });
   } finally {
     act(() => root.unmount());
     container.remove();

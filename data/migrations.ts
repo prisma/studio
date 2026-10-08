@@ -216,7 +216,7 @@ const CURRENT_APP_CONTRACT_QUERY = `select l."id", l."space", l."destination_cor
   where l."space" = 'app'
   order by l."id" desc limit 1`;
 
-/** Reads the latest applied app snapshot; never substitutes an older contract. */
+/** Reads the latest applied PostgreSQL app snapshot; never uses an older contract. */
 export async function readRecordedSchema(
   executor: Executor,
   options?: ExecuteOptions,
