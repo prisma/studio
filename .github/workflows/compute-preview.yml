@@ -1,30 +1,24 @@
 name: compute preview
 
 on:
-  pull_request:
-    types:
-      - opened
-      - reopened
-      - synchronize
-  delete:
+  push:
+  workflow_dispatch:
 
 permissions:
   contents: read
-  issues: write
   pull-requests: write
+  id-token: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.event.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  deploy-preview:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+  deploy:
+    if: github.ref_type == 'branch' && !github.event.repository.fork
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
@@ -39,57 +33,39 @@ jobs:
         env:
           BUN_VERSION: 1.3.12
         run: |
-          curl -fsSL https://bun.sh/install | bash -s -- bun-v${BUN_VERSION}
+          curl -fsSL https://bun.sh/install | bash -s -- "bun-v${BUN_VERSION}"
           echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
           "$HOME/.bun/bin/bun" --version
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      # Composer's directory tracer follows the bundled Prisma Dev temp paths.
+      # Keep that trace inside the checkout, away from unrelated system files.
+      - name: Prepare Composer temp directory
+        run: mkdir -p .prisma-composer/tmp
 
-      - name: Build Compute artifact
-        run: pnpm build:deploy
-
-      - name: Deploy preview
+      # The action selects production for the default branch and otherwise uses
+      # the exact branch name as its stage. The Git connection supplies OIDC.
+      - name: Deploy Studio
         id: deploy
+        uses: prisma/cloud-deploy-action@8cef831d59df59dde55117e5119a3bef060b3bd2 # v1
+        with:
+          module: module.ts
+          install-command: pnpm install --frozen-lockfile
+          build-command: pnpm build:deploy
         env:
-          PRISMA_API_TOKEN: ${{ secrets.STUDIO_PREVIEW_COMPUTE_TOKEN }}
-          PREVIEW_BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
-        run: node scripts/compute-preview/compute-preview-deploy.mjs
+          TMPDIR: ${{ github.workspace }}/.prisma-composer/tmp
+
+      - name: Require a completed deployment
+        if: steps.deploy.outputs.outcome != 'succeeded'
+        run: |
+          echo "::error::Studio was not deployed. Connect prisma/studio to the Prisma project and grant this workflow OIDC access."
+          exit 1
 
       - name: Comment preview URL on PR
+        if: steps.deploy.outputs.outcome == 'succeeded' && github.ref_name != github.event.repository.default_branch
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ github.token }}
-          PREVIEW_BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
-          PREVIEW_PR_NUMBER: ${{ github.event.pull_request.number }}
-          PREVIEW_SERVICE_NAME: ${{ steps.deploy.outputs.preview_service_name }}
-          PREVIEW_SERVICE_URL: ${{ steps.deploy.outputs.preview_service_url }}
-          PREVIEW_VERSION_URL: ${{ steps.deploy.outputs.preview_version_url }}
+          PREVIEW_BRANCH_NAME: ${{ github.ref_name }}
+          PREVIEW_SERVICE_NAME: studio
+          PREVIEW_SERVICE_URL: ${{ steps.deploy.outputs.url }}
         run: node scripts/compute-preview/compute-preview-comment.mjs
-
-  destroy-preview:
-    if: github.event_name == 'delete' && github.event.ref_type == 'branch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-
-      - name: Setup Node
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
-        with:
-          node-version-file: .node-version
-
-      - name: Install Bun
-        env:
-          BUN_VERSION: 1.3.12
-        run: |
-          curl -fsSL https://bun.sh/install | bash -s -- bun-v${BUN_VERSION}
-          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
-          "$HOME/.bun/bin/bun" --version
-
-      - name: Destroy preview service for deleted branch
-        env:
-          PRISMA_API_TOKEN: ${{ secrets.STUDIO_PREVIEW_COMPUTE_TOKEN }}
-          PREVIEW_BRANCH_NAME: ${{ github.event.ref }}
-        run: node scripts/compute-preview/compute-preview-destroy.mjs

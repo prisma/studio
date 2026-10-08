@@ -33,7 +33,12 @@ export default tseslint.config(
   {
     ignores: [
       "**/.agents/**/*",
+      "**/.claude/**/*",
+      "**/.cursor/skills/**/*",
+      "**/.devin/skills/**/*",
       "**/.playwright-cli/**/*",
+      "**/.prisma-composer/**/*",
+      "**/.alchemy/**/*",
       "**/deploy/**/*",
       "**/node_modules/**/*",
       "**/dist/**/*",

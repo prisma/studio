@@ -25,6 +25,18 @@ It is responsible for:
 5. bundling Prisma Streams local's worker into `touch/processor_worker.js`
 6. copying the worker's vendored `hash_vendor/` files into `touch/`
 7. writing a self-contained output directory whose entrypoint is `bundle/server.bundle.js`
+8. injecting the Composer service's `port()` into the prebuilt-assets module so bundled deploy mode binds the platform's port instead of a source-demo environment override
+
+`demo/ppg-dev/compute-service.ts` declares the complete `deploy/` directory as a
+Composer node build, retaining the database and Streams assets at their relative
+paths. Composer supplies the process bootstrap and runtime configuration; Studio
+MUST NOT generate a fixed-port Compute entrypoint. Source-mode `pnpm demo:ppg`
+continues to use `STUDIO_DEMO_PORT` and defaults to `4310`.
+
+The Composer directory adapter traces runtime files in the bundle. Assembly MUST
+use an empty checkout-local temp directory (`.prisma-composer/tmp`) so Prisma Dev's
+temp-file accesses do not make that trace scan unrelated system temp files.
+See `compute-preview-deploy.md` for the app, workflow, state, and credential contract.
 
 ## Prisma Dev Runtime Assets
 

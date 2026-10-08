@@ -6,5 +6,6 @@ declare module "virtual:prebuilt-assets" {
 
   export const appScript: string;
   export const appStyles: string;
+  export const appPort: number;
   export const builtAssets: Map<string, BuiltAsset>;
 }

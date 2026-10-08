@@ -74,9 +74,7 @@ export function EmbeddedStudio() {
   return (
     <Studio
       adapter={adapter}
-      llm={async (
-        request: StudioLlmRequest,
-      ): Promise<StudioLlmResponse> => {
+      llm={async (request: StudioLlmRequest): Promise<StudioLlmResponse> => {
         const response = await fetch("/api/ai", {
           body: JSON.stringify(request),
           headers: { "content-type": "application/json" },
@@ -654,39 +652,73 @@ stable filenames so the deployed demo does not need the repo checkout at
 runtime. It also Bun-bundles the Prisma Streams local worker into `deploy/touch/`
 so Compute can keep Prisma Dev's WAL-to-stream sidecar alive in the source-free artifact.
 
-Deploy that artifact with:
+Run the built preview through Composer locally (Node 22.18+ and Bun 1.3.10+):
 
 ```sh
-bunx @prisma/compute-cli deploy --skip-build \
-  --path deploy \
-  --entrypoint bundle/compute-entrypoint.js \
-  --http-port 8080 \
-  --service <service-id>
+mkdir -p .prisma-composer/tmp
+TMPDIR="$PWD/.prisma-composer/tmp" pnpm exec prisma dev module.ts
+```
+
+Open the service URL printed by Composer. The temp directory keeps Composer's
+runtime file trace away from unrelated system temp files. The bundled server
+reads Composer's injected port; the source demo still defaults to port 4310.
+
+Deploy a branch preview with an existing `prisma auth login` session:
+
+```sh
+TMPDIR="$PWD/.prisma-composer/tmp" pnpm exec prisma deploy module.ts --stage <branch-name>
 ```
 
 ## Compute Preview Deploys
 
-This repo also maintains branch-scoped Compute previews for pull requests.
+`module.ts` declares the `studio` Composer app. Its one `studio` service
+packages the whole demo, including the seeded ephemeral database and Streams.
+The Composer packages are development tools; consumers of the Studio npm library
+need no Composer dependency or deployment configuration.
 
-- `.github/workflows/compute-preview.yml` deploys the current PR branch into the
-  dedicated `studio-preview` Compute project whenever a PR is opened,
-  reopened, or updated with new commits.
-- The preview service name is derived from the branch name through a stable
-  Compute-safe slug, so later pushes reuse the same service instead of creating
-  duplicates.
-- The workflow updates one sticky PR comment with the live preview URL after a
-  successful deploy.
-- When a Git branch is deleted, the same workflow destroys the matching preview
-  service.
+`.github/workflows/compute-preview.yml` runs the official Prisma deploy action on
+branch pushes and manual workflow runs. The default branch (`main`) publishes the
+stable hosted demo; every other branch uses its exact Git name as a Composer stage.
+Later pushes converge the same environment without slug collisions. Fork repositories
+skip the job. A successful preview push updates one sticky URL comment on each
+already-open PR for that branch; opening a PR alone does not deploy it. The action
+also prints the live URL in the workflow summary.
 
-The workflow expects the GitHub Actions secret
-`STUDIO_PREVIEW_COMPUTE_TOKEN`, which should contain a Compute API token for the
-`studio-preview` project.
+Connect `prisma/studio` to its Prisma project once, following
+[Deploy on push](https://www.prisma.io/docs/compute/deploy-on-push). If Console's
+new-project importer reports that the Studio library has no framework or `start`
+script, create an **empty project** named `studio` instead, with the **Singapore**
+region. The Composer declaration and workflow in this repository already define
+how to build and launch the hosted demo; no root `start` script is needed.
 
-For branch-deletion cleanup to happen automatically, the workflow must be
-present on the default branch. In practice that means merging the preview
-workflow to `main` once, after which later PR branches will get full automatic
-create/update/delete behavior.
+From the repository root, authenticate in the project's workspace and connect it:
+
+```sh
+pnpm exec prisma auth login
+pnpm exec prisma project link studio
+pnpm exec prisma git connect https://github.com/prisma/studio
+```
+
+Install the Prisma GitHub App for this repository if prompted. The local project
+link is stored in gitignored `.prisma/local.json`. The Composer app name MUST match
+the connected project's name. The configured `ap-southeast-1` region applies when
+creating a project; an existing project keeps its region.
+
+GitHub Actions authenticates through OIDC with `id-token: write`; no Prisma token
+secret or workspace-ID variable is used by the workflow. A missing connection fails
+the deployment check instead of leaving a successful run without a deployment.
+Connect before merging, then rerun the branch's workflow and verify its preview URL.
+After merge, a push to `main` deploys the stable demo. Manual workflow runs can
+redeploy a branch without another commit.
+
+Deleting a Git branch lets the repository connection remove the preview's services,
+databases, and buckets automatically. Prisma protects production and the default
+branch from this cleanup; Studio does not run a custom teardown job.
+
+Composer stages do not adopt the old hand-created preview services. Remove those
+obsolete services explicitly in Prisma Console after the new previews are working.
+A branch containing resources without Composer state must be cleared explicitly
+or replaced by an unused stage before Composer can manage it.
 
 ## Development Workflow
 

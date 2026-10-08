@@ -3,6 +3,7 @@ import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { afterAll, describe, expect, it } from "vitest";
 
@@ -177,7 +178,7 @@ describe("build-compute", () => {
       expect(rootEntries.some((entry) => entry.endsWith(".data"))).toBe(false);
 
       expect(bundleEntries).toContain("server.bundle.js");
-      expect(bundleEntries).toContain("compute-entrypoint.js");
+      expect(bundleEntries).not.toContain("compute-entrypoint.js");
       expect(bundleEntries).toContain("initdb.wasm");
       expect(bundleEntries).toContain("pglite.data");
       expect(bundleEntries).toContain("pglite.wasm");
@@ -214,28 +215,26 @@ describe("build-compute", () => {
       expect(serverBundle).not.toContain(
         "sourceMappingURL=data:application/json;base64",
       );
-      const computeEntrypoint = await readFile(
-        join(outputDir, "bundle", "compute-entrypoint.js"),
-        "utf8",
-      );
-      expect(computeEntrypoint).toContain(
-        'process.env.STUDIO_DEMO_PORT ??= "8080";',
-      );
-      expect(computeEntrypoint).toContain(
-        'await import("./server.bundle.js");',
-      );
-
       if (!supportsBundledPrismaDevBoot(bunVersion)) {
         return;
       }
 
       const port = await getAvailablePort();
-      const serverProcess = spawn("bun", ["./bundle/compute-entrypoint.js"], {
+      const bootstrapSource = [
+        `import { bootstrapService } from ${JSON.stringify(new URL("../../node_modules/@prisma/composer-prisma-cloud/dist/testing.mjs", import.meta.url).href)};`,
+        `import service from ${JSON.stringify(new URL("./compute-service.ts", import.meta.url).href)};`,
+        `await bootstrapService(service, { deps: {}, service: { port: ${port} } }, async () => {`,
+        `  await import(${JSON.stringify(pathToFileURL(join(outputDir, "bundle", "server.bundle.js")).href)});`,
+        "});",
+      ].join("\n");
+      const serverProcess = spawn("bun", ["--eval", bootstrapSource], {
         cwd: outputDir,
         env: {
           ...process.env,
           STUDIO_DEMO_AI_ENABLED: "false",
-          STUDIO_DEMO_PORT: String(port),
+          // The bundled preview must use Composer's port, even when a local
+          // demo override exists in the shell launching it.
+          STUDIO_DEMO_PORT: "1",
         },
         stdio: ["ignore", "pipe", "pipe"],
       });
