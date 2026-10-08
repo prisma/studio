@@ -10,7 +10,26 @@ The `demo/ppg-dev` server has two runtime modes:
 
 The deploy path exists because the demo server is not just a Bun server entrypoint. In development it expects the Studio repo checkout so it can rebuild `client.tsx` and `ui/index.css` at runtime.
 
-Bundled deploy mode uses the embedded local Prisma Streams runtime exactly as published by `@prisma/streams-local`, so Studio does not carry a second demo-local memory autotune layer on top of Streams' own defaults.
+Bundled deploy mode runs an ephemeral seeded database without Streams. Source
+mode uses the embedded local Prisma Streams runtime exactly as published by
+`@prisma/streams-local`, without a demo-local memory autotune layer.
+
+## Hosted Database Lifecycle
+
+`compute-runtime.ts` MUST start Prisma Dev's stateless `ServerState` and
+`startDBServer` through the published `@prisma/dev/internal/state` and
+`@prisma/dev/internal/db` entrypoints. The public `startPrismaDevServer` always
+launches Streams, whose lock and SQLite files require a writable home directory.
+The hosted database MUST remain in memory, use direct TCP, and seed the same
+fixtures as source mode. It MUST NOT start Streams, WAL replication, or the
+observability ticker. Cleanup MUST close the SQL client, database, and state.
+
+The prebuilt-assets module supplies this lifecycle to the shared server.
+The assembled-runtime test MUST boot with a read-only Linux data directory and
+query seeded rows. The internal entrypoints are covered by this real boot test;
+`@prisma/dev` remains pinned. Hosted browser config MUST omit Streams so Studio
+does not show Streams navigation. Query insights remain available through the
+BFF's own query recorder.
 
 ## Build Responsibilities
 
@@ -25,6 +44,24 @@ It is responsible for:
 5. bundling Prisma Streams local's worker into `touch/processor_worker.js`
 6. copying the worker's vendored `hash_vendor/` files into `touch/`
 7. writing a self-contained output directory whose entrypoint is `bundle/server.bundle.js`
+8. injecting the Composer service's `port()` into the prebuilt-assets module so bundled deploy mode binds the platform's port instead of a source-demo environment override
+9. injecting the database-only hosted lifecycle through the same prebuilt-assets module
+
+`demo/ppg-dev/compute-service.ts` declares the complete `deploy/` directory as a
+Composer node build with `dependencies: "bundled"`, retaining the database and
+Streams assets at their relative paths. Composer supplies the process bootstrap
+and runtime configuration; Studio MUST NOT generate a fixed-port Compute entrypoint. Source-mode `pnpm demo:ppg`
+continues to use `STUDIO_DEMO_PORT` and defaults to `4310`.
+The root Module binds the hosted service's Composer port parameter to `8080`;
+the server still reads `service.port()`. Bundled mode MUST let `Bun.serve`
+perform the port binding without a preceding TCP probe, since Compute's
+network can accept a probe without proving this process can bind the listener.
+The source demo retains its local port diagnostic.
+
+Assembly MUST copy the self-contained directory without tracing host files.
+Prisma Dev reads operating-system metadata and temporary files at runtime; those
+reads MUST NOT cause build-machine files such as `/etc/os-release` to be packaged.
+See `compute-preview-deploy.md` for the app, workflow, state, and credential contract.
 
 ## Prisma Dev Runtime Assets
 

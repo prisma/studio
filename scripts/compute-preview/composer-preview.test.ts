@@ -1,0 +1,126 @@
+import { spawnSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
+
+import { describe, expect, it } from "vitest";
+
+import {
+  buildPreviewCommentBody,
+  PREVIEW_COMMENT_MARKER,
+} from "./compute-preview-utils.mjs";
+
+describe("buildPreviewCommentBody", () => {
+  it("retains the sticky marker and reports the Composer service and stage", () => {
+    expect(
+      buildPreviewCommentBody({
+        branchName: "codex/public-origin-main",
+        serviceName: "studio",
+        serviceUrl: "https://example.cdg.prisma.build",
+      }),
+    ).toBe(
+      [
+        PREVIEW_COMMENT_MARKER,
+        "Compute preview deployed with Prisma Composer.",
+        "",
+        "Stage: `codex/public-origin-main`",
+        "Service: `studio`",
+        "Preview: https://example.cdg.prisma.build",
+      ].join("\n"),
+    );
+  });
+});
+
+describe("Composer preview workflow", () => {
+  it("rejects a missing deployment URL before attempting a request", async () => {
+    const workflow = await readFile(
+      new URL("../../.github/workflows/compute-preview.yml", import.meta.url),
+      "utf8",
+    );
+    const startupStep = workflow.split("- name: Verify demo startup")[1];
+    const script = startupStep
+      ?.split("run: |\n")[1]
+      ?.split("\n      - name:")[0]
+      ?.replace(/^ {10}/gm, "");
+
+    expect(script).toBeDefined();
+    const result = spawnSync(
+      "bash",
+      [
+        "-e",
+        "-o",
+        "pipefail",
+        "-c",
+        `curl() { echo "Unexpected request" >&2; return 1; }\n${script}`,
+      ],
+      {
+        env: { ...process.env, PREVIEW_SERVICE_URL: "" },
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("::error::Deploy action returned no URL.");
+    expect(result.stderr).not.toContain("Unexpected request");
+  });
+
+  it("deploys branch pushes with OIDC and lets the action select production or the exact preview stage", async () => {
+    const workflow = await readFile(
+      new URL("../../.github/workflows/compute-preview.yml", import.meta.url),
+      "utf8",
+    );
+
+    expect(workflow).toContain("prisma/cloud-deploy-action@");
+    expect(workflow).toContain(
+      "github.ref_type == 'branch' && !github.event.repository.fork",
+    );
+    expect(workflow).toContain("  push:");
+    expect(workflow).toContain("id-token: write");
+    expect(workflow).not.toContain("          stage:");
+    expect(workflow).toContain("pnpm build:deploy &&");
+    expect(workflow).toContain("demo/ppg-dev/compute-service.test.ts");
+    expect(workflow).toContain("demo/ppg-dev/build-compute.test.ts");
+    expect(workflow).toContain(
+      "install-command: pnpm install --frozen-lockfile",
+    );
+    expect(workflow).toContain("cancel-in-progress: false");
+    expect(workflow).toContain("steps.deploy.outputs.outcome == 'succeeded'");
+    expect(workflow).not.toContain("PRISMA_API_TOKEN");
+    expect(workflow).not.toContain("PRISMA_SERVICE_TOKEN");
+    expect(workflow).not.toContain("PRISMA_WORKSPACE_ID");
+    expect(workflow).not.toContain("  delete:");
+    expect(workflow).not.toContain("destroy-preview:");
+  });
+
+  it("fails a skipped deployment and only posts preview comments for non-default branches", async () => {
+    const workflow = await readFile(
+      new URL("../../.github/workflows/compute-preview.yml", import.meta.url),
+      "utf8",
+    );
+    expect(workflow).toContain(
+      "if: steps.deploy.outputs.outcome != 'succeeded'",
+    );
+    expect(workflow).toContain("exit 1");
+    expect(workflow).toContain(
+      "github.ref_name != github.event.repository.default_branch",
+    );
+    expect(workflow).toContain("PREVIEW_BRANCH_NAME: ${{ github.ref_name }}");
+    expect(workflow).not.toContain("PREVIEW_PR_NUMBER:");
+  });
+
+  it("requires the deployed demo to start before reporting its preview URL", async () => {
+    const workflow = await readFile(
+      new URL("../../.github/workflows/compute-preview.yml", import.meta.url),
+      "utf8",
+    );
+    const startupStep = workflow.indexOf("- name: Verify demo startup");
+    const commentStep = workflow.indexOf("- name: Comment preview URL on PR");
+
+    expect(startupStep).toBeGreaterThan(0);
+    expect(commentStep).toBeGreaterThan(startupStep);
+    expect(workflow).toContain("--fail");
+    expect(workflow).toContain("--retry-all-errors");
+    expect(workflow).toContain("${PREVIEW_SERVICE_URL}/api/config");
+    expect(workflow).toContain('typeof config.bootId !== "string"');
+    expect(workflow).toContain("config.database?.enabled !== true");
+    expect(workflow).toContain("config.streams !== undefined");
+  });
+});

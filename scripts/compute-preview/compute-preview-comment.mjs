@@ -1,18 +1,28 @@
 #!/usr/bin/env node
 
 import {
-  PREVIEW_COMMENT_MARKER,
   buildPreviewCommentBody,
+  PREVIEW_COMMENT_MARKER,
 } from "./compute-preview-utils.mjs";
 
 async function main() {
   const githubToken = getRequiredEnv("GITHUB_TOKEN");
   const repository = getRequiredEnv("GITHUB_REPOSITORY");
-  const prNumber = getRequiredEnv("PREVIEW_PR_NUMBER");
   const branchName = getRequiredEnv("PREVIEW_BRANCH_NAME");
   const serviceName = getRequiredEnv("PREVIEW_SERVICE_NAME");
   const serviceUrl = getRequiredEnv("PREVIEW_SERVICE_URL");
-  const versionUrl = process.env.PREVIEW_VERSION_URL?.trim();
+
+  await updatePreviewComments({
+    githubToken,
+    repository,
+    branchName,
+    serviceName,
+    serviceUrl,
+  });
+}
+
+export async function updatePreviewComments(args) {
+  const { githubToken, repository, branchName, serviceName, serviceUrl } = args;
   const [owner, repo] = repository.split("/");
 
   if (!owner || !repo) {
@@ -23,34 +33,35 @@ async function main() {
     branchName,
     serviceName,
     serviceUrl,
-    versionUrl,
   });
-  const comments = await githubRequest({
+  const pullRequests = await githubRequest({
     githubToken,
     method: "GET",
-    path: `/repos/${owner}/${repo}/issues/${prNumber}/comments?per_page=100`,
+    path: `/repos/${owner}/${repo}/pulls?state=open&head=${encodeURIComponent(`${owner}:${branchName}`)}&per_page=100`,
   });
-  const existingComment = comments.find((comment) =>
-    typeof comment.body === "string" &&
-    comment.body.includes(PREVIEW_COMMENT_MARKER),
-  );
 
-  if (existingComment) {
+  for (const pullRequest of pullRequests) {
+    const comments = await githubRequest({
+      githubToken,
+      method: "GET",
+      path: `/repos/${owner}/${repo}/issues/${pullRequest.number}/comments?per_page=100`,
+    });
+    const existingComment = comments.find(
+      (comment) =>
+        comment.user?.login === "github-actions[bot]" &&
+        typeof comment.body === "string" &&
+        comment.body.includes(PREVIEW_COMMENT_MARKER),
+    );
+
     await githubRequest({
       body: { body },
       githubToken,
-      method: "PATCH",
-      path: `/repos/${owner}/${repo}/issues/comments/${existingComment.id}`,
+      method: existingComment ? "PATCH" : "POST",
+      path: existingComment
+        ? `/repos/${owner}/${repo}/issues/comments/${existingComment.id}`
+        : `/repos/${owner}/${repo}/issues/${pullRequest.number}/comments`,
     });
-    return;
   }
-
-  await githubRequest({
-    body: { body },
-    githubToken,
-    method: "POST",
-    path: `/repos/${owner}/${repo}/issues/${prNumber}/comments`,
-  });
 }
 
 async function githubRequest(args) {
@@ -86,4 +97,4 @@ function getRequiredEnv(name) {
   return value;
 }
 
-await main();
+if (import.meta.main) await main();

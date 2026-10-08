@@ -116,6 +116,17 @@ describe("ensurePortAvailable", () => {
 });
 
 describe("addDemoStartupFailureHint", () => {
+  it("does not mistake a read-only runtime directory for a port conflict", () => {
+    const message = addDemoStartupFailureHint({
+      appPort: 8080,
+      errorMessage:
+        "Error: EACCES: permission denied, mkdir '/mnt/app/home/.local/share'\n    at startLocalDurableStreamsServer (/tmp/streams-local.js:12:34)",
+    });
+
+    expect(message).not.toContain("STUDIO_DEMO_PORT");
+    expect(message).not.toContain("another Studio demo");
+  });
+
   it("adds a targeted hint for local streams startup failures", () => {
     const message = addDemoStartupFailureHint({
       appPort: 4310,

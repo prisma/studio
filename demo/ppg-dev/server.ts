@@ -51,6 +51,7 @@ declare const Bun: {
   serve(options: {
     fetch(request: Request): Promise<Response> | Response;
     idleTimeout?: number;
+    hostname?: string;
     port: number;
   }): {
     stop(closeActiveConnections?: boolean): void;
@@ -73,9 +74,11 @@ type PostgresExecutor = NonNullable<DemoRuntime["postgresExecutor"]>;
 // the import fails and we fall back to building assets at runtime.
 
 type PrebuiltAssets = {
+  appPort: number;
   appScript: string;
   appStyles: string;
   builtAssets: Map<string, BuiltAsset>;
+  startRuntime(): Promise<DemoRuntime>;
 };
 
 let prebuiltAssets: PrebuiltAssets | null = null;
@@ -88,7 +91,9 @@ try {
 
 const isProduction = prebuiltAssets !== null;
 
-const APP_PORT = Number.parseInt(process.env.STUDIO_DEMO_PORT ?? "4310", 10);
+const APP_PORT =
+  prebuiltAssets?.appPort ??
+  Number.parseInt(process.env.STUDIO_DEMO_PORT ?? "4310", 10);
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY ?? "";
 const AI_ENABLED = resolveDemoAiEnabled({
   anthropicApiKey: ANTHROPIC_API_KEY,
@@ -260,14 +265,20 @@ async function main(): Promise<void> {
     return;
   }
 
-  await ensurePortAvailable({
-    envVar: "STUDIO_DEMO_PORT",
-    port: APP_PORT,
-    serviceName: "Studio demo HTTP server",
-  });
+  // The bundled app validates its port with the actual Bun listener; a TCP
+  // connection probe does not establish whether this process can bind it.
+  if (!isProduction) {
+    await ensurePortAvailable({
+      envVar: "STUDIO_DEMO_PORT",
+      port: APP_PORT,
+      serviceName: "Studio demo HTTP server",
+    });
+  }
 
   const runtimeOptions = parseDemoRuntimeOptions(process.argv.slice(2));
-  const runtime = await startDemoRuntime(runtimeOptions);
+  const runtime = prebuiltAssets
+    ? await prebuiltAssets.startRuntime()
+    : await startDemoRuntime(runtimeOptions);
 
   cleanupCallbacks.push(...runtime.cleanupCallbacks);
   postgresClient = runtime.postgresClient;
@@ -292,6 +303,7 @@ async function main(): Promise<void> {
 
   const server = Bun.serve({
     fetch: (request) => handleRequest(request),
+    hostname: "0.0.0.0",
     idleTimeout: 120,
     port: APP_PORT,
   });

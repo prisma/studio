@@ -1,10 +1,14 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
+import { assemble } from "@prisma/composer/node/control";
 import { afterAll, describe, expect, it } from "vitest";
+
+import studio from "./compute-service";
 
 function runProcess(
   command: string,
@@ -139,151 +143,196 @@ afterAll(async () => {
 });
 
 describe("build-compute", () => {
-  it(
-    "copies stable Prisma dev runtime assets next to the bundled server entrypoint",
-    async () => {
-      const bunVersion = await getBunVersion();
+  it("boots the seeded hosted database without Streams or a writable home", async () => {
+    const bunVersion = await getBunVersion();
 
-      if (!bunVersion) {
-        return;
-      }
+    if (!bunVersion) {
+      return;
+    }
 
-      const outputDir = await mkdtemp(
-        join(tmpdir(), "studio-build-compute-output-"),
-      );
-      tempDirs.add(outputDir);
+    const outputDir = await mkdtemp(
+      join(tmpdir(), "studio-build-compute-output-"),
+    );
+    tempDirs.add(outputDir);
 
-      const build = await runProcess(
-        "bun",
-        ["demo/ppg-dev/build-compute.ts", outputDir],
-        {
-          cwd: process.cwd(),
-          env: {
-            STUDIO_DEMO_AI_ENABLED: "false",
-          },
-        },
-      );
-
-      expect(build.code).toBe(0);
-      expect(build.stderr).toBe("");
-
-      const rootEntries = await readdir(outputDir);
-      const bundleEntries = await readdir(join(outputDir, "bundle"));
-
-      expect(rootEntries).toContain("bundle");
-      expect(rootEntries).toContain("touch");
-      expect(rootEntries.some((entry) => entry.endsWith(".tar.gz"))).toBe(false);
-      expect(rootEntries.some((entry) => entry.endsWith(".wasm"))).toBe(false);
-      expect(rootEntries.some((entry) => entry.endsWith(".data"))).toBe(false);
-
-      expect(bundleEntries).toContain("server.bundle.js");
-      expect(bundleEntries).toContain("compute-entrypoint.js");
-      expect(bundleEntries).toContain("initdb.wasm");
-      expect(bundleEntries).toContain("pglite.data");
-      expect(bundleEntries).toContain("pglite.wasm");
-      expect(bundleEntries).toContain("pglite-seed.tar.gz");
-      expect(
-        bundleEntries.some(
-          (entry) => entry.includes(".tar-") && entry.endsWith(".gz"),
-        ),
-      ).toBe(true);
-
-      const touchEntries = await readdir(join(outputDir, "touch"));
-      const hashVendorEntries = await readdir(
-        join(outputDir, "touch", "hash_vendor"),
-      );
-      const workerBundle = await readFile(
-        join(outputDir, "touch", "processor_worker.js"),
-        "utf8",
-      );
-
-      expect(touchEntries).toContain("processor_worker.js");
-      expect(touchEntries).toContain("hash_vendor");
-      expect(hashVendorEntries).toContain("LICENSE.hash-wasm");
-      expect(hashVendorEntries).toContain("NOTICE.md");
-      expect(hashVendorEntries).toContain("xxhash3.umd.min.cjs");
-      expect(hashVendorEntries).toContain("xxhash32.umd.min.cjs");
-      expect(hashVendorEntries).toContain("xxhash64.umd.min.cjs");
-      expect(workerBundle).not.toContain('from "better-result"');
-      expect(workerBundle).not.toContain('from "ajv"');
-
-      const serverBundle = await readFile(
-        join(outputDir, "bundle", "server.bundle.js"),
-        "utf8",
-      );
-      expect(serverBundle).not.toContain(
-        "sourceMappingURL=data:application/json;base64",
-      );
-      const computeEntrypoint = await readFile(
-        join(outputDir, "bundle", "compute-entrypoint.js"),
-        "utf8",
-      );
-      expect(computeEntrypoint).toContain(
-        'process.env.STUDIO_DEMO_PORT ??= "8080";',
-      );
-      expect(computeEntrypoint).toContain(
-        'await import("./server.bundle.js");',
-      );
-
-      if (!supportsBundledPrismaDevBoot(bunVersion)) {
-        return;
-      }
-
-      const port = await getAvailablePort();
-      const serverProcess = spawn("bun", ["./bundle/compute-entrypoint.js"], {
-        cwd: outputDir,
+    const build = await runProcess(
+      "bun",
+      ["demo/ppg-dev/build-compute.ts", outputDir],
+      {
+        cwd: process.cwd(),
         env: {
-          ...process.env,
           STUDIO_DEMO_AI_ENABLED: "false",
-          STUDIO_DEMO_PORT: String(port),
         },
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+      },
+    );
 
-      let stdout = "";
-      let stderr = "";
+    expect(build.code).toBe(0);
+    expect(build.stderr).toBe("");
 
-      serverProcess.stdout.on("data", (chunk) => {
-        stdout += String(chunk);
-      });
-      serverProcess.stderr.on("data", (chunk) => {
-        stderr += String(chunk);
-      });
+    const rootEntries = await readdir(outputDir);
+    const bundleEntries = await readdir(join(outputDir, "bundle"));
 
-      try {
-        const response = await waitForHttp(
-          `http://127.0.0.1:${port}/api/config`,
-        );
-        const payload = (await response.json()) as {
-          bootId?: unknown;
-          streams?: {
-            url?: unknown;
-          };
+    expect(rootEntries).toContain("bundle");
+    expect(rootEntries).toContain("touch");
+    expect(rootEntries.some((entry) => entry.endsWith(".tar.gz"))).toBe(false);
+    expect(rootEntries.some((entry) => entry.endsWith(".wasm"))).toBe(false);
+    expect(rootEntries.some((entry) => entry.endsWith(".data"))).toBe(false);
+
+    expect(bundleEntries).toContain("server.bundle.js");
+    expect(bundleEntries).not.toContain("compute-entrypoint.js");
+    expect(bundleEntries).toContain("initdb.wasm");
+    expect(bundleEntries).toContain("pglite.data");
+    expect(bundleEntries).toContain("pglite.wasm");
+    expect(bundleEntries).toContain("pglite-seed.tar.gz");
+    expect(
+      bundleEntries.some(
+        (entry) => entry.includes(".tar-") && entry.endsWith(".gz"),
+      ),
+    ).toBe(true);
+
+    const touchEntries = await readdir(join(outputDir, "touch"));
+    const hashVendorEntries = await readdir(
+      join(outputDir, "touch", "hash_vendor"),
+    );
+    const workerBundle = await readFile(
+      join(outputDir, "touch", "processor_worker.js"),
+      "utf8",
+    );
+
+    expect(touchEntries).toContain("processor_worker.js");
+    expect(touchEntries).toContain("hash_vendor");
+    expect(hashVendorEntries).toContain("LICENSE.hash-wasm");
+    expect(hashVendorEntries).toContain("NOTICE.md");
+    expect(hashVendorEntries).toContain("xxhash3.umd.min.cjs");
+    expect(hashVendorEntries).toContain("xxhash32.umd.min.cjs");
+    expect(hashVendorEntries).toContain("xxhash64.umd.min.cjs");
+    expect(workerBundle).not.toContain('from "better-result"');
+    expect(workerBundle).not.toContain('from "ajv"');
+
+    const serverBundle = await readFile(
+      join(outputDir, "bundle", "server.bundle.js"),
+      "utf8",
+    );
+    expect(serverBundle).not.toContain(
+      "sourceMappingURL=data:application/json;base64",
+    );
+    if (!supportsBundledPrismaDevBoot(bunVersion)) {
+      return;
+    }
+
+    const assemblyCwd = await mkdtemp(join(tmpdir(), "studio-assembly-"));
+    tempDirs.add(assemblyCwd);
+    const assemblyBuild = { ...studio.build, dir: outputDir };
+    const artifact = await assemble({
+      build: assemblyBuild,
+      address: "studio",
+      cwd: assemblyCwd,
+    });
+
+    const readOnlyHome = join(assemblyCwd, "read-only-home");
+    await mkdir(readOnlyHome);
+    await chmod(readOnlyHome, 0o555);
+
+    const port = await getAvailablePort();
+    const bootstrapSource = [
+      // Compute uses Linux XDG paths, and its application home is read-only.
+      // Exercise those paths even when this test runs on a developer's Mac.
+      'Object.defineProperty(process, "platform", { value: "linux" });',
+      'import { Socket } from "node:net";',
+      // Compute's mapped port can accept a connection probe before the app
+      // binds it. Only the server's actual listen operation establishes
+      // whether that port is available to the application.
+      "const connect = Socket.prototype.connect;",
+      "Socket.prototype.connect = function (...args) {",
+      `  if (args[0] === ${port}) {`,
+      '    queueMicrotask(() => this.emit("connect"));',
+      "    return this;",
+      "  }",
+      "  return Reflect.apply(connect, this, args);",
+      "};",
+      `import { bootstrapService } from ${JSON.stringify(new URL("../../node_modules/@prisma/composer-prisma-cloud/dist/testing.mjs", import.meta.url).href)};`,
+      `import service from ${JSON.stringify(new URL("./compute-service.ts", import.meta.url).href)};`,
+      `await bootstrapService(service, { deps: {}, service: { port: ${port} } }, async () => {`,
+      `  await import(${JSON.stringify(pathToFileURL(join(artifact.dir, artifact.entry)).href)});`,
+      "});",
+    ].join("\n");
+    const serverProcess = spawn("bun", ["--eval", bootstrapSource], {
+      cwd: artifact.dir,
+      env: {
+        ...process.env,
+        STUDIO_DEMO_AI_ENABLED: "false",
+        // The bundled preview must use Composer's port, even when a local
+        // demo override exists in the shell launching it.
+        STUDIO_DEMO_PORT: "1",
+        XDG_DATA_HOME: join(readOnlyHome, ".local/share"),
+        XDG_CONFIG_HOME: join(readOnlyHome, ".config"),
+        XDG_CACHE_HOME: join(readOnlyHome, ".cache"),
+        XDG_STATE_HOME: join(readOnlyHome, ".local/state"),
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    serverProcess.stdout.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    serverProcess.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+
+    try {
+      const response = await waitForHttp(`http://127.0.0.1:${port}/api/config`);
+      const payload = (await response.json()) as {
+        bootId?: unknown;
+        database?: { enabled?: unknown };
+        seededAt?: unknown;
+        streams?: {
+          url?: unknown;
         };
+      };
 
-        expect(typeof payload.bootId).toBe("string");
-        expect(typeof payload.streams?.url).toBe("string");
-        expect(payload.streams?.url).toBe("/api/streams");
+      expect(typeof payload.bootId).toBe("string");
+      expect(payload.database?.enabled).toBe(true);
+      expect(typeof payload.seededAt).toBe("string");
+      expect(payload.streams).toBeUndefined();
 
-        const faviconResponse = await fetch(
-          `http://127.0.0.1:${port}/favicon.ico`,
-        );
-        expect(faviconResponse.status).toBe(204);
-      } finally {
-        serverProcess.kill("SIGTERM");
-        if (
-          serverProcess.exitCode === null &&
-          serverProcess.signalCode === null
-        ) {
-          await new Promise<void>((resolve) => {
-            serverProcess.once("close", () => resolve());
-          });
-        }
+      const queryResponse = await fetch(`http://127.0.0.1:${port}/api/query`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          procedure: "query",
+          query: {
+            sql: "select count(*)::int as count from organizations",
+            parameters: [],
+          },
+        }),
+      });
+      expect(await queryResponse.json()).toEqual([null, [{ count: 12 }]]);
+
+      const faviconResponse = await fetch(
+        `http://127.0.0.1:${port}/favicon.ico`,
+      );
+      expect(faviconResponse.status).toBe(204);
+    } catch (error) {
+      throw new Error(`Bundled demo failed to respond:\n${stderr}`, {
+        cause: error,
+      });
+    } finally {
+      serverProcess.kill("SIGTERM");
+      if (
+        serverProcess.exitCode === null &&
+        serverProcess.signalCode === null
+      ) {
+        await new Promise<void>((resolve) => {
+          serverProcess.once("close", () => resolve());
+        });
       }
+      await chmod(readOnlyHome, 0o755);
+    }
 
-      expect(normalizeBundledServerStderr(stderr)).toBe("");
-      expect(stdout).toContain(`http://localhost:${port}`);
-    },
-    120_000,
-  );
+    expect(normalizeBundledServerStderr(stderr)).toBe("");
+    expect(stdout).toContain(`http://localhost:${port}`);
+  }, 120_000);
 });
