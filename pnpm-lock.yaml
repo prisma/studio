@@ -92,11 +92,11 @@ devDependencies:
     specifier: 8.57.0
     version: 8.57.0
   '@prisma/composer':
-    specifier: 0.28.0
-    version: 0.28.0(@effect/platform-bun@4.0.0-rc.115)(@effect/platform-node@4.0.0-rc.115)(@types/node@25.0.9)(@types/react@19.2.14)(mysql2@3.17.1)(pg@8.22.0)(typescript@5.9.3)(vitest@4.0.17)
+    specifier: 0.28.0-dev.3
+    version: 0.28.0-dev.3(@effect/platform-bun@4.0.0-rc.115)(@effect/platform-node@4.0.0-rc.115)(@types/node@25.0.9)(@types/react@19.2.14)(mysql2@3.17.1)(pg@8.22.0)(typescript@5.9.3)(vitest@4.0.17)
   '@prisma/composer-prisma-cloud':
-    specifier: 0.28.0
-    version: 0.28.0(@prisma/cli-engine@0.6.3)(@prisma/orm-postgres@8.0.0-rc.16)(@types/node@25.0.9)(@types/react@19.2.14)(mysql2@3.17.1)(redis@6.3.0)(typanion@3.14.0)(typescript@5.9.3)(vitest@4.0.17)
+    specifier: 0.28.0-dev.3
+    version: 0.28.0-dev.3(@prisma/cli-engine@0.6.3)(@prisma/orm-postgres@8.0.0-rc.16)(@types/node@25.0.9)(@types/react@19.2.14)(mysql2@3.17.1)(redis@6.3.0)(typanion@3.14.0)(typescript@5.9.3)(vitest@4.0.17)
   '@prisma/dev':
     specifier: 0.24.13
     version: 0.24.13(typescript@5.9.3)
@@ -2647,7 +2647,7 @@ packages:
       '@prisma/cli-engine': 0.6.3
     dependencies:
       '@prisma/cli-engine': 0.6.3(@prisma/management-api-sdk@1.80.0)
-      '@prisma/composer': 0.28.0(@effect/platform-bun@4.0.0-rc.115)(@effect/platform-node@4.0.0-rc.115)(@types/node@25.0.9)(@types/react@19.2.14)(mysql2@3.17.1)(pg@8.22.0)(typescript@5.9.3)(vitest@4.0.17)
+      '@prisma/composer': 0.28.0(@types/node@25.0.9)(@types/react@19.2.14)(mysql2@3.17.1)(pg@8.22.0)(typescript@5.9.3)(vitest@4.0.17)
       alchemy: 2.0.0-beta.78(@effect/platform-bun@4.0.0-rc.115)(@effect/platform-node@4.0.0-rc.115)(@types/node@25.0.9)(@types/react@19.2.14)(effect@4.0.0-rc.115)(mysql2@3.17.1)(pg@8.22.0)(typescript@5.9.3)(vitest@4.0.17)
       cross-spawn: 7.0.6
       effect: 4.0.0-rc.115
@@ -2677,8 +2677,8 @@ packages:
       - ws
     dev: true
 
-  /@prisma/composer-prisma-cloud@0.28.0(@prisma/cli-engine@0.6.3)(@prisma/orm-postgres@8.0.0-rc.16)(@types/node@25.0.9)(@types/react@19.2.14)(mysql2@3.17.1)(redis@6.3.0)(typanion@3.14.0)(typescript@5.9.3)(vitest@4.0.17):
-    resolution: {integrity: sha512-ybygjeOdCmk7MmOwAulYvSazyteUIPN9I1Cac0L+E/+CLiil99rQDFxXqZMiIkAEHgmdw26bDqNEnRFqG9ayLQ==}
+  /@prisma/composer-prisma-cloud@0.28.0-dev.3(@prisma/cli-engine@0.6.3)(@prisma/orm-postgres@8.0.0-rc.16)(@types/node@25.0.9)(@types/react@19.2.14)(mysql2@3.17.1)(redis@6.3.0)(typanion@3.14.0)(typescript@5.9.3)(vitest@4.0.17):
+    resolution: {integrity: sha512-3UK8/0ch2CVKvVWRJUiEhVDnCR3K4Bg/MFtotVetuckaifn1BdEeShozZWfGnO/wvjBZQ/+0u3c+tLHpxC0BPg==}
     engines: {node: '>=22.18.0'}
     peerDependencies:
       '@prisma/orm-postgres': 8.0.0-rc.16
@@ -2687,7 +2687,7 @@ packages:
       '@effect/platform-bun': 4.0.0-rc.115(effect@4.0.0-rc.115)
       '@effect/platform-node': 4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.3.0)
       '@effect/platform-node-shared': 4.0.0-rc.115(effect@4.0.0-rc.115)
-      '@prisma/composer': 0.28.0(@effect/platform-bun@4.0.0-rc.115)(@effect/platform-node@4.0.0-rc.115)(@types/node@25.0.9)(@types/react@19.2.14)(mysql2@3.17.1)(pg@8.22.0)(typescript@5.9.3)(vitest@4.0.17)
+      '@prisma/composer': 0.28.0-dev.3(@effect/platform-bun@4.0.0-rc.115)(@effect/platform-node@4.0.0-rc.115)(@types/node@25.0.9)(@types/react@19.2.14)(mysql2@3.17.1)(pg@8.22.0)(typescript@5.9.3)(vitest@4.0.17)
       '@prisma/dev': 0.25.2(typescript@5.9.3)
       '@prisma/management-api-sdk': 1.82.0
       '@prisma/orm-postgres': 8.0.0-rc.16(@prisma/cli-engine@0.6.3)(temporal-polyfill@1.0.5)(typanion@3.14.0)(typescript@5.9.3)
@@ -2739,8 +2739,47 @@ packages:
       - ws
     dev: true
 
-  /@prisma/composer@0.28.0(@effect/platform-bun@4.0.0-rc.115)(@effect/platform-node@4.0.0-rc.115)(@types/node@25.0.9)(@types/react@19.2.14)(mysql2@3.17.1)(pg@8.22.0)(typescript@5.9.3)(vitest@4.0.17):
+  /@prisma/composer@0.28.0(@types/node@25.0.9)(@types/react@19.2.14)(mysql2@3.17.1)(pg@8.22.0)(typescript@5.9.3)(vitest@4.0.17):
     resolution: {integrity: sha512-OqgP9lpyZ9lCXdbDgiP6BkIECMib+4vLTIkjszBUMi00fIGaEBm6YQQmy4ysb20gZFyJ5i3OyIVn75+uAPnaIQ==}
+    engines: {node: '>=22.18.0'}
+    dependencies:
+      '@effect/sql-d1': 4.0.0-rc.115(effect@4.0.0-rc.115)
+      '@effect/sql-sqlite-do': 4.0.0-rc.115(effect@4.0.0-rc.115)
+      '@effect/vitest': 4.0.0-rc.115(effect@4.0.0-rc.115)(vitest@4.0.17)
+      '@prisma/management-api-sdk': 1.82.0
+      '@standard-schema/spec': 1.1.0
+      alchemy: 2.0.0-beta.78(@effect/platform-bun@4.0.0-rc.115)(@effect/platform-node@4.0.0-rc.115)(@types/node@25.0.9)(@types/react@19.2.14)(effect@4.0.0-rc.115)(mysql2@3.17.1)(pg@8.22.0)(typescript@5.9.3)(vitest@4.0.17)
+      arktype: 2.2.8
+      cross-spawn: 7.0.6
+      effect: 4.0.0-rc.115
+      esbuild: 0.28.2
+    transitivePeerDependencies:
+      - '@alchemy.run/frontend-frameworks'
+      - '@aws/durable-execution-sdk-js'
+      - '@effect/platform-bun'
+      - '@effect/platform-node'
+      - '@effect/sql-mysql2'
+      - '@effect/sql-pg'
+      - '@types/node'
+      - '@types/react'
+      - '@vercel/nft'
+      - bufferutil
+      - drizzle-kit
+      - drizzle-orm
+      - mongodb
+      - mysql2
+      - pg
+      - proxy-agent
+      - react-devtools-core
+      - typescript
+      - utf-8-validate
+      - vite
+      - vitest
+      - ws
+    dev: true
+
+  /@prisma/composer@0.28.0-dev.3(@effect/platform-bun@4.0.0-rc.115)(@effect/platform-node@4.0.0-rc.115)(@types/node@25.0.9)(@types/react@19.2.14)(mysql2@3.17.1)(pg@8.22.0)(typescript@5.9.3)(vitest@4.0.17):
+    resolution: {integrity: sha512-6eNFbEiljO68Ht69oCVaSDZpWs+A3eOOwegcEAhwKTeCtbJdAT3Cv0H7Vi1PBGDRbKqc87+8LcQ0TL25Ea53Zg==}
     engines: {node: '>=22.18.0'}
     dependencies:
       '@effect/sql-d1': 4.0.0-rc.115(effect@4.0.0-rc.115)

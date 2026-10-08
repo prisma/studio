@@ -655,18 +655,18 @@ so Compute can keep Prisma Dev's WAL-to-stream sidecar alive in the source-free 
 Run the built preview through Composer locally (Node 22.18+ and Bun 1.3.10+):
 
 ```sh
-mkdir -p .prisma-composer/tmp
-TMPDIR="$PWD/.prisma-composer/tmp" pnpm exec prisma dev module.ts
+pnpm exec prisma dev module.ts
 ```
 
-Open the service URL printed by Composer. The temp directory keeps Composer's
-runtime file trace away from unrelated system temp files. The bundled server
-reads Composer's injected port; the source demo still defaults to port 4310.
+Open the service URL printed by Composer. The service declares
+`dependencies: "bundled"`, so Composer copies the complete artifact without
+tracing build-machine files. The bundled server reads Composer's injected port;
+the source demo still defaults to port 4310.
 
 Deploy a branch preview with an existing `prisma auth login` session:
 
 ```sh
-TMPDIR="$PWD/.prisma-composer/tmp" pnpm exec prisma deploy module.ts --stage <branch-name>
+pnpm exec prisma deploy module.ts --stage <branch-name>
 ```
 
 ## Compute Preview Deploys

@@ -9,8 +9,9 @@ Compute resources by hand. `module.ts` declares the `studio` app with one `studi
 service from `demo/ppg-dev/compute-service.ts`. This is demo infrastructure;
 Composer MUST stay in dev dependencies and MUST NOT enter the published library API.
 
-The service MUST use Composer's directory build adapter to include the complete
-`deploy/` artifact, with `bundle/server.bundle.js` as its entry. Prisma Dev and
+The service MUST use Composer's directory build adapter with
+`dependencies: "bundled"` to include the complete `deploy/` artifact, with
+`bundle/server.bundle.js` as its entry. Prisma Dev and
 Streams remain inside that service so each environment starts with its own ephemeral,
 seeded database and event streams. Query execution MUST remain direct TCP.
 
@@ -20,6 +21,8 @@ environment without custom resource state. The configured `ap-southeast-1` regio
 is used only when creating a project; an existing project keeps its region.
 The CLI, Composer packages, and Alchemy executable MUST be pinned in dev
 dependencies. Alchemy is direct because pnpm does not expose transitive bins.
+Composer packages are pinned to `0.28.0-dev.3`, the published version introducing
+the bundled-dependencies mode, until that mode is available in a stable release.
 
 ## Git Connection and Credentials
 
@@ -65,11 +68,10 @@ The workflow MUST use the pinned official `prisma/cloud-deploy-action` with
 `install-command: pnpm install --frozen-lockfile`, `build-command: pnpm build:deploy`,
 and `module: module.ts`. The action runs the installed Prisma CLI under Bun.
 
-The job MUST prepare an empty `.prisma-composer/tmp` directory and expose its
-absolute path as `TMPDIR` to Composer. The directory adapter traces runtime file
-accesses in the self-contained Prisma Dev bundle; using the system temp directory
-would include unrelated host files and sockets in that trace. Generated Composer
-and Alchemy directories MUST be gitignored and excluded from lint/typecheck.
+Composer MUST copy the self-contained build without a runtime dependency trace.
+Tracing Prisma Dev's operating-system and temp-file reads would incorrectly stage
+build-machine files and fail Linux assembly. Generated Composer and Alchemy
+directories MUST be gitignored and excluded from lint/typecheck.
 
 The bundled server MUST read its HTTP port from `service.port()` through the
 prebuilt-assets module and bind `0.0.0.0`. The source demo continues to use

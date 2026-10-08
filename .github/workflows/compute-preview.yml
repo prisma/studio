@@ -37,11 +37,6 @@ jobs:
           echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
           "$HOME/.bun/bin/bun" --version
 
-      # Composer's directory tracer follows the bundled Prisma Dev temp paths.
-      # Keep that trace inside the checkout, away from unrelated system files.
-      - name: Prepare Composer temp directory
-        run: mkdir -p .prisma-composer/tmp
-
       # The action selects production for the default branch and otherwise uses
       # the exact branch name as its stage. The Git connection supplies OIDC.
       - name: Deploy Studio
@@ -51,9 +46,6 @@ jobs:
           module: module.ts
           install-command: pnpm install --frozen-lockfile
           build-command: pnpm build:deploy
-        env:
-          TMPDIR: ${{ github.workspace }}/.prisma-composer/tmp
-
       - name: Require a completed deployment
         if: steps.deploy.outputs.outcome != 'succeeded'
         run: |

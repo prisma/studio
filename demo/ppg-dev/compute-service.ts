@@ -8,5 +8,6 @@ export default compute({
     module: import.meta.url,
     dir: "../../deploy",
     entry: "bundle/server.bundle.js",
+    dependencies: "bundled",
   }),
 });
