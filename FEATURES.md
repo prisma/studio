@@ -380,3 +380,10 @@ Theme root classes and variables are synchronized before paint, and supported br
 Palette theme toggles stay interactive in browsers that expose the View Transition API, so `Match system theme` can be turned both on and off in place without closing the palette or getting stuck on the system setting.
 Shared buttons, inputs, filter pills, visualizer nodes, confirmation dialogs, staged-cell overlays, grid cells, compact pagination controls, and the Prisma navigation mark resolve readable dark-mode treatment from those theme tokens and assets, so toolbar controls, page pickers, inline filters, schema cards, prompts, staged edits, table values, and the Studio brand chrome stay visible on dark host surfaces.
 When Studio runs in a full-page shell whose document has no host-authored background, it also syncs the resolved theme to the document root (`color-scheme` plus Studio's background color), so overscroll areas and the space behind Studio's rounded corners match the active theme instead of staying white. Host pages that style their own `<html>`/`<body>` background are left untouched.
+
+## Embeddable Recorded Schema and Branch Comparison
+
+`SchemaDiff` exposes the Migrations view's model cards, relation canvas, and schema panel without Studio providers or navigation.
+Hosts can show a complete recorded contract or compare two applied snapshots; SQL appears only when migration operations are provided.
+`readRecordedSchema` reads the latest Prisma 8 app contract through a PostgreSQL executor and reports missing snapshots explicitly.
+The self-contained MCP Apps resource supports ChatGPT plugins, host themes, and host messages for missing snapshots. It needs no database credentials in the browser.

@@ -119,10 +119,40 @@
         "default": "./dist/ui/index.cjs"
       }
     },
-    "./ui/index.css": "./dist/ui/index.css"
+    "./ui/index.css": "./dist/ui/index.css",
+    "./ui/schema-diff": {
+      "import": {
+        "types": "./dist/ui/schema-diff/SchemaDiff.d.ts",
+        "default": "./dist/ui/schema-diff/SchemaDiff.js"
+      },
+      "require": {
+        "types": "./dist/ui/schema-diff/SchemaDiff.d.cts",
+        "default": "./dist/ui/schema-diff/SchemaDiff.cjs"
+      }
+    },
+    "./data/migrations": {
+      "import": {
+        "types": "./dist/data/migrations.d.ts",
+        "default": "./dist/data/migrations.js"
+      },
+      "require": {
+        "types": "./dist/data/migrations.d.cts",
+        "default": "./dist/data/migrations.cjs"
+      }
+    },
+    "./ui/schema-diff/app": {
+      "import": {
+        "types": "./dist/ui/schema-diff/app.d.ts",
+        "default": "./dist/ui/schema-diff/app.js"
+      },
+      "require": {
+        "types": "./dist/ui/schema-diff/app.d.cts",
+        "default": "./dist/ui/schema-diff/app.cjs"
+      }
+    }
   },
   "scripts": {
-    "build": "NODE_OPTIONS=--max-old-space-size=8192 tsup",
+    "build": "NODE_OPTIONS=--max-old-space-size=8192 tsup && node scripts/build-schema-app.mjs",
     "build:deploy": "rm -rf deploy && bun demo/ppg-dev/build-compute.ts deploy",
     "check:exports": "node scripts/release/check-exports.mjs",
     "changeset": "changeset",
@@ -163,6 +193,7 @@
     "@electric-sql/pglite": "0.3.15",
     "@eslint/eslintrc": "2.1.4",
     "@eslint/js": "8.57.0",
+    "@modelcontextprotocol/ext-apps": "2.0.3",
     "@prisma/composer": "0.28.0-dev.3",
     "@prisma/composer-prisma-cloud": "0.28.0-dev.3",
     "@prisma/dev": "0.24.13",
@@ -201,6 +232,7 @@
     "cmdk": "1.1.1",
     "dayjs": "1.11.19",
     "diff": "8.0.2",
+    "esbuild": "0.28.2",
     "eslint": "8.57.0",
     "eslint-config-prettier": "9.1.0",
     "eslint-plugin-import": "2.29.1",

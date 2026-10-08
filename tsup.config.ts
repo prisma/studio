@@ -40,6 +40,8 @@ function require(mod) {
     "./data/sqljs/index.ts",
     "./ui/index.css",
     "./ui/index.tsx",
+    "./ui/schema-diff/SchemaDiff.tsx",
+    "./data/migrations.ts",
   ],
   external: ["@types/react", "react", "react-dom"],
   format: ["cjs", "esm"],
