@@ -37,7 +37,7 @@ That override stays opt-in, rebuilds from the sibling repos by default, and can 
 
 ## Hosted Demo and Branch Previews
 
-Pushing `main` publishes the stable seeded Studio demo; other branches deploy isolated Prisma Composer stages in the `studio` Compute project.
+Pushing `main` publishes the stable seeded Studio demo; other branches deploy isolated Prisma Composer stages in the `studio` Compute project, with a `demo` service whose logical ID is distinct from the root module so Composer can publish the application topology to Prisma Console.
 The exact Git branch name identifies each preview. GitHub OIDC supplies deployment credentials, and preview pushes update sticky URL comments on already-open PRs after the public demo passes its startup check.
 The hosted demo starts a seeded in-memory database over direct TCP and disables Streams so it can run with Compute's read-only home directory; the source demo includes Streams.
 CI verifies startup before reporting a URL. The Git connection removes deleted-branch previews, and Composer maps port 8080 without adding deployment dependencies to the published library.

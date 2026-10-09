@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
 
+import studio from "../../demo/ppg-dev/compute-service";
 import {
   buildPreviewCommentBody,
   PREVIEW_COMMENT_MARKER,
@@ -13,7 +14,7 @@ describe("buildPreviewCommentBody", () => {
     expect(
       buildPreviewCommentBody({
         branchName: "codex/public-origin-main",
-        serviceName: "studio",
+        serviceName: "demo",
         serviceUrl: "https://example.cdg.prisma.build",
       }),
     ).toBe(
@@ -22,7 +23,7 @@ describe("buildPreviewCommentBody", () => {
         "Compute preview deployed with Prisma Composer.",
         "",
         "Stage: `codex/public-origin-main`",
-        "Service: `studio`",
+        "Service: `demo`",
         "Preview: https://example.cdg.prisma.build",
       ].join("\n"),
     );
@@ -103,6 +104,7 @@ describe("Composer preview workflow", () => {
       "github.ref_name != github.event.repository.default_branch",
     );
     expect(workflow).toContain("PREVIEW_BRANCH_NAME: ${{ github.ref_name }}");
+    expect(workflow).toContain(`PREVIEW_SERVICE_NAME: ${studio.name}`);
     expect(workflow).not.toContain("PREVIEW_PR_NUMBER:");
   });
 

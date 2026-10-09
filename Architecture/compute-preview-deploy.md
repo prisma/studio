@@ -5,9 +5,14 @@ This document is normative for the hosted demo and branch-scoped Prisma Composer
 ## Purpose and Application
 
 Studio needs a stable hosted demo and isolated branch previews without managing
-Compute resources by hand. `module.ts` declares the `studio` app with one `studio`
+Compute resources by hand. `module.ts` declares the `studio` app with one `demo`
 service from `demo/ppg-dev/compute-service.ts`. This is demo infrastructure;
 Composer MUST stay in dev dependencies and MUST NOT enter the published library API.
+
+The root Module and its child service MUST have distinct logical IDs. Composer
+publishes both nodes to the branch's application topology; duplicate IDs are
+rejected by the platform even when the Compute deployment succeeds. The root
+MUST remain `studio` to target the connected project, and the service MUST be `demo`.
 
 The service MUST use Composer's directory build adapter with
 `dependencies: "bundled"` to include the complete `deploy/` artifact, with
@@ -60,7 +65,7 @@ project; the browser's current workspace does not change an existing CLI session
 - Stage names MUST retain the exact Git ref, including slashes and case. Composer
   validates Git refs; Studio MUST NOT slug or truncate them. Distinct branches
   such as `feature/foo` and `feature-foo` must stay distinct.
-- The service name MUST remain `studio` inside every environment. Composer manages
+- The service name MUST remain `demo` inside every environment. Composer manages
   the project, branch, service, versions, runtime configuration, and hosted state.
 - Deployments for one branch MUST share a concurrency group and MUST NOT cancel
   an in-progress Composer operation, which owns a hosted state lease.
@@ -108,11 +113,16 @@ helper. The connection's cleanup does not depend on a workflow firing on deletio
 Successful non-default branch deploys MUST update one sticky PR comment on each
 already-open PR for that same repository branch, using the action's `url` output.
 The existing `<!-- studio-compute-preview -->` marker MUST be retained, and the
-comment MUST show the exact stage name and `studio` service. Only comments owned
+comment MUST show the exact stage name and `demo` service. Only comments owned
 by `github-actions[bot]` may be edited. A branch without an open PR still deploys;
 its URL remains available in the action's workflow summary.
 
 ## Migration
+
+Renaming the Composer service from `studio` to `demo` creates a new Compute service
+and public URL in each environment on its next deploy. Composer removes the old
+managed service through its normal convergence. The project remains `studio`;
+links to the former service URL must use the new deployment URL instead.
 
 Existing hand-created services are not Composer-managed state. The migration
 MUST NOT try to adopt, delete, or add compatibility paths for them. New Composer

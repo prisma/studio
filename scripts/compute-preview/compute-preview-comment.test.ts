@@ -7,7 +7,7 @@ const preview = {
   githubToken: "test-token",
   repository: "prisma/studio",
   branchName: "feature/foo",
-  serviceName: "studio",
+  serviceName: "demo",
   serviceUrl: "https://example.sin.prisma.build",
 };
 
