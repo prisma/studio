@@ -22,6 +22,21 @@ describe("Studio Composer app", () => {
     expect(app.name).toBe("studio");
   });
 
+  it("uses unique logical IDs and valid parents for the published topology", () => {
+    const nodes = Load(app).nodes.filter(({ node }) =>
+      ["module", "service", "resource"].includes(node.kind),
+    );
+    const ids = new Set(nodes.map(({ id }) => id));
+
+    expect(ids.size).toBe(nodes.length);
+    for (const { id, parent } of nodes) {
+      if (parent !== undefined) {
+        expect(parent).not.toBe(id);
+        expect(ids.has(parent)).toBe(true);
+      }
+    }
+  });
+
   it("resolves the app's configured HTTP port through Composer", () => {
     const graph = Load(app);
     const service = graph.nodes.find(({ node }) => node.kind === "service");
@@ -45,7 +60,7 @@ describe("Studio Composer app", () => {
     const services = graph.nodes.filter(({ node }) => node.kind === "service");
 
     expect(services).toHaveLength(1);
-    expect(services[0]?.id).toBe("studio");
+    expect(services[0]?.id).toBe("demo");
     expect(studio.build).toMatchObject({
       type: "node",
       dir: "../../deploy",
@@ -80,7 +95,7 @@ describe("Studio Composer app", () => {
       const build = { ...studio.build, dir: outputDir };
       const artifact = await assemble({
         build,
-        address: "studio",
+        address: studio.name,
         cwd,
         report: (report) => reports.push(report),
       });

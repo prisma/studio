@@ -225,7 +225,7 @@ describe("build-compute", () => {
     const assemblyBuild = { ...studio.build, dir: outputDir };
     const artifact = await assemble({
       build: assemblyBuild,
-      address: "studio",
+      address: studio.name,
       cwd: assemblyCwd,
     });
 

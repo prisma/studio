@@ -671,9 +671,12 @@ pnpm exec prisma deploy module.ts --stage <branch-name>
 
 ## Compute Preview Deploys
 
-`module.ts` declares the `studio` Composer app. Its one `studio` service
+`module.ts` declares the `studio` Composer app. Its one `demo` service
 packages the seeded ephemeral database. Streams is disabled in hosted previews;
 the source demo started with `pnpm demo:ppg` includes Streams.
+The module and service have distinct names so Composer can publish their topology
+to Prisma Console. Renaming the service from `studio` to `demo` replaces its hosted
+URL on the next deployment; the project remains `studio`.
 The root Module binds its Composer port parameter to 8080 for the app and
 Compute's HTTP mapping; the bundled server reads this through `service.port()`.
 The Composer packages are development tools; consumers of the Studio npm library
