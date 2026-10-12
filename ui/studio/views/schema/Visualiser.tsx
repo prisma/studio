@@ -469,6 +469,8 @@ export function SchemaVisualization({
     <>
       <div className="w-full h-full bg-card">
         <ReactFlow
+          minZoom={0.05}
+          maxZoom={5}
           nodes={nodes}
           edges={initialEdges}
           onInit={(instance) => {
