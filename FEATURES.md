@@ -35,13 +35,12 @@ In that mode the shell hides schema selection, table navigation, and database-on
 Studio's local development workflow can temporarily replace the published npm `@prisma/dev` package with the sibling source package from `../team-expansion/dev/server`, while also swapping its `@prisma/streams-local` dependency over to a built local Streams checkout.
 That override stays opt-in, rebuilds from the sibling repos by default, and can be reverted without rewriting the tracked lockfile, so experimental Prisma Dev and Durable Streams work can stay local to one Studio checkout.
 
-## Compute PR Preview Deploys
+## Hosted Demo and Branch Previews
 
-Pull requests can publish the current branch into the dedicated `studio-preview`
-Compute project without hand-creating services for each branch.
-The preview workflow derives a stable Compute-safe service name from the branch,
-reuses that service across later pushes, posts the live URL back to the PR, and
-destroys the preview service when the branch is deleted.
+Pushing `main` publishes the stable seeded Studio demo; other branches deploy isolated Prisma Composer stages in the `studio` Compute project, with a `demo` service whose logical ID is distinct from the root module so Composer can publish the application topology to Prisma Console.
+The exact Git branch name identifies each preview. GitHub OIDC supplies deployment credentials, and preview pushes update sticky URL comments on already-open PRs after the public demo passes its startup check.
+The hosted demo starts a seeded in-memory database over direct TCP and disables Streams so it can run with Compute's read-only home directory; the source demo includes Streams.
+CI verifies startup before reporting a URL. The Git connection removes deleted-branch previews, and Composer maps port 8080 without adding deployment dependencies to the published library.
 
 ## Introspection Recovery and Retry
 
@@ -52,6 +51,11 @@ Studio keeps the last successful schema snapshot visible when a refresh fails, d
 
 Studio re-introspects the database schema when the user returns to the window, and a dedicated "Refresh schema" toolbar button (next to "Refresh table") triggers an explicit refresh with a loading state and tooltip.
 All refresh paths share one React Query key and a single `refreshIntrospection` helper, so the toolbar button, the write-error self-heal path, and window-focus refetch all invalidate the same cached introspection and refetch the active observer.
+
+## Refresh Table Feedback and Errors
+
+Clicking "Refresh table" gives immediate feedback: the button spins and stays disabled for the entire refresh, covering both the schema re-introspection and the row refetch it performs, so the UI always reacts the moment the action starts.
+When a refresh fails, the last successfully loaded rows stay visible in the grid and an inline notice above it explains what failed — the adapter error message, its source, and a preview of the failed SQL — with a Retry action.
 
 ## Self-Healing Editor on Type-Mismatch Write Errors
 
@@ -377,3 +381,10 @@ Theme root classes and variables are synchronized before paint, and supported br
 Palette theme toggles stay interactive in browsers that expose the View Transition API, so `Match system theme` can be turned both on and off in place without closing the palette or getting stuck on the system setting.
 Shared buttons, inputs, filter pills, visualizer nodes, confirmation dialogs, staged-cell overlays, grid cells, compact pagination controls, and the Prisma navigation mark resolve readable dark-mode treatment from those theme tokens and assets, so toolbar controls, page pickers, inline filters, schema cards, prompts, staged edits, table values, and the Studio brand chrome stay visible on dark host surfaces.
 When Studio runs in a full-page shell whose document has no host-authored background, it also syncs the resolved theme to the document root (`color-scheme` plus Studio's background color), so overscroll areas and the space behind Studio's rounded corners match the active theme instead of staying white. Host pages that style their own `<html>`/`<body>` background are left untouched.
+
+## Embeddable Recorded Schema and Branch Comparison
+
+`SchemaDiff` exposes the Migrations view's model cards, relation canvas, and schema panel without Studio providers or navigation.
+Hosts can show a complete recorded contract or compare two applied snapshots; SQL appears only when migration operations are provided.
+`readRecordedSchema` reads the latest Prisma 8 app contract through a PostgreSQL executor and reports missing snapshots explicitly.
+The self-contained MCP Apps resource supports ChatGPT plugins, host themes, and host messages for missing snapshots. It needs no database credentials in the browser.

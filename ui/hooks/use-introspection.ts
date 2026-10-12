@@ -8,6 +8,7 @@ import {
   INTROSPECTION_QUERY_KEY,
   refreshIntrospection,
 } from "./refresh-introspection";
+import { getQueryPreview } from "./utils/get-query-preview";
 
 export interface IntrospectionErrorState {
   adapterSource: string;
@@ -31,15 +32,6 @@ function createInitialIntrospectionResult(
     filterOperators: [],
     query: { parameters: [], sql: "" },
   } satisfies AdapterIntrospectResult;
-}
-
-function getQueryPreview(query: Query<unknown> | undefined): string | null {
-  if (!query?.sql) {
-    return null;
-  }
-
-  const preview = query.sql.slice(0, 120);
-  return query.sql.length > 120 ? `${preview}...` : preview;
 }
 
 export function useIntrospection() {

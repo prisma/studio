@@ -2,6 +2,7 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "compilerOptions": {
     "allowJs": true,
+    "allowImportingTsExtensions": true,
     "allowSyntheticDefaultImports": true,
     "checkJs": false,
     "declaration": true,
@@ -27,5 +28,12 @@
       "@/*": ["./*"]
     }
   },
-  "exclude": ["**/eslint*.mjs", "dist", "node_modules"]
+  "exclude": [
+    "**/eslint*.mjs",
+    ".prisma-composer",
+    ".alchemy",
+    "deploy",
+    "dist",
+    "node_modules"
+  ]
 }

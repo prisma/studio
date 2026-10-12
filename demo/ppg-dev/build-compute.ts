@@ -15,22 +15,11 @@
  *
  * Deploy:
  *
- *   bunx @prisma/compute-cli deploy --skip-build \
- *     --path <outdir> --entrypoint bundle/compute-entrypoint.js \
- *     --http-port 8080 \
- *     --service <service-id>
+ *   pnpm exec prisma deploy module.ts --stage <branch-name>
  */
 
 import { existsSync } from "node:fs";
-import {
-  cp,
-  mkdir,
-  readdir,
-  rename,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { cp, mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -175,7 +164,6 @@ console.log(
   `[build] Copied Prisma Dev runtime assets: ${copiedRuntimeAssets.length}`,
 );
 
-await writeComputeEntrypoint(bundleDir);
 await bundlePrismaStreamsTouchAssets(outDir);
 console.log("[build] Bundled Prisma Streams worker assets.");
 
@@ -229,6 +217,9 @@ function generateAssetsModule(
     .join(",\n");
 
   return [
+    `import service from ${JSON.stringify(join(studioRoot, "demo/ppg-dev/compute-service.ts"))};`,
+    `export { startComputeRuntime as startRuntime } from ${JSON.stringify(join(studioRoot, "demo/ppg-dev/compute-runtime.ts"))};`,
+    "export const appPort = service.port();",
     `export const appScript = ${JSON.stringify(script)};`,
     `export const appStyles = ${JSON.stringify(styles)};`,
     `export const builtAssets = new Map([\n${mapEntries}\n]);`,
@@ -265,11 +256,7 @@ async function bundlePrismaStreamsTouchAssets(outDir: string): Promise<void> {
   });
 
   if (!workerBuild.success) {
-    throw new Error(
-      workerBuild.logs
-        .map((log) => log.message)
-        .join("\n"),
-    );
+    throw new Error(workerBuild.logs.map((log) => log.message).join("\n"));
   }
 
   const builtWorker = workerBuild.outputs[0]?.path;
@@ -283,15 +270,4 @@ async function bundlePrismaStreamsTouchAssets(outDir: string): Promise<void> {
     force: true,
     recursive: true,
   });
-}
-
-async function writeComputeEntrypoint(bundleDir: string): Promise<void> {
-  await writeFile(
-    join(bundleDir, "compute-entrypoint.js"),
-    [
-      'process.env.STUDIO_DEMO_PORT ??= "8080";',
-      'await import("./server.bundle.js");',
-      "",
-    ].join("\n"),
-  );
 }

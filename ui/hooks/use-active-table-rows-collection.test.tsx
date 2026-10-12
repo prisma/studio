@@ -7,15 +7,16 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type {
-  Adapter,
-  AdapterIntrospectResult,
-  AdapterQueryDetails,
-  AdapterUpdateManyDetails,
-  Column,
-  FilterGroup,
-  SortOrderItem,
-  Table,
+import {
+  type Adapter,
+  AdapterError,
+  type AdapterIntrospectResult,
+  type AdapterQueryDetails,
+  type AdapterUpdateManyDetails,
+  type Column,
+  type FilterGroup,
+  type SortOrderItem,
+  type Table,
 } from "../../data/adapter";
 import type { TableQueryMetaState } from "../studio/context";
 import { useActiveTableRowsCollection } from "./use-active-table-rows-collection";
@@ -78,14 +79,15 @@ function createActiveTable(): Table {
 
 function createAdapterMock(options?: {
   queryImplementation?: (details: AdapterQueryDetails) => Promise<
-    [
-      null,
-      {
-        filteredRowCount: number;
-        query: { parameters: unknown[]; sql: string };
-        rows: Record<string, unknown>[];
-      },
-    ]
+    | [AdapterError]
+    | [
+        null,
+        {
+          filteredRowCount: number;
+          query: { parameters: unknown[]; sql: string };
+          rows: Record<string, unknown>[];
+        },
+      ]
   >;
 }): Adapter {
   const introspection: AdapterIntrospectResult = {
@@ -626,6 +628,74 @@ describe("useActiveTableRowsCollection", () => {
     await waitFor(() => getLatestState()?.isFetching === false);
 
     cleanup();
+  });
+
+  it("keeps the last rows and clears isFetching when refetch rejects with an AdapterError", async () => {
+    let queryCalls = 0;
+    const queryError = new AdapterError("connection refused");
+    queryError.adapterSource = "postgresql";
+    queryError.query = { parameters: [], sql: "select * from users" };
+
+    const queryImplementation: QueryImplementation = () => {
+      queryCalls += 1;
+
+      if (queryCalls === 1) {
+        return Promise.resolve([
+          null,
+          {
+            filteredRowCount: 2,
+            query: { parameters: [], sql: "query-initial" },
+            rows: [
+              { id: "u1", name: "Alice" },
+              { id: "u2", name: "Bob" },
+            ],
+          },
+        ]);
+      }
+
+      return Promise.resolve([queryError]);
+    };
+
+    const harness = renderHookHarness({
+      queryImplementation,
+    });
+
+    await waitFor(() => (harness.getLatestState()?.rows.length ?? 0) === 2);
+    expect(harness.getLatestState()?.isFetching).toBe(false);
+
+    let caught: unknown;
+
+    await act(async () => {
+      try {
+        await harness.getLatestState()?.refetch();
+      } catch (error) {
+        caught = error;
+      }
+    });
+
+    expect(caught).toBe(queryError);
+
+    // The failed refetch keeps the last successfully loaded rows in the
+    // collection instead of clearing the grid.
+    await waitFor(() => harness.getLatestState()?.isFetching === false);
+    expect(harness.getLatestState()?.rows.map((row) => row.id)).toEqual([
+      "u1",
+      "u2",
+    ]);
+    expect(
+      harness.onEvent.mock.calls.some((call: unknown[]) => {
+        const event = call[0] as {
+          name: string;
+          payload: { operation: string };
+        };
+        return (
+          event.name === "studio_operation_error" &&
+          event.payload.operation === "query"
+        );
+      }),
+    ).toBe(true);
+
+    harness.cleanup();
   });
 
   it("preserves filtered row count while a different page is loading", async () => {

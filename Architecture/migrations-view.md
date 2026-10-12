@@ -17,8 +17,8 @@ This architecture governs:
 ## Canonical Components
 
 - [`ui/hooks/use-migrations.ts`](../ui/hooks/use-migrations.ts)
-- [`ui/studio/views/migrations/contract-diff.ts`](../ui/studio/views/migrations/contract-diff.ts)
-- [`ui/studio/views/migrations/diff-layout.ts`](../ui/studio/views/migrations/diff-layout.ts)
+- [`ui/schema-diff/contract-diff.ts`](../ui/schema-diff/contract-diff.ts)
+- [`ui/schema-diff/diff-layout.ts`](../ui/schema-diff/diff-layout.ts)
 - [`ui/studio/views/migrations/MigrationsView.tsx`](../ui/studio/views/migrations/MigrationsView.tsx)
 - [`ui/studio/Navigation.tsx`](../ui/studio/Navigation.tsx)
 - [`demo/ppg-dev/seed-migrations.ts`](../demo/ppg-dev/seed-migrations.ts)
@@ -77,7 +77,41 @@ The per-migration header (title, hash edge, diff-stat chips, view controls) floa
 Two mutually exclusive collapsible panels sit under the canvas in a shared container whose height is user-resizable from a drag handle on its top edge (pointer drag plus ArrowUp/ArrowDown, clamped 120–640px, persisted UI state):
 
 - **SQL** renders the ledger row's operation envelopes verbatim — labels, operation classes, and executed statements.
-- **Schema** renders a Prisma-schema-style diff. `psl-schema.ts` projects each contract snapshot into PSL-shaped text (model/enum blocks, mapped field types, defaults, relations, `@@index`/`@@unique`/`@@map`) and diffs the two texts line-by-line with the `diff` (jsdiff) package, collapsing long unchanged runs. The projection favors diff stability (fixed field ordering, no column alignment padding) over exact `prisma format` output. jsdiff was chosen over `@pierre/diffs` because the latter hard-depends on shiki, which is too heavy for the published bundle; the renderer is isolated in `MigrationSchemaPanel` so it can be swapped.
+- **Schema** renders a Prisma-schema-style diff. `psl-schema.ts` projects each contract snapshot into PSL-shaped text (model/enum blocks, mapped field types, defaults, relations, `@@index`/`@@unique`/`@@map`) and diffs the two texts line-by-line with the `diff` (jsdiff) package, collapsing long unchanged runs. The projection favors diff stability (fixed field ordering, no column alignment padding) over exact `prisma format` output. jsdiff was chosen over `@pierre/diffs` because the latter hard-depends on shiki, which is too heavy for the published bundle; the renderer is isolated in `SchemaDiffSchemaPanel` (`ui/schema-diff/SchemaDiffDetails.tsx`) so it can be swapped.
+
+## Embedding the migration UI
+
+`@prisma/studio-core/ui/schema-diff` exports `SchemaDiff`. It receives recorded
+`before` and `after` contracts as props and does not use Studio context, URL
+state, adapters, or database credentials. Studio keeps history selection and
+persisted preferences in `MigrationsView`; Console and MCP hosts supply their
+own authorized data. All three callers use the same canvas and detail panels.
+
+Import `@prisma/studio-core/ui/index.css` once. The component defaults to a
+scoped `.ps` root; Studio sets `scoped={false}` within its existing root.
+`mode="schema"` shows the full recorded schema. `mode="diff"` compares two
+snapshots. Omitting `operations` hides SQL, because a branch comparison does
+not represent one executed migration. A constrained parent must provide a
+height so the canvas can measure its viewport.
+
+`@prisma/studio-core/data/migrations` exports `readRecordedSchema(executor)`.
+The reader requires a PostgreSQL executor.
+It probes the tables and reads the newest `app` ledger destination with its
+stored contract in a bounded query. Missing tables, an empty ledger, and a
+missing current snapshot have distinct statuses. The reader never substitutes
+an older snapshot and does not introspect or mutate the live schema. The host
+must authorize the database before supplying an executor and authorize both
+databases when comparing branches.
+
+`@prisma/studio-core/ui/schema-diff/app` exports `schemaDiffAppHtml`, built as
+one self-contained MCP Apps HTML resource. The official Apps SDK connects to
+the host, receives `structuredContent.schema` as a `SchemaComparison`, and
+updates the theme from host context. New inputs clear stale results; failed or
+cancelled requests show a status message. The resource needs no network access
+or database credentials. The MCP server declares its resource URI, HTML MIME
+type, and CSP; a production ChatGPT plugin also supplies its unique UI origin.
+After `pnpm build`, `node demo/schema-app/server.mjs` serves a sandboxed host at
+`http://localhost:4320` for branch, main, missing-snapshot, and theme checks.
 
 ## Demo Seeding
 

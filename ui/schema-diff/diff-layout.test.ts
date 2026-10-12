@@ -3,10 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { EnumDiff, MigrationDiff, ModelDiff } from "./contract-diff";
 import { buildDiffGraph } from "./diff-layout";
 
-function model(
-  name: string,
-  overrides: Partial<ModelDiff> = {},
-): ModelDiff {
+function model(name: string, overrides: Partial<ModelDiff> = {}): ModelDiff {
   return {
     name,
     status: "unchanged",
@@ -21,10 +18,7 @@ function model(
   };
 }
 
-function enumDiff(
-  name: string,
-  overrides: Partial<EnumDiff> = {},
-): EnumDiff {
+function enumDiff(name: string, overrides: Partial<EnumDiff> = {}): EnumDiff {
   return {
     name,
     status: "unchanged",

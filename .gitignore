@@ -4,6 +4,8 @@ dist
 .agent/
 .claude/
 .windsurf/
+.cursor/skills/
+.devin/skills/
 .agents/*
 !.agents/skills/
 .agents/skills/*
@@ -20,3 +22,6 @@ Archive.zip
 tasks/evidence/
 deploy/
 compute.config.json
+.prisma-composer/
+.alchemy/
+.prisma/local.json

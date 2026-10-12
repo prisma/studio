@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { StudioMigration } from "../../../hooks/use-migrations";
+import type { StudioMigration } from "../../../../data/migrations";
 import { MigrationsView } from "./MigrationsView";
 
 const { useMigrationsMock, useNavigationMock, setMigrationParamMock } =
@@ -38,9 +38,10 @@ vi.mock("reactflow", () => ({
   Position: { Left: "left", Right: "right", Top: "top", Bottom: "bottom" },
 }));
 
-vi.mock("./diff-layout", async () => {
-  const actual =
-    await vi.importActual<typeof import("./diff-layout")>("./diff-layout");
+vi.mock("../../../schema-diff/diff-layout", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../../schema-diff/diff-layout")
+  >("../../../schema-diff/diff-layout");
 
   return {
     ...actual,
