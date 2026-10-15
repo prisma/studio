@@ -22,6 +22,7 @@ const ENUM_NODE_WIDTH = 190;
 
 export interface ModelDiffNodeData {
   model: ModelDiff;
+  showStatusBadge?: boolean;
 }
 
 export interface EnumDiffNodeData {

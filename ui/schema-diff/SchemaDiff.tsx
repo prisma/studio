@@ -260,6 +260,7 @@ export function SchemaDiff({
                 before={baseline}
                 after={after}
                 showAllModels={showAllModels}
+                showStatusBadges={mode === "diff"}
               />
             </div>
           )}
