@@ -125,10 +125,11 @@ it("renders a branch comparison without Studio providers or SQL controls", async
     expect(container.textContent).not.toContain("+1 model");
     expect(container.querySelector('[data-status="added"]')).toBeNull();
     expect(container.querySelector('[data-status="unchanged"]')).not.toBeNull();
-    expect(
-      container.querySelector('[data-testid="migration-model-node-User"]')
-        ?.textContent,
-    ).not.toContain("unchanged");
+    const schemaModel = container.querySelector(
+      '[data-testid="migration-model-node-User"]',
+    );
+    expect(schemaModel).not.toBeNull();
+    expect(schemaModel?.textContent).not.toContain("unchanged");
     await act(async () => {
       root.render(<SchemaDiff before={after} after={after} mode="diff" />);
       await Promise.resolve();
@@ -141,10 +142,11 @@ it("renders a branch comparison without Studio providers or SQL controls", async
       root.render(<SchemaDiff before={after} after={after} mode="schema" />);
       await Promise.resolve();
     });
-    expect(
-      container.querySelector('[data-testid="migration-model-node-User"]')
-        ?.textContent,
-    ).not.toContain("unchanged");
+    const restoredSchemaModel = container.querySelector(
+      '[data-testid="migration-model-node-User"]',
+    );
+    expect(restoredSchemaModel).not.toBeNull();
+    expect(restoredSchemaModel?.textContent).not.toContain("unchanged");
     const schemaButton = container.querySelector<HTMLButtonElement>(
       '[data-testid="migration-panel-schema"]',
     );
