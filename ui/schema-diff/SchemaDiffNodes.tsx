@@ -179,14 +179,16 @@ const ModelDiffNodeComponent: FC<NodeProps<ModelDiffNodeData>> = memo(
               </div>
             )}
           </div>
-          <span
-            className={cn(
-              "shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-              styles.badge,
-            )}
-          >
-            {styles.badgeLabel}
-          </span>
+          {data.showStatusBadge !== false && (
+            <span
+              className={cn(
+                "shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                styles.badge,
+              )}
+            >
+              {styles.badgeLabel}
+            </span>
+          )}
         </div>
         <div className="flex flex-col gap-0.5 px-1.5 py-1.5">
           {model.fields.map((field) => (

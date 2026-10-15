@@ -19,8 +19,9 @@ export const SchemaDiffCanvas = memo(function SchemaDiffCanvas(props: {
   before: unknown;
   after: unknown;
   showAllModels: boolean;
+  showStatusBadges: boolean;
 }) {
-  const { before, after, showAllModels } = props;
+  const { before, after, showAllModels, showStatusBadges } = props;
   const diff = useMemo(() => diffContracts(before, after), [before, after]);
   const graph = useMemo(
     () => buildDiffGraph(diff, showAllModels),
@@ -31,6 +32,14 @@ export const SchemaDiffCanvas = memo(function SchemaDiffCanvas(props: {
     edges: Edge[];
   }>({ nodes: [], edges: [] });
   const reactFlowInstanceRef = useRef<ReactFlowInstance | null>(null);
+  const nodes = useMemo(
+    () =>
+      layoutedGraph.nodes.map((node) => ({
+        ...node,
+        data: { ...node.data, showStatusBadge: showStatusBadges },
+      })),
+    [layoutedGraph.nodes, showStatusBadges],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -79,7 +88,7 @@ export const SchemaDiffCanvas = memo(function SchemaDiffCanvas(props: {
       fitViewOptions={{ padding: 0.18 }}
       maxZoom={1.4}
       minZoom={0.2}
-      nodes={layoutedGraph.nodes}
+      nodes={nodes}
       nodesConnectable={false}
       nodesDraggable={false}
       nodeTypes={nodeTypes}

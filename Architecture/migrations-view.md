@@ -89,8 +89,8 @@ own authorized data. All three callers use the same canvas and detail panels.
 
 Import `@prisma/studio-core/ui/index.css` once. The component defaults to a
 scoped `.ps` root; Studio sets `scoped={false}` within its existing root.
-`mode="schema"` shows the full recorded schema. `mode="diff"` compares two
-snapshots. Omitting `operations` hides SQL, because a branch comparison does
+`mode="schema"` shows the full recorded schema without model status badges.
+`mode="diff"` compares two snapshots. Omitting `operations` hides SQL, because a branch comparison does
 not represent one executed migration. A constrained parent must provide a
 height so the canvas can measure its viewport.
 
