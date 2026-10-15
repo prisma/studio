@@ -1,5 +1,11 @@
 # @prisma/studio-core
 
+## 0.34.1
+
+### Patch Changes
+
+- 1630dc9: Hide model status badges when viewing a recorded schema without a comparison.
+
 ## 0.34.0
 
 ### Minor Changes
