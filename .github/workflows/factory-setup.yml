@@ -1,0 +1,38 @@
+# One-time onboarding + health check, run by hand from the Actions tab. Verifies the App
+# credentials mint a token, checks the app has write access here, creates the 8 protocol
+# labels idempotently, and confirms a Claude credential is present. Safe to re-run.
+name: factory-setup
+
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        id: app
+        with:
+          app-id: ${{ secrets.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Labels + access check
+        run: .factory/route.sh setup
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          FACTORY_BOT_LOGIN: ${{ steps.app.outputs.app-slug }}[bot]
+
+      - name: Claude credential present?
+        env:
+          API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -z "$API_KEY" ] && [ -z "$OAUTH" ]; then
+            echo "::error::Set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN in Actions secrets — the loops cannot run without one."
+            exit 1
+          fi
+          echo "Claude credential found."
