@@ -47,4 +47,48 @@ describe("data/sql-statements", () => {
       })?.statement,
     ).toBe("select 2");
   });
+
+  it("respects MySQL backslash escapes, backtick identifiers, and hash comments", () => {
+    const sql = String.raw`
+      select 'O\'Brien; x' as name, "say \"hi\";" as quote;
+      select 1 as ${"`"}a;b${"`"};
+      # don't split here;
+      select 2
+    `;
+
+    expect(
+      splitTopLevelSqlStatements(sql, { dialect: "mysql" }).map(
+        (segment) => segment.statement,
+      ),
+    ).toEqual([
+      String.raw`select 'O\'Brien; x' as name, "say \"hi\";" as quote`,
+      "select 1 as `a;b`",
+      "# don't split here;\n      select 2",
+    ]);
+  });
+
+  it("keeps standard string quoting for PostgreSQL and SQLite", () => {
+    const sql = String.raw`select 'C:\'; select 2`;
+
+    for (const dialect of ["postgresql", "sqlite"] as const) {
+      expect(
+        splitTopLevelSqlStatements(sql, { dialect }).map(
+          (segment) => segment.statement,
+        ),
+      ).toEqual([String.raw`select 'C:\'`, "select 2"]);
+    }
+  });
+
+  it("returns only the MySQL statement under the cursor when a string contains an escaped quote", () => {
+    const sql = String.raw`select * from users where name = 'O\'Brien';
+select 2;`;
+
+    expect(
+      getTopLevelSqlStatementAtCursor({
+        cursorIndex: 0,
+        dialect: "mysql",
+        sql,
+      })?.statement,
+    ).toBe(String.raw`select * from users where name = 'O\'Brien'`);
+  });
 });
