@@ -1834,6 +1834,49 @@ describe("SqlView", () => {
     harness.cleanup();
   });
 
+  it("splits MySQL scripts with MySQL string escapes when running the statement at the cursor", async () => {
+    const { adapter, rawSpy } = createAdapterMock({
+      capabilities: {
+        sqlDialect: "mysql",
+      },
+    });
+    const studio = createStudioMock(adapter);
+    useStudioMock.mockReturnValue(studio);
+
+    const harness = renderSqlView();
+    const runButton = [...harness.container.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Run SQL"),
+    );
+
+    if (!runButton || !mockCodeMirrorOnChange) {
+      throw new Error("SQL editor controls not rendered");
+    }
+
+    const sql = String.raw`select * from users where name = 'O\'Brien';
+select 2 as two;`;
+
+    act(() => {
+      mockCodeMirrorOnChange?.(sql);
+    });
+    mockEditorCursorHead = sql.indexOf("users");
+
+    await act(async () => {
+      runButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => rawSpy.mock.calls.length > 0);
+
+    expect(rawSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sql: String.raw`select * from users where name = 'O\'Brien'`,
+      }),
+      expect.any(Object),
+    );
+
+    harness.cleanup();
+  });
+
   it("persists SQL editor draft text in TanStack local-storage collection", async () => {
     const { adapter } = createAdapterMock();
     const studio = createStudioMock(adapter);
