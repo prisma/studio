@@ -1732,12 +1732,20 @@ export function ActiveTableView(_props: ViewProps) {
                     label: "copy csv",
                   },
                   {
+                    action: () => handleCopySelectionExport("json"),
+                    label: "copy json",
+                  },
+                  {
                     action: () => handleSaveSelectionExport("markdown"),
                     label: "save markdown",
                   },
                   {
                     action: () => handleSaveSelectionExport("csv"),
                     label: "save csv",
+                  },
+                  {
+                    action: () => handleSaveSelectionExport("json"),
+                    label: "save json",
                   },
                 ].map((item) => (
                   <DropdownMenuItem

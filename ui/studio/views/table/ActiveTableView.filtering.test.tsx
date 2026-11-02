@@ -3134,8 +3134,10 @@ describe("ActiveTableView filtering", () => {
     expect(document.body.textContent).toContain("include column header");
     expect(document.body.textContent).toContain("copy markdown");
     expect(document.body.textContent).toContain("copy csv");
+    expect(document.body.textContent).toContain("copy json");
     expect(document.body.textContent).toContain("save markdown");
     expect(document.body.textContent).toContain("save csv");
+    expect(document.body.textContent).toContain("save json");
 
     const checkedCheckbox = findMenuCheckboxByText("include column header");
 
@@ -3151,6 +3153,354 @@ describe("ActiveTableView filtering", () => {
 
     expect(writeText).toHaveBeenCalledWith(
       "id,email\nuser_1,alice@example.com\nuser_2,bob@example.com",
+    );
+
+    view.cleanup();
+  });
+
+  it("copies row selections as json using the current visible column order", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const activeTable = {
+      columns: {
+        created_at: {
+          ...createColumn({
+            datatypeName: "timestamptz",
+            group: "datetime",
+            name: "created_at",
+          }),
+          datatype: {
+            format: "YYYY-MM-DD HH:mm:ss.SSSZZ",
+            group: "datetime",
+            isArray: false,
+            isNative: true,
+            name: "timestamptz",
+            options: [],
+            schema: "pg_catalog",
+          },
+        },
+        email: createColumn({
+          datatypeName: "character varying(64)",
+          group: "string",
+          name: "email",
+        }),
+        id: createColumn({
+          datatypeName: "uuid",
+          group: "string",
+          name: "id",
+          pkPosition: 1,
+        }),
+        is_active: createColumn({
+          datatypeName: "boolean",
+          group: "string",
+          name: "is_active",
+        }),
+        meta: createColumn({
+          datatypeName: "jsonb",
+          group: "string",
+          name: "meta",
+        }),
+        score: createColumn({
+          datatypeName: "integer",
+          group: "numeric",
+          name: "score",
+        }),
+        tags: createColumn({
+          datatypeName: "jsonb",
+          group: "string",
+          name: "tags",
+        }),
+      },
+      name: "users",
+      schema: "public",
+    };
+
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText,
+      },
+    });
+    useNavigationMock.mockImplementation(() => ({
+      createUrl: vi.fn(() => "#"),
+      metadata: {
+        activeTable,
+      },
+      searchParam: navigationSearchParam,
+      setPageIndexParam: setPageIndexParamMock,
+      setSearchParam: setSearchParamMock,
+    }));
+    useIntrospectionMock.mockReturnValue({
+      data: {
+        filterOperators: [
+          "=",
+          "!=",
+          ">",
+          ">=",
+          "<",
+          "<=",
+          "is",
+          "is not",
+          "like",
+          "not like",
+          "ilike",
+          "not ilike",
+        ],
+        query: {
+          parameters: [],
+          sql: "",
+        },
+        schemas: {
+          public: {
+            name: "public",
+            tables: {
+              users: activeTable,
+            },
+          },
+        },
+        timezone: "UTC",
+      },
+      refetch: vi.fn(),
+    });
+
+    useActiveTableQueryMock.mockReturnValue({
+      data: {
+        filteredRowCount: 2,
+        rows: [
+          {
+            __ps_rowid: "row-1",
+            created_at: "2026-03-11T00:00:00.000Z",
+            email: "alice@example.com",
+            id: "user_1",
+            is_active: true,
+            meta: { owner: "alice" },
+            score: 42,
+            tags: ["vip", "beta"],
+          },
+          {
+            __ps_rowid: "row-2",
+            created_at: "2026-03-12T00:00:00.000Z",
+            email: "bob@example.com",
+            id: "user_2",
+            is_active: false,
+            meta: null,
+            score: 0,
+            tags: [],
+          },
+        ],
+      },
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    useSelectionMock.mockReturnValue({
+      deleteSelection: vi.fn(),
+      isSelecting: true,
+      rowSelectionState: {
+        "row-2": true,
+        "row-1": true,
+      },
+      setRowSelectionState: vi.fn(),
+    });
+    gridColumnOrderState = [
+      "email",
+      "id",
+      "is_active",
+      "score",
+      "tags",
+      "meta",
+      "created_at",
+    ];
+
+    const view = renderView();
+    const copyAsTrigger = findButtonByText("copy as");
+
+    expect(copyAsTrigger).toBeDefined();
+
+    dispatchPointerClick(copyAsTrigger);
+    await flush();
+
+    const copyJsonButton = findMenuItemByText("copy json");
+
+    expect(copyJsonButton).toBeDefined();
+
+    dispatchPointerClick(copyJsonButton);
+
+    expect(writeText).toHaveBeenCalledWith(
+      JSON.stringify(
+        [
+          {
+            email: "alice@example.com",
+            id: "user_1",
+            is_active: true,
+            score: 42,
+            tags: ["vip", "beta"],
+            meta: { owner: "alice" },
+            created_at: "2026-03-11T00:00:00.000Z",
+          },
+          {
+            email: "bob@example.com",
+            id: "user_2",
+            is_active: false,
+            score: 0,
+            tags: [],
+            meta: null,
+            created_at: "2026-03-12T00:00:00.000Z",
+          },
+        ],
+        null,
+        2,
+      ),
+    );
+
+    view.cleanup();
+  });
+
+  it("copies a single selected row as one json object", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const activeTable = {
+      columns: {
+        created_at: {
+          ...createColumn({
+            datatypeName: "timestamptz",
+            group: "datetime",
+            name: "created_at",
+          }),
+          datatype: {
+            format: "YYYY-MM-DD HH:mm:ss.SSSZZ",
+            group: "datetime",
+            isArray: false,
+            isNative: true,
+            name: "timestamptz",
+            options: [],
+            schema: "pg_catalog",
+          },
+        },
+        email: createColumn({
+          datatypeName: "character varying(64)",
+          group: "string",
+          name: "email",
+        }),
+        id: createColumn({
+          datatypeName: "uuid",
+          group: "string",
+          name: "id",
+          pkPosition: 1,
+        }),
+        is_active: createColumn({
+          datatypeName: "boolean",
+          group: "string",
+          name: "is_active",
+        }),
+      },
+      name: "users",
+      schema: "public",
+    };
+
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText,
+      },
+    });
+    useNavigationMock.mockImplementation(() => ({
+      createUrl: vi.fn(() => "#"),
+      metadata: {
+        activeTable,
+      },
+      searchParam: navigationSearchParam,
+      setPageIndexParam: setPageIndexParamMock,
+      setSearchParam: setSearchParamMock,
+    }));
+    useIntrospectionMock.mockReturnValue({
+      data: {
+        filterOperators: [
+          "=",
+          "!=",
+          ">",
+          ">=",
+          "<",
+          "<=",
+          "is",
+          "is not",
+          "like",
+          "not like",
+          "ilike",
+          "not ilike",
+        ],
+        query: {
+          parameters: [],
+          sql: "",
+        },
+        schemas: {
+          public: {
+            name: "public",
+            tables: {
+              users: activeTable,
+            },
+          },
+        },
+        timezone: "UTC",
+      },
+      refetch: vi.fn(),
+    });
+
+    useActiveTableQueryMock.mockReturnValue({
+      data: {
+        filteredRowCount: 2,
+        rows: [
+          {
+            __ps_rowid: "row-1",
+            created_at: "2026-03-11T00:00:00.000Z",
+            email: "alice@example.com",
+            id: "user_1",
+            is_active: true,
+          },
+          {
+            __ps_rowid: "row-2",
+            created_at: "2026-03-12T00:00:00.000Z",
+            email: "bob@example.com",
+            id: "user_2",
+            is_active: false,
+          },
+        ],
+      },
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    useSelectionMock.mockReturnValue({
+      deleteSelection: vi.fn(),
+      isSelecting: true,
+      rowSelectionState: {
+        "row-2": true,
+      },
+      setRowSelectionState: vi.fn(),
+    });
+    gridColumnOrderState = ["email", "id", "is_active", "created_at"];
+
+    const view = renderView();
+    const copyAsTrigger = findButtonByText("copy as");
+
+    expect(copyAsTrigger).toBeDefined();
+
+    dispatchPointerClick(copyAsTrigger);
+    await flush();
+
+    const copyJsonButton = findMenuItemByText("copy json");
+
+    expect(copyJsonButton).toBeDefined();
+
+    dispatchPointerClick(copyJsonButton);
+
+    expect(writeText).toHaveBeenCalledWith(
+      JSON.stringify(
+        {
+          email: "bob@example.com",
+          id: "user_2",
+          is_active: false,
+          created_at: "2026-03-12T00:00:00.000Z",
+        },
+        null,
+        2,
+      ),
     );
 
     view.cleanup();
