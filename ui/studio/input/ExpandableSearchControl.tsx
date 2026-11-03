@@ -114,8 +114,15 @@ export function ExpandableSearchControl(props: ExpandableSearchControlProps) {
       return;
     }
 
+    // Clearing an applied term would swap the grid to a different rows
+    // collection while staged edits still belong to the searched rows.
+    if (searchInput.trim().length > 0) {
+      rowSearchInputRef.current?.blur();
+      return;
+    }
+
     closeRowSearch();
-  }, [closeRowSearch, disabled]);
+  }, [closeRowSearch, disabled, rowSearchInputRef, searchInput]);
 
   useEffect(() => {
     setHighlightedSuggestionId((currentId) => {

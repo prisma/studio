@@ -26,6 +26,7 @@ function renderSearchControl(
   rowSearchOverrides: Partial<
     ComponentPropsWithoutRef<typeof ExpandableSearchControl>["rowSearch"]
   > = {},
+  controlProps: { disabled?: boolean } = {},
 ) {
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -75,13 +76,17 @@ function renderSearchControl(
         expandedWidthClassName="w-full"
         rowSearch={rowSearch}
         supportsSearch
+        {...controlProps}
       />,
     );
   });
 
   return {
     container,
-    rerender(nextRowSearchOverrides: Partial<typeof rowSearch>) {
+    rerender(
+      nextRowSearchOverrides: Partial<typeof rowSearch>,
+      nextControlProps: { disabled?: boolean } = controlProps,
+    ) {
       act(() => {
         root.render(
           <ExpandableSearchControl
@@ -92,6 +97,7 @@ function renderSearchControl(
               ...nextRowSearchOverrides,
             }}
             supportsSearch
+            {...nextControlProps}
           />,
         );
       });
@@ -105,6 +111,42 @@ describe("ExpandableSearchControl", () => {
   afterEach(() => {
     vi.clearAllMocks();
     document.body.innerHTML = "";
+  });
+
+  it("keeps an applied search term when it becomes disabled", () => {
+    const { container, rerender, root, rowSearch } = renderSearchControl({
+      searchInput: "alice",
+      searchSuggestions: [],
+    });
+
+    rerender({}, { disabled: true });
+
+    const searchInput = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Global search"]',
+    );
+
+    expect(rowSearch.closeRowSearch).not.toHaveBeenCalled();
+    expect(searchInput?.value).toBe("alice");
+    expect(searchInput?.readOnly).toBe(true);
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("closes an empty search when it becomes disabled", () => {
+    const { rerender, root, rowSearch } = renderSearchControl({
+      searchInput: "",
+      searchSuggestions: [],
+    });
+
+    rerender({}, { disabled: true });
+
+    expect(rowSearch.closeRowSearch).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      root.unmount();
+    });
   });
 
   it("renders an inline validation message when the current search input is invalid", () => {
