@@ -386,6 +386,64 @@ async function waitFor(assertion: () => boolean): Promise<void> {
   throw new Error("Timed out waiting for SQL view state");
 }
 
+function findButtonByText(text: string) {
+  return Array.from(
+    document.querySelectorAll<HTMLButtonElement>("button"),
+  ).find((button) => button.textContent?.trim() === text);
+}
+
+function findMenuItemByText(text: string) {
+  return Array.from(
+    document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+  ).find((item) => item.textContent?.trim() === text);
+}
+
+function dispatchPointerClick(element: Element | null | undefined) {
+  if (!element) {
+    return;
+  }
+
+  const PointerEventConstructor = window.PointerEvent ?? MouseEvent;
+
+  act(() => {
+    element.dispatchEvent(
+      new PointerEventConstructor("pointerdown", {
+        bubbles: true,
+        button: 0,
+        cancelable: true,
+      }),
+    );
+    element.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, button: 0, cancelable: true }),
+    );
+  });
+}
+
+function selectResultRow(
+  container: HTMLElement,
+  rowIndex: number,
+  options?: { shiftKey?: boolean },
+) {
+  const cell = container.querySelector(
+    `td[data-grid-row-index="${rowIndex}"][data-grid-column-id="__ps_select"]`,
+  );
+
+  if (!cell) {
+    throw new Error(`Could not find row selection cell for row ${rowIndex}`);
+  }
+
+  act(() => {
+    cell.dispatchEvent(
+      new MouseEvent("mousedown", {
+        bubbles: true,
+        button: 0,
+        cancelable: true,
+        shiftKey: options?.shiftKey ?? false,
+      }),
+    );
+  });
+}
+
 function renderSqlView() {
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -1705,6 +1763,71 @@ describe("SqlView", () => {
       expect.objectContaining({
         name: "studio_operation_success",
       }),
+    );
+
+    harness.cleanup();
+  });
+
+  it("exports selected SQL result rows through the shared copy-as menu", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText,
+      },
+    });
+
+    const { adapter } = createAdapterMock({
+      raw: () => {
+        return Promise.resolve([
+          null,
+          {
+            query: { parameters: [], sql: "select * from users" },
+            rowCount: 2,
+            rows: [
+              { email: "alice@example.com", id: "user_1" },
+              { email: "bob@example.com", id: "user_2" },
+            ],
+          },
+        ]);
+      },
+    });
+    const studio = createStudioMock(adapter);
+    useStudioMock.mockReturnValue(studio);
+
+    const harness = renderSqlView();
+    const runButton = [...harness.container.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Run SQL"),
+    );
+
+    if (!runButton) {
+      throw new Error("SQL view controls not rendered");
+    }
+
+    act(() => {
+      runButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitFor(() => {
+      return (
+        harness.container.textContent?.includes("2 row(s) returned") ?? false
+      );
+    });
+
+    expect(findButtonByText("copy as")).toBeUndefined();
+
+    selectResultRow(harness.container, 0);
+    selectResultRow(harness.container, 1, { shiftKey: true });
+    await flush();
+
+    dispatchPointerClick(findButtonByText("copy as"));
+    await flush();
+
+    dispatchPointerClick(findMenuItemByText("copy csv"));
+
+    expect(writeText).toHaveBeenCalledWith(
+      "email,id\nalice@example.com,user_1\nbob@example.com,user_2",
     );
 
     harness.cleanup();

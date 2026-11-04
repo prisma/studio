@@ -5,6 +5,7 @@ import {
   buildRowSelectionExportTable,
   buildSelectionExportFilename,
   downloadSelectionExport,
+  getSelectionExportColumnIds,
   serializeSelectionExport,
 } from "./selection-export";
 
@@ -120,18 +121,68 @@ describe("selection-export", () => {
   it("builds stable filenames for saved exports", () => {
     expect(
       buildSelectionExportFilename({
-        schema: "public",
-        table: "users",
+        base: "public-users",
         format: "csv",
       }),
     ).toBe("public-users-selection.csv");
     expect(
       buildSelectionExportFilename({
-        schema: "public",
-        table: "users",
+        base: "public-users",
         format: "markdown",
       }),
     ).toBe("public-users-selection.md");
+    expect(
+      buildSelectionExportFilename({
+        base: "sql-result",
+        format: "csv",
+      }),
+    ).toBe("sql-result-selection.csv");
+  });
+
+  it("orders export columns by pinning then visible column order", () => {
+    expect(
+      getSelectionExportColumnIds({
+        columnOrder: ["email", "id", "created_at"],
+        columnPinning: {
+          left: ["__ps_select", "created_at"],
+          right: [],
+        },
+        defaultColumnIds: ["id", "email", "created_at"],
+      }),
+    ).toEqual(["created_at", "email", "id"]);
+  });
+
+  it("keeps right-pinned columns last, as the grid renders them", () => {
+    expect(
+      getSelectionExportColumnIds({
+        columnOrder: ["id", "email", "created_at"],
+        columnPinning: {
+          left: ["__ps_select", "created_at"],
+          right: ["id"],
+        },
+        defaultColumnIds: ["id", "email", "created_at"],
+      }),
+    ).toEqual(["created_at", "email", "id"]);
+  });
+
+  it("never exports the row selection column, whatever the query returns", () => {
+    expect(
+      getSelectionExportColumnIds({
+        columnOrder: ["__ps_select", "id"],
+        columnPinning: {},
+        defaultColumnIds: ["__ps_select", "id"],
+      }),
+    ).toEqual(["id"]);
+  });
+
+  it("ignores column order entries that are not part of the result", () => {
+    expect(
+      getSelectionExportColumnIds({
+        columnOrder: ["dropped_column", "email"],
+        columnPinning: {},
+        defaultColumnIds: ["id", "email"],
+      }),
+    ).toEqual(["email", "id"]);
   });
 
   it("downloads the serialized export via a temporary object url", async () => {
