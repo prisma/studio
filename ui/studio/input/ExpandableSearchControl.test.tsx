@@ -26,12 +26,14 @@ function renderSearchControl(
   rowSearchOverrides: Partial<
     ComponentPropsWithoutRef<typeof ExpandableSearchControl>["rowSearch"]
   > = {},
+  controlProps: { disabled?: boolean } = {},
 ) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   const rowSearch = {
     acceptSearchSuggestion: vi.fn(),
+    appliedSearchTerm: "",
     closeRowSearch: vi.fn(),
     isRowSearchOpen: true,
     isSearchInputInvalid: false,
@@ -75,13 +77,17 @@ function renderSearchControl(
         expandedWidthClassName="w-full"
         rowSearch={rowSearch}
         supportsSearch
+        {...controlProps}
       />,
     );
   });
 
   return {
     container,
-    rerender(nextRowSearchOverrides: Partial<typeof rowSearch>) {
+    rerender(
+      nextRowSearchOverrides: Partial<typeof rowSearch>,
+      nextControlProps: { disabled?: boolean } = controlProps,
+    ) {
       act(() => {
         root.render(
           <ExpandableSearchControl
@@ -92,6 +98,7 @@ function renderSearchControl(
               ...nextRowSearchOverrides,
             }}
             supportsSearch
+            {...nextControlProps}
           />,
         );
       });
@@ -105,6 +112,90 @@ describe("ExpandableSearchControl", () => {
   afterEach(() => {
     vi.clearAllMocks();
     document.body.innerHTML = "";
+  });
+
+  it("keeps an applied search term when it becomes disabled", () => {
+    const closeRowSearch = vi.fn();
+    const { container, rerender, root } = renderSearchControl({
+      appliedSearchTerm: "alice",
+      closeRowSearch,
+      searchInput: "alice",
+      searchSuggestions: [],
+    });
+
+    rerender({}, { disabled: true });
+
+    const searchInput = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Global search"]',
+    );
+
+    expect(closeRowSearch).not.toHaveBeenCalled();
+    expect(searchInput?.value).toBe("alice");
+    expect(searchInput?.readOnly).toBe(true);
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("keeps an applied search term when the input was cleared but not applied yet", () => {
+    const closeRowSearch = vi.fn();
+    const setSearchInput = vi.fn();
+    const { rerender, root } = renderSearchControl({
+      appliedSearchTerm: "alice",
+      closeRowSearch,
+      searchInput: "",
+      searchSuggestions: [],
+      setSearchInput,
+    });
+
+    rerender({}, { disabled: true });
+
+    expect(closeRowSearch).not.toHaveBeenCalled();
+    expect(setSearchInput).toHaveBeenCalledWith("alice");
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("drops an unapplied search draft when it becomes disabled", () => {
+    const closeRowSearch = vi.fn();
+    const setSearchInput = vi.fn();
+    const { rerender, root } = renderSearchControl({
+      appliedSearchTerm: "alice",
+      closeRowSearch,
+      searchInput: "alice smith",
+      searchSuggestions: [],
+      setSearchInput,
+    });
+
+    rerender({}, { disabled: true });
+
+    expect(closeRowSearch).not.toHaveBeenCalled();
+    expect(setSearchInput).toHaveBeenCalledWith("alice");
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("closes the search when it becomes disabled without an applied term", () => {
+    const closeRowSearch = vi.fn();
+    const { rerender, root } = renderSearchControl({
+      appliedSearchTerm: "",
+      closeRowSearch,
+      searchInput: "draft",
+      searchSuggestions: [],
+    });
+
+    rerender({}, { disabled: true });
+
+    expect(closeRowSearch).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      root.unmount();
+    });
   });
 
   it("renders an inline validation message when the current search input is invalid", () => {

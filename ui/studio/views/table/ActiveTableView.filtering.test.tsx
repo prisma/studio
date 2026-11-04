@@ -2552,6 +2552,143 @@ describe("ActiveTableView filtering", () => {
     }
   });
 
+  it("keeps an applied row search while edits are staged so the save targets the searched rows", async () => {
+    studioSupportsFullTableSearch = true;
+    navigationSearchParam = "alice";
+    useActiveTableQueryMock.mockReturnValue({
+      data: {
+        filteredRowCount: 1,
+        rows: [
+          {
+            __ps_rowid: "row-1",
+            created_at: "2026-01-01T10:00:00.000Z",
+            email: "alice@example.com",
+            id: "user_1",
+          },
+        ],
+      },
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+
+    const view = renderView();
+
+    try {
+      await flush();
+
+      act(() => {
+        view.getGridCell("email", 0).dispatchEvent(
+          new MouseEvent("click", {
+            bubbles: true,
+            cancelable: true,
+            button: 0,
+          }),
+        );
+      });
+      await flush();
+
+      const input = getOpenEditorInput();
+
+      act(() => {
+        setEditorValue(input, "alice+draft@example.com");
+        input.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            bubbles: true,
+            cancelable: true,
+            key: "Enter",
+          }),
+        );
+      });
+      await flush();
+
+      const searchInput = view.container.querySelector<HTMLInputElement>(
+        'input[aria-label="Global search"]',
+      );
+
+      expect(findButtonByText("Save 1 row")).toBeDefined();
+      expect(setSearchParamMock).not.toHaveBeenCalledWith("");
+      expect(useActiveTableQueryMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ searchTerm: "alice" }),
+      );
+      expect(searchInput?.value).toBe("alice");
+      expect(searchInput?.readOnly).toBe(true);
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  it("drops a row-search draft that is still debouncing when an edit is staged", async () => {
+    studioSupportsFullTableSearch = true;
+    navigationSearchParam = "alice";
+    useActiveTableQueryMock.mockReturnValue({
+      data: {
+        filteredRowCount: 1,
+        rows: [
+          {
+            __ps_rowid: "row-1",
+            created_at: "2026-01-01T10:00:00.000Z",
+            email: "alice@example.com",
+            id: "user_1",
+          },
+        ],
+      },
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+
+    const view = renderView();
+
+    try {
+      await flush();
+
+      const searchInput = view.container.querySelector<HTMLInputElement>(
+        'input[aria-label="Global search"]',
+      );
+
+      if (!searchInput) {
+        throw new Error("Expected the applied row search to be open");
+      }
+
+      act(() => {
+        setEditorValue(searchInput, "alice smith");
+      });
+
+      act(() => {
+        view.getGridCell("email", 0).dispatchEvent(
+          new MouseEvent("click", {
+            bubbles: true,
+            cancelable: true,
+            button: 0,
+          }),
+        );
+      });
+      await flush();
+
+      const input = getOpenEditorInput();
+
+      act(() => {
+        setEditorValue(input, "alice+draft@example.com");
+        input.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            bubbles: true,
+            cancelable: true,
+            key: "Enter",
+          }),
+        );
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 450));
+      });
+
+      expect(findButtonByText("Save 1 row")).toBeDefined();
+      expect(setSearchParamMock).not.toHaveBeenCalledWith("alice smith");
+      expect(setSearchParamMock).not.toHaveBeenCalledWith("");
+      expect(searchInput.value).toBe("alice");
+    } finally {
+      view.cleanup();
+    }
+  });
+
   it("confirms before discarding staged edits", async () => {
     useActiveTableQueryMock.mockReturnValue({
       data: {
