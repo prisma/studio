@@ -33,6 +33,7 @@ function renderSearchControl(
   const root = createRoot(container);
   const rowSearch = {
     acceptSearchSuggestion: vi.fn(),
+    appliedSearchTerm: "",
     closeRowSearch: vi.fn(),
     isRowSearchOpen: true,
     isSearchInputInvalid: false,
@@ -114,7 +115,10 @@ describe("ExpandableSearchControl", () => {
   });
 
   it("keeps an applied search term when it becomes disabled", () => {
-    const { container, rerender, root, rowSearch } = renderSearchControl({
+    const closeRowSearch = vi.fn();
+    const { container, rerender, root } = renderSearchControl({
+      appliedSearchTerm: "alice",
+      closeRowSearch,
       searchInput: "alice",
       searchSuggestions: [],
     });
@@ -125,7 +129,7 @@ describe("ExpandableSearchControl", () => {
       'input[aria-label="Global search"]',
     );
 
-    expect(rowSearch.closeRowSearch).not.toHaveBeenCalled();
+    expect(closeRowSearch).not.toHaveBeenCalled();
     expect(searchInput?.value).toBe("alice");
     expect(searchInput?.readOnly).toBe(true);
 
@@ -134,15 +138,60 @@ describe("ExpandableSearchControl", () => {
     });
   });
 
-  it("closes an empty search when it becomes disabled", () => {
-    const { rerender, root, rowSearch } = renderSearchControl({
+  it("keeps an applied search term when the input was cleared but not applied yet", () => {
+    const closeRowSearch = vi.fn();
+    const setSearchInput = vi.fn();
+    const { rerender, root } = renderSearchControl({
+      appliedSearchTerm: "alice",
+      closeRowSearch,
       searchInput: "",
+      searchSuggestions: [],
+      setSearchInput,
+    });
+
+    rerender({}, { disabled: true });
+
+    expect(closeRowSearch).not.toHaveBeenCalled();
+    expect(setSearchInput).toHaveBeenCalledWith("alice");
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("drops an unapplied search draft when it becomes disabled", () => {
+    const closeRowSearch = vi.fn();
+    const setSearchInput = vi.fn();
+    const { rerender, root } = renderSearchControl({
+      appliedSearchTerm: "alice",
+      closeRowSearch,
+      searchInput: "alice smith",
+      searchSuggestions: [],
+      setSearchInput,
+    });
+
+    rerender({}, { disabled: true });
+
+    expect(closeRowSearch).not.toHaveBeenCalled();
+    expect(setSearchInput).toHaveBeenCalledWith("alice");
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("closes the search when it becomes disabled without an applied term", () => {
+    const closeRowSearch = vi.fn();
+    const { rerender, root } = renderSearchControl({
+      appliedSearchTerm: "",
+      closeRowSearch,
+      searchInput: "draft",
       searchSuggestions: [],
     });
 
     rerender({}, { disabled: true });
 
-    expect(rowSearch.closeRowSearch).toHaveBeenCalledTimes(1);
+    expect(closeRowSearch).toHaveBeenCalledTimes(1);
 
     act(() => {
       root.unmount();

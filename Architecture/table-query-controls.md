@@ -108,7 +108,7 @@ Rules:
   - hidden by default behind a search icon button
   - expands to an inline input on open and collapses on `Escape`
   - collapses on blur only when input is empty
-- When staged rows or staged updates exist, the row-search control MUST block new search edits until the user saves or discards those staged edits. An empty row-search control MUST stay closed; an applied search term MUST stay applied (shown read-only) so the visible rows, and the rows collection the staged edits are saved through, do not change.
+- When staged rows or staged updates exist, the row-search control MUST block new search edits until the user saves or discards those staged edits. Without an applied search term the control MUST stay closed. With an applied search term the term MUST stay applied (shown read-only) and any unapplied draft MUST be discarded, so the visible rows, and the rows collection the staged edits are saved through, do not change.
 - Command-palette row-search actions MUST reuse that same inline control:
   - selecting plain `Search rows` focuses the existing toolbar search input
   - selecting `Search rows: <query>` injects the payload into that input and applies the URL-backed search term
