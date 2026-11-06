@@ -280,6 +280,7 @@ The same lint transport also validates saved table-level SQL filter pills in the
 Keyboard execution supports `Cmd/Ctrl+Enter`, and in multi-statement scripts it runs only the top-level statement at the current cursor.
 Large SQL result sets stay responsive while you keep editing the query because result-grid rendering is isolated from editor keystrokes unless the executed result itself changes.
 Long SQL lines wrap inside the editor instead of stretching the overall page wider, so writing large queries stays readable on narrow viewports.
+The SQL editor panel is height-capped and scrolls internally, so a long query cannot push the `Run SQL` button off screen or squeeze the result grid out of view.
 
 ## AI SQL Generation
 
