@@ -278,6 +278,7 @@ export function SqlView(_props: ViewProps) {
   const aiPromptInputRef = useRef<HTMLInputElement | null>(null);
   const isMountedRef = useRef(true);
   const runCurrentSqlRef = useRef<() => void>(() => undefined);
+  const sqlEditorPanelRef = useRef<HTMLDivElement | null>(null);
   const persistedSqlDraftRef = useRef<string | null>(initialPersistedSqlDraft);
   const [editorValue, setEditorValue] = useState(() => {
     return initialPersistedSqlDraft ?? DEFAULT_SQL;
@@ -436,6 +437,16 @@ export function SqlView(_props: ViewProps) {
   useEffect(() => {
     aiPromptHistoryRef.current = aiPromptHistory;
   }, [aiPromptHistory]);
+
+  useEffect(() => {
+    if (errorMessage === null && result === null) {
+      return;
+    }
+
+    sqlEditorPanelRef.current?.scrollTo({
+      top: sqlEditorPanelRef.current.scrollHeight,
+    });
+  }, [errorMessage, result]);
 
   useEffect(() => {
     return () => {
@@ -1096,6 +1107,7 @@ export function SqlView(_props: ViewProps) {
 
       <div
         data-testid="sql-editor-panel"
+        ref={sqlEditorPanelRef}
         className="flex min-h-0 max-h-[60%] flex-col gap-3 overflow-y-auto border-b border-border bg-background p-3 [&>*]:shrink-0"
       >
         <div className="rounded-md border border-border overflow-hidden bg-background">

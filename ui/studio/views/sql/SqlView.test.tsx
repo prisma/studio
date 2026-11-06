@@ -1118,6 +1118,61 @@ describe("SqlView", () => {
     harness.cleanup();
   });
 
+  it("scrolls the capped editor panel to reveal execution feedback after a failed query", async () => {
+    const raw: Adapter["raw"] = (details) => {
+      const error = new Error(
+        "relation missing_table does not exist",
+      ) as AdapterError;
+      error.query = { parameters: [], sql: details.sql };
+      return Promise.resolve([error]);
+    };
+    const { adapter } = createAdapterMock({ raw });
+    const studio = createStudioMock(adapter);
+    useStudioMock.mockReturnValue(studio);
+
+    const harness = renderSqlView();
+    const panel = harness.container.querySelector<HTMLDivElement>(
+      '[data-testid="sql-editor-panel"]',
+    );
+    const editor = harness.container.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="SQL editor"]',
+    );
+    const runButton = [...harness.container.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Run SQL"),
+    );
+
+    if (!panel || !editor || !runButton) {
+      throw new Error(
+        "Expected SQL editor panel, SQL editor and Run SQL button",
+      );
+    }
+
+    const scrollToMock = vi.fn();
+    panel.scrollTo = scrollToMock;
+
+    act(() => {
+      editor.value = "select * from missing_table";
+      mockCodeMirrorOnChange?.("select * from missing_table");
+    });
+
+    act(() => {
+      runButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitFor(() => {
+      return (
+        harness.container.textContent?.includes(
+          "relation missing_table does not exist",
+        ) ?? false
+      );
+    });
+
+    expect(harness.container.textContent).toContain("Query error:");
+    expect(scrollToMock).toHaveBeenCalledWith({ top: panel.scrollHeight });
+
+    harness.cleanup();
+  });
+
   it("aborts in-flight SQL execution when the view unmounts", async () => {
     let executionSignal: AbortSignal | undefined;
     const pendingExecution =
