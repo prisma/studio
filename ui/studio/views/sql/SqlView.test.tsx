@@ -1740,6 +1740,30 @@ describe("SqlView", () => {
     harness.cleanup();
   });
 
+  it("caps and scrolls the SQL editor panel so results keep their space", () => {
+    const { adapter } = createAdapterMock();
+    const studio = createStudioMock(adapter);
+    useStudioMock.mockReturnValue(studio);
+
+    const harness = renderSqlView();
+    const editorPanel = harness.container.querySelector(
+      '[data-testid="sql-editor-panel"]',
+    );
+
+    expect(editorPanel).not.toBeNull();
+    const editorPanelClassList = editorPanel?.className.split(/\s+/) ?? [];
+    for (const requiredClass of [
+      "max-h-[60%]",
+      "min-h-0",
+      "overflow-y-auto",
+      "[&>*]:shrink-0",
+    ]) {
+      expect(editorPanelClassList).toContain(requiredClass);
+    }
+
+    harness.cleanup();
+  });
+
   it("supports cancelling a running query", async () => {
     const raw: Adapter["raw"] = async (_details, options) => {
       return await new Promise((resolve) => {

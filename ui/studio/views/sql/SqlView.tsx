@@ -1094,7 +1094,10 @@ export function SqlView(_props: ViewProps) {
         ) : null}
       </StudioHeader>
 
-      <div className="flex flex-col gap-3 p-3 border-b border-border bg-background">
+      <div
+        data-testid="sql-editor-panel"
+        className="flex min-h-0 max-h-[60%] flex-col gap-3 overflow-y-auto border-b border-border bg-background p-3 [&>*]:shrink-0"
+      >
         <div className="rounded-md border border-border overflow-hidden bg-background">
           <CodeMirror
             aria-label="SQL editor"
