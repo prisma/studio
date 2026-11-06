@@ -1,5 +1,11 @@
 # @prisma/studio-core
 
+## 0.34.2
+
+### Patch Changes
+
+- 3e8ef3b: Cap the SQL editor panel height so a long query scrolls inside the editor instead of pushing the `Run SQL` button off screen or collapsing the result grid to zero height.
+
 ## 0.34.1
 
 ### Patch Changes
