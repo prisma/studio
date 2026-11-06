@@ -451,7 +451,12 @@ export function SqlView(_props: ViewProps) {
     sqlEditorPanelRef.current?.scrollTo({
       top: sqlEditorPanelRef.current.scrollHeight,
     });
-  }, [errorMessage, result, aiGenerationErrorMessage, aiCorrectionErrorMessage]);
+  }, [
+    errorMessage,
+    result,
+    aiGenerationErrorMessage,
+    aiCorrectionErrorMessage,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -1160,11 +1165,6 @@ export function SqlView(_props: ViewProps) {
             Correcting SQL with AI...
           </div>
         ) : null}
-        {aiCorrectionErrorMessage ? (
-          <div className="text-sm text-destructive">
-            <strong>AI SQL correction error:</strong> {aiCorrectionErrorMessage}
-          </div>
-        ) : null}
         {aiGenerationRationale ? (
           <div className="text-xs text-muted-foreground">
             <strong>AI rationale:</strong> {aiGenerationRationale}
@@ -1173,6 +1173,11 @@ export function SqlView(_props: ViewProps) {
         {errorMessage ? (
           <div className="text-sm text-destructive">
             <strong>Query error:</strong> {errorMessage}
+          </div>
+        ) : null}
+        {aiCorrectionErrorMessage ? (
+          <div className="text-sm text-destructive">
+            <strong>AI SQL correction error:</strong> {aiCorrectionErrorMessage}
           </div>
         ) : null}
         {result ? (

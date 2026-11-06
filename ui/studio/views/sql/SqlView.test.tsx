@@ -1519,6 +1519,93 @@ describe("SqlView", () => {
     harness.cleanup();
   });
 
+  it("renders the AI SQL correction error after the query error so scrolling reveals it", async () => {
+    const raw: Adapter["raw"] = (details) => {
+      const error = new Error(
+        'relation "public.missing_table" does not exist',
+      ) as AdapterError;
+      error.query = { parameters: [], sql: details.sql };
+      return Promise.resolve([error]);
+    };
+    const { adapter } = createAdapterMock({ raw });
+    const studio = createStudioMock(adapter);
+    const llmMock = vi
+      .fn<(request: StudioLlmRequest) => Promise<string>>()
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          rationale: "Uses the missing table.",
+          sql: "select * from public.missing_table;",
+          shouldGenerateVisualization: false,
+        }),
+      )
+      .mockRejectedValueOnce(new Error("AI SQL correction exploded."));
+    studio.llm = llmMock;
+    useStudioMock.mockReturnValue(studio);
+
+    const harness = renderSqlView();
+    const panel = harness.container.querySelector<HTMLDivElement>(
+      '[data-testid="sql-editor-panel"]',
+    );
+    const promptInput = harness.container.querySelector<HTMLInputElement>(
+      'input[aria-label="Generate SQL with AI"]',
+    );
+    const generateButton = [
+      ...harness.container.querySelectorAll("button"),
+    ].find((button) => button.textContent?.includes("Generate SQL"));
+
+    if (!panel || !promptInput || !generateButton) {
+      throw new Error("Expected SQL editor panel and SQL generation controls");
+    }
+
+    const scrollToMock = vi.fn();
+    panel.scrollTo = scrollToMock;
+
+    act(() => {
+      setInputValue(promptInput, "show me the missing table");
+    });
+
+    act(() => {
+      generateButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitFor(() => {
+      return (
+        harness.container.querySelector<HTMLTextAreaElement>(
+          'textarea[aria-label="SQL editor"]',
+        )?.value === "select * from public.missing_table;"
+      );
+    });
+
+    const runButton = [...harness.container.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Run SQL"),
+    );
+
+    if (!runButton) {
+      throw new Error("Expected Run SQL button");
+    }
+
+    act(() => {
+      runButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitFor(() => {
+      return (
+        harness.container.textContent?.includes(
+          "AI SQL correction exploded.",
+        ) ?? false
+      );
+    });
+
+    expect(harness.container.textContent).toContain("Query error:");
+    expect(harness.container.textContent).toContain("AI SQL correction error:");
+    expect(panel.lastElementChild?.textContent).toContain(
+      "AI SQL correction error:",
+    );
+    expect(scrollToMock).toHaveBeenCalledWith({ top: panel.scrollHeight });
+
+    harness.cleanup();
+  });
+
   it("renders an in-grid graph action and swaps it for a chart after generation", async () => {
     const { adapter } = createAdapterMock();
     const studio = createStudioMock(adapter);
