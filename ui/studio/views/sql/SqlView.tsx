@@ -873,6 +873,7 @@ export function SqlView(_props: ViewProps) {
 
     const statementAtCursor = getTopLevelSqlStatementAtCursor({
       cursorIndex: view.state.selection.main.head,
+      dialect: sqlEditorSchema.dialect,
       sql: editorValue,
     });
 
