@@ -439,14 +439,19 @@ export function SqlView(_props: ViewProps) {
   }, [aiPromptHistory]);
 
   useEffect(() => {
-    if (errorMessage === null && result === null) {
+    if (
+      errorMessage === null &&
+      result === null &&
+      aiGenerationErrorMessage === null &&
+      aiCorrectionErrorMessage === null
+    ) {
       return;
     }
 
     sqlEditorPanelRef.current?.scrollTo({
       top: sqlEditorPanelRef.current.scrollHeight,
     });
-  }, [errorMessage, result]);
+  }, [errorMessage, result, aiGenerationErrorMessage, aiCorrectionErrorMessage]);
 
   useEffect(() => {
     return () => {

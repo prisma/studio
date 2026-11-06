@@ -1469,6 +1469,56 @@ describe("SqlView", () => {
     harness.cleanup();
   });
 
+  it("scrolls the capped editor panel to reveal AI SQL generation errors", async () => {
+    const { adapter } = createAdapterMock();
+    const studio = createStudioMock(adapter);
+    studio.llm = vi.fn(() =>
+      Promise.reject(new Error("AI SQL generation exploded.")),
+    );
+    useStudioMock.mockReturnValue(studio);
+
+    const harness = renderSqlView();
+    const panel = harness.container.querySelector<HTMLDivElement>(
+      '[data-testid="sql-editor-panel"]',
+    );
+    const promptInput = harness.container.querySelector<HTMLInputElement>(
+      'input[aria-label="Generate SQL with AI"]',
+    );
+    const generateButton = [
+      ...harness.container.querySelectorAll("button"),
+    ].find((button) => button.textContent?.includes("Generate SQL"));
+
+    if (!panel || !promptInput || !generateButton) {
+      throw new Error("Expected SQL editor panel and SQL generation controls");
+    }
+
+    const scrollToMock = vi.fn();
+    panel.scrollTo = scrollToMock;
+
+    act(() => {
+      setInputValue(promptInput, "show me organizations");
+    });
+
+    act(() => {
+      generateButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitFor(() => {
+      return (
+        harness.container.textContent?.includes(
+          "AI SQL generation exploded.",
+        ) ?? false
+      );
+    });
+
+    expect(harness.container.textContent).toContain(
+      "AI SQL generation exploded.",
+    );
+    expect(scrollToMock).toHaveBeenCalledWith({ top: panel.scrollHeight });
+
+    harness.cleanup();
+  });
+
   it("renders an in-grid graph action and swaps it for a chart after generation", async () => {
     const { adapter } = createAdapterMock();
     const studio = createStudioMock(adapter);
