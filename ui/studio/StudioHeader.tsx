@@ -8,6 +8,8 @@ interface StudioHeaderProps {
   children?: React.ReactNode;
   className?: string;
   endContent?: React.ReactNode;
+  /** Names the current view so every screen says where you are. */
+  title?: string;
 }
 
 export function StudioHeader(props: StudioHeaderProps) {
@@ -15,7 +17,7 @@ export function StudioHeader(props: StudioHeaderProps) {
   return (
     <div
       className={cn(
-        "bg-studio-header-background flex w-full rounded-t-lg border-b border-border bg-card p-2 py-3",
+        "flex w-full rounded-t-lg border-b border-border bg-card px-2 py-2.5",
         props.className,
       )}
     >
@@ -25,8 +27,9 @@ export function StudioHeader(props: StudioHeaderProps) {
             aria-label={
               isNavigationOpen ? "Close navigation" : "Open navigation"
             }
-            variant="outline"
+            variant="ghost"
             size="icon"
+            className="text-muted-foreground hover:text-foreground"
             onClick={toggleNavigation}
           >
             {isNavigationOpen ? (
@@ -35,6 +38,11 @@ export function StudioHeader(props: StudioHeaderProps) {
               <PanelLeftOpen data-icon="inline-start" />
             )}
           </Button>
+          {props.title ? (
+            <h1 className="shrink-0 pr-1 font-sans text-sm font-semibold text-foreground">
+              {props.title}
+            </h1>
+          ) : null}
           {props.children}
         </div>
 

@@ -17,14 +17,19 @@ export function ConsoleView(_props: ViewProps) {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <StudioHeader />
+      <StudioHeader title="Console" />
       <div
         ref={scrollRef}
-        className="flex flex-col grow p-4 overflow-y-auto gap-2 bg-background/50"
+        className="flex grow flex-col gap-3 overflow-y-auto p-4"
       >
         {operationEvents.length === 0 && (
-          <div className="flex justify-center items-center h-full text-muted-foreground">
-            No operation events yet.
+          <div className="flex h-full flex-col items-center justify-center gap-1 text-center">
+            <p className="text-sm font-medium text-foreground">
+              No operation events yet.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Queries Studio runs against your database appear here.
+            </p>
           </div>
         )}
         {operationEvents.map((event) => (

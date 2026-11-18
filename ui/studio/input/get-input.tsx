@@ -12,11 +12,7 @@ import { RawInput } from "./RawInput";
 import { TimeInput } from "./TimeInput";
 
 export type CellEditNavigationDirection =
-  | "down"
-  | "left"
-  | "right"
-  | "tab"
-  | "up";
+  "down" | "left" | "right" | "tab" | "up";
 
 export interface GetInputProps {
   cell: Cell<Record<string, unknown>, unknown>;

@@ -890,9 +890,7 @@ function renderView() {
 
 function getFocusedCellState() {
   return localUiStateStore.get("datagrid:public.users:focused-cell") as
-    | { columnId: string; rowIndex: number }
-    | null
-    | undefined;
+    { columnId: string; rowIndex: number } | null | undefined;
 }
 
 beforeEach(() => {
@@ -1433,8 +1431,7 @@ describe("ActiveTableView filtering", () => {
       );
 
       const filter = JSON.parse(createUrlArgs?.filterParam ?? "{}") as
-        | FilterGroup
-        | Record<string, unknown>;
+        FilterGroup | Record<string, unknown>;
 
       expect(filter).toMatchObject({
         after: "and",
@@ -2025,7 +2022,7 @@ describe("ActiveTableView filtering", () => {
         "ps-staged-cell",
       );
       expect(view.getGridCell("email", 0).className).toContain(
-        "after:border-amber-300",
+        "before:bg-staged-cell-background",
       );
 
       dispatchKeyboard("Enter");
@@ -3057,8 +3054,7 @@ describe("ActiveTableView filtering", () => {
       expect(
         (
           updateManyMutateMock.mock.calls[0]?.[1] as
-            | { onSuccess?: unknown }
-            | undefined
+            { onSuccess?: unknown } | undefined
         )?.onSuccess,
       ).toBeTypeOf("function");
       expect(queryConfirmationDialog()).toBeNull();

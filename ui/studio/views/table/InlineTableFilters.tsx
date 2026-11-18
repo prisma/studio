@@ -245,7 +245,21 @@ export function InlineTableFilterAddButton(
   const isAiFilterVisible = typeof aiFilter === "function";
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const aiInputRef = useRef<HTMLInputElement | null>(null);
-  const columns = useMemo(() => Object.values(table.columns), [table.columns]);
+  // Same order as the grid: primary key columns first, then by name.
+  const columns = useMemo(
+    () =>
+      Object.values(table.columns).sort((left, right) => {
+        const leftPk = left.pkPosition ?? Number.POSITIVE_INFINITY;
+        const rightPk = right.pkPosition ?? Number.POSITIVE_INFINITY;
+
+        if (leftPk !== rightPk) {
+          return leftPk - rightPk;
+        }
+
+        return left.name.localeCompare(right.name);
+      }),
+    [table.columns],
+  );
   const visibleColumns = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
 
@@ -359,7 +373,7 @@ export function InlineTableFilterAddButton(
           disabled && "opacity-70",
           isAiFilterVisible
             ? "border-r border-border/70 hover:bg-accent/50"
-            : "rounded-md border border-input shadow-sm hover:bg-accent",
+            : "rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground",
           !isAiFilterVisible &&
             totalEditingFilters > 0 &&
             "border-primary ring-1 ring-primary/15",
@@ -558,7 +572,7 @@ export function InlineTableFilterAddButton(
                 {matchesSqlFilterOption(searchTerm) ? (
                   <button
                     type="button"
-                    className="mb-1 flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-accent hover:text-accent-foreground"
+                    className="mb-1 flex w-full items-center justify-between rounded-sm px-2.5 py-1.5 text-left transition-colors hover:bg-accent hover:text-accent-foreground"
                     onClick={handleSqlFilterSelect}
                   >
                     <span className="flex min-w-0 items-center gap-2.5">
@@ -576,12 +590,12 @@ export function InlineTableFilterAddButton(
                   <button
                     key={column.name}
                     type="button"
-                    className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-accent hover:text-accent-foreground"
+                    className="flex w-full items-center justify-between rounded-sm px-2.5 py-1.5 text-left transition-colors hover:bg-accent hover:text-accent-foreground"
                     onClick={() => handleColumnSelect(column.name)}
                   >
                     <span className="flex min-w-0 items-center gap-2.5">
                       <Database className="size-3.5 text-muted-foreground" />
-                      <span className="truncate text-sm font-medium">
+                      <span className="truncate font-mono text-xs text-foreground">
                         {column.name}
                       </span>
                     </span>
@@ -1011,7 +1025,7 @@ function InlineTableFilterPill(props: {
                       <button
                         key={option.value}
                         type="button"
-                        className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-accent hover:text-accent-foreground"
+                        className="flex w-full items-center justify-between rounded-sm px-2.5 py-1.5 text-left transition-colors hover:bg-accent hover:text-accent-foreground"
                         onClick={() => handleOperatorSelect(option.value)}
                       >
                         <span className="text-sm font-medium">

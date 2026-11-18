@@ -27,9 +27,11 @@ export function DataGridHeader<TData>(props: HeaderProps<TData>) {
   const sortedState = header.column.getIsSorted();
   const isSorted = sortedState !== false;
   const shouldKeepControlsVisible = isPinned || isSorted;
+  // Active (sorted/pinned) columns keep only their indicator visible at rest; the
+  // full pill appears on hover or focus, like every other column.
   const controlsClassName = shouldKeepControlsVisible
-    ? "opacity-100 pointer-events-auto"
-    : "opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto";
+    ? "opacity-100 pointer-events-auto border-transparent bg-transparent shadow-none group-hover:border-table-border group-hover:bg-background/95 group-hover:shadow-sm focus-within:border-table-border focus-within:bg-background/95 focus-within:shadow-sm"
+    : "opacity-0 pointer-events-none border-table-border bg-background/95 shadow-sm group-hover:opacity-100 group-hover:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto";
 
   const isSortAsc = sortedState === "asc";
   const isSortDesc = sortedState === "desc";
@@ -94,7 +96,7 @@ export function DataGridHeader<TData>(props: HeaderProps<TData>) {
         data-testid="column-header-controls"
         data-active={shouldKeepControlsVisible || undefined}
         className={cn(
-          "absolute right-1 top-1/2 -translate-y-1/2 z-10 inline-flex items-center gap-0.5 rounded-full border border-table-border bg-background/95 px-1 py-0.5 shadow-sm transition-opacity duration-150",
+          "absolute right-1 top-1/2 -translate-y-1/2 z-10 inline-flex items-center gap-0.5 rounded-full border px-1 py-0.5 transition-[opacity,background-color,box-shadow] duration-150",
           controlsClassName,
         )}
       >
@@ -112,6 +114,10 @@ export function DataGridHeader<TData>(props: HeaderProps<TData>) {
               isPinned
                 ? "text-foreground"
                 : "text-muted-foreground/70 hover:text-foreground",
+              // On a sorted column the pin is a hover action, not a resting mark.
+              !isPinned &&
+                shouldKeepControlsVisible &&
+                "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
             )}
           >
             <Pin size={12} />

@@ -10,8 +10,14 @@ export interface InputActionsProps extends PropsWithChildren {
 }
 
 export function InputActions(props: InputActionsProps) {
-  const { children, disabled, onCancel, onSave, saveText, showSave = true } =
-    props;
+  const {
+    children,
+    disabled,
+    onCancel,
+    onSave,
+    saveText,
+    showSave = true,
+  } = props;
 
   return (
     <div className="flex flex-row gap-1 border-t border-table-border text-xs p-2">

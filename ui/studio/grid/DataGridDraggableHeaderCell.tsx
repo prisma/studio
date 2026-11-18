@@ -44,8 +44,7 @@ export const DataGridDraggableHeaderCell = (
   const shouldPreviewReorder = Boolean(
     (
       table.options.meta as
-        | { isColumnReorderPreviewEnabled?: boolean }
-        | undefined
+        { isColumnReorderPreviewEnabled?: boolean } | undefined
     )?.isColumnReorderPreviewEnabled,
   );
   const shouldSuppressReorderTransform = !isDragging && !shouldPreviewReorder;

@@ -241,7 +241,7 @@ export function ExpandableSearchControl(props: ExpandableSearchControlProps) {
         aria-disabled={disabled || undefined}
         aria-label="Global search"
         className={cn(
-          "absolute top-0 min-w-9 w-auto px-2 transition-opacity duration-200",
+          "absolute top-0 min-w-9 w-auto px-2 text-muted-foreground transition-opacity duration-200 hover:text-foreground",
           alignment === "left" ? "left-0" : "right-0",
           disabled && "opacity-70",
           isRowSearchOpen && "pointer-events-none opacity-0",
@@ -257,7 +257,7 @@ export function ExpandableSearchControl(props: ExpandableSearchControlProps) {
         onMouseDown={handleBlockedMouseDown}
         size="icon"
         type="button"
-        variant="outline"
+        variant="ghost"
       >
         <Search />
       </Button>

@@ -109,9 +109,7 @@ export async function requestValidatedAiJsonResponse<
     }
 
     if (correctionCount >= maxCorrectionRetries) {
-      throw new Error(
-        result.issues[0]?.message ?? invalidResponseMessage,
-      );
+      throw new Error(result.issues[0]?.message ?? invalidResponseMessage);
     }
 
     promptToSend = buildRetryPrompt({

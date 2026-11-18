@@ -810,6 +810,10 @@ function getHtmlDocument(): string {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Studio + ppg demo${isProduction ? "" : " (direct tcp)"}</title>
+    <!-- Studio ships no font files; hosts load DM Sans / DM Mono. The demo plays the host. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap" />
     <link rel="stylesheet" href="/app.css${bustSuffix}" />
   </head>
   <body style="margin: 0; min-height: 100vh;">

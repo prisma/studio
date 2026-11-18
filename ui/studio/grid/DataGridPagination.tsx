@@ -14,7 +14,7 @@ import type {
 import { useEffect, useId, useState } from "react";
 
 import type { BigIntString, NumericString } from "@/data/type-utils";
-import { Button, buttonVariants } from "@/ui/components/ui/button";
+import { Button } from "@/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -126,7 +126,7 @@ export function DataGridPagination(props: DataGridPaginationProps) {
 
   return (
     <div className="rounded-b-lg overflow-visible sticky bottom-0 left-0 border-t-0 w-full z-20 p-0">
-      <div className="flex items-center justify-between gap-2 py-3 px-2 border-t border-table-border backdrop-blur-sm bg-background/90">
+      <div className="flex items-center justify-between gap-2 py-2 px-3 border-t border-table-border backdrop-blur-sm bg-background/90">
         {variant === "basic" ? (
           <div className="flex items-center gap-2">
             <Button
@@ -190,12 +190,12 @@ export function DataGridPagination(props: DataGridPaginationProps) {
           <div className="flex flex-wrap items-center gap-2">
             <div
               aria-label="Pagination"
-              className="inline-flex items-stretch overflow-hidden rounded-md border border-input bg-background shadow-sm"
+              className="inline-flex items-center gap-0.5 rounded-md bg-secondary p-0.5"
               role="group"
             >
               <Button
                 aria-label="Go to first page"
-                variant="outline"
+                variant="ghost"
                 size="icon"
                 disabled={
                   shouldDisablePageControls || !table.getCanPreviousPage()
@@ -206,7 +206,7 @@ export function DataGridPagination(props: DataGridPaginationProps) {
                   undefined
                 }
                 className={cn(
-                  "h-9 w-9 rounded-none border-0 border-r border-input shadow-none",
+                  "size-7 rounded-sm text-muted-foreground shadow-none hover:bg-background hover:text-foreground",
                   controlsDisabled ? "opacity-70" : undefined,
                 )}
                 onMouseDown={handleBlockedMouseDown}
@@ -231,7 +231,7 @@ export function DataGridPagination(props: DataGridPaginationProps) {
               </Button>
               <Button
                 aria-label="Go to previous page"
-                variant="outline"
+                variant="ghost"
                 size="icon"
                 disabled={
                   shouldDisablePageControls || !table.getCanPreviousPage()
@@ -242,7 +242,7 @@ export function DataGridPagination(props: DataGridPaginationProps) {
                   undefined
                 }
                 className={cn(
-                  "h-9 w-9 rounded-none border-0 border-r border-input shadow-none",
+                  "size-7 rounded-sm text-muted-foreground shadow-none hover:bg-background hover:text-foreground",
                   controlsDisabled ? "opacity-70" : undefined,
                 )}
                 onMouseDown={handleBlockedMouseDown}
@@ -265,7 +265,7 @@ export function DataGridPagination(props: DataGridPaginationProps) {
               >
                 <ChevronLeft data-icon="inline-start" />
               </Button>
-              <div className="flex items-center gap-2 border-r border-input px-3 font-sans text-xs font-medium text-foreground tabular-nums">
+              <div className="flex h-7 items-center gap-1.5 rounded-sm bg-background px-2 font-sans text-xs text-foreground tabular-nums shadow-sm ring-1 ring-border">
                 <Input
                   aria-disabled={shouldBlockInteraction || undefined}
                   aria-label="Page number"
@@ -274,7 +274,7 @@ export function DataGridPagination(props: DataGridPaginationProps) {
                   type="text"
                   value={pageDraft}
                   className={cn(
-                    "h-9 w-auto min-w-0 rounded-none border-0 px-1 text-right font-sans text-xs text-foreground tabular-nums shadow-none focus-visible:ring-0",
+                    "h-6 w-auto min-w-0 rounded-none border-0 bg-transparent px-1 text-right font-sans text-xs text-foreground tabular-nums shadow-none focus-visible:ring-0",
                     (shouldBlockInteraction || shouldDisablePageControls) &&
                       "opacity-70",
                   )}
@@ -323,11 +323,11 @@ export function DataGridPagination(props: DataGridPaginationProps) {
                   <Button
                     aria-disabled={shouldBlockInteraction || undefined}
                     aria-label="Rows per page"
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
                     disabled={shouldDisablePageControls}
                     className={cn(
-                      "h-9 rounded-none border-0 border-r border-input px-3 shadow-none font-sans text-xs font-medium",
+                      "h-7 rounded-sm px-2 shadow-none font-sans text-xs font-normal text-muted-foreground hover:bg-background hover:text-foreground",
                       "justify-between gap-2 whitespace-nowrap",
                       controlsDisabled ? "opacity-70" : undefined,
                     )}
@@ -375,14 +375,14 @@ export function DataGridPagination(props: DataGridPaginationProps) {
               </DropdownMenu>
               <Button
                 aria-label="Go to next page"
-                variant="outline"
+                variant="ghost"
                 size="icon"
                 disabled={shouldDisablePageControls || !table.getCanNextPage()}
                 aria-disabled={
                   shouldBlockInteraction || !table.getCanNextPage() || undefined
                 }
                 className={cn(
-                  "h-9 w-9 rounded-none border-0 border-r border-input shadow-none",
+                  "size-7 rounded-sm text-muted-foreground shadow-none hover:bg-background hover:text-foreground",
                   controlsDisabled ? "opacity-70" : undefined,
                 )}
                 onMouseDown={handleBlockedMouseDown}
@@ -407,14 +407,14 @@ export function DataGridPagination(props: DataGridPaginationProps) {
               </Button>
               <Button
                 aria-label="Go to last page"
-                variant="outline"
+                variant="ghost"
                 size="icon"
                 disabled={shouldDisablePageControls || !table.getCanNextPage()}
                 aria-disabled={
                   shouldBlockInteraction || !table.getCanNextPage() || undefined
                 }
                 className={cn(
-                  "h-9 w-9 rounded-none border-0 shadow-none",
+                  "size-7 rounded-sm text-muted-foreground shadow-none hover:bg-background hover:text-foreground",
                   controlsDisabled ? "opacity-70" : undefined,
                 )}
                 onMouseDown={handleBlockedMouseDown}
@@ -440,8 +440,7 @@ export function DataGridPagination(props: DataGridPaginationProps) {
             </div>
             <div
               className={cn(
-                buttonVariants({ size: "default", variant: "outline" }),
-                "h-9 gap-3 px-3 font-sans text-xs shadow-sm",
+                "flex h-7 items-center gap-2 px-1 font-sans text-xs",
                 shouldBlockInteraction && "opacity-70",
               )}
             >
@@ -460,18 +459,18 @@ export function DataGridPagination(props: DataGridPaginationProps) {
                 }}
               />
               <Label
-                className="cursor-pointer font-sans text-xs font-medium"
+                className="cursor-pointer font-sans text-xs font-normal text-muted-foreground"
                 htmlFor={infiniteScrollControlId}
                 onMouseDown={handleBlockedMouseDown}
               >
-                infinite scroll
+                Infinite scroll
               </Label>
             </div>
           </div>
         )}
         {rowCountLabel == null ? null : (
           <span
-            className="shrink-0 px-1 font-sans text-xs font-medium text-muted-foreground tabular-nums"
+            className="shrink-0 px-2 font-sans text-xs text-muted-foreground tabular-nums"
             data-testid="data-grid-row-count"
           >
             {rowCountLabel}

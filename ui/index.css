@@ -8,11 +8,331 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  /* Eclipse radii: 3 / 6 / 12. xl stays one step above for sheets and dialogs. */
+  --radius-sm: var(--radius-square-low);
+  --radius-md: var(--radius-square);
+  --radius-lg: var(--radius-square-high);
+  --radius-xl: 16px;
+
+  /* Eclipse type: DM Sans + DM Mono, closed scale with an 11.66px 2xs step. */
+  --font-sans: var(--font-family-sans);
+  --font-mono: var(--font-family-monospace);
+  --text-2xs: 11.66px;
+  --text-2xs--line-height: 16px;
+  --tracking-loose: 0.06875rem;
+
+  /* Eclipse elevation: hairline rings for edges, soft offset shadows by level. */
+  --shadow-xs: var(--shadow-lower);
+  --shadow-sm: var(--shadow-lower);
+  --shadow-md: var(--shadow-middle);
+  --shadow-lg: var(--shadow-higher);
+  --shadow-xl: var(--shadow-higher);
+  --shadow-2xl: var(--shadow-higher);
+  --shadow-hairline: var(--card-hairline);
+
   --color-background: var(--background);
+  --color-canvas: var(--canvas);
+  --color-border-weak: var(--border-weak);
+  --color-input-background: var(--input-background);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-prism-cyan: var(--brand-cyan);
+  --color-prism-yellow: var(--brand-yellow);
+  --color-prism-red: var(--brand-red);
+
+  /* Brand palette only (prisma.io/brand): every Tailwind hue resolves to a
+     Prism scale or a brand neutral, so stray utilities can't introduce off-brand colour. */
+  --color-prism-cyan-50: var(--prism-cyan-50);
+  --color-prism-cyan-100: var(--prism-cyan-100);
+  --color-prism-cyan-200: var(--prism-cyan-200);
+  --color-prism-cyan-300: var(--prism-cyan-300);
+  --color-prism-cyan-400: var(--prism-cyan-400);
+  --color-prism-cyan-500: var(--prism-cyan-500);
+  --color-prism-cyan-600: var(--prism-cyan-600);
+  --color-prism-cyan-700: var(--prism-cyan-700);
+  --color-prism-cyan-800: var(--prism-cyan-800);
+  --color-prism-cyan-900: var(--prism-cyan-900);
+  --color-prism-cyan-950: var(--prism-cyan-950);
+  --color-prism-red-50: var(--prism-red-50);
+  --color-prism-red-100: var(--prism-red-100);
+  --color-prism-red-200: var(--prism-red-200);
+  --color-prism-red-300: var(--prism-red-300);
+  --color-prism-red-400: var(--prism-red-400);
+  --color-prism-red-500: var(--prism-red-500);
+  --color-prism-red-600: var(--prism-red-600);
+  --color-prism-red-700: var(--prism-red-700);
+  --color-prism-red-800: var(--prism-red-800);
+  --color-prism-red-900: var(--prism-red-900);
+  --color-prism-red-950: var(--prism-red-950);
+  --color-prism-yellow-50: var(--prism-yellow-50);
+  --color-prism-yellow-100: var(--prism-yellow-100);
+  --color-prism-yellow-200: var(--prism-yellow-200);
+  --color-prism-yellow-300: var(--prism-yellow-300);
+  --color-prism-yellow-400: var(--prism-yellow-400);
+  --color-prism-yellow-500: var(--prism-yellow-500);
+  --color-prism-yellow-600: var(--prism-yellow-600);
+  --color-prism-yellow-700: var(--prism-yellow-700);
+  --color-prism-yellow-800: var(--prism-yellow-800);
+  --color-prism-yellow-900: var(--prism-yellow-900);
+  --color-prism-yellow-950: var(--prism-yellow-950);
+  --color-brand-neutral-50: var(--brand-neutral-50);
+  --color-brand-neutral-100: var(--brand-neutral-100);
+  --color-brand-neutral-200: var(--brand-neutral-200);
+  --color-brand-neutral-300: var(--brand-neutral-300);
+  --color-brand-neutral-400: var(--brand-neutral-400);
+  --color-brand-neutral-500: var(--brand-neutral-500);
+  --color-brand-neutral-600: var(--brand-neutral-600);
+  --color-brand-neutral-700: var(--brand-neutral-700);
+  --color-brand-neutral-800: var(--brand-neutral-800);
+  --color-brand-neutral-900: var(--brand-neutral-900);
+  --color-brand-neutral-950: var(--brand-neutral-950);
+  --color-emerald-50: var(--prism-cyan-50);
+  --color-emerald-100: var(--prism-cyan-100);
+  --color-emerald-200: var(--prism-cyan-200);
+  --color-emerald-300: var(--prism-cyan-300);
+  --color-emerald-400: var(--prism-cyan-400);
+  --color-emerald-500: var(--prism-cyan-500);
+  --color-emerald-600: var(--prism-cyan-600);
+  --color-emerald-700: var(--prism-cyan-700);
+  --color-emerald-800: var(--prism-cyan-800);
+  --color-emerald-900: var(--prism-cyan-900);
+  --color-emerald-950: var(--prism-cyan-950);
+  --color-green-50: var(--prism-cyan-50);
+  --color-green-100: var(--prism-cyan-100);
+  --color-green-200: var(--prism-cyan-200);
+  --color-green-300: var(--prism-cyan-300);
+  --color-green-400: var(--prism-cyan-400);
+  --color-green-500: var(--prism-cyan-500);
+  --color-green-600: var(--prism-cyan-600);
+  --color-green-700: var(--prism-cyan-700);
+  --color-green-800: var(--prism-cyan-800);
+  --color-green-900: var(--prism-cyan-900);
+  --color-green-950: var(--prism-cyan-950);
+  --color-teal-50: var(--prism-cyan-50);
+  --color-teal-100: var(--prism-cyan-100);
+  --color-teal-200: var(--prism-cyan-200);
+  --color-teal-300: var(--prism-cyan-300);
+  --color-teal-400: var(--prism-cyan-400);
+  --color-teal-500: var(--prism-cyan-500);
+  --color-teal-600: var(--prism-cyan-600);
+  --color-teal-700: var(--prism-cyan-700);
+  --color-teal-800: var(--prism-cyan-800);
+  --color-teal-900: var(--prism-cyan-900);
+  --color-teal-950: var(--prism-cyan-950);
+  --color-cyan-50: var(--prism-cyan-50);
+  --color-cyan-100: var(--prism-cyan-100);
+  --color-cyan-200: var(--prism-cyan-200);
+  --color-cyan-300: var(--prism-cyan-300);
+  --color-cyan-400: var(--prism-cyan-400);
+  --color-cyan-500: var(--prism-cyan-500);
+  --color-cyan-600: var(--prism-cyan-600);
+  --color-cyan-700: var(--prism-cyan-700);
+  --color-cyan-800: var(--prism-cyan-800);
+  --color-cyan-900: var(--prism-cyan-900);
+  --color-cyan-950: var(--prism-cyan-950);
+  --color-sky-50: var(--prism-cyan-50);
+  --color-sky-100: var(--prism-cyan-100);
+  --color-sky-200: var(--prism-cyan-200);
+  --color-sky-300: var(--prism-cyan-300);
+  --color-sky-400: var(--prism-cyan-400);
+  --color-sky-500: var(--prism-cyan-500);
+  --color-sky-600: var(--prism-cyan-600);
+  --color-sky-700: var(--prism-cyan-700);
+  --color-sky-800: var(--prism-cyan-800);
+  --color-sky-900: var(--prism-cyan-900);
+  --color-sky-950: var(--prism-cyan-950);
+  --color-blue-50: var(--prism-cyan-50);
+  --color-blue-100: var(--prism-cyan-100);
+  --color-blue-200: var(--prism-cyan-200);
+  --color-blue-300: var(--prism-cyan-300);
+  --color-blue-400: var(--prism-cyan-400);
+  --color-blue-500: var(--prism-cyan-500);
+  --color-blue-600: var(--prism-cyan-600);
+  --color-blue-700: var(--prism-cyan-700);
+  --color-blue-800: var(--prism-cyan-800);
+  --color-blue-900: var(--prism-cyan-900);
+  --color-blue-950: var(--prism-cyan-950);
+  --color-lime-50: var(--prism-cyan-50);
+  --color-lime-100: var(--prism-cyan-100);
+  --color-lime-200: var(--prism-cyan-200);
+  --color-lime-300: var(--prism-cyan-300);
+  --color-lime-400: var(--prism-cyan-400);
+  --color-lime-500: var(--prism-cyan-500);
+  --color-lime-600: var(--prism-cyan-600);
+  --color-lime-700: var(--prism-cyan-700);
+  --color-lime-800: var(--prism-cyan-800);
+  --color-lime-900: var(--prism-cyan-900);
+  --color-lime-950: var(--prism-cyan-950);
+  --color-red-50: var(--prism-red-50);
+  --color-red-100: var(--prism-red-100);
+  --color-red-200: var(--prism-red-200);
+  --color-red-300: var(--prism-red-300);
+  --color-red-400: var(--prism-red-400);
+  --color-red-500: var(--prism-red-500);
+  --color-red-600: var(--prism-red-600);
+  --color-red-700: var(--prism-red-700);
+  --color-red-800: var(--prism-red-800);
+  --color-red-900: var(--prism-red-900);
+  --color-red-950: var(--prism-red-950);
+  --color-rose-50: var(--prism-red-50);
+  --color-rose-100: var(--prism-red-100);
+  --color-rose-200: var(--prism-red-200);
+  --color-rose-300: var(--prism-red-300);
+  --color-rose-400: var(--prism-red-400);
+  --color-rose-500: var(--prism-red-500);
+  --color-rose-600: var(--prism-red-600);
+  --color-rose-700: var(--prism-red-700);
+  --color-rose-800: var(--prism-red-800);
+  --color-rose-900: var(--prism-red-900);
+  --color-rose-950: var(--prism-red-950);
+  --color-pink-50: var(--prism-red-50);
+  --color-pink-100: var(--prism-red-100);
+  --color-pink-200: var(--prism-red-200);
+  --color-pink-300: var(--prism-red-300);
+  --color-pink-400: var(--prism-red-400);
+  --color-pink-500: var(--prism-red-500);
+  --color-pink-600: var(--prism-red-600);
+  --color-pink-700: var(--prism-red-700);
+  --color-pink-800: var(--prism-red-800);
+  --color-pink-900: var(--prism-red-900);
+  --color-pink-950: var(--prism-red-950);
+  --color-amber-50: var(--prism-yellow-50);
+  --color-amber-100: var(--prism-yellow-100);
+  --color-amber-200: var(--prism-yellow-200);
+  --color-amber-300: var(--prism-yellow-300);
+  --color-amber-400: var(--prism-yellow-400);
+  --color-amber-500: var(--prism-yellow-500);
+  --color-amber-600: var(--prism-yellow-600);
+  --color-amber-700: var(--prism-yellow-700);
+  --color-amber-800: var(--prism-yellow-800);
+  --color-amber-900: var(--prism-yellow-900);
+  --color-amber-950: var(--prism-yellow-950);
+  --color-yellow-50: var(--prism-yellow-50);
+  --color-yellow-100: var(--prism-yellow-100);
+  --color-yellow-200: var(--prism-yellow-200);
+  --color-yellow-300: var(--prism-yellow-300);
+  --color-yellow-400: var(--prism-yellow-400);
+  --color-yellow-500: var(--prism-yellow-500);
+  --color-yellow-600: var(--prism-yellow-600);
+  --color-yellow-700: var(--prism-yellow-700);
+  --color-yellow-800: var(--prism-yellow-800);
+  --color-yellow-900: var(--prism-yellow-900);
+  --color-yellow-950: var(--prism-yellow-950);
+  --color-orange-50: var(--prism-yellow-50);
+  --color-orange-100: var(--prism-yellow-100);
+  --color-orange-200: var(--prism-yellow-200);
+  --color-orange-300: var(--prism-yellow-300);
+  --color-orange-400: var(--prism-yellow-400);
+  --color-orange-500: var(--prism-yellow-500);
+  --color-orange-600: var(--prism-yellow-600);
+  --color-orange-700: var(--prism-yellow-700);
+  --color-orange-800: var(--prism-yellow-800);
+  --color-orange-900: var(--prism-yellow-900);
+  --color-orange-950: var(--prism-yellow-950);
+  --color-violet-50: var(--brand-neutral-50);
+  --color-violet-100: var(--brand-neutral-100);
+  --color-violet-200: var(--brand-neutral-200);
+  --color-violet-300: var(--brand-neutral-300);
+  --color-violet-400: var(--brand-neutral-400);
+  --color-violet-500: var(--brand-neutral-500);
+  --color-violet-600: var(--brand-neutral-600);
+  --color-violet-700: var(--brand-neutral-700);
+  --color-violet-800: var(--brand-neutral-800);
+  --color-violet-900: var(--brand-neutral-900);
+  --color-violet-950: var(--brand-neutral-950);
+  --color-purple-50: var(--brand-neutral-50);
+  --color-purple-100: var(--brand-neutral-100);
+  --color-purple-200: var(--brand-neutral-200);
+  --color-purple-300: var(--brand-neutral-300);
+  --color-purple-400: var(--brand-neutral-400);
+  --color-purple-500: var(--brand-neutral-500);
+  --color-purple-600: var(--brand-neutral-600);
+  --color-purple-700: var(--brand-neutral-700);
+  --color-purple-800: var(--brand-neutral-800);
+  --color-purple-900: var(--brand-neutral-900);
+  --color-purple-950: var(--brand-neutral-950);
+  --color-indigo-50: var(--brand-neutral-50);
+  --color-indigo-100: var(--brand-neutral-100);
+  --color-indigo-200: var(--brand-neutral-200);
+  --color-indigo-300: var(--brand-neutral-300);
+  --color-indigo-400: var(--brand-neutral-400);
+  --color-indigo-500: var(--brand-neutral-500);
+  --color-indigo-600: var(--brand-neutral-600);
+  --color-indigo-700: var(--brand-neutral-700);
+  --color-indigo-800: var(--brand-neutral-800);
+  --color-indigo-900: var(--brand-neutral-900);
+  --color-indigo-950: var(--brand-neutral-950);
+  --color-fuchsia-50: var(--brand-neutral-50);
+  --color-fuchsia-100: var(--brand-neutral-100);
+  --color-fuchsia-200: var(--brand-neutral-200);
+  --color-fuchsia-300: var(--brand-neutral-300);
+  --color-fuchsia-400: var(--brand-neutral-400);
+  --color-fuchsia-500: var(--brand-neutral-500);
+  --color-fuchsia-600: var(--brand-neutral-600);
+  --color-fuchsia-700: var(--brand-neutral-700);
+  --color-fuchsia-800: var(--brand-neutral-800);
+  --color-fuchsia-900: var(--brand-neutral-900);
+  --color-fuchsia-950: var(--brand-neutral-950);
+  --color-zinc-50: var(--brand-neutral-50);
+  --color-zinc-100: var(--brand-neutral-100);
+  --color-zinc-200: var(--brand-neutral-200);
+  --color-zinc-300: var(--brand-neutral-300);
+  --color-zinc-400: var(--brand-neutral-400);
+  --color-zinc-500: var(--brand-neutral-500);
+  --color-zinc-600: var(--brand-neutral-600);
+  --color-zinc-700: var(--brand-neutral-700);
+  --color-zinc-800: var(--brand-neutral-800);
+  --color-zinc-900: var(--brand-neutral-900);
+  --color-zinc-950: var(--brand-neutral-950);
+  --color-gray-50: var(--brand-neutral-50);
+  --color-gray-100: var(--brand-neutral-100);
+  --color-gray-200: var(--brand-neutral-200);
+  --color-gray-300: var(--brand-neutral-300);
+  --color-gray-400: var(--brand-neutral-400);
+  --color-gray-500: var(--brand-neutral-500);
+  --color-gray-600: var(--brand-neutral-600);
+  --color-gray-700: var(--brand-neutral-700);
+  --color-gray-800: var(--brand-neutral-800);
+  --color-gray-900: var(--brand-neutral-900);
+  --color-gray-950: var(--brand-neutral-950);
+  --color-slate-50: var(--brand-neutral-50);
+  --color-slate-100: var(--brand-neutral-100);
+  --color-slate-200: var(--brand-neutral-200);
+  --color-slate-300: var(--brand-neutral-300);
+  --color-slate-400: var(--brand-neutral-400);
+  --color-slate-500: var(--brand-neutral-500);
+  --color-slate-600: var(--brand-neutral-600);
+  --color-slate-700: var(--brand-neutral-700);
+  --color-slate-800: var(--brand-neutral-800);
+  --color-slate-900: var(--brand-neutral-900);
+  --color-slate-950: var(--brand-neutral-950);
+  --color-neutral-50: var(--brand-neutral-50);
+  --color-neutral-100: var(--brand-neutral-100);
+  --color-neutral-200: var(--brand-neutral-200);
+  --color-neutral-300: var(--brand-neutral-300);
+  --color-neutral-400: var(--brand-neutral-400);
+  --color-neutral-500: var(--brand-neutral-500);
+  --color-neutral-600: var(--brand-neutral-600);
+  --color-neutral-700: var(--brand-neutral-700);
+  --color-neutral-800: var(--brand-neutral-800);
+  --color-neutral-900: var(--brand-neutral-900);
+  --color-neutral-950: var(--brand-neutral-950);
+  --color-stone-50: var(--brand-neutral-50);
+  --color-stone-100: var(--brand-neutral-100);
+  --color-stone-200: var(--brand-neutral-200);
+  --color-stone-300: var(--brand-neutral-300);
+  --color-stone-400: var(--brand-neutral-400);
+  --color-stone-500: var(--brand-neutral-500);
+  --color-stone-600: var(--brand-neutral-600);
+  --color-stone-700: var(--brand-neutral-700);
+  --color-stone-800: var(--brand-neutral-800);
+  --color-stone-900: var(--brand-neutral-900);
+  --color-stone-950: var(--brand-neutral-950);
+  --color-white: #ffffff;
+  --color-black: #0a0a0a;
+
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
@@ -40,7 +360,7 @@
 
   --color-studio-background: var(--background);
   --color-table-cell-odd: var(--background);
-  --color-table-cell-even: var(--secondary);
+  --color-table-cell-even: var(--background);
   --color-table-row-selected-odd: color-mix(
     in oklab,
     var(--background) 90%,
@@ -48,11 +368,11 @@
   );
   --color-table-row-selected-even: color-mix(
     in oklab,
-    var(--secondary) 90%,
+    var(--background) 90%,
     var(--primary) 10%
   );
   --color-table-head: var(--background);
-  --color-table-border: var(--border);
+  --color-table-border: var(--border-weak);
 
   --animate-indeterminate: indeterminate 1.5s infinite ease-in-out;
 
@@ -173,91 +493,188 @@
 }
 
 :root {
-  --radius: 0.5rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.141 0.005 285.823);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.141 0.005 285.823);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.141 0.005 285.823);
-  --primary: oklch(0.64 0.1423 268.56);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.967 0.001 286.375);
-  --secondary-foreground: oklch(0.21 0.006 285.885);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.21 0.006 285.885);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.705 0.015 286.067);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
+  /* Colours: prisma.io/brand only. Neutrals are the brand page's semantic tokens;
+     hues are the Prism Cyan / Red / Yellow scales. Type, radii and elevation follow
+     Eclipse. The Studio PostCSS build rewrites :root to .ps, so nothing reaches the host. */
+  --radius-square-low: 3px;
+  --radius-square: 6px;
+  --radius-square-high: 12px;
+
+  --prism-cyan-50: #eeffff;
+  --prism-cyan-100: #dcfdff;
+  --prism-cyan-200: #b3f4f9;
+  --prism-cyan-300: #7be7f0;
+  --prism-cyan-400: #01d7e4;
+  --prism-cyan-500: #00bbcb;
+  --prism-cyan-600: #009aaa;
+  --prism-cyan-700: #007f8d;
+  --prism-cyan-800: #006772;
+  --prism-cyan-900: #00545d;
+  --prism-cyan-950: #00353c;
+  --prism-red-50: #ffeeee;
+  --prism-red-100: #ffdfdf;
+  --prism-red-200: #ffc2c4;
+  --prism-red-300: #ff9fa4;
+  --prism-red-400: #ff7682;
+  --prism-red-500: #f34a60;
+  --prism-red-600: #d02344;
+  --prism-red-700: #af0a33;
+  --prism-red-800: #8e0b29;
+  --prism-red-900: #740f22;
+  --prism-red-950: #4b0211;
+  --prism-yellow-50: #fff7e0;
+  --prism-yellow-100: #fcedc2;
+  --prism-yellow-200: #f8da85;
+  --prism-yellow-300: #f3c306;
+  --prism-yellow-400: #eaa700;
+  --prism-yellow-500: #d48700;
+  --prism-yellow-600: #b46700;
+  --prism-yellow-700: #965100;
+  --prism-yellow-800: #7a4200;
+  --prism-yellow-900: #633700;
+  --prism-yellow-950: #402000;
+  --brand-neutral-50: #fafafa;
+  --brand-neutral-100: #f5f5f5;
+  --brand-neutral-200: #e5e5e5;
+  --brand-neutral-300: #e5e5e5;
+  --brand-neutral-400: #a1a1a1;
+  --brand-neutral-500: #737373;
+  --brand-neutral-600: #646567;
+  --brand-neutral-700: #555555;
+  --brand-neutral-800: #3a3b3c;
+  --brand-neutral-900: #262626;
+  --brand-neutral-950: #0a0a0a;
+
+  --background: #ffffff;
+  --canvas: #fafafa;
+  --foreground: #3a3b3c;
+  --card: #ffffff;
+  --card-foreground: #3a3b3c;
+  --popover: #ffffff;
+  --popover-foreground: #3a3b3c;
+  --primary: #151515;
+  --primary-foreground: #f9faf5;
+  --secondary: #f5f5f5;
+  --secondary-foreground: #3a3b3c;
+  --muted: #f5f5f5;
+  --muted-foreground: #646567;
+  --accent: #f5f5f5;
+  --accent-foreground: #3a3b3c;
+  --destructive: #d02344;
+  --destructive-foreground: #f9faf5;
+  --border: #e5e5e5;
+  --border-weak: #e5e5e5;
+  --input: #e5e5e5;
+  --input-background: transparent;
+  --ring: #555555;
+  /* Exact brand colours (the ringed swatches on prisma.io/brand). Brand rule: text
+     stays ink and status colour is carried by a dot or fill, never by coloured text. */
+  --brand-cyan: var(--prism-cyan-400);
+  --brand-red: var(--prism-red-500);
+  --brand-yellow: var(--prism-yellow-300);
+  --success: var(--brand-cyan);
+  --warning: var(--brand-yellow);
+  --warning-foreground: #151515;
+  --info: var(--brand-cyan);
+
+  --font-family-sans:
+    "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-family-monospace:
+    "DM Mono", ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas,
+    monospace;
+  --font-feature-settings-sans:
+    "cv01" on, "cv02" on, "cv06" on, "cv07" on, "cv08" on, "cv10" on;
+
+  --card-hairline: 0 0 0 0.5px rgb(0 0 0 / 0.42);
+  --shadow-lower: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-middle: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow-higher:
+    0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+
+  --chart-1: var(--prism-cyan-500);
+  --chart-2: var(--prism-red-500);
+  --chart-3: var(--prism-yellow-400);
+  --chart-4: var(--prism-cyan-700);
+  --chart-5: var(--prism-red-700);
 
   --studio-cell-spacing: 0.5rem;
   --studio-cell-height: 38px;
-  --studio-staged-cell-background: oklch(0.97 0.025 95 / 0.78);
-  --studio-staged-cell-background-hover: oklch(0.955 0.035 95 / 0.84);
+  --studio-staged-cell-background: var(--prism-yellow-50);
+  --studio-staged-cell-background-hover: var(--prism-yellow-100);
   --text-xs: 0.75rem;
-  --chart-background: oklch(1 0 0);
-  --chart-foreground: oklch(0.145 0.004 285);
-  --chart-foreground-muted: oklch(0.55 0.014 260);
+  --chart-background: #ffffff;
+  --chart-foreground: #3a3b3c;
+  --chart-foreground-muted: #646567;
   --chart-line-primary: var(--chart-1);
   --chart-line-secondary: var(--chart-2);
-  --chart-crosshair: oklch(0.4 0.1828 274.34);
-  --chart-grid: oklch(0.9 0 0);
-  --chart-tooltip-background: oklch(0.21 0.006 285 / 0.8);
-  --chart-tooltip-foreground: oklch(0.985 0 0);
-  --chart-tooltip-muted: oklch(0.65 0.01 260);
-  --chart-marker-background: oklch(0.97 0.005 260);
-  --chart-marker-border: oklch(0.85 0.01 260);
-  --chart-marker-foreground: oklch(0.3 0.01 260);
-  --chart-ring-background: oklch(0.9 0.005 260 / 0.25);
-  --chart-label: oklch(0.45 0.01 260);
+  --chart-crosshair: #555555;
+  --chart-grid: #e5e5e5;
+  --chart-tooltip-background: #171717;
+  --chart-tooltip-foreground: #fafafa;
+  --chart-tooltip-muted: #a1a1a1;
+  --chart-marker-background: #f5f5f5;
+  --chart-marker-border: #e5e5e5;
+  --chart-marker-foreground: #3a3b3c;
+  --chart-ring-background: color-mix(in srgb, #e5e5e5 25%, transparent);
+  --chart-label: #646567;
 }
 
 .dark {
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.21 0.006 285.885);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.21 0.006 285.885);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.64 0.1423 268.56);
-  --primary-foreground: oklch(0.21 0.006 285.885);
-  --secondary: oklch(0.274 0.006 286.033);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.552 0.016 285.938);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --studio-staged-cell-background: oklch(0.58 0.042 92 / 0.18);
-  --studio-staged-cell-background-hover: oklch(0.63 0.05 92 / 0.24);
-  --chart-background: oklch(0.145 0 0);
-  --chart-foreground: oklch(0.45 0 0);
-  --chart-foreground-muted: oklch(0.65 0.01 260);
-  --chart-crosshair: oklch(0.45 0 0);
-  --chart-grid: oklch(0.25 0 0);
-  --chart-marker-background: oklch(0.25 0.01 260);
-  --chart-marker-border: oklch(0.4 0.01 260);
-  --chart-marker-foreground: oklch(0.9 0 0);
-  --chart-ring-background: oklch(0.35 0.01 260 / 0.25);
-  --chart-label: oklch(0.75 0.01 260);
+  color-scheme: dark;
+
+  /* Dark surfaces express elevation by luminance: background, canvas/card, popover. */
+  --background: #0a0a0a;
+  --canvas: #171717;
+  --foreground: #fafafa;
+  --card: #171717;
+  --card-foreground: #fafafa;
+  --popover: #171717;
+  --popover-foreground: #fafafa;
+  --primary: #e5e5e5;
+  --primary-foreground: #171717;
+  --secondary: #262626;
+  --secondary-foreground: #fafafa;
+  --muted: #262626;
+  --muted-foreground: #a1a1a1;
+  --accent: #262626;
+  --accent-foreground: #fafafa;
+  --destructive: #ff6467;
+  --destructive-foreground: #171717;
+  --border: rgb(255 255 255 / 0.1);
+  --border-weak: rgb(255 255 255 / 0.1);
+  --input: rgb(255 255 255 / 0.15);
+  --input-background: #171717;
+  --ring: #737373;
+  --success: var(--brand-cyan);
+  --warning: var(--brand-yellow);
+  --warning-foreground: #151515;
+  --info: var(--brand-cyan);
+
+  --card-hairline: 0 0 0 0.5px
+    color-mix(in srgb, var(--foreground) 40%, transparent);
+  --shadow-lower: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow-middle: 0 1px 3px 0 rgb(0 0 0 / 0.5), 0 1px 2px -1px rgb(0 0 0 / 0.5);
+  --shadow-higher:
+    0 10px 15px -3px rgb(0 0 0 / 0.6), 0 4px 6px -4px rgb(0 0 0 / 0.6);
+
+  --chart-1: var(--prism-cyan-400);
+  --chart-2: var(--prism-red-400);
+  --chart-3: var(--prism-yellow-300);
+  --chart-4: var(--prism-cyan-300);
+  --chart-5: var(--prism-red-300);
+  --studio-staged-cell-background: color-mix(in srgb, var(--prism-yellow-300) 16%, transparent);
+  --studio-staged-cell-background-hover: color-mix(in srgb, var(--prism-yellow-300) 22%, transparent);
+  --chart-background: #0a0a0a;
+  --chart-foreground: #a1a1a1;
+  --chart-foreground-muted: #a1a1a1;
+  --chart-crosshair: #737373;
+  --chart-grid: #262626;
+  --chart-marker-background: #262626;
+  --chart-marker-border: #555555;
+  --chart-marker-foreground: #fafafa;
+  --chart-ring-background: color-mix(in srgb, #555555 25%, transparent);
+  --chart-label: #a1a1a1;
 }
 
 @layer base {
@@ -267,6 +684,18 @@
   }
   .ps {
     @import "tailwindcss/preflight.css";
+  }
+  /* Portalled content (popovers, dialogs, cell editors) re-enters through its own
+     .ps wrapper, so the type has to be set here, not inherited from the host body. */
+  .ps {
+    font-family: var(--font-family-sans);
+    font-feature-settings: var(--font-feature-settings-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    color: var(--foreground);
+  }
+  .ps ::selection {
+    background-color: color-mix(in srgb, var(--prism-cyan-400) 30%, transparent);
   }
 }
 
@@ -295,4 +724,41 @@
   from {
     opacity: 0;
   }
+}
+
+/* React Flow canvas controls (Visualizer, Migrations): same soft track and ghost
+   buttons as Studio's other segmented controls, instead of the library default. */
+.react-flow__controls {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-square);
+  background: var(--background);
+  box-shadow: var(--shadow-lower);
+}
+
+.react-flow__controls-button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-square-low);
+  background: transparent;
+  color: var(--muted-foreground);
+  transition:
+    background-color 150ms,
+    color 150ms;
+}
+
+.react-flow__controls-button:hover {
+  background: var(--secondary);
+  color: var(--foreground);
+}
+
+.react-flow__controls-button svg {
+  max-width: 12px;
+  max-height: 12px;
+  fill: currentColor;
 }

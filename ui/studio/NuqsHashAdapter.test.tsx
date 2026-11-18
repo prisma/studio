@@ -42,8 +42,7 @@ describe("NuqsHashAdapter", () => {
     const root = createRoot(container);
 
     let setValueRef:
-      | ((value: string | null) => Promise<URLSearchParams>)
-      | undefined;
+      ((value: string | null) => Promise<URLSearchParams>) | undefined;
 
     function Harness() {
       const [value, setValue] = useQueryState("test", {
@@ -104,8 +103,7 @@ describe("NuqsHashAdapter", () => {
     const root = createRoot(container);
 
     let setValueRef:
-      | ((value: string | null) => Promise<URLSearchParams>)
-      | undefined;
+      ((value: string | null) => Promise<URLSearchParams>) | undefined;
 
     function Harness() {
       const [value, setValue] = useQueryState("aggregations");

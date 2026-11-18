@@ -3,6 +3,7 @@ import {
   ChartNoAxesGantt,
   ChevronsLeft,
   ChevronsRight,
+  ChevronUp,
 } from "lucide-react";
 import {
   useCallback,
@@ -117,7 +118,7 @@ const STREAM_FOLLOW_MODE_OPTIONS = [
 }>;
 
 const STREAM_FOLLOW_MODE_ITEM_CLASS_NAME =
-  "h-8 rounded-none border-0 px-2.5 shadow-none transition-colors data-[state=on]:bg-background data-[state=on]:font-semibold data-[state=on]:text-foreground data-[state=on]:shadow-sm";
+  "h-7 rounded-sm border-0 px-2.5 text-muted-foreground shadow-none transition-colors hover:bg-transparent hover:text-foreground data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm data-[state=on]:ring-1 data-[state=on]:ring-border";
 const PRISMA_WAL_STREAM_NAME = "prisma-wal";
 const STATE_PROTOCOL_PROFILE = "state-protocol";
 const PRISMA_WAL_HISTORY_CLAUSE_PATTERN =
@@ -594,7 +595,7 @@ function StreamEventRow(props: {
         <div className="min-w-0">
           {event.key ? (
             <Badge
-              className="max-w-full truncate font-normal"
+              className="max-w-full truncate font-mono font-normal"
               variant="secondary"
             >
               {event.key}
@@ -1742,25 +1743,22 @@ function ActiveStreamView(props: {
       data-testid="stream-view-root"
     >
       <StudioHeader
+        title={selectedStream?.name}
         endContent={
           selectedStream ? (
             <div
               aria-label="Stream follow mode"
-              className="inline-flex items-stretch gap-0 overflow-hidden rounded-sm border border-input bg-muted/60 shadow-none"
+              className="inline-flex items-center gap-0.5 rounded-md bg-secondary p-0.5 shadow-none"
               data-testid="stream-follow-mode-toggle"
               role="group"
             >
-              {STREAM_FOLLOW_MODE_OPTIONS.map((option, index) => {
+              {STREAM_FOLLOW_MODE_OPTIONS.map((option) => {
                 const isSelected = followMode === option.value;
 
                 return (
                   <Button
                     aria-pressed={isSelected}
-                    className={cn(
-                      STREAM_FOLLOW_MODE_ITEM_CLASS_NAME,
-                      index < STREAM_FOLLOW_MODE_OPTIONS.length - 1 &&
-                        "border-r border-input",
-                    )}
+                    className={STREAM_FOLLOW_MODE_ITEM_CLASS_NAME}
                     data-state={isSelected ? "on" : "off"}
                     data-testid={`stream-follow-mode-${option.value}`}
                     key={option.value}
@@ -1970,98 +1968,43 @@ function ActiveStreamView(props: {
           </div>
 
           <div
-            className="border-t border-table-border bg-background/90 px-2 py-3 backdrop-blur-sm"
+            className="border-t border-table-border bg-background/90 px-3 py-2 backdrop-blur-sm"
             data-testid="stream-footer"
           >
-            <div className="flex flex-wrap items-center justify-start gap-2">
+            {/* Same layout as the table footer: navigation left, totals right. */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <TooltipProvider>
                 <div
                   aria-label="Stream navigation"
-                  className="inline-flex items-stretch overflow-hidden rounded-md border border-input bg-background shadow-sm"
+                  className="inline-flex items-center gap-0.5 rounded-md bg-secondary p-0.5"
                   role="group"
                 >
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
                         aria-label="Jump to beginning of stream"
-                        className="h-9 w-9 rounded-none border-0 border-r border-input shadow-none"
+                        className="size-7 rounded-sm text-muted-foreground hover:bg-background hover:text-foreground"
                         data-testid="stream-jump-start-button"
                         onClick={jumpToStreamBeginning}
                         size="icon"
                         type="button"
-                        variant="outline"
+                        variant="ghost"
                       >
                         <ChevronsLeft data-icon="inline-start" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>Jump to beginning</TooltipContent>
                   </Tooltip>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <button
-                        aria-label="Open stream diagnostics"
-                        className={cn(
-                          "relative flex min-w-[14rem] items-center justify-center overflow-hidden border-r border-input bg-background px-4 text-sm font-medium text-foreground tabular-nums transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                        )}
-                        data-testid="stream-summary-panel"
-                        type="button"
-                      >
-                        {isSearchActive ? (
-                          <>
-                            <div
-                              aria-hidden="true"
-                              className="pointer-events-none absolute inset-y-0 left-0 bg-sky-500/8 transition-[width] duration-200 ease-out"
-                              data-testid="stream-search-scan-progress"
-                              style={{
-                                width: searchScanProgressWidth,
-                              }}
-                            />
-                            {isScrollTriggeredSearchLoadPending ? (
-                              <div
-                                aria-hidden="true"
-                                className="pointer-events-none absolute inset-0 animate-pulse bg-foreground/5"
-                                data-testid="stream-search-load-indicator"
-                              />
-                            ) : null}
-                            <span className="relative z-10">
-                              {formatSearchSummary({
-                                resultsLoadedCount: searchResultsLoadedCount,
-                                scannedEventCount: searchScannedEventCount,
-                                totalEventCount,
-                              })}
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            {formatCount(totalEventCount)} events
-                            {selectedStreamDetails
-                              ? `, ${formatBytes(selectedStreamDetails.totalSizeBytes)} total`
-                              : ""}
-                          </>
-                        )}
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      align="center"
-                      className="w-[40rem] max-w-[calc(100vw-2rem)] p-0"
-                      side="top"
-                      sideOffset={8}
-                    >
-                      <StreamDiagnosticsPopover
-                        details={selectedStreamDetails}
-                      />
-                    </PopoverContent>
-                  </Popover>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
                         aria-label="Jump to end of stream"
-                        className="h-9 w-9 rounded-none border-0 shadow-none"
+                        className="size-7 rounded-sm text-muted-foreground hover:bg-background hover:text-foreground"
                         data-testid="stream-jump-end-button"
                         onClick={jumpToLatestEvents}
                         size="icon"
                         type="button"
-                        variant="outline"
+                        variant="ghost"
                       >
                         <ChevronsRight data-icon="inline-start" />
                       </Button>
@@ -2070,6 +2013,66 @@ function ActiveStreamView(props: {
                   </Tooltip>
                 </div>
               </TooltipProvider>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    aria-label="Open stream diagnostics"
+                    title="Stream diagnostics"
+                    className={cn(
+                      "group relative flex h-7 items-center gap-1.5 overflow-hidden rounded-md px-2 text-xs text-muted-foreground tabular-nums transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:bg-secondary data-[state=open]:text-foreground",
+                    )}
+                    data-testid="stream-summary-panel"
+                    type="button"
+                  >
+                    {isSearchActive ? (
+                      <>
+                        <div
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-y-0 left-0 bg-prism-cyan/15 transition-[width] duration-200 ease-out"
+                          data-testid="stream-search-scan-progress"
+                          style={{
+                            width: searchScanProgressWidth,
+                          }}
+                        />
+                        {isScrollTriggeredSearchLoadPending ? (
+                          <div
+                            aria-hidden="true"
+                            className="pointer-events-none absolute inset-0 animate-pulse bg-foreground/5"
+                            data-testid="stream-search-load-indicator"
+                          />
+                        ) : null}
+                        <span className="relative z-10">
+                          {formatSearchSummary({
+                            resultsLoadedCount: searchResultsLoadedCount,
+                            scannedEventCount: searchScannedEventCount,
+                            totalEventCount,
+                          })}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        {formatCount(totalEventCount)} events
+                        {selectedStreamDetails
+                          ? `, ${formatBytes(selectedStreamDetails.totalSizeBytes)} total`
+                          : ""}
+                      </>
+                    )}
+                    {/* Signals that the totals open the diagnostics panel above. */}
+                    <ChevronUp
+                      aria-hidden
+                      className="relative z-10 size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-180"
+                    />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="end"
+                  className="w-[40rem] max-w-[calc(100vw-2rem)] p-0"
+                  side="top"
+                  sideOffset={8}
+                >
+                  <StreamDiagnosticsPopover details={selectedStreamDetails} />
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
         </>

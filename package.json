@@ -294,6 +294,8 @@
     }
   },
   "dependencies": {
+    "@codemirror/language": "6.12.2",
+    "@lezer/highlight": "1.2.3",
     "@radix-ui/react-toggle": "1.1.10",
     "@visx/curve": "4.0.1-alpha.0",
     "@visx/event": "4.0.1-alpha.0",

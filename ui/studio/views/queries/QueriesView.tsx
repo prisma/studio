@@ -600,13 +600,29 @@ export function QueriesView(_props: ViewProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      <StudioHeader />
+      <StudioHeader
+        title="Queries"
+        endContent={
+          <Button
+            onClick={() => setIsPaused((current) => !current)}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {isPaused ? (
+              <Play data-icon="inline-start" />
+            ) : (
+              <Pause data-icon="inline-start" />
+            )}
+            {isPaused ? "Resume" : "Pause"}
+          </Button>
+        }
+      />
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden p-4">
         <div className="flex shrink-0 flex-wrap items-start justify-between gap-x-6 gap-y-3">
           <div className="flex min-w-0 flex-col gap-1">
-            <h1 className="text-lg font-semibold text-foreground">Queries</h1>
-            <p className="max-w-5xl text-sm text-muted-foreground">
+            <p className="max-w-5xl text-xs text-muted-foreground">
               Monitor database activity and identify and fix poorly-performing
               queries in your application.{" "}
               <a
@@ -618,23 +634,6 @@ export function QueriesView(_props: ViewProps) {
                 Find out how to see your Prisma ORM calls.
               </a>
             </p>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-2">
-            <Button
-              onClick={() => setIsPaused((current) => !current)}
-              className="shadow-none"
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              {isPaused ? (
-                <Play data-icon="inline-start" />
-              ) : (
-                <Pause data-icon="inline-start" />
-              )}
-              {isPaused ? "Resume" : "Pause"}
-            </Button>
           </div>
         </div>
 
@@ -920,12 +919,12 @@ function QueryActivityChart(props: {
       <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-4">
           <QueryActivityLegend
-            colorClassName="bg-sky-500"
+            colorClassName="bg-prism-cyan"
             label="Queries/s"
             value={formatQueriesPerSecond(activitySummary.queriesPerSecond)}
           />
           <QueryActivityLegend
-            colorClassName="bg-emerald-500"
+            colorClassName="bg-prism-yellow"
             label="Avg latency"
             value={formatActivityLatency(activitySummary.averageLatencyMs)}
           />
@@ -933,7 +932,7 @@ function QueryActivityChart(props: {
 
         <ToggleGroup
           aria-label="Select activity time range"
-          className="rounded-md border border-border/70 bg-muted/20 p-0.5"
+          className="gap-0.5 rounded-md bg-secondary p-0.5"
           onValueChange={(value) => {
             const nextWindow = Number(value);
 
@@ -947,7 +946,7 @@ function QueryActivityChart(props: {
           {QUERY_ACTIVITY_WINDOWS.map((windowOption) => (
             <ToggleGroupItem
               aria-label={`Show the last ${windowOption.label}`}
-              className="h-6 min-w-8 rounded-sm px-2 text-[11px] data-[state=on]:bg-background data-[state=on]:shadow-sm"
+              className="h-6 min-w-8 rounded-sm px-2 text-xs"
               key={windowOption.value}
               value={String(windowOption.value)}
             >
@@ -1026,7 +1025,7 @@ function QueryActivityChart(props: {
                 );
               })}
               <path
-                className="stroke-sky-500"
+                className="stroke-prism-cyan"
                 data-testid="queries-activity-queries-path"
                 d={queriesPerSecondPath}
                 fill="none"
@@ -1036,7 +1035,7 @@ function QueryActivityChart(props: {
                 vectorEffect="non-scaling-stroke"
               />
               <path
-                className="stroke-emerald-500"
+                className="stroke-prism-yellow"
                 data-testid="queries-activity-latency-path"
                 d={latencyPath}
                 fill="none"
@@ -1067,7 +1066,7 @@ function QueryActivityChart(props: {
                       sample.queriesPerSecond > 0 &&
                       queriesPerSecondY !== null && (
                         <circle
-                          className="fill-sky-500 stroke-background"
+                          className="fill-prism-cyan stroke-background"
                           cx={x}
                           cy={queriesPerSecondY}
                           data-testid="queries-activity-queries-point"
@@ -1080,7 +1079,7 @@ function QueryActivityChart(props: {
                       sample.averageLatencyMs > 0 &&
                       latencyY !== null && (
                         <circle
-                          className="fill-emerald-500 stroke-background"
+                          className="fill-prism-yellow stroke-background"
                           cx={x}
                           cy={latencyY}
                           data-testid="queries-activity-latency-point"
@@ -1111,7 +1110,7 @@ function QueryActivityChart(props: {
                 />
                 {hoveredQueriesPerSecondY !== null && (
                   <circle
-                    className="fill-background stroke-sky-500"
+                    className="fill-background stroke-prism-cyan"
                     cx={hoveredX}
                     cy={hoveredQueriesPerSecondY}
                     r="3"
@@ -1121,7 +1120,7 @@ function QueryActivityChart(props: {
                 )}
                 {hoveredLatencyY !== null && (
                   <circle
-                    className="fill-background stroke-emerald-500"
+                    className="fill-background stroke-prism-yellow"
                     cx={hoveredX}
                     cy={hoveredLatencyY}
                     r="3"
@@ -1146,18 +1145,18 @@ function QueryActivityChart(props: {
               {formatTime(hoveredSample.time * 1000)}
             </div>
             <QueryActivityTooltipMetric
-              colorClassName="bg-sky-500"
+              colorClassName="bg-prism-cyan"
               label="Queries/s"
               testId="queries-activity-tooltip-queries"
               value={formatQueriesPerSecond(hoveredSample.queriesPerSecond)}
-              valueClassName="text-sky-600 dark:text-sky-400"
+              valueClassName="text-foreground"
             />
             <QueryActivityTooltipMetric
-              colorClassName="bg-emerald-500"
+              colorClassName="bg-prism-yellow"
               label="Avg latency"
               testId="queries-activity-tooltip-latency"
               value={formatActivityLatency(hoveredSample.averageLatencyMs)}
-              valueClassName="text-emerald-600 dark:text-emerald-400"
+              valueClassName="text-foreground"
             />
           </div>
         )}
@@ -1247,27 +1246,27 @@ function QueryTable(props: {
         </colgroup>
         <TableHeader className="sticky top-0 z-10 bg-background/95">
           <TableRow className="border-border/70 bg-muted/20 hover:bg-muted/20">
-            <TableHead className="h-9 text-[11px] font-medium uppercase tracking-[0.12em]">
+            <TableHead className="h-9 whitespace-nowrap font-mono text-2xs font-medium uppercase tracking-loose">
               <SortLabel active={sortField === "latency"}>Latency</SortLabel>
             </TableHead>
-            <TableHead className="h-9 text-[11px] font-medium uppercase tracking-[0.12em]">
+            <TableHead className="h-9 whitespace-nowrap font-mono text-2xs font-medium uppercase tracking-loose">
               Query
             </TableHead>
-            <TableHead className="h-9 text-right text-[11px] font-medium uppercase tracking-[0.12em]">
+            <TableHead className="h-9 whitespace-nowrap text-right font-mono text-2xs font-medium uppercase tracking-loose">
               <SortLabel active={sortField === "executions"}>
                 Executions
               </SortLabel>
             </TableHead>
-            <TableHead className="h-9 text-right text-[11px] font-medium uppercase tracking-[0.12em]">
+            <TableHead className="h-9 whitespace-nowrap text-right font-mono text-2xs font-medium uppercase tracking-loose">
               <SortLabel active={sortField === "rowsReturned"}>
                 Rows Returned
               </SortLabel>
             </TableHead>
-            <TableHead className="h-9 text-right text-[11px] font-medium uppercase tracking-[0.12em]">
+            <TableHead className="h-9 whitespace-nowrap text-right font-mono text-2xs font-medium uppercase tracking-loose">
               <SortLabel active={sortField === "lastSeen"}>Last Seen</SortLabel>
             </TableHead>
             {canShowAnalysis && (
-              <TableHead className="h-9 text-right text-[11px] font-medium uppercase tracking-[0.12em]">
+              <TableHead className="h-9 whitespace-nowrap text-right font-mono text-2xs font-medium uppercase tracking-loose">
                 Analysis
               </TableHead>
             )}
@@ -1300,12 +1299,10 @@ function QueryTable(props: {
                   )}
                 </button>
               </TableCell>
-              <TableCell className="px-3 py-3 text-right">
-                <Badge variant="secondary">
-                  {numberFormatter.format(query.count)}
-                </Badge>
+              <TableCell className="px-3 py-3 text-right tabular-nums">
+                {numberFormatter.format(query.count)}
               </TableCell>
-              <TableCell className="px-3 py-3 text-right">
+              <TableCell className="px-3 py-3 text-right tabular-nums">
                 {numberFormatter.format(query.rowsReturned)}
               </TableCell>
               <TableCell className="px-3 py-3 text-right text-muted-foreground">
@@ -1499,14 +1496,24 @@ function SortLabel(props: { active: boolean; children: string }) {
 }
 
 function LatencyBadge(props: { duration: number }) {
-  const variant =
+  // Brand rule: ink figure, health carried by a dot in the exact Prism colour.
+  const tone =
     props.duration >= 500
-      ? "destructive"
+      ? { dot: "bg-prism-red", label: "Very slow" }
       : props.duration >= 100
-        ? "outline"
-        : "success";
+        ? { dot: "bg-prism-yellow", label: "Slow" }
+        : { dot: "bg-prism-cyan", label: "Fast" };
 
-  return <Badge variant={variant}>{formatLatency(props.duration)}</Badge>;
+  return (
+    <span className="inline-flex items-center gap-1.5 font-mono text-xs text-foreground tabular-nums">
+      <span
+        aria-label={tone.label}
+        role="img"
+        className={cn("size-2 shrink-0 rounded-full", tone.dot)}
+      />
+      {formatLatency(props.duration)}
+    </span>
+  );
 }
 
 function QueryDetailsSheet(props: {

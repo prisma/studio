@@ -367,7 +367,7 @@ describe("Navigation", () => {
     window.location.hash = "";
   });
 
-  it("uses the dark-mode Prisma logo asset when Studio is dark", () => {
+  it("uses the white Prisma wordmark when Studio is dark", () => {
     const lightContainer = document.createElement("div");
     document.body.appendChild(lightContainer);
     const lightRoot = createRoot(lightContainer);
@@ -377,7 +377,7 @@ describe("Navigation", () => {
     });
 
     const lightLogo = lightContainer.querySelector<HTMLImageElement>(
-      'img[alt="Prisma Logo"]',
+      'img[data-testid="studio-logo"]',
     );
 
     expect(lightLogo).not.toBeNull();
@@ -397,13 +397,14 @@ describe("Navigation", () => {
     });
 
     const logo = darkContainer.querySelector<HTMLImageElement>(
-      'img[alt="Prisma Logo"]',
+      'img[data-testid="studio-logo"]',
     );
 
     expect(logo).not.toBeNull();
+    // prisma.io/brand: the all-white lockup is the dark-background variant.
     expect(logo?.getAttribute("src")).not.toBe(lightLogo?.getAttribute("src"));
-    expect(decodeURIComponent(logo?.getAttribute("src") ?? "")).toContain(
-      "fill='white'",
+    expect(decodeURIComponent(logo?.getAttribute("src") ?? "")).not.toMatch(
+      /#04D5E7/i,
     );
 
     act(() => {

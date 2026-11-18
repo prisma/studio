@@ -1,4 +1,4 @@
-import { Key, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { useMemo } from "react";
 
 import { Button } from "@/ui/components/ui/button";
@@ -6,6 +6,7 @@ import { useNavigation } from "@/ui/hooks/use-navigation";
 import { useUiState } from "@/ui/hooks/use-ui-state";
 
 import { useSchemaVisualization } from "../../../hooks/use-schema-visualization";
+import { ColumnBadge } from "../../ColumnBadge";
 import { StudioHeader } from "../../StudioHeader";
 import { ViewProps } from "../View";
 import {
@@ -75,32 +76,25 @@ export function SchemaView(_props: ViewProps) {
 
   return (
     <>
-      <StudioHeader endContent={resetLayoutButton}>
-        {/* Legend Item: Primary Key */}
-        <div className="flex items-center gap-2">
-          <span className="flex size-5 items-center justify-center rounded-full bg-muted p-0.5 text-muted-foreground">
-            <Key className="size-3 text-primary" />
-          </span>
-          <p className="text-xs text-muted-foreground">Primary Key</p>
-        </div>
-
-        {/* Legend Item: Nullable */}
-        <div className="flex items-center gap-2">
-          <span className="flex size-5 items-center justify-center rounded-full bg-muted p-0.5 text-muted-foreground">
-            <span className="inline-flex size-3 items-center justify-center text-center leading-none">
-              ?
-            </span>
-          </span>
-          <p className="text-xs text-muted-foreground">Nullable</p>
-        </div>
-
-        {/* Legend Item: Foreign Key */}
-        <div className="flex items-center gap-2">
-          <span className="flex size-5 items-center justify-center rounded-full bg-primary p-0.5 text-primary-foreground">
-            <Key className="size-3" />
-          </span>
-          <p className="text-xs text-muted-foreground">Foreign Key</p>
-        </div>
+      <StudioHeader endContent={resetLayoutButton} title="Visualizer">
+        {/* Same order as the badge slots on a card row: key, then nullable. */}
+        <ul
+          aria-label="Legend"
+          className="flex min-w-0 items-center gap-4 border-l border-border pl-4 text-xs text-muted-foreground"
+        >
+          <li className="flex items-center gap-1.5">
+            <ColumnBadge kind="primary-key" />
+            Primary key
+          </li>
+          <li className="flex items-center gap-1.5">
+            <ColumnBadge kind="foreign-key" />
+            Foreign key
+          </li>
+          <li className="flex items-center gap-1.5">
+            <ColumnBadge kind="nullable" />
+            Nullable
+          </li>
+        </ul>
       </StudioHeader>
       <div className="w-full h-full">
         <SchemaVisualization tables={tables} relationships={relationships} />

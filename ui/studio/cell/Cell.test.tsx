@@ -43,7 +43,7 @@ describe("Cell", () => {
 
   it("uses semantic staged-cell overlay classes instead of a fixed amber fill", () => {
     expect(stagedCellClassName).toContain("before:bg-staged-cell-background");
-    expect(stagedCellClassName).toContain("after:border-amber-300");
+    expect(stagedCellClassName).not.toContain("after:border-amber-300");
     expect(stagedCellClassName).not.toContain("before:bg-amber-50/80");
 
     expect(focusedStagedCellClassName).toContain(

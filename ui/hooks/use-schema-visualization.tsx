@@ -80,9 +80,15 @@ export function useSchemaVisualization(): SchemaVisualizationData {
         fields.push(fieldData);
       });
 
+      // Keys first (as ERDs read), otherwise keep the table's column order.
+      const orderedFields = [
+        ...fields.filter((field) => field.isPrimary),
+        ...fields.filter((field) => !field.isPrimary),
+      ];
+
       const tableObject: Table = {
         name: table.name,
-        fields,
+        fields: orderedFields,
       };
 
       tables.push(tableObject);

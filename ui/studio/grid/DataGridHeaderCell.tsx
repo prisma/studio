@@ -1,4 +1,4 @@
-import { ArrowUp10, Asterisk, Calculator, KeyRound } from "lucide-react";
+import { ArrowUp10, Asterisk, Calculator } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Column } from "../../../data/adapter";
@@ -9,6 +9,7 @@ import {
   TooltipTrigger,
 } from "../../components/ui/tooltip";
 import { formatDatatypeName } from "../../lib/datatype-display";
+import { ColumnBadge } from "../ColumnBadge";
 
 function HeaderTooltipIcon(props: { children: ReactNode; tooltip: ReactNode }) {
   const { children, tooltip } = props;
@@ -46,7 +47,7 @@ export function DataGridHeaderCell({ column }: { column: Column }) {
     <div className="flex min-w-0 items-center gap-1 overflow-hidden">
       {pkPosition != null && (
         <HeaderTooltipIcon tooltip={<span>Primary key</span>}>
-          <KeyRound size={12} className="text-amber-500" />
+          <ColumnBadge kind="primary-key" size="sm" />
         </HeaderTooltipIcon>
       )}
       {fkColumn != null && (
@@ -58,7 +59,7 @@ export function DataGridHeaderCell({ column }: { column: Column }) {
             </span>
           }
         >
-          <KeyRound size={12} className="text-primary" />
+          <ColumnBadge kind="foreign-key" size="sm" />
         </HeaderTooltipIcon>
       )}
       {isAutoincrement && (
@@ -84,7 +85,7 @@ export function DataGridHeaderCell({ column }: { column: Column }) {
         </HeaderTooltipIcon>
       )}
       <span className="min-w-0 truncate font-medium">{name}</span>
-      <span className="min-w-0 truncate lowercase text-muted-foreground/70">
+      <span className="min-w-0 truncate lowercase text-muted-foreground">
         {datatype.affinity || formatDatatypeName(datatype)}
       </span>
     </div>

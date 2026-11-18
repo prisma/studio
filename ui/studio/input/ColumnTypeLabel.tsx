@@ -70,7 +70,7 @@ export function ColumnTypeLabel(
           </Tooltip>
         </TooltipProvider>
         {column.nullable ? (
-          <span className="font-mono lowercase text-muted-foreground/70">
+          <span className="font-mono lowercase text-muted-foreground">
             nullable
           </span>
         ) : null}

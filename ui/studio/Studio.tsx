@@ -50,16 +50,14 @@ export type StudioOperationSuccessEventBase = {
 };
 
 export type StudioOperationEventBase =
-  | StudioOperationSuccessEventBase
-  | StudioOperationErrorEventBase;
+  StudioOperationSuccessEventBase | StudioOperationErrorEventBase;
 export type StudioOperationEvent = StudioOperationEventBase & {
   eventId: string;
   timestamp: string;
 };
 
 export type StudioEventBase =
-  | StudioLaunchedEventBase
-  | StudioOperationEventBase;
+  StudioLaunchedEventBase | StudioOperationEventBase;
 export type StudioEvent = StudioEventBase & {
   eventId: string;
   timestamp: string;
@@ -170,7 +168,7 @@ function StudioContent() {
             </AnimatePresence>
 
             <motion.div
-              className="flex h-full min-h-0 min-w-0 flex-1 flex-col self-stretch overflow-hidden rounded-lg bg-secondary p-px"
+              className="flex h-full min-h-0 min-w-0 flex-1 flex-col self-stretch overflow-hidden rounded-lg border border-border bg-background"
               data-testid="studio-main-pane"
               transition={{ duration: 0.14 }}
             >

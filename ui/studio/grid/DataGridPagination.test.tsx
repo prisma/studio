@@ -115,7 +115,7 @@ describe("DataGridPagination", () => {
     );
     const infiniteScrollLabel = Array.from(
       container.querySelectorAll("label"),
-    ).find((label) => label.textContent?.trim() === "infinite scroll");
+    ).find((label) => label.textContent?.trim() === "Infinite scroll");
 
     if (!(stickyContainer instanceof HTMLElement)) {
       throw new Error("Could not find pagination container");
@@ -126,7 +126,7 @@ describe("DataGridPagination", () => {
     }
 
     expect(stickyContainer.className).not.toContain("overflow-clip");
-    expect(pageInput.className).toContain("h-9");
+    expect(pageInput.className).toContain("h-6");
     expect(pageInput.getAttribute("type")).toBe("text");
     expect(pageSizeButton).not.toBeNull();
     expect(
@@ -326,7 +326,7 @@ describe("DataGridPagination", () => {
       pageInput.parentElement?.querySelectorAll("span") ?? [],
     ).map((span) => span.textContent?.trim());
 
-    expect(pageInput.parentElement?.className).toContain("gap-2");
+    expect(pageInput.parentElement?.className).toContain("gap-1.5");
     expect(pageInput.parentElement?.textContent).not.toContain("Page");
     expect(pageInput.className).toContain("w-auto");
     expect(pageInput.className).toContain("px-1");
@@ -518,7 +518,7 @@ describe("DataGridPagination", () => {
 
     const infiniteScrollLabel = Array.from(
       container.querySelectorAll("label"),
-    ).find((label) => label.textContent?.trim() === "infinite scroll");
+    ).find((label) => label.textContent?.trim() === "Infinite scroll");
 
     if (!(infiniteScrollLabel instanceof HTMLLabelElement)) {
       throw new Error("Could not find infinite scroll label");

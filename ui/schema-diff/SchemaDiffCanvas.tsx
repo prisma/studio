@@ -98,10 +98,7 @@ export const SchemaDiffCanvas = memo(function SchemaDiffCanvas(props: {
       proOptions={{ hideAttribution: true }}
     >
       <Background className="bg-muted/40" gap={20} size={1.5} />
-      <Controls
-        className="shadow-sm [&_button]:border [&_button]:border-input [&_button]:bg-background [&_button_>_svg]:fill-foreground"
-        showInteractive={false}
-      />
+      <Controls showInteractive={false} />
     </ReactFlow>
   );
 });

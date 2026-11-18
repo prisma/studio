@@ -30,8 +30,8 @@ const defaultCellContentClassName = cn(
 
 export const stagedCellClassName = cn(
   "ps-staged-cell relative z-0",
+  // Staged edits read through the pale yellow fill alone; a box on every cell was noise.
   "before:pointer-events-none before:absolute before:inset-0 before:z-0 before:bg-staged-cell-background before:content-['']",
-  "after:pointer-events-none after:absolute after:inset-0 after:z-20 after:border after:border-amber-300 after:content-['']",
 );
 
 export const focusedCellClassName = cn(

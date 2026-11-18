@@ -1,15 +1,14 @@
 import {
-  AlertCircle,
-  CheckCircle,
+  Check,
   ChevronDown,
   ChevronRight,
   Copy,
   TriangleAlertIcon,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Query } from "../../../../data";
-import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import {
   Card,
@@ -47,58 +46,80 @@ export function OperationEventEntry({ event }: OperationEventEntryProps) {
     <div className="flex flex-col gap-2">
       <Card
         className={cn(
-          "w-full rounded-sm border-ring/20 overflow-clip shadow-none",
+          "w-full rounded-md border-border overflow-clip shadow-none",
         )}
       >
         <CardHeader
           className={cn(
-            "p-3 font-normal",
+            "px-3 py-2 font-normal",
+            "border-b",
             isError
-              ? "border-red-500/60 bg-red-500/10"
-              : "border-green-500/60 bg-green-500/10",
+              ? "border-prism-red/25 bg-prism-red/8"
+              : "border-prism-cyan/30 bg-prism-cyan/10",
           )}
         >
-          <CardTitle className="flex items-center justify-between font-mono text-xs">
+          <CardTitle className="flex items-center justify-between gap-3 font-mono text-xs">
             <div className="flex items-center gap-2">
-              {isError ? (
-                <AlertCircle size={16} className="text-red-500" />
-              ) : (
-                <CheckCircle size={16} className="text-green-500" />
-              )}
-              <span className="">
-                {event.payload.operation}, {formatTimestamp(event.timestamp)}
+              <span
+                aria-hidden
+                className={cn(
+                  "flex size-4 shrink-0 items-center justify-center rounded-full text-[#151515]",
+                  isError ? "bg-prism-red" : "bg-prism-cyan",
+                )}
+              >
+                {isError ? (
+                  <X size={10} strokeWidth={3} />
+                ) : (
+                  <Check size={10} strokeWidth={3} />
+                )}
+              </span>
+              <span className="font-semibold text-foreground">
+                {event.payload.operation}
+                <span className="font-normal text-muted-foreground">
+                  , {formatTimestamp(event.timestamp)}
+                </span>
               </span>
             </div>
-            <Badge
-              variant={isError ? "destructive" : "success"}
-              className="font-normal text-xs"
-            >
+            <span className="font-sans text-xs font-medium text-foreground/70">
               {event.name === "studio_operation_success" ? "Success" : "Error"}
-            </Badge>
+            </span>
           </CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col gap-3 p-3">
+        <CardContent className="flex flex-col gap-2 p-3">
           {event.payload.query && (
             <div data-response-type="query" className="flex flex-col gap-2">
-              <div className="flex items-center justify-between relative">
-                <button
-                  type="button"
-                  onClick={() => setIsQueryExpanded(!isQueryExpanded)}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                  aria-expanded={isQueryExpanded}
-                >
-                  {isQueryExpanded ? (
-                    <ChevronDown size={12} />
-                  ) : (
-                    <ChevronRight size={12} />
+              <button
+                type="button"
+                onClick={() => setIsQueryExpanded(!isQueryExpanded)}
+                className="flex w-fit items-center gap-1 rounded-sm text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                aria-expanded={isQueryExpanded}
+              >
+                {isQueryExpanded ? (
+                  <ChevronDown size={12} />
+                ) : (
+                  <ChevronRight size={12} />
+                )}
+                SQL Query
+              </button>
+              {/* Copy lives on the block it copies. */}
+              <div className="group relative">
+                <div
+                  className={cn(
+                    "rounded-md bg-muted py-2 pr-10 pl-3 font-mono text-xs leading-5 text-foreground",
+                    isQueryExpanded
+                      ? "block max-h-64 overflow-y-auto whitespace-pre-wrap"
+                      : "truncate whitespace-pre",
                   )}
-                  SQL Query
-                </button>
+                >
+                  {isQueryExpanded
+                    ? event.payload.query.sql
+                    : getQueryPreview(event.payload.query)}
+                </div>
                 <Button
                   aria-label="Copy SQL query"
-                  variant="outline"
+                  variant="ghost"
                   size="icon"
-                  className="size-6"
+                  className="absolute top-1 right-1 size-7 text-muted-foreground hover:bg-background hover:text-foreground [&_svg]:size-3.5"
                   onClick={() => {
                     void navigator.clipboard.writeText(
                       event.payload.query?.sql || "",
@@ -109,32 +130,14 @@ export function OperationEventEntry({ event }: OperationEventEntryProps) {
                   <Copy data-icon="inline-start" />
                 </Button>
               </div>
-              <div
-                className={cn(
-                  "p-3 bg-secondary/50 border border-border rounded-sm text-xs font-mono overflow-x-auto",
-                  isQueryExpanded
-                    ? "block whitespace-pre-wrap max-h-64 overflow-y-auto"
-                    : "max-h-10 overflow-hidden",
-                )}
-              >
-                {isQueryExpanded
-                  ? event.payload.query.sql
-                  : getQueryPreview(event.payload.query)}
+              <div className="flex min-w-0 items-baseline gap-2 text-xs">
+                <span className="shrink-0 text-muted-foreground">
+                  Parameters
+                </span>
+                <code className="min-w-0 break-all font-mono text-foreground/80">
+                  {JSON.stringify(event.payload.query.parameters || [])}
+                </code>
               </div>
-              {
-                <div className="flex flex-col gap-1">
-                  <span className="text-xs text-muted-foreground">
-                    Parameters
-                  </span>
-                  <div className="p-3 bg-secondary/50 border border-border rounded-sm text-xs font-mono overflow-x-auto">
-                    {JSON.stringify(
-                      event.payload.query.parameters || [],
-                      null,
-                      2,
-                    )}
-                  </div>
-                </div>
-              }
             </div>
           )}
           {isError && event.payload.error && (
@@ -148,13 +151,13 @@ export function OperationEventEntry({ event }: OperationEventEntryProps) {
               {event.payload.error.adapterSource ? (
                 <div className="flex flex-col gap-1">
                   <span className="text-xs text-muted-foreground">Adapter</span>
-                  <div className="p-3 bg-secondary/50 border border-border rounded-sm text-xs font-mono overflow-x-auto">
+                  <div className="px-3 py-2.5 bg-muted rounded-md text-xs font-mono text-foreground overflow-x-auto">
                     {event.payload.error.adapterSource}
                   </div>
                 </div>
               ) : null}
-              <div className="p-3 bg-secondary/50 border border-red-400/20 rounded-sm text-xs font-mono overflow-x-auto">
-                <pre className="text-xs text-red-400 whitespace-pre-wrap font-mono">
+              <div className="px-3 py-2.5 bg-prism-red/8 border-l-2 border-prism-red rounded-md text-xs font-mono overflow-x-auto">
+                <pre className="text-xs text-foreground whitespace-pre-wrap font-mono">
                   {event.payload.error instanceof AggregateError
                     ? event.payload.error.errors.map(
                         (err: Error, index: number) => (

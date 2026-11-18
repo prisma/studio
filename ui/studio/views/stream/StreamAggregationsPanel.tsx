@@ -64,19 +64,19 @@ const SPARKLINE_TONES: Record<
   }
 > = {
   count: {
-    fillEnd: "rgba(34, 197, 94, 0.02)",
-    fillStart: "rgba(34, 197, 94, 0.20)",
-    line: "#22c55e",
+    fillEnd: "color-mix(in srgb, var(--brand-cyan) 2%, transparent)",
+    fillStart: "color-mix(in srgb, var(--brand-cyan) 20%, transparent)",
+    line: "var(--brand-cyan)",
   },
   summary: {
-    fillEnd: "rgba(59, 130, 246, 0.02)",
-    fillStart: "rgba(59, 130, 246, 0.20)",
-    line: "#3b82f6",
+    fillEnd: "color-mix(in srgb, var(--brand-red) 2%, transparent)",
+    fillStart: "color-mix(in srgb, var(--brand-red) 20%, transparent)",
+    line: "var(--brand-red)",
   },
   summary_parts: {
-    fillEnd: "rgba(14, 165, 233, 0.02)",
-    fillStart: "rgba(14, 165, 233, 0.20)",
-    line: "#0ea5e9",
+    fillEnd: "color-mix(in srgb, var(--brand-yellow) 2%, transparent)",
+    fillStart: "color-mix(in srgb, var(--brand-yellow) 20%, transparent)",
+    line: "var(--brand-yellow)",
   },
 };
 
@@ -749,15 +749,15 @@ function StreamAggregationSparkline(props: {
     >
       <defs>
         <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor={tone.fillStart} />
-          <stop offset="100%" stopColor={tone.fillEnd} />
+          <stop offset="0%" style={{ stopColor: tone.fillStart }} />
+          <stop offset="100%" style={{ stopColor: tone.fillEnd }} />
         </linearGradient>
       </defs>
       <path d={paths.areaPath} fill={`url(#${gradientId})`} />
       <path
         d={paths.linePath}
         fill="none"
-        stroke={tone.line}
+        style={{ stroke: tone.line }}
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeWidth="1.4"
