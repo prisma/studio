@@ -1,6 +1,11 @@
-import type { RowSelectionState } from "@tanstack/react-table";
+import type {
+  ColumnPinningState,
+  RowSelectionState,
+} from "@tanstack/react-table";
 
-import type { GridSelectionRange } from "../../grid/cell-selection";
+import type { GridSelectionRange } from "./cell-selection";
+
+const ROW_SELECTION_COLUMN_ID = "__ps_select";
 
 export type SelectionExportFormat = "csv" | "markdown";
 
@@ -108,13 +113,56 @@ export function serializeSelectionExport(args: {
 }
 
 export function buildSelectionExportFilename(args: {
-  schema: string;
-  table: string;
+  base: string;
   format: SelectionExportFormat;
 }): string {
   const extension = args.format === "csv" ? "csv" : "md";
 
-  return `${args.schema}-${args.table}-selection.${extension}`;
+  return `${args.base}-selection.${extension}`;
+}
+
+export function getSelectionExportColumnIds(args: {
+  defaultColumnIds: string[];
+  columnOrder: string[];
+  columnPinning: ColumnPinningState;
+}): string[] {
+  const { columnOrder, columnPinning, defaultColumnIds } = args;
+  const validColumnIds = new Set(defaultColumnIds);
+  const isExportableColumnId = (columnId: string) =>
+    columnId !== ROW_SELECTION_COLUMN_ID && validColumnIds.has(columnId);
+  const leftPinnedColumnIds = (columnPinning.left ?? []).filter(
+    isExportableColumnId,
+  );
+  const rightPinnedColumnIds = (columnPinning.right ?? []).filter(
+    isExportableColumnId,
+  );
+  const pinnedColumnIds = new Set([
+    ...leftPinnedColumnIds,
+    ...rightPinnedColumnIds,
+  ]);
+  // Same order as the grid renders: left-pinned, then the visible order, then
+  // right-pinned.
+  const orderedColumnIds = [
+    ...columnOrder.filter(isExportableColumnId),
+    ...defaultColumnIds.filter(
+      (columnId) =>
+        isExportableColumnId(columnId) && !columnOrder.includes(columnId),
+    ),
+  ].filter((columnId) => !pinnedColumnIds.has(columnId));
+  const seen = new Set<string>();
+
+  return [
+    ...leftPinnedColumnIds,
+    ...orderedColumnIds,
+    ...rightPinnedColumnIds,
+  ].filter((columnId) => {
+    if (seen.has(columnId)) {
+      return false;
+    }
+
+    seen.add(columnId);
+    return true;
+  });
 }
 
 export function downloadSelectionExport(args: {
