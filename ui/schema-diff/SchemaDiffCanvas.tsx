@@ -1,11 +1,11 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import ReactFlow, {
   Background,
-  Controls,
   type Edge,
   type ReactFlowInstance,
 } from "reactflow";
 
+import { CanvasZoomControls } from "../studio/CanvasZoomControls";
 import { diffContracts } from "./contract-diff";
 import {
   buildDiffGraph,
@@ -98,7 +98,7 @@ export const SchemaDiffCanvas = memo(function SchemaDiffCanvas(props: {
       proOptions={{ hideAttribution: true }}
     >
       <Background className="bg-muted/40" gap={20} size={1.5} />
-      <Controls showInteractive={false} />
+      <CanvasZoomControls />
     </ReactFlow>
   );
 });

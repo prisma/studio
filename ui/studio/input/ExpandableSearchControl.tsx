@@ -232,8 +232,8 @@ export function ExpandableSearchControl(props: ExpandableSearchControlProps) {
   return (
     <div
       className={cn(
-        "relative h-9 transition-[width] duration-200 ease-out",
-        isRowSearchOpen ? expandedWidthClassName : "w-9",
+        "relative h-8 transition-[width] duration-200 ease-out",
+        isRowSearchOpen ? expandedWidthClassName : "w-8",
       )}
       data-row-search-open={isRowSearchOpen ? "true" : "false"}
     >
@@ -241,7 +241,7 @@ export function ExpandableSearchControl(props: ExpandableSearchControlProps) {
         aria-disabled={disabled || undefined}
         aria-label="Global search"
         className={cn(
-          "absolute top-0 min-w-9 w-auto px-2 text-muted-foreground transition-opacity duration-200 hover:text-foreground",
+          "absolute top-0 size-8 min-w-8 px-2 text-muted-foreground transition-opacity duration-200 hover:text-foreground",
           alignment === "left" ? "left-0" : "right-0",
           disabled && "opacity-70",
           isRowSearchOpen && "pointer-events-none opacity-0",
@@ -271,13 +271,18 @@ export function ExpandableSearchControl(props: ExpandableSearchControlProps) {
         )}
         data-row-search-input-wrapper
       >
+        {/* Console-style search pill: magnifier inside, fully rounded ends. */}
         <div className="relative">
+          <Search
+            aria-hidden
+            className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+          />
           <Input
             aria-disabled={disabled || undefined}
             aria-invalid={isSearchInputInvalid || undefined}
             aria-label="Global search"
             className={cn(
-              "h-9 w-full bg-background pr-10 shadow-none",
+              "h-8 w-full rounded-full bg-background pl-8 pr-9 shadow-none",
               disabled && "opacity-70",
             )}
             data-search-syntax-message={searchValidationMessage ?? undefined}
@@ -328,7 +333,7 @@ export function ExpandableSearchControl(props: ExpandableSearchControlProps) {
           <Button
             aria-disabled={disabled || undefined}
             aria-label="Close search"
-            className="absolute right-1 top-1/2 size-7 -translate-y-1/2 rounded-sm shadow-none"
+            className="absolute right-1 top-1/2 size-6 -translate-y-1/2 rounded-full shadow-none"
             data-testid="search-close-button"
             onClick={() => {
               if (disabled) {

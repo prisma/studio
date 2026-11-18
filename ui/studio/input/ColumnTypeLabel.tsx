@@ -38,7 +38,7 @@ export function ColumnTypeLabel(
 
   return (
     <div className="flex flex-col">
-      <div className="flex items-center justify-between gap-2 border-b border-border/40 bg-background/60 px-2 py-1 text-[11px] text-muted-foreground">
+      <div className="flex items-center justify-between gap-2 border-b border-border-weak px-3 py-1.5 text-[11px] text-muted-foreground">
         <TooltipProvider delayDuration={200}>
           <Tooltip>
             <TooltipTrigger asChild>

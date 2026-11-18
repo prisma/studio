@@ -63,7 +63,10 @@ function MigrationListItem(props: {
           {migration.displayName}
         </span>
         {migration.isDestructive && (
-          <TriangleAlert className="size-3.5 shrink-0 fill-prism-yellow text-[#151515]" />
+          <TriangleAlert
+            aria-label="Destructive migration"
+            className="size-3.5 shrink-0 text-muted-foreground"
+          />
         )}
       </div>
       <div className="flex items-center gap-2 pl-9">

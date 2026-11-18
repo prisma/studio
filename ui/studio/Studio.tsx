@@ -151,12 +151,14 @@ function StudioContent() {
       <StudioCommandPaletteProvider>
         <div className={containerClasses}>
           <div
-            className="relative flex h-full min-h-0 w-full min-w-0 gap-0 overflow-hidden rounded-lg bg-background"
+            className="relative flex h-full min-h-0 w-full min-w-0 gap-0 overflow-hidden rounded-lg bg-canvas"
             data-testid="studio-shell"
           >
             <AnimatePresence mode="wait">
               {isNavigationOpen && (
                 <motion.div
+                  // Clip while animating so the sidebar never slides under the page.
+                  className="shrink-0 overflow-hidden"
                   initial={{ width: 0, opacity: 0 }}
                   animate={{ width: "auto", opacity: 1 }}
                   exit={{ width: 0, opacity: 0 }}
@@ -168,7 +170,9 @@ function StudioContent() {
             </AnimatePresence>
 
             <motion.div
-              className="flex h-full min-h-0 min-w-0 flex-1 flex-col self-stretch overflow-hidden rounded-lg border border-border bg-background"
+              // Desk and sheet: the page is a white card on the canvas, inset so it
+              // never butts against the sidebar.
+              className="m-1.5 flex min-h-0 min-w-0 flex-1 flex-col self-stretch overflow-hidden rounded-lg border border-border bg-background shadow-xs"
               data-testid="studio-main-pane"
               transition={{ duration: 0.14 }}
             >

@@ -11,7 +11,6 @@ import {
 import ReactFlow, {
   Background,
   ConnectionLineType,
-  Controls,
   type Edge,
   // EdgeMarker, // TODO: Add EdgeMarkers for relationship type
   Handle,
@@ -38,6 +37,7 @@ import type {
   Table,
 } from "../../../hooks/use-schema-visualization";
 import { cn } from "../../../lib/utils";
+import { CanvasZoomControls } from "../../CanvasZoomControls";
 import { ColumnBadge } from "../../ColumnBadge";
 import {
   applySchemaNodePositions,
@@ -452,8 +452,6 @@ export function SchemaVisualization({
     [setManualNodePositions, setNodePositions],
   );
 
-  // Controls take Studio's shared track style from ui/index.css.
-  const controlStyles = undefined;
   const miniMapStyles = cn(
     "overflow-hidden rounded-md border border-border bg-background shadow-xs",
     "[&_.react-flow__minimap-node]:fill-border",
@@ -476,7 +474,7 @@ export function SchemaVisualization({
           fitViewOptions={{ padding: 0.2 }}
         >
           <Background className="bg-muted/40" gap={20} size={1.5} />
-          <Controls showInteractive={false} className={controlStyles} />
+          <CanvasZoomControls />
           <MiniMap pannable className={miniMapStyles} />
         </ReactFlow>
       </div>

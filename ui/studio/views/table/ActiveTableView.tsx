@@ -1,11 +1,15 @@
 import { useIsMutating } from "@tanstack/react-query";
 import { type ColumnDef, type ColumnPinningState } from "@tanstack/react-table";
 import {
+  Check,
   ChevronDown,
   Columns3Cog,
+  Copy,
   History,
   Plus,
   RefreshCw,
+  Trash2,
+  Undo2,
 } from "lucide-react";
 import {
   type Dispatch,
@@ -1616,7 +1620,7 @@ export function ActiveTableView(_props: ViewProps) {
                       aria-label={tableHistoryAriaLabel ?? "Open table history"}
                       variant="ghost"
                       size="icon"
-                      className="text-muted-foreground hover:text-foreground"
+                      className="size-8 text-muted-foreground hover:text-foreground"
                       asChild
                     >
                       <a href={tableHistoryUrl}>
@@ -1635,7 +1639,7 @@ export function ActiveTableView(_props: ViewProps) {
                     aria-label="Refresh schema"
                     variant="ghost"
                     size="icon"
-                    className="text-muted-foreground hover:text-foreground"
+                    className="size-8 text-muted-foreground hover:text-foreground"
                     onClick={() => void refreshSchema()}
                     disabled={isIntrospectionRefetching}
                   >
@@ -1657,7 +1661,7 @@ export function ActiveTableView(_props: ViewProps) {
                     aria-label="Refresh table"
                     variant="ghost"
                     size="icon"
-                    className="text-muted-foreground hover:text-foreground"
+                    className="size-8 text-muted-foreground hover:text-foreground"
                     onClick={() => void reload()}
                     disabled={isRefreshingTable}
                   >
@@ -1698,12 +1702,20 @@ export function ActiveTableView(_props: ViewProps) {
         <Button
           variant="ghost"
           className="h-8 gap-1.5 px-2.5 text-muted-foreground hover:text-foreground"
-          onClick={newStagedRow}
+          onClick={(event) => {
+            // Hand focus to the new row so the button doesn't stay highlighted.
+            event.currentTarget.blur();
+            newStagedRow();
+          }}
           disabled={isInserting > 0}
         >
           <Plus data-icon="inline-start" />
           Insert row
         </Button>
+        {/* Selection actions sit in their own group. */}
+        {(hasSelectionExport || (isSelecting && selectedRowCount > 0)) && (
+          <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-border" />
+        )}
         {hasSelectionExport && (
           <DropdownMenu
             open={isSelectionExportOpen}
@@ -1719,14 +1731,15 @@ export function ActiveTableView(_props: ViewProps) {
               <Button
                 aria-expanded={isSelectionExportOpen}
                 aria-label="Copy selection as"
-                variant="outline"
+                variant="ghost"
                 className={cn(
-                  "h-9 shrink-0 gap-1.5 px-3 font-sans",
-                  isSelectionExportOpen && "bg-accent text-accent-foreground",
+                  "h-8 shrink-0 gap-1.5 px-2.5 font-sans text-muted-foreground hover:text-foreground",
+                  isSelectionExportOpen && "bg-secondary text-foreground",
                 )}
               >
-                <span>copy as</span>
-                <ChevronDown className="size-3.5 text-muted-foreground" />
+                <Copy data-icon="inline-start" />
+                <span>Copy as</span>
+                <ChevronDown className="size-3.5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
@@ -1778,14 +1791,20 @@ export function ActiveTableView(_props: ViewProps) {
             </DropdownMenuContent>
           </DropdownMenu>
         )}
+        {isSelecting && selectedRowCount > 0 && (
+          <Button
+            variant="ghost"
+            className="h-8 gap-1.5 px-2.5 font-sans text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => setDeleteDialogOpen(true)}
+          >
+            <Trash2 data-icon="inline-start" />
+            {deleteSelectionLabel}
+          </Button>
+        )}
         {hasStagedChanges && (
           <>
-            <Button
-              className="h-8 px-3 font-sans"
-              onClick={() => setSaveDialogOpen(true)}
-            >
-              {getSaveStagedRowsLabel(totalStagedRowCount)}
-            </Button>
+            {/* Unsaved edits: Discard, then Save as the one primary action. */}
+            <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-border" />
             <Button
               data-wiggle-animation={
                 discardWiggleAnimationKey
@@ -1794,23 +1813,24 @@ export function ActiveTableView(_props: ViewProps) {
               }
               variant="ghost"
               className={cn(
-                "h-8 px-2.5 font-sans text-muted-foreground hover:text-foreground motion-safe:origin-center motion-safe:will-change-transform",
+                "h-8 gap-1.5 px-2.5 font-sans text-muted-foreground hover:text-foreground motion-safe:origin-center motion-safe:will-change-transform",
                 discardWiggleAnimationClassName,
               )}
               onClick={() => setDiscardDialogOpen(true)}
             >
+              <Undo2 data-icon="inline-start" />
               Discard edits
             </Button>
+            {/* The one outlined action among ghosts: clearly "commit", not a black block. */}
+            <Button
+              variant="outline"
+              className="h-8 gap-1.5 px-3 font-sans"
+              onClick={() => setSaveDialogOpen(true)}
+            >
+              <Check data-icon="inline-start" />
+              {getSaveStagedRowsLabel(totalStagedRowCount)}
+            </Button>
           </>
-        )}
-        {isSelecting && selectedRowCount > 0 && (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setDeleteDialogOpen(true)}
-          >
-            {deleteSelectionLabel}
-          </Button>
         )}
       </StudioHeader>
       <InlineTableFiltersHeaderRow

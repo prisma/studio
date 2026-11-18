@@ -502,14 +502,16 @@ export function Navigation({ className }: NavigationProps) {
   );
 
   const sideBarClasses = cn(
-    "relative flex shrink-0 flex-col overflow-y-auto min-h-full h-0 text-card-foreground shadow-xs rounded-lg",
+    "relative flex shrink-0 flex-col overflow-y-auto min-h-full h-0 text-card-foreground",
+    // Thin scrollbar that only appears on hover, so it never sits against the page edge.
+    "[scrollbar-width:thin] [scrollbar-color:transparent_transparent] hover:[scrollbar-color:var(--border)_transparent]",
     className,
   );
   // Views read as product chrome (sans + icon); tables are data identifiers (mono).
   const navigationItemClasses =
-    "py-1.5 font-sans text-[13px] font-normal text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors cursor-pointer data-[active=true]:bg-accent data-[active=true]:text-foreground data-[active=true]:font-medium data-[active=true]:ring-1 data-[active=true]:ring-inset data-[active=true]:ring-border outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground data-[active=true]:[&_svg]:text-foreground";
+    "py-1.5 font-sans text-[13px] font-normal text-muted-foreground hover:bg-sidebar-active/50 hover:text-foreground transition-colors cursor-pointer data-[active=true]:bg-sidebar-active data-[active=true]:text-foreground data-[active=true]:font-medium  outline-none focus-visible:text-foreground [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground data-[active=true]:[&_svg]:text-foreground";
   const tableItemClasses =
-    "py-1 font-mono text-xs text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors cursor-pointer data-[active=true]:bg-accent data-[active=true]:text-foreground data-[active=true]:font-medium data-[active=true]:ring-1 data-[active=true]:ring-inset data-[active=true]:ring-border outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
+    "py-1 font-mono text-xs text-muted-foreground hover:bg-sidebar-active/50 hover:text-foreground transition-colors cursor-pointer data-[active=true]:bg-sidebar-active data-[active=true]:text-foreground data-[active=true]:font-medium  outline-none focus-visible:text-foreground";
 
   return (
     <div
@@ -842,11 +844,14 @@ export function Navigation({ className }: NavigationProps) {
         </Navigation.SearchableBlock>
       )}
 
+      {/* Wide invisible grab area; only a hairline at the page edge shows on hover or drag. */}
       <button
         aria-label="Resize navigation"
         className={cn(
-          "absolute inset-y-0 right-0 flex w-3 cursor-col-resize touch-none items-stretch justify-center outline-none",
-          isNavigationResizing && "bg-foreground/5",
+          "absolute top-[18px] bottom-[18px] right-0 flex w-3 cursor-col-resize touch-none items-stretch justify-end outline-none",
+          "after:w-px after:bg-transparent after:transition-colors after:duration-150 after:content-['']",
+          "hover:after:bg-foreground/20 focus-visible:after:bg-foreground/30",
+          isNavigationResizing && "after:bg-foreground/30",
         )}
         data-testid="navigation-resize-handle"
         onKeyDown={handleResizeKeyDown}

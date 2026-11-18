@@ -17,7 +17,9 @@ export function StudioHeader(props: StudioHeaderProps) {
   return (
     <div
       className={cn(
-        "flex w-full rounded-t-lg border-b border-border bg-card px-2 py-2.5",
+        "flex w-full border-b border-border bg-card px-2 py-2.5",
+        // Header icons at 14px with a finer stroke, in scale with 14px labels.
+        "[&_button_svg]:size-3.5 [&_button_svg]:stroke-[1.75]",
         props.className,
       )}
     >
@@ -29,7 +31,7 @@ export function StudioHeader(props: StudioHeaderProps) {
             }
             variant="ghost"
             size="icon"
-            className="text-muted-foreground hover:text-foreground"
+            className="size-8 text-muted-foreground hover:text-foreground"
             onClick={toggleNavigation}
           >
             {isNavigationOpen ? (

@@ -376,15 +376,15 @@ export function DateInput(props: DateInputProps) {
           value={inputValue}
         />
       </div>
-      <div className="flex flex-col gap-0 p-2 border-t border-table-border">
-        <div className="flex items-center justify-between mb-1 gap-2">
+      <div className="flex flex-col gap-2 border-t border-border-weak px-3 pt-2 pb-3">
+        <div className="flex items-center justify-between gap-2">
           <Select
             onValueChange={(value) =>
               updateDateFromInputs({ month: parseInt(value) })
             }
             value={currentMonthValue}
           >
-            <SelectTrigger className="text-xs data-[state=open]:border-primary shadow-none">
+            <SelectTrigger className="h-8 w-auto gap-1 border-transparent bg-transparent px-2 text-sm font-medium hover:bg-secondary">
               <SelectValue placeholder="Month" />
             </SelectTrigger>
             <SelectContent>
@@ -396,7 +396,7 @@ export function DateInput(props: DateInputProps) {
             </SelectContent>
           </Select>
           <Input
-            className="text-xs w-20 text-right shadow-none"
+            className="h-8 w-16 border-transparent bg-transparent text-center text-sm font-medium tabular-nums shadow-none hover:bg-secondary focus-visible:bg-secondary [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             max={MAX_JS_DATE.getFullYear()}
             min={MIN_JS_DATE.getFullYear()}
             onChange={handleYearChange}
@@ -418,10 +418,11 @@ export function DateInput(props: DateInputProps) {
           startMonth={MIN_JS_DATE}
         />
         {hasTimePrecision && (
-          <div className="mt-1">
-            <div className="flex items-center justify-start gap-1">
+          // One quiet time field (HH:mm:ss) with the zone beside it.
+          <div className="flex items-center justify-between gap-2 border-t border-border-weak pt-2">
+            <div className="inline-flex h-8 items-center rounded-md px-0.5 transition-colors hover:bg-secondary focus-within:bg-secondary">
               <Input
-                className="text-xs w-16 text-right shadow-none"
+                className="h-7 w-7 rounded-sm border-0 bg-transparent px-0 text-center font-mono text-xs tabular-nums shadow-none focus-visible:bg-background [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 type="number"
                 value={hourValue}
                 onChange={(e) => handleTimeChange("hour", e.target.value)}
@@ -433,7 +434,7 @@ export function DateInput(props: DateInputProps) {
               />
               <span className="text-xs text-muted-foreground">:</span>
               <Input
-                className="text-xs w-16 text-right shadow-none"
+                className="h-7 w-7 rounded-sm border-0 bg-transparent px-0 text-center font-mono text-xs tabular-nums shadow-none focus-visible:bg-background [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 type="number"
                 value={minuteValue}
                 onChange={(e) => handleTimeChange("minute", e.target.value)}
@@ -445,7 +446,7 @@ export function DateInput(props: DateInputProps) {
               />
               <span className="text-xs text-muted-foreground">:</span>
               <Input
-                className="text-xs w-16 text-right shadow-none "
+                className="h-7 w-7 rounded-sm border-0 bg-transparent px-0 text-center font-mono text-xs tabular-nums shadow-none focus-visible:bg-background [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 type="number"
                 value={secondValue}
                 onChange={(e) => handleTimeChange("second", e.target.value)}
@@ -457,7 +458,7 @@ export function DateInput(props: DateInputProps) {
               />
               {/* TODO: milliseconds. */}
             </div>
-            <p className="mt-1 text-[11px] text-muted-foreground">
+            <p className="text-[11px] leading-4 text-muted-foreground">
               Editing in local time ({localTimezoneLabel})
             </p>
           </div>

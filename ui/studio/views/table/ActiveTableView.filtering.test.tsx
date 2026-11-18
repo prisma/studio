@@ -786,10 +786,9 @@ function queryConfirmationDialog() {
 }
 
 function expectConfirmationFocusRing(button: HTMLButtonElement | undefined) {
-  expect(button?.className).toContain("focus:ring-2");
-  expect(button?.className).toContain("focus:ring-ring");
-  expect(button?.className).toContain("focus:ring-offset-2");
-  expect(button?.className).toContain("focus:ring-offset-background");
+  // Soft focus ring shared with every other button (no dark offset ring).
+  expect(button?.className).toContain("focus-visible:ring-2");
+  expect(button?.className).toContain("focus-visible:ring-foreground/15");
 }
 
 function getOpenEditorInput(): HTMLInputElement | HTMLTextAreaElement {
@@ -1495,8 +1494,8 @@ describe("ActiveTableView filtering", () => {
     expect(dialog).not.toBeNull();
     expect(dialog?.className).toContain("font-sans");
     expect(dialog?.className).toContain("max-w-[280px]");
-    expect(dialog?.className).toContain("gap-2.5");
-    expect(dialog?.className).toContain("p-3");
+    expect(dialog?.className).toContain("gap-4");
+    expect(dialog?.className).toContain("p-4");
 
     const prompt = dialog?.querySelector("p");
 
@@ -3065,7 +3064,7 @@ describe("ActiveTableView filtering", () => {
 
   it("only shows copy-as actions while rows or cells are selected", () => {
     const view = renderView();
-    const copyAsTrigger = findButtonByText("copy as");
+    const copyAsTrigger = findButtonByText("Copy as");
 
     expect(copyAsTrigger).toBeUndefined();
 
@@ -3119,7 +3118,7 @@ describe("ActiveTableView filtering", () => {
     gridColumnOrderState = ["id", "email", "created_at"];
 
     const view = renderView();
-    const copyAsTrigger = findButtonByText("copy as");
+    const copyAsTrigger = findButtonByText("Copy as");
 
     expect(copyAsTrigger).toBeDefined();
     expect(copyAsTrigger?.className).toContain("font-sans");
@@ -3196,7 +3195,7 @@ describe("ActiveTableView filtering", () => {
     gridColumnOrderState = ["id", "email", "created_at"];
 
     const view = renderView();
-    const copyAsTrigger = findButtonByText("copy as");
+    const copyAsTrigger = findButtonByText("Copy as");
 
     expect(copyAsTrigger).toBeDefined();
 
@@ -3285,7 +3284,7 @@ describe("ActiveTableView filtering", () => {
     };
 
     const view = renderView();
-    const copyAsTrigger = findButtonByText("copy as");
+    const copyAsTrigger = findButtonByText("Copy as");
 
     expect(copyAsTrigger).toBeDefined();
 
@@ -3566,7 +3565,7 @@ describe("ActiveTableView filtering", () => {
     expect(aiFilterShell.className).toContain("overflow-hidden");
     expect(aiFilterShell.className).toContain("border");
     expect(aiInput.className).toContain("border-0");
-    expect(insertRowButton.className).toContain("h-9");
+    expect(insertRowButton.className).toContain("h-8");
     expect(headerEndControls.className).toContain("pl-2");
     expect(headerEndControls.querySelectorAll("button")).toHaveLength(1);
     expect(filterChevron).not.toBeNull();

@@ -369,7 +369,7 @@ export function InlineTableFilterAddButton(
         aria-label="Add filter"
         type="button"
         className={cn(
-          "flex h-9 shrink-0 items-center gap-1.5 bg-transparent px-3 text-sm text-foreground transition-colors focus-visible:outline-none",
+          "flex h-8 shrink-0 items-center gap-1.5 bg-transparent px-2.5 text-sm font-medium text-foreground transition-colors focus-visible:outline-none",
           disabled && "opacity-70",
           isAiFilterVisible
             ? "border-r border-border/70 hover:bg-accent/50"

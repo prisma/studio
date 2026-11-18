@@ -90,12 +90,14 @@ export function WriteableCell(props: WriteableCellProps) {
         align="start"
         alignOffset={-1}
         className={cn(
-          "p-0 z-30 gap-0 border-muted-foreground/50",
+          // Square top-left: the editor grows out of the cell it covers, so no
+          // sliver of the cell's focus outline shows past a rounded corner.
+          "p-0 z-30 gap-0 rounded-tl-none",
           "w-[calc(var(--radix-popover-trigger-width)+1px)] max-w-72 min-w-max",
         )}
         sideOffset={-40}
       >
-        <div className="bg-secondary/70">{inputComponent}</div>
+        <div>{inputComponent}</div>
       </PopoverCellContent>
     </PopoverCell>
   );

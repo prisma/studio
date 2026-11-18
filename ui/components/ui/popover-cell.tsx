@@ -147,7 +147,7 @@ const PopoverCellContent = forwardRef<
             {...props}
             align={align}
             className={cn(
-              "flex flex-col gap-2 z-50 border border-border bg-popover text-popover-foreground shadow-md outline-none",
+              "flex flex-col gap-2 z-50 overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg outline-none",
               className,
             )}
             data-studio-cell-editor="true"

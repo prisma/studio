@@ -32,6 +32,7 @@
 
   --color-background: var(--background);
   --color-canvas: var(--canvas);
+  --color-sidebar-active: var(--sidebar-active);
   --color-border-weak: var(--border-weak);
   --color-input-background: var(--input-background);
   --color-success: var(--success);
@@ -374,7 +375,10 @@
   --color-table-head: var(--background);
   --color-table-border: var(--border-weak);
 
-  --animate-indeterminate: indeterminate 1.5s infinite ease-in-out;
+  --animate-indeterminate: indeterminate 4s infinite ease-in-out;
+  /* Loading ray waits before appearing, so quick queries never flash it. */
+  --animate-ray-in: ray-in 200ms ease-out 400ms both;
+  --animate-copy-feedback: copy-feedback 1200ms ease-out both;
 
   --color-chart-label: var(--chart-label);
 
@@ -405,6 +409,30 @@
   --color-chart-foreground: var(--chart-foreground);
 
   --color-chart-background: var(--chart-background);
+
+  @keyframes copy-feedback {
+    0% {
+      opacity: 0;
+    }
+    12% {
+      opacity: 1;
+    }
+    75% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes ray-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
 
   @keyframes indeterminate {
     0% {
@@ -546,7 +574,9 @@
   --brand-neutral-950: #0a0a0a;
 
   --background: #ffffff;
-  --canvas: #fafafa;
+  /* Frame and sidebar match Prisma Console (Eclipse canvas / accent). */
+  --canvas: oklch(0.97 0.0029 264.54);
+  --sidebar-active: oklch(0.94 0.003 264.54);
   --foreground: #3a3b3c;
   --card: #ffffff;
   --card-foreground: #3a3b3c;
@@ -626,6 +656,7 @@
   /* Dark surfaces express elevation by luminance: background, canvas/card, popover. */
   --background: #0a0a0a;
   --canvas: #171717;
+  --sidebar-active: oklch(0.22 0 0);
   --foreground: #fafafa;
   --card: #171717;
   --card-foreground: #fafafa;
@@ -695,7 +726,7 @@
     color: var(--foreground);
   }
   .ps ::selection {
-    background-color: color-mix(in srgb, var(--prism-cyan-400) 30%, transparent);
+    background-color: color-mix(in srgb, var(--foreground) 14%, transparent);
   }
 }
 
@@ -726,39 +757,3 @@
   }
 }
 
-/* React Flow canvas controls (Visualizer, Migrations): same soft track and ghost
-   buttons as Studio's other segmented controls, instead of the library default. */
-.react-flow__controls {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-square);
-  background: var(--background);
-  box-shadow: var(--shadow-lower);
-}
-
-.react-flow__controls-button {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-square-low);
-  background: transparent;
-  color: var(--muted-foreground);
-  transition:
-    background-color 150ms,
-    color 150ms;
-}
-
-.react-flow__controls-button:hover {
-  background: var(--secondary);
-  color: var(--foreground);
-}
-
-.react-flow__controls-button svg {
-  max-width: 12px;
-  max-height: 12px;
-  fill: currentColor;
-}

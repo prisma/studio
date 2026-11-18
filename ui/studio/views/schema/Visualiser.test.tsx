@@ -146,6 +146,9 @@ vi.mock("reactflow", async () => {
     Controls: () => null,
     Handle: () => null,
     MiniMap: () => null,
+    Panel: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+    useReactFlow: () => ({ fitView() {}, zoomIn() {}, zoomOut() {} }),
+    useViewport: () => ({ x: 0, y: 0, zoom: 1 }),
     Position: {
       Bottom: "bottom",
       Left: "left",
