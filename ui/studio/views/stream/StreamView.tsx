@@ -1968,7 +1968,7 @@ function ActiveStreamView(props: {
           </div>
 
           <div
-            className="border-t border-table-border bg-background/90 px-3 py-2 backdrop-blur-sm"
+            className="rounded-b-[calc(var(--radius-lg)-1px)] border-t border-table-border bg-background/90 px-3 py-2 backdrop-blur-sm"
             data-testid="stream-footer"
           >
             {/* Same layout as the table footer: navigation left, totals right. */}

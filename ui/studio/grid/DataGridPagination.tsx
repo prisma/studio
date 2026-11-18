@@ -126,7 +126,7 @@ export function DataGridPagination(props: DataGridPaginationProps) {
 
   return (
     <div className="rounded-b-lg overflow-visible sticky bottom-0 left-0 border-t-0 w-full z-20 p-0">
-      <div className="flex items-center justify-between gap-2 py-2 px-3 border-t border-table-border backdrop-blur-sm bg-background/90">
+      <div className="flex items-center justify-between gap-2 py-2 px-3 border-t border-table-border rounded-b-[calc(var(--radius-lg)-1px)] backdrop-blur-sm bg-background/90">
         {variant === "basic" ? (
           <div className="flex items-center gap-2">
             <Button

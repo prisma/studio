@@ -65,6 +65,26 @@ function createMockTable(args?: {
 }
 
 describe("DataGridPagination", () => {
+  it("rounds the blurred footer bar to the card's inner corners", () => {
+    // backdrop-blur gives the bar its own layer, which the card's rounded
+    // overflow clip does not reach, so the bar must carry the radius itself.
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<DataGridPagination table={createMockTable()} />);
+    });
+
+    const bar = container.querySelector(".backdrop-blur-sm");
+    expect(bar?.className).toContain("rounded-b-[calc(var(--radius-lg)-1px)]");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it("uses regular-sized text buttons for the basic pagination variant", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
