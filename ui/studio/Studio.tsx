@@ -13,6 +13,7 @@ import { StudioContextProvider, useStudio } from "./context";
 import { IntrospectionStatusNotice } from "./IntrospectionStatusNotice";
 import { Navigation } from "./Navigation";
 import { StudioHeader } from "./StudioHeader";
+import { ComposeView } from "./views/compose/ComposeView";
 import { ConsoleView } from "./views/console/ConsoleView";
 import { MigrationsView } from "./views/migrations/MigrationsView";
 import { QueriesView } from "./views/queries/QueriesView";
@@ -118,6 +119,7 @@ const views: Record<string, (props: ViewProps) => JSX.Element | null> = {
   console: ConsoleView,
   sql: SqlView,
   migrations: MigrationsView,
+  compose: ComposeView,
   default: BasicView,
 };
 

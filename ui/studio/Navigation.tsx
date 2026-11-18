@@ -595,6 +595,22 @@ export function Navigation({ className }: NavigationProps) {
                 </a>
               </Navigation.Item>
             )}
+            <Navigation.Item
+              asChild
+              isActive={viewParam === "compose"}
+              className={navigationItemClasses}
+            >
+              <a
+                href={createUrl({
+                  schemaParam,
+                  viewParam: "compose",
+                })}
+                className="w-full"
+                data-testid="navigation-compose-item"
+              >
+                Compose
+              </a>
+            </Navigation.Item>
           </Navigation.Block>
 
           <Navigation.SearchableBlock
