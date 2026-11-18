@@ -472,6 +472,7 @@ export function SchemaVisualization({
           nodeTypes={nodeTypes}
           fitView
           fitViewOptions={{ padding: 0.2 }}
+          proOptions={{ hideAttribution: true }}
         >
           <Background className="bg-muted/40" gap={20} size={1.5} />
           <CanvasZoomControls />

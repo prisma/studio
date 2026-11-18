@@ -119,8 +119,8 @@ export function DemoApp(props: {
   return (
     <div
       style={{
-        background:
-          "linear-gradient(165deg, light-dark(#f8fafc, #0b1220) 0%, light-dark(#e2e8f0, #131c2e) 40%, light-dark(#dbeafe, #1a2440) 100%)",
+        // Same flat grey as Studio's own canvas, so the frame blends into the page.
+        background: "light-dark(oklch(0.97 0.0029 264.54), #171717)",
         display: "grid",
         gridTemplateRows: "auto 1fr",
         height: "100vh",
