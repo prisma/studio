@@ -29,7 +29,9 @@ import { useNavigation } from "../hooks/use-navigation";
 import { useNavigationTableList } from "../hooks/use-navigation-table-list";
 import { useStreams } from "../hooks/use-streams";
 import { useUiState } from "../hooks/use-ui-state";
+import { isMacPlatform } from "../lib/platform";
 import { cn } from "../lib/utils";
+import { useCommandPalette } from "./CommandPalette";
 import {
   MAX_NAVIGATION_WIDTH,
   MIN_NAVIGATION_WIDTH,
@@ -509,9 +511,9 @@ export function Navigation({ className }: NavigationProps) {
   );
   // Views read as product chrome (sans + icon); tables are data identifiers (mono).
   const navigationItemClasses =
-    "py-1.5 font-sans text-[13px] font-normal text-muted-foreground hover:bg-sidebar-active/50 hover:text-foreground transition-colors cursor-pointer data-[active=true]:bg-sidebar-active data-[active=true]:text-foreground data-[active=true]:font-medium  outline-none focus-visible:text-foreground [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground data-[active=true]:[&_svg]:text-foreground";
+    "py-1.5 font-sans text-sm font-normal text-muted-foreground hover:bg-sidebar-active/50 hover:text-foreground transition-colors cursor-pointer data-[active=true]:bg-sidebar-active data-[active=true]:text-foreground data-[active=true]:font-medium  outline-none focus-visible:text-foreground [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground data-[active=true]:[&_svg]:text-foreground";
   const tableItemClasses =
-    "py-1 font-mono text-xs text-muted-foreground hover:bg-sidebar-active/50 hover:text-foreground transition-colors cursor-pointer data-[active=true]:bg-sidebar-active data-[active=true]:text-foreground data-[active=true]:font-medium  outline-none focus-visible:text-foreground";
+    "py-1 font-mono text-sm font-normal text-muted-foreground hover:bg-sidebar-active/50 hover:text-foreground transition-colors cursor-pointer data-[active=true]:bg-sidebar-active data-[active=true]:text-foreground data-[active=true]:font-medium  outline-none focus-visible:text-foreground";
 
   return (
     <div
@@ -858,6 +860,32 @@ export function Navigation({ className }: NavigationProps) {
         onPointerDown={handleResizePointerDown}
         type="button"
       />
+
+      <CommandMenuHint />
+    </div>
+  );
+}
+
+/**
+ * Quiet pointer to the command palette, pinned to the bottom of the sidebar.
+ * The palette (themes, views, actions) is otherwise only reachable by shortcut.
+ */
+function CommandMenuHint() {
+  const commandPalette = useCommandPalette();
+
+  return (
+    <div className="sticky bottom-0 mt-auto bg-canvas px-2 pt-2 pb-3">
+      <button
+        aria-label="Open command menu"
+        className="flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-sidebar-active/50 hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+        onClick={() => commandPalette.open()}
+        type="button"
+      >
+        <span className="truncate">Commands</span>
+        <kbd className="shrink-0 rounded-sm border border-border bg-background px-1 py-px font-mono text-2xs text-muted-foreground">
+          {isMacPlatform() ? "⌘K" : "Ctrl K"}
+        </kbd>
+      </button>
     </div>
   );
 }
@@ -877,8 +905,10 @@ const Block = ({
 }) => {
   return (
     <div className={className} {...props}>
-      <div className="flex items-center gap-1.5 pt-4 pb-1 px-4 sticky top-0 backdrop-blur-sm">
-        <h2 className="text-xs font-medium text-muted-foreground">{label}</h2>
+      <div className="flex items-center gap-1.5 pt-4 pb-1 px-4 sticky top-0 z-10 bg-canvas">
+        <h2 className="font-mono text-2xs font-normal uppercase tracking-loose text-muted-foreground">
+          {label}
+        </h2>
       </div>
       <nav aria-label={label} className="flex flex-col gap-px pb-2 px-2 pt-1">
         {children}
@@ -931,14 +961,16 @@ const SearchableBlock = ({
       data-testid={`navigation-search-block-${blockKey}`}
       {...props}
     >
-      <div className="relative flex items-center gap-1 pt-4 pb-1 px-4 sticky top-0 backdrop-blur-sm min-h-10">
+      <div className="relative flex items-center gap-1 pt-4 pb-1 px-4 sticky top-0 z-10 bg-canvas min-h-10">
         <div
           className={cn(
             "flex items-center gap-1 transition-opacity duration-200",
             isSearchOpen && "opacity-0 pointer-events-none",
           )}
         >
-          <h2 className="text-xs font-medium text-muted-foreground">{title}</h2>
+          <h2 className="font-mono text-2xs font-normal uppercase tracking-loose text-muted-foreground">
+            {title}
+          </h2>
         </div>
 
         <div
@@ -976,9 +1008,14 @@ const SearchableBlock = ({
               : "opacity-0 scale-x-0 pointer-events-none",
           )}
         >
+          {/* Same pill as the table search: round, with the icon inside. */}
+          <Search
+            aria-hidden
+            className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
+          />
           <Input
             aria-label={searchAriaLabel}
-            className="h-9 w-full bg-background shadow-none"
+            className="h-8 w-full rounded-full bg-background pl-8 shadow-none"
             onChange={(event) => {
               setSearchTerm(event.currentTarget.value);
             }}
@@ -1052,7 +1089,7 @@ const SchemaSelector = () => {
   const isInitialIntrospectionLoad = isFetching && !hasResolvedIntrospection;
 
   return (
-    <div className="flex items-center gap-1 pt-4 pb-2 px-4 sticky top-0 backdrop-blur-sm">
+    <div className="flex items-center gap-1 pt-4 pb-2 px-4">
       <Select
         value={schemaParam}
         onValueChange={(schemaParam) => {

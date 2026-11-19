@@ -220,6 +220,7 @@ This keeps table cells, copies, and other row-backed UI surfaces from drifting w
 ## Command Palette
 
 `Cmd/Ctrl+K` opens a compact Studio command palette that immediately focuses search and filters available actions as you type.
+A quiet `Commands ⌘K` row (`Ctrl K` off macOS) is pinned to the bottom of the sidebar, so people who don't know the shortcut can find the palette and learn it; clicking it opens the palette.
 In table view it surfaces context-aware actions like row search, AI filtering, insert row, refresh, and page navigation, while the lower sections jump to tables and core Studio views.
 Table navigation stays intentionally short by showing only the first 3 tables by default and the top 3 matches while filtering. If more tables exist, the palette shows an `x more...` entry that hands off into the existing sidebar table search so users keep one consistent table-filtering UI.
 `Search rows` and `Filter with AI` work in two modes: typing the command name keeps them as focus actions for the existing toolbar inputs, while free text turns them into direct `Search rows: ...` and `Filter with AI: ...` actions that execute immediately. Keyboard selection stays active from the moment the palette opens, so arrow keys can move through results before any typing, and the list auto-scrolls the active result into view as you move into lower sections.
@@ -355,7 +356,8 @@ Saving staged edits, discarding staged edits, and selected-row deletion all use 
 ## Operation Console and Error Visibility
 
 Introspection and data operations emit structured success/error events with SQL text, parameters, timestamps, and status.
-The Console view provides query history with copy actions, and error toasts link directly to Console for fast diagnostics.
+The Console view is a log with one row per operation (status, operation, a one-line SQL preview, time), so many operations can be scanned at once.
+Clicking a row opens the full SQL, parameters and a copy action; failed rows show their error in the row and start open with the adapter and full message. Error toasts link directly to Console for fast diagnostics.
 
 ## Telemetry Opt-Out
 

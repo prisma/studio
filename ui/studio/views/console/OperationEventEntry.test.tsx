@@ -11,7 +11,7 @@ type UseUiStateReturn = readonly [
 ];
 
 const { useUiStateMock } = vi.hoisted(() => ({
-  useUiStateMock: vi.fn<() => UseUiStateReturn>(),
+  useUiStateMock: vi.fn<(key: string, initial: boolean) => UseUiStateReturn>(),
 }));
 
 vi.mock("../../../hooks/use-ui-state", () => ({
@@ -22,9 +22,47 @@ vi.mock("../../../hooks/use-ui-state", () => ({
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
+const successEvent: StudioOperationEvent = {
+  eventId: "evt_1",
+  timestamp: "2026-03-09T11:07:44.000Z",
+  name: "studio_operation_success",
+  payload: {
+    operation: "query",
+    error: undefined,
+    query: {
+      sql: "select * from organizations limit $1",
+      parameters: [25],
+    },
+  },
+};
+
+function renderEntry(event: StudioOperationEvent) {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  act(() => {
+    root.render(
+      <table>
+        <tbody>
+          <OperationEventEntry event={event} />
+        </tbody>
+      </table>,
+    );
+  });
+
+  return {
+    container,
+    cleanup: () => {
+      act(() => root.unmount());
+      container.remove();
+    },
+  };
+}
+
 describe("OperationEventEntry", () => {
   beforeEach(() => {
-    useUiStateMock.mockReturnValue([false, vi.fn()]);
+    useUiStateMock.mockImplementation((_key, initial) => [initial, vi.fn()]);
   });
 
   afterEach(() => {
@@ -32,68 +70,65 @@ describe("OperationEventEntry", () => {
     document.body.innerHTML = "";
   });
 
-  it("renders query details with gap-based stacks and accessible controls", () => {
-    const event: StudioOperationEvent = {
-      eventId: "evt_1",
-      timestamp: "2026-03-09T00:00:00.000Z",
-      name: "studio_operation_success",
-      payload: {
-        operation: "query",
-        error: undefined,
-        query: {
-          sql: "select * from organizations",
-          parameters: [],
-        },
-      },
-    };
+  it("renders one log row with operation, SQL preview, status and time", () => {
+    const { container, cleanup } = renderEntry(successEvent);
 
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
+    const rows = container.querySelectorAll("tr");
+    expect(rows).toHaveLength(1);
 
-    act(() => {
-      root.render(<OperationEventEntry event={event} />);
-    });
-
-    const rootEntry = container.firstElementChild;
-    const queryBlock = container.querySelector('[data-response-type="query"]');
-    const toggleButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("SQL Query"),
+    const cells = [...rows[0]!.querySelectorAll("td")].map(
+      (cell) => cell.textContent,
     );
-    const copyButton = container.querySelector(
-      'button[aria-label="Copy SQL query"]',
-    );
+    expect(cells).toContain("query");
+    expect(cells).toContain("Success");
+    expect(cells.some((text) => text?.includes("select * from"))).toBe(true);
 
-    expect(rootEntry?.className).toContain("flex");
-    expect(rootEntry?.className).toContain("gap-2");
-    expect(queryBlock?.className).toContain("flex");
-    expect(queryBlock?.className).toContain("gap-2");
-    expect(
-      Array.from(container.querySelectorAll<HTMLElement>("[class]")).some(
-        (element) => element.className.includes("space-y-"),
-      ),
-    ).toBe(false);
-    expect(toggleButton?.getAttribute("aria-expanded")).toBe("false");
-    expect(copyButton).not.toBeNull();
+    const toggle = container.querySelector("button[aria-expanded]");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector('[aria-label="Copy SQL query"]')).toBeNull();
 
-    act(() => {
-      root.unmount();
-    });
-    container.remove();
+    cleanup();
   });
 
-  it("renders adapter source for error events", () => {
-    const error = new Error("forced introspection failure");
-    (
-      error as Error & {
-        adapterSource?: string;
-        query?: { parameters: unknown[]; sql: string };
-      }
-    ).adapterSource = "postgresql";
+  it("toggles the details when the row is clicked", () => {
+    const setExpanded = vi.fn();
+    useUiStateMock.mockImplementation(() => [false, setExpanded]);
+    const { container, cleanup } = renderEntry(successEvent);
 
-    const event: StudioOperationEvent = {
+    act(() => {
+      container.querySelector("tr")!.click();
+    });
+
+    expect(setExpanded).toHaveBeenCalledWith(true);
+
+    cleanup();
+  });
+
+  it("shows the full SQL, parameters and copy when expanded", () => {
+    useUiStateMock.mockImplementation(() => [true, vi.fn()]);
+    const { container, cleanup } = renderEntry(successEvent);
+
+    const detail = container.querySelector('[data-response-type="query"]');
+    expect(detail?.textContent).toContain(
+      "select * from organizations limit $1",
+    );
+    expect(detail?.textContent).toContain("[25]");
+    expect(
+      container.querySelector('[aria-label="Copy SQL query"]'),
+    ).not.toBeNull();
+    // The disclosure chevron turns down while the row is open.
+    expect(container.querySelector("tr svg.rotate-90")).not.toBeNull();
+
+    cleanup();
+  });
+
+  it("puts the error in the row and opens its details by default", () => {
+    const error = new Error("forced introspection failure");
+    (error as Error & { adapterSource?: string }).adapterSource = "postgresql";
+
+    const { container, cleanup } = renderEntry({
       eventId: "evt_2",
-      timestamp: "2026-03-09T00:00:00.000Z",
+      timestamp: "2026-03-09T11:07:44.000Z",
       name: "studio_operation_error",
       payload: {
         operation: "introspect",
@@ -103,23 +138,19 @@ describe("OperationEventEntry", () => {
           parameters: [],
         },
       },
-    };
-
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-
-    act(() => {
-      root.render(<OperationEventEntry event={event} />);
     });
 
+    const [row] = container.querySelectorAll("tr");
+    expect(row?.textContent).toContain("forced introspection failure");
+    expect(row?.textContent).toContain("Error");
+    expect(useUiStateMock).toHaveBeenCalledWith(
+      "operation-event:evt_2:query-expanded",
+      true,
+      expect.anything(),
+    );
     expect(container.textContent).toContain("Adapter");
     expect(container.textContent).toContain("postgresql");
-    expect(container.textContent).toContain("forced introspection failure");
 
-    act(() => {
-      root.unmount();
-    });
-    container.remove();
+    cleanup();
   });
 });

@@ -70,12 +70,12 @@ function MigrationListItem(props: {
         )}
       </div>
       <div className="flex items-center gap-2 pl-9">
-        <span className="text-[10px] text-muted-foreground">
+        <span className="text-xs text-muted-foreground">
           {migration.appliedAt
             ? dayjs(migration.appliedAt).format("MMM D, HH:mm:ss")
             : "unknown time"}
         </span>
-        <span className="text-[10px] text-muted-foreground/70">
+        <span className="text-xs text-muted-foreground/70">
           {migration.operations.length} op
           {migration.operations.length === 1 ? "" : "s"}
         </span>
@@ -87,7 +87,7 @@ function MigrationListItem(props: {
               key={chip}
               className={cn(
                 // Light pill in the exact brand colour; ink text keeps it readable.
-                "rounded-full px-1.5 py-px font-mono text-[10px] text-foreground/80",
+                "rounded-full px-1.5 py-px font-mono text-2xs text-foreground/80",
                 chip.startsWith("+") && "bg-prism-cyan/15",
                 chip.startsWith("−") && "bg-prism-red/12",
                 chip.startsWith("~") && "bg-prism-yellow/25",

@@ -454,8 +454,10 @@ export function SchemaVisualization({
 
   const miniMapStyles = cn(
     "overflow-hidden rounded-md border border-border bg-background shadow-xs",
-    "[&_.react-flow__minimap-node]:fill-border",
-    "[&_.react-flow__minimap-mask]:fill-secondary [&_.react-flow__minimap-mask]:opacity-70",
+    // Target the SVG shapes: Tailwind reads the "__" in React Flow's class names as spaces.
+    // Nodes are rects; the viewport mask is the path.
+    "[&_svg_rect]:fill-border",
+    "[&_svg_path]:fill-secondary [&_svg_path]:opacity-70",
   );
 
   return (

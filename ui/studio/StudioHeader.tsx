@@ -41,7 +41,7 @@ export function StudioHeader(props: StudioHeaderProps) {
             )}
           </Button>
           {props.title ? (
-            <h1 className="shrink-0 pr-1 font-sans text-sm font-semibold text-foreground">
+            <h1 className="shrink-0 pr-1 font-sans text-base font-semibold text-foreground">
               {props.title}
             </h1>
           ) : null}

@@ -775,7 +775,7 @@ export function QueriesView(_props: ViewProps) {
 function ToolbarSelectControl(props: { children: ReactNode; label: string }) {
   return (
     <div className="flex w-full min-w-0 items-center gap-1.5 sm:w-auto">
-      <span className="shrink-0 text-[11px] font-medium text-muted-foreground">
+      <span className="shrink-0 font-mono text-2xs font-normal uppercase tracking-loose text-muted-foreground">
         {props.label}
       </span>
       {props.children}
@@ -1299,13 +1299,13 @@ function QueryTable(props: {
                   )}
                 </button>
               </TableCell>
-              <TableCell className="px-3 py-3 text-right tabular-nums">
+              <TableCell className="px-3 py-3 text-right font-mono text-xs tabular-nums">
                 {numberFormatter.format(query.count)}
               </TableCell>
-              <TableCell className="px-3 py-3 text-right tabular-nums">
+              <TableCell className="px-3 py-3 text-right font-mono text-xs tabular-nums">
                 {numberFormatter.format(query.rowsReturned)}
               </TableCell>
-              <TableCell className="px-3 py-3 text-right text-muted-foreground">
+              <TableCell className="px-3 py-3 text-right text-xs text-muted-foreground">
                 {formatTime(query.lastSeen)}
               </TableCell>
               {canShowAnalysis && (

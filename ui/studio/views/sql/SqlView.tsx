@@ -29,6 +29,7 @@ import { TableHead, TableRow } from "../../../components/ui/table";
 import { useColumnPinning } from "../../../hooks/use-column-pinning";
 import { useIntrospection } from "../../../hooks/use-introspection";
 import { useNavigation } from "../../../hooks/use-navigation";
+import { isMacPlatform } from "../../../lib/platform";
 import type { CellProps } from "../../cell/Cell";
 import { Cell } from "../../cell/Cell";
 import { getCell } from "../../cell/get-cell";
@@ -1256,13 +1257,6 @@ export function SqlView(_props: ViewProps) {
         )}
       </div>
     </div>
-  );
-}
-
-function isMacPlatform(): boolean {
-  return (
-    typeof navigator !== "undefined" &&
-    /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent)
   );
 }
 

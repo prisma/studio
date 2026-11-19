@@ -120,7 +120,7 @@ export function DemoApp(props: {
     <div
       style={{
         // Same flat grey as Studio's own canvas, so the frame blends into the page.
-        background: "light-dark(oklch(0.97 0.0029 264.54), #171717)",
+        background: "light-dark(oklch(0.97 0.0029 264.54), oklch(0.16 0 0))",
         display: "grid",
         gridTemplateRows: "auto 1fr",
         height: "100vh",

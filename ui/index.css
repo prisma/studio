@@ -653,28 +653,29 @@
 .dark {
   color-scheme: dark;
 
-  /* Dark surfaces express elevation by luminance: background, canvas/card, popover. */
-  --background: #0a0a0a;
-  --canvas: #171717;
-  --sidebar-active: oklch(0.22 0 0);
-  --foreground: #fafafa;
+  /* Eclipse dark surfaces (matches Console): the canvas is the darkest layer, the
+     page sits just above it and cards and popovers step up in luminance. */
+  --background: #0e0e0e;
+  --canvas: oklch(0.16 0 0);
+  --sidebar-active: var(--accent);
+  --foreground: oklch(0.94 0 0);
   --card: #171717;
-  --card-foreground: #fafafa;
-  --popover: #171717;
-  --popover-foreground: #fafafa;
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: var(--foreground);
   --primary: #e5e5e5;
   --primary-foreground: #171717;
   --secondary: #262626;
-  --secondary-foreground: #fafafa;
+  --secondary-foreground: var(--foreground);
   --muted: #262626;
-  --muted-foreground: #a1a1a1;
+  --muted-foreground: #9fa0a6;
   --accent: #262626;
-  --accent-foreground: #fafafa;
+  --accent-foreground: var(--foreground);
   --destructive: #ff6467;
   --destructive-foreground: #171717;
-  --border: rgb(255 255 255 / 0.1);
-  --border-weak: rgb(255 255 255 / 0.1);
-  --input: rgb(255 255 255 / 0.15);
+  --border: #34343a;
+  --border-weak: #29292d;
+  --input: var(--border);
   --input-background: #171717;
   --ring: #737373;
   --success: var(--brand-cyan);
@@ -696,16 +697,16 @@
   --chart-5: var(--prism-red-300);
   --studio-staged-cell-background: color-mix(in srgb, var(--prism-yellow-300) 16%, transparent);
   --studio-staged-cell-background-hover: color-mix(in srgb, var(--prism-yellow-300) 22%, transparent);
-  --chart-background: #0a0a0a;
-  --chart-foreground: #a1a1a1;
-  --chart-foreground-muted: #a1a1a1;
+  --chart-background: var(--background);
+  --chart-foreground: var(--muted-foreground);
+  --chart-foreground-muted: var(--muted-foreground);
   --chart-crosshair: #737373;
   --chart-grid: #262626;
   --chart-marker-background: #262626;
   --chart-marker-border: #555555;
-  --chart-marker-foreground: #fafafa;
+  --chart-marker-foreground: var(--foreground);
   --chart-ring-background: color-mix(in srgb, #555555 25%, transparent);
-  --chart-label: #a1a1a1;
+  --chart-label: var(--muted-foreground);
 }
 
 @layer base {
