@@ -1,4 +1,4 @@
-import { AlertCircle, Key, SquareArrowRight } from "lucide-react";
+import { AlertCircle, Key, Minus, Plus, SquareArrowRight } from "lucide-react";
 import {
   type FC,
   JSX,
@@ -7,6 +7,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
 } from "react";
 import ReactFlow, {
   Background,
@@ -78,8 +79,11 @@ const TableNode: FC<NodeProps<SchemaNodeData>> = memo(({ data }) => {
     metadata: { activeSchema },
     createUrl,
   } = useNavigation();
+  // this is an arbitary number, for simplicity, we can change it in the future to be configurable from settings.
+  const MAX_VISIBLE_FIELDS = 6;
   const isNoTablesNode = data.label === "No Tables Found";
-
+  const [isMinimized, setIsMinimized] = useState(false);
+  const onToggleMinimize = () => setIsMinimized((prev) => !prev);
   // This function now returns an array of icon components to render for a field
   const getFieldIcons = (
     field: SchemaNodeData["fields"][number],
@@ -159,21 +163,39 @@ const TableNode: FC<NodeProps<SchemaNodeData>> = memo(({ data }) => {
         >
           <div className="font-semibold">{data.label}</div>
           {!isNoTablesNode && (
-            <Button asChild variant="ghost" size="icon" className="size-7">
-              <a
-                aria-label={`Open table ${data.label}`}
-                href={createUrl({
-                  tableParam: data.label,
-                  schemaParam: activeSchema?.name,
-                  viewParam: "table",
-                })}
-                rel="noopener noreferrer"
-                title={`Open table ${data.label}`}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <SquareArrowRight data-icon="inline-start" />
-              </a>
-            </Button>
+            <>
+              <div>
+                <Button asChild variant="ghost" size="icon" className="size-7">
+                  <a
+                    aria-label={`Open table ${data.label}`}
+                    href={createUrl({
+                      tableParam: data.label,
+                      schemaParam: activeSchema?.name,
+                      viewParam: "table",
+                    })}
+                    rel="noopener noreferrer"
+                    title={`Open table ${data.label}`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <SquareArrowRight data-icon="inline-start" />
+                  </a>
+                </Button>
+                <Button asChild variant="ghost" size="icon" className="size-7">
+                  <a
+                    aria-label={`Minimize Labels ${data.label}`}
+                    rel="noopener noreferrer"
+                    title={`Minimize Labels ${data.label}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleMinimize();
+                    }}
+                
+                  >
+                    {isMinimized ? <Plus /> : <Minus />}
+                  </a>
+                </Button>
+              </div>
+            </>
           )}
         </div>
         <div className="px-4 py-2">
@@ -194,26 +216,26 @@ const TableNode: FC<NodeProps<SchemaNodeData>> = memo(({ data }) => {
               </span>
             </div>
           ) : (
-            data.fields.map((field, index) => (
-              <div
-                key={index}
-                className={cn(
-                  "flex items-center gap-2 py-2 text-sm text-foreground",
-                  field.isPrimary && "text-primary",
-                )}
-              >
-                {/* Container for icons, allows multiple icons side-by-side */}
-                <div className="flex items-center gap-1 min-w-[calc(1.25rem*2+0.25rem)]">
-                  {getFieldIcons(field).map((iconComponent, idx) => (
-                    <div key={idx}>{iconComponent}</div>
-                  ))}
+            data.fields.map((field, index) => {
+              if (isMinimized && index >= MAX_VISIBLE_FIELDS) return null;
+              return (
+                <div
+                  key={field.name}
+                  className={cn(
+                    "flex items-center gap-2 py-2 text-sm text-foreground",
+                    field.isPrimary && "text-primary",
+                  )}
+                >
+                  <div className="flex items-center gap-1 min-w-[calc(1.25rem*2+0.25rem)]">
+                    {getFieldIcons(field)}
+                  </div>
+                  <span className="flex-1 truncate max-w-44">{field.name}</span>
+                  <span className="text-xs text-muted-foreground font-mono truncate">
+                    {field.type}
+                  </span>
                 </div>
-                <span className="flex-1 truncate max-w-44">{field.name}</span>
-                <span className="text-xs text-muted-foreground font-mono truncate">
-                  {field.type}
-                </span>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
         <Handle
