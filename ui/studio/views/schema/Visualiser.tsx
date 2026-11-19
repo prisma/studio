@@ -180,7 +180,7 @@ const TableNode: FC<NodeProps<SchemaNodeData>> = memo(({ data }) => {
                     <SquareArrowRight data-icon="inline-start" />
                   </a>
                 </Button>
-                <Button asChild variant="ghost" size="icon" className="size-7">
+                <Button type ="button" variant="ghost" size="icon" className="size-7">
                   <a
                     aria-label={`Minimize Labels ${data.label}`}
                     rel="noopener noreferrer"
