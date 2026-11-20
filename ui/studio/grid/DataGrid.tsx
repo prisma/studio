@@ -1613,7 +1613,11 @@ export function DataGrid(props: DataGridProps) {
           hasRowSelection
             ? getSelectedRowCellCount()
             : hasCellSelection && selectionRange
-              ? getRangeCellCount(selectionRange)
+              ? getRangeCellCount({
+                  columnCount: selectableColumnIds.length,
+                  range: selectionRange,
+                  rowCount: rows.length,
+                })
               : 1,
         ),
         true,
@@ -2601,7 +2605,11 @@ export function DataGrid(props: DataGridProps) {
       const selectedText = getSelectedClipboardText();
       if (selectedText) {
         return {
-          cellCount: getRangeCellCount(selectionRange),
+          cellCount: getRangeCellCount({
+            columnCount: selectableColumnIds.length,
+            range: selectionRange,
+            rowCount: rows.length,
+          }),
           text: selectedText,
         };
       }
@@ -2624,6 +2632,7 @@ export function DataGrid(props: DataGridProps) {
     getSelectedRowClipboardText,
     getSingleCellClipboardText,
     hasRowSelection,
+    rows.length,
     selectableColumnIds.length,
     selectionRange,
     table,
