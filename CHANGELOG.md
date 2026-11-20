@@ -1,5 +1,15 @@
 # @prisma/studio-core
 
+## 0.35.0
+
+### Minor Changes
+
+- d608b89: Refresh Studio's visual design with Prisma brand colours and Eclipse styling: DM Sans/DM Mono type, the official Prisma wordmark, an inset page card on a Console-matching canvas, quieter toolbars and controls, shared column badges, a Console-style canvas zoom bar, a subtle Prism-ray loading line, an in-cell "Copied" confirmation and a calmer date/time editor. Hosts should load DM Sans and DM Mono; Studio falls back to the system font otherwise.
+
+### Patch Changes
+
+- 3e8ef3b: Cap the SQL editor panel height so a long query scrolls inside the editor instead of pushing the `Run SQL` button off screen or collapsing the result grid to zero height.
+
 ## 0.34.1
 
 ### Patch Changes
