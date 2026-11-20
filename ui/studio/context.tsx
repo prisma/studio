@@ -101,8 +101,7 @@ function prefersReducedMotion(): boolean {
 }
 
 function getViewTransitionStarter():
-  | DocumentWithViewTransition["startViewTransition"]
-  | undefined {
+  DocumentWithViewTransition["startViewTransition"] | undefined {
   if (typeof document === "undefined" || prefersReducedMotion()) {
     return undefined;
   }
@@ -488,8 +487,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
   const getOrCreateRowsCollection = useCallback(
     <T,>(key: string, factory: () => T): T => {
       const existingCollection = rowsCollectionCacheRef.current.get(key) as
-        | T
-        | undefined;
+        T | undefined;
 
       if (existingCollection != null) {
         return existingCollection;

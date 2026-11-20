@@ -148,6 +148,12 @@ vi.mock("../hooks/use-navigation-table-list", () => ({
   },
 }));
 
+const openCommandPaletteMock = vi.fn<() => void>();
+
+vi.mock("./CommandPalette", () => ({
+  useCommandPalette: () => ({ open: openCommandPaletteMock }),
+}));
+
 vi.mock("./context", () => ({
   MAX_NAVIGATION_WIDTH: 520,
   MIN_NAVIGATION_WIDTH: 192,
@@ -265,6 +271,7 @@ function getSearchBlock(
 describe("Navigation", () => {
   beforeEach(() => {
     isDarkMode = false;
+    openCommandPaletteMock.mockReset();
     useHasMigrationHistoryMock.mockReturnValue(false);
     setNavigationWidthMock.mockReset();
     refetchIntrospectionMock.mockReset();
@@ -367,7 +374,73 @@ describe("Navigation", () => {
     window.location.hash = "";
   });
 
-  it("uses the dark-mode Prisma logo asset when Studio is dark", () => {
+  it("hints at the command palette at the bottom of the sidebar", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const sidebar = container.querySelector(
+      '[data-testid="studio-navigation"]',
+    );
+    const hint = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Open command menu"]',
+    );
+
+    // Last thing in the sidebar, pinned while the lists scroll.
+    expect(hint).not.toBeNull();
+    expect(sidebar?.lastElementChild?.contains(hint)).toBe(true);
+    expect(sidebar?.lastElementChild?.className).toContain("sticky");
+    expect(hint?.textContent).toContain("Commands");
+    expect(hint?.querySelector("kbd")?.textContent).toMatch(/(⌘|Ctrl) ?K/);
+
+    act(() => {
+      hint!.click();
+    });
+    expect(openCommandPaletteMock).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("keeps sticky sidebar headers from sliding over each other", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    // The schema picker scrolls away with the lists; only section headings stick.
+    const schemaPicker = container
+      .querySelector('[role="combobox"]')
+      ?.closest("div.px-4");
+    expect(schemaPicker).not.toBeNull();
+    expect(schemaPicker?.className).not.toContain("sticky");
+
+    // Sticky headings are opaque, so the list scrolling under them never shows through.
+    const stickyHeadings = [
+      ...container.querySelectorAll<HTMLElement>(".sticky.top-0"),
+    ];
+    expect(stickyHeadings.length).toBeGreaterThan(0);
+    for (const heading of stickyHeadings) {
+      expect(heading.className).toContain("bg-canvas");
+      expect(heading.className).not.toContain("backdrop-blur");
+    }
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("uses the white Prisma wordmark when Studio is dark", () => {
     const lightContainer = document.createElement("div");
     document.body.appendChild(lightContainer);
     const lightRoot = createRoot(lightContainer);
@@ -377,7 +450,7 @@ describe("Navigation", () => {
     });
 
     const lightLogo = lightContainer.querySelector<HTMLImageElement>(
-      'img[alt="Prisma Logo"]',
+      'img[data-testid="studio-logo"]',
     );
 
     expect(lightLogo).not.toBeNull();
@@ -397,19 +470,59 @@ describe("Navigation", () => {
     });
 
     const logo = darkContainer.querySelector<HTMLImageElement>(
-      'img[alt="Prisma Logo"]',
+      'img[data-testid="studio-logo"]',
     );
 
     expect(logo).not.toBeNull();
+    // prisma.io/brand: the all-white lockup is the dark-background variant.
     expect(logo?.getAttribute("src")).not.toBe(lightLogo?.getAttribute("src"));
-    expect(decodeURIComponent(logo?.getAttribute("src") ?? "")).toContain(
-      "fill='white'",
+    expect(decodeURIComponent(logo?.getAttribute("src") ?? "")).not.toMatch(
+      /#04D5E7/i,
     );
 
     act(() => {
       darkRoot.unmount();
     });
     darkContainer.remove();
+  });
+
+  it("follows the Eclipse type roles: label-style group headings, one body size per list", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<Navigation />);
+    });
+
+    const headings = [...container.querySelectorAll("h2")];
+    expect(headings.map((heading) => heading.textContent)).toContain("Tables");
+    for (const heading of headings) {
+      for (const utility of [
+        "font-mono",
+        "text-2xs",
+        "uppercase",
+        "tracking-loose",
+        "text-muted-foreground",
+      ]) {
+        expect(heading.className).toContain(utility);
+      }
+    }
+
+    const links = [...container.querySelectorAll<HTMLAnchorElement>("a")];
+    const tableLink = links.find(
+      (link) => link.textContent?.trim() === "all_data_types",
+    );
+    const viewLink = links.find(
+      (link) => link.textContent?.trim() === "Console",
+    );
+    expect(tableLink?.className).toContain("text-sm");
+    expect(viewLink?.className).toContain("text-sm");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
   });
 
   it("renders table navigation hitboxes on the actual links", () => {

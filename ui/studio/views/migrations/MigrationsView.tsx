@@ -1,9 +1,8 @@
 import dayjs from "dayjs";
-import { GitBranch, TriangleAlert } from "lucide-react";
+import { TriangleAlert } from "lucide-react";
 import { useMemo } from "react";
 
 import type { StudioMigration } from "../../../../data/migrations";
-import { Badge } from "../../../components/ui/badge";
 import { Skeleton } from "../../../components/ui/skeleton";
 import { useMigrations } from "../../../hooks/use-migrations";
 import { useNavigation } from "../../../hooks/use-navigation";
@@ -43,9 +42,9 @@ function MigrationListItem(props: {
   return (
     <button
       className={cn(
-        "group flex w-full flex-col gap-1 rounded-lg border border-transparent px-3 py-2 text-left transition-colors",
-        "hover:bg-accent/60",
-        isSelected && "border-border bg-accent shadow-sm",
+        "group flex w-full flex-col gap-1 rounded-md px-3 py-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        "hover:bg-secondary",
+        isSelected && "bg-accent ring-1 ring-inset ring-border",
       )}
       data-testid={`migration-list-item-${migration.id}`}
       onClick={onSelect}
@@ -54,10 +53,8 @@ function MigrationListItem(props: {
       <div className="flex items-center gap-2">
         <span
           className={cn(
-            "flex h-5 min-w-7 items-center justify-center rounded-full px-1 font-mono text-[10px] font-semibold",
-            isSelected
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted text-muted-foreground",
+            "min-w-7 font-mono text-2xs tabular-nums",
+            isSelected ? "text-foreground" : "text-muted-foreground",
           )}
         >
           #{index}
@@ -66,16 +63,19 @@ function MigrationListItem(props: {
           {migration.displayName}
         </span>
         {migration.isDestructive && (
-          <TriangleAlert className="size-3.5 shrink-0 text-amber-500" />
+          <TriangleAlert
+            aria-label="Destructive migration"
+            className="size-3.5 shrink-0 text-muted-foreground"
+          />
         )}
       </div>
       <div className="flex items-center gap-2 pl-9">
-        <span className="text-[10px] text-muted-foreground">
+        <span className="text-xs text-muted-foreground">
           {migration.appliedAt
             ? dayjs(migration.appliedAt).format("MMM D, HH:mm:ss")
             : "unknown time"}
         </span>
-        <span className="text-[10px] text-muted-foreground/70">
+        <span className="text-xs text-muted-foreground/70">
           {migration.operations.length} op
           {migration.operations.length === 1 ? "" : "s"}
         </span>
@@ -86,13 +86,11 @@ function MigrationListItem(props: {
             <span
               key={chip}
               className={cn(
-                "rounded-full px-1.5 py-px font-mono text-[9px]",
-                chip.startsWith("+") &&
-                  "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-                chip.startsWith("−") &&
-                  "bg-rose-500/15 text-rose-700 dark:text-rose-300",
-                chip.startsWith("~") &&
-                  "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+                // Light pill in the exact brand colour; ink text keeps it readable.
+                "rounded-full px-1.5 py-px font-mono text-2xs text-foreground/80",
+                chip.startsWith("+") && "bg-prism-cyan/15",
+                chip.startsWith("−") && "bg-prism-red/12",
+                chip.startsWith("~") && "bg-prism-yellow/25",
               )}
             >
               {chip}
@@ -136,14 +134,12 @@ export function MigrationsView(_props: ViewProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      <StudioHeader>
-        <div className="flex items-center gap-2">
-          <GitBranch className="size-4 text-muted-foreground" />
-          <span className="text-sm font-medium">Migrations</span>
-          {migrations.length > 0 && (
-            <Badge variant="secondary">{migrations.length}</Badge>
-          )}
-        </div>
+      <StudioHeader title="Migrations">
+        {migrations.length > 0 && (
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {migrations.length}
+          </span>
+        )}
       </StudioHeader>
 
       {!hasPrismaNextMigrations ? (
@@ -172,7 +168,7 @@ export function MigrationsView(_props: ViewProps) {
       ) : (
         <div className="flex min-h-0 flex-1">
           <aside
-            className="flex w-72 shrink-0 flex-col gap-1 overflow-y-auto border-r border-border bg-card/40 p-2"
+            className="flex w-72 shrink-0 flex-col gap-px overflow-y-auto border-r border-border p-2"
             data-testid="migration-list"
           >
             {migrations.map((migration, position) => (

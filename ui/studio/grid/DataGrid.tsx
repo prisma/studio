@@ -71,6 +71,7 @@ import type { CellProps } from "../cell/Cell";
 import {
   buildClipboardText,
   buildPasteChanges,
+  getRangeCellCount,
   type GridCellCoordinate,
   type GridPasteChange,
   isCellInRange,
@@ -89,6 +90,12 @@ import {
   computeColumnVirtualizationWindow,
   DISABLED_COLUMN_VIRTUALIZATION_WINDOW,
 } from "./column-virtualization";
+import {
+  COPY_FEEDBACK_DURATION_MS,
+  DataGridCopyFeedback,
+  getCopyFeedbackLabel,
+  type GridCopyFeedback,
+} from "./DataGridCopyFeedback";
 import { DataGridLoadingBar } from "./DataGridLoadingBar";
 import { DataGridPagination } from "./DataGridPagination";
 import { getColumnPinningStyles } from "./features/column-pinning";
@@ -680,6 +687,36 @@ export function DataGrid(props: DataGridProps) {
   );
   const selectedRowIdsKey = selectedRowIds.join("|");
   const selectionStartRef = useRef<GridCellCoordinate | null>(null);
+  const gridContentRef = useRef<HTMLDivElement | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState<GridCopyFeedback | null>(
+    null,
+  );
+  const copyFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const showCopyFeedback = useCallback(
+    (cellSelector: string | null, label: string, ok: boolean) => {
+      if (copyFeedbackTimerRef.current) {
+        clearTimeout(copyFeedbackTimerRef.current);
+      }
+
+      setCopyFeedback({ cellSelector, key: Date.now(), label, ok });
+      copyFeedbackTimerRef.current = setTimeout(() => {
+        setCopyFeedback(null);
+        copyFeedbackTimerRef.current = null;
+      }, COPY_FEEDBACK_DURATION_MS);
+    },
+    [],
+  );
+
+  useEffect(
+    () => () => {
+      if (copyFeedbackTimerRef.current) {
+        clearTimeout(copyFeedbackTimerRef.current);
+      }
+    },
+    [],
+  );
   const pointerSelectionRef = useRef<{
     anchor: GridCellCoordinate;
     base: GridCellCoordinate;
@@ -1402,6 +1439,13 @@ export function DataGrid(props: DataGridProps) {
     table,
   ]);
 
+  const getSelectedRowCellCount = useCallback(
+    () =>
+      table.getRowModel().rows.filter((row) => row.getIsSelected()).length *
+      selectableColumnIds.length,
+    [selectableColumnIds.length, table],
+  );
+
   const focusedCellCopyTarget = useMemo(() => {
     if (!focusedCell) {
       return null;
@@ -1561,6 +1605,23 @@ export function DataGrid(props: DataGridProps) {
 
       event.preventDefault();
       event.clipboardData?.setData("text/plain", text);
+      showCopyFeedback(
+        focusedCell
+          ? `td[data-grid-visual-row-index="${focusedCell.rowIndex}"][data-grid-column-id="${CSS.escape(focusedCell.columnId)}"]`
+          : null,
+        getCopyFeedbackLabel(
+          hasRowSelection
+            ? getSelectedRowCellCount()
+            : hasCellSelection && selectionRange
+              ? getRangeCellCount({
+                  columnCount: selectableColumnIds.length,
+                  range: selectionRange,
+                  rowCount: rows.length,
+                })
+              : 1,
+        ),
+        true,
+      );
     };
 
     const handlePaste = (event: ClipboardEvent) => {
@@ -1626,15 +1687,18 @@ export function DataGrid(props: DataGridProps) {
     };
   }, [
     canWriteToCell,
+    focusedCell,
     focusedCellCopyTarget,
     getFocusedCellClipboardText,
     getSelectedClipboardText,
+    getSelectedRowCellCount,
     getSelectedRowClipboardText,
     hasRowSelection,
     onPasteSelection,
     rows,
     selectableColumnIds,
     selectionRange,
+    showCopyFeedback,
   ]);
 
   const setRowSelection = useCallback(
@@ -2494,16 +2558,21 @@ export function DataGrid(props: DataGridProps) {
     );
   }
 
-  const getContextMenuCopyText = useCallback((): string => {
+  const getContextMenuCopy = useCallback((): {
+    cellCount: number;
+    text: string;
+  } => {
+    const nothing = { cellCount: 0, text: "" };
+
     if (!contextMenuTarget) {
-      return "";
+      return nothing;
     }
 
     const { columnId, rowIndex } = contextMenuTarget;
     const row = table.getRowModel().rows[rowIndex];
 
     if (!row) {
-      return "";
+      return nothing;
     }
 
     const isRowSelectorCell = columnId === ROW_SELECTOR_COLUMN_ID;
@@ -2518,38 +2587,53 @@ export function DataGrid(props: DataGridProps) {
         rowIndex,
       });
 
-    if (isRowSelectorCell) {
-      if (hasRowSelection && isRowSelected) {
-        return getSelectedRowClipboardText();
-      }
-
-      return getRowClipboardText(rowIndex);
+    if (hasRowSelection && isRowSelected) {
+      return {
+        cellCount: getSelectedRowCellCount(),
+        text: getSelectedRowClipboardText(),
+      };
     }
 
-    if (hasRowSelection && isRowSelected) {
-      return getSelectedRowClipboardText();
+    if (isRowSelectorCell) {
+      return {
+        cellCount: selectableColumnIds.length,
+        text: getRowClipboardText(rowIndex),
+      };
     }
 
     if (isSelected) {
       const selectedText = getSelectedClipboardText();
       if (selectedText) {
-        return selectedText;
+        return {
+          cellCount: getRangeCellCount({
+            columnCount: selectableColumnIds.length,
+            range: selectionRange,
+            rowCount: rows.length,
+          }),
+          text: selectedText,
+        };
       }
     }
 
     if (columnIndex == null) {
-      return "";
+      return nothing;
     }
 
-    return getSingleCellClipboardText(rowIndex, columnIndex);
+    return {
+      cellCount: 1,
+      text: getSingleCellClipboardText(rowIndex, columnIndex),
+    };
   }, [
     columnIndexById,
     contextMenuTarget,
     getRowClipboardText,
     getSelectedClipboardText,
+    getSelectedRowCellCount,
     getSelectedRowClipboardText,
     getSingleCellClipboardText,
     hasRowSelection,
+    rows.length,
+    selectableColumnIds.length,
     selectionRange,
     table,
   ]);
@@ -2581,23 +2665,38 @@ export function DataGrid(props: DataGridProps) {
 
   const handleContextMenuCopyAction = useCallback(() => {
     setGridInteractionSuppressionWindow();
-    const copyText = getContextMenuCopyText();
+    const { cellCount, text: copyText } = getContextMenuCopy();
 
     if (!copyText && copyText !== "") {
       return;
     }
 
-    void navigator.clipboard.writeText(copyText).catch((error) => {
-      console.error("Failed to copy to clipboard:", error);
-    });
-  }, [getContextMenuCopyText]);
+    const cellSelector = contextMenuTarget
+      ? `td[data-grid-row-index="${contextMenuTarget.rowIndex}"][data-grid-column-id="${CSS.escape(contextMenuTarget.columnId)}"]`
+      : null;
+
+    void navigator.clipboard
+      .writeText(copyText)
+      .then(() => {
+        showCopyFeedback(cellSelector, getCopyFeedbackLabel(cellCount), true);
+      })
+      .catch((error) => {
+        console.error("Failed to copy to clipboard:", error);
+        showCopyFeedback(cellSelector, "Couldn't copy", false);
+      });
+  }, [contextMenuTarget, getContextMenuCopy, showCopyFeedback]);
 
   return (
     <>
       <div
         data-studio="content"
+        ref={gridContentRef}
         className="flex-1 w-0 h-0 min-h-0 min-w-full flex flex-col relative bg-background/50"
       >
+        <DataGridCopyFeedback
+          containerRef={gridContentRef}
+          feedback={copyFeedback}
+        />
         <div>
           {displayLoader && (
             <DataGridLoadingBar className="absolute -top-px left-0 right-0" />

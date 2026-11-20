@@ -11,6 +11,7 @@ This document is normative for the Studio `Cmd/Ctrl+K` command palette.
 ## UI Contract
 
 - `Cmd+K` and `Ctrl+K` MUST open the palette from any Studio view and focus the search input immediately.
+- The sidebar MUST end with a `Commands` hint row, pinned to the bottom, that shows the platform shortcut (`⌘K` on macOS, `Ctrl K` elsewhere) and opens the palette through `useCommandPalette().open()` when clicked. It MUST NOT keep any palette state of its own.
 - The palette shell MUST be composed from the standard ShadCN [`Dialog`](../ui/components/ui/dialog.tsx) and [`Command`](../ui/components/ui/command.tsx) primitives. Custom logic MAY shape the sections and query interpretation, but MUST NOT replace the modal shell or command-list primitives with bespoke markup.
 - The top section MUST contain actions registered by the active view. In table view this includes row search, AI filtering, staged save/discard actions when edits are pending, insert row, refresh, and pagination actions.
 - The next section MUST show table navigation results for the active schema. With no query it shows the first 3 tables; with a query it shows the top 3 matches.

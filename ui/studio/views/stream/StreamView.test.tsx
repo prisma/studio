@@ -2420,7 +2420,7 @@ describe("StreamView", () => {
     expect(
       container.querySelector('[data-testid="stream-follow-mode-toggle"]')
         ?.className,
-    ).toContain("rounded-sm");
+    ).toContain("rounded-md");
     expect(
       container.querySelector('[data-testid="stream-follow-mode-toggle"]')
         ?.className,
@@ -2428,7 +2428,7 @@ describe("StreamView", () => {
     expect(tailFollowButton?.className).toContain(
       "data-[state=on]:bg-background",
     );
-    expect(liveFollowButton?.className).toContain("h-8");
+    expect(liveFollowButton?.className).toContain("h-7");
     expect(
       container
         .querySelector<HTMLButtonElement>(
@@ -2443,7 +2443,7 @@ describe("StreamView", () => {
     expect(footerSummary?.textContent).toContain("12,345 events");
     expect(footerSummary?.textContent).toContain("1.5 GB total");
     expect(footerSummary?.className).toContain("tabular-nums");
-    expect(footer?.firstElementChild?.className).toContain("justify-start");
+    expect(footer?.firstElementChild?.className).toContain("justify-between");
     expect(
       container.querySelector('[data-testid="stream-jump-start-button"]'),
     ).not.toBeNull();

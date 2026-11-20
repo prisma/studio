@@ -1,9 +1,20 @@
 import { Slot } from "@radix-ui/react-slot";
-import { RefreshCw, Search, Table2, Waves } from "lucide-react";
+import {
+  Activity,
+  Code2,
+  History,
+  Network,
+  RefreshCw,
+  ScrollText,
+  Search,
+  Table2,
+  Waves,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import PrismaLogo from "../../assets/prisma.svg";
-import PrismaLightSymbol from "../../assets/prisma-light-symbol.svg";
+import PrismaWordmark from "../../assets/prisma-wordmark.svg";
+import PrismaWordmarkWhite from "../../assets/prisma-wordmark-white.svg";
+import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
   Select,
@@ -19,7 +30,9 @@ import { useNavigation } from "../hooks/use-navigation";
 import { useNavigationTableList } from "../hooks/use-navigation-table-list";
 import { useStreams } from "../hooks/use-streams";
 import { useUiState } from "../hooks/use-ui-state";
+import { isMacPlatform } from "../lib/platform";
 import { cn } from "../lib/utils";
+import { useCommandPalette } from "./CommandPalette";
 import {
   MAX_NAVIGATION_WIDTH,
   MIN_NAVIGATION_WIDTH,
@@ -99,7 +112,6 @@ export function Navigation({ className }: NavigationProps) {
     errorState != null && !hasResolvedIntrospection;
   const hasRecoverableIntrospectionWarning =
     errorState != null && hasResolvedIntrospection;
-  const prismaLogoSrc = isDarkMode ? PrismaLightSymbol : PrismaLogo;
   const resolvedNavigationWidth = draftNavigationWidth ?? navigationWidth;
   const {
     hasStreamsServer,
@@ -493,11 +505,16 @@ export function Navigation({ className }: NavigationProps) {
   );
 
   const sideBarClasses = cn(
-    "relative flex shrink-0 flex-col overflow-y-auto min-h-full h-0 text-card-foreground shadow-xs rounded-lg",
+    "relative flex shrink-0 flex-col overflow-y-auto min-h-full h-0 text-card-foreground",
+    // Thin scrollbar that only appears on hover, so it never sits against the page edge.
+    "[scrollbar-width:thin] [scrollbar-color:transparent_transparent] hover:[scrollbar-color:var(--border)_transparent]",
     className,
   );
+  // Views read as product chrome (sans + icon); tables are data identifiers (mono).
   const navigationItemClasses =
-    "py-1 font-mono text-xs text-foreground/60 hover:text-foreground transition-all cursor-pointer data-[active=true]:bg-accent data-[active=true]:foreground data-[active=true]:text-foreground";
+    "py-1.5 font-sans text-sm font-normal text-muted-foreground hover:bg-sidebar-active/50 hover:text-foreground transition-colors cursor-pointer data-[active=true]:bg-sidebar-active data-[active=true]:text-foreground data-[active=true]:font-medium outline-none focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground data-[active=true]:[&_svg]:text-foreground";
+  const tableItemClasses =
+    "py-1 font-mono text-sm font-normal text-muted-foreground hover:bg-sidebar-active/50 hover:text-foreground transition-colors cursor-pointer data-[active=true]:bg-sidebar-active data-[active=true]:text-foreground data-[active=true]:font-medium outline-none focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
 
   return (
     <div
@@ -505,9 +522,24 @@ export function Navigation({ className }: NavigationProps) {
       data-testid="studio-navigation"
       style={{ width: `${resolvedNavigationWidth}px` }}
     >
-      <div className="flex items-center gap-2 pt-4 pb-0.5 px-4">
-        <img src={prismaLogoSrc} alt="Prisma Logo" className="h-6 w-auto" />
-        <span className="text-lg font-medium font-sans">Prisma Studio</span>
+      {/*
+        Product lockup: the official wordmark (prisma.io/brand; white variant on dark)
+        followed by the product name, sized off the wordmark's own geometry so the
+        two read as one line. At a 20px wordmark (67-unit viewBox, k = 20/67):
+        - cap height 38.8k = 11.6px -> DM Sans (cap 0.7em) at 16.5px matches "P"
+        - baseline 52.7k = 15.7px -> 16.5px text on a 20px line box lands at 15.6px
+        - word space ~0.3em = 5px, weight 500 in the same ink as "Prisma"
+      */}
+      <div className="flex min-w-0 items-start gap-[5px] px-4 pt-4 pb-1">
+        <img
+          src={isDarkMode ? PrismaWordmarkWhite : PrismaWordmark}
+          alt="Prisma"
+          className="h-5 w-auto shrink-0"
+          data-testid="studio-logo"
+        />
+        <span className="truncate font-sans text-[16.5px] leading-5 font-medium tracking-[-0.01em] text-foreground">
+          Studio
+        </span>
       </div>
 
       {hasDatabase ? (
@@ -527,6 +559,7 @@ export function Navigation({ className }: NavigationProps) {
                 })}
                 className="w-full"
               >
+                <Network aria-hidden />
                 Visualizer
               </a>
             </Navigation.Item>
@@ -543,6 +576,7 @@ export function Navigation({ className }: NavigationProps) {
                   })}
                   className="w-full"
                 >
+                  <Activity aria-hidden />
                   Queries
                 </a>
               </Navigation.Item>
@@ -559,6 +593,7 @@ export function Navigation({ className }: NavigationProps) {
                 })}
                 className="w-full"
               >
+                <ScrollText aria-hidden />
                 Console
               </a>
             </Navigation.Item>
@@ -574,6 +609,7 @@ export function Navigation({ className }: NavigationProps) {
                 })}
                 className="w-full"
               >
+                <Code2 aria-hidden />
                 SQL
               </a>
             </Navigation.Item>
@@ -591,6 +627,7 @@ export function Navigation({ className }: NavigationProps) {
                   className="w-full"
                   data-testid="navigation-migrations-item"
                 >
+                  <History aria-hidden />
                   Migrations
                 </a>
               </Navigation.Item>
@@ -671,7 +708,7 @@ export function Navigation({ className }: NavigationProps) {
                             ? isHighlighted
                             : isCurrentTable
                         }
-                        className={navigationItemClasses}
+                        className={tableItemClasses}
                         onMouseEnter={() => {
                           if (!tableSearchUiState.isOpen) {
                             return;
@@ -755,7 +792,7 @@ export function Navigation({ className }: NavigationProps) {
               <Navigation.Item
                 key={stream.name}
                 asChild
-                className={navigationItemClasses}
+                className={tableItemClasses}
                 data-search-highlighted={
                   streamSearchUiState.isOpen && index === highlightedStreamIndex
                     ? "true"
@@ -810,17 +847,47 @@ export function Navigation({ className }: NavigationProps) {
         </Navigation.SearchableBlock>
       )}
 
+      {/* Wide invisible grab area; only a hairline at the page edge shows on hover or drag. */}
       <button
         aria-label="Resize navigation"
         className={cn(
-          "absolute inset-y-0 right-0 flex w-3 cursor-col-resize touch-none items-stretch justify-center outline-none",
-          isNavigationResizing && "bg-foreground/5",
+          "absolute top-[18px] bottom-[18px] right-0 flex w-3 cursor-col-resize touch-none items-stretch justify-end outline-none",
+          "after:w-px after:bg-transparent after:transition-colors after:duration-150 after:content-['']",
+          "hover:after:bg-foreground/20 focus-visible:after:bg-foreground/30",
+          isNavigationResizing && "after:bg-foreground/30",
         )}
         data-testid="navigation-resize-handle"
         onKeyDown={handleResizeKeyDown}
         onPointerDown={handleResizePointerDown}
         type="button"
       />
+
+      <CommandMenuHint />
+    </div>
+  );
+}
+
+/**
+ * Quiet pointer to the command palette, pinned to the bottom of the sidebar.
+ * The palette (themes, views, actions) is otherwise only reachable by shortcut.
+ */
+function CommandMenuHint() {
+  const commandPalette = useCommandPalette();
+
+  return (
+    <div className="sticky bottom-0 mt-auto bg-canvas px-2 pt-2 pb-3">
+      <Button
+        aria-label="Open command menu"
+        className="h-auto w-full justify-between px-2.5 py-1.5 font-normal text-muted-foreground hover:bg-sidebar-active/50 hover:text-foreground focus-visible:bg-sidebar-active/50 focus-visible:text-foreground"
+        onClick={() => commandPalette.open()}
+        type="button"
+        variant="ghost"
+      >
+        <span className="truncate">Commands</span>
+        <kbd className="shrink-0 rounded-sm border border-border bg-background px-1 py-px font-mono text-2xs text-muted-foreground">
+          {isMacPlatform() ? "⌘K" : "Ctrl K"}
+        </kbd>
+      </Button>
     </div>
   );
 }
@@ -829,7 +896,7 @@ const Block = ({
   className,
   label,
   children,
-  icon: Icon = Table2,
+  icon: _icon,
   ...props
 }: React.HTMLAttributes<HTMLDivElement> & {
   icon?: React.ComponentType<{
@@ -840,11 +907,12 @@ const Block = ({
 }) => {
   return (
     <div className={className} {...props}>
-      <div className="flex items-center gap-1 pt-4 pb-2 px-4 sticky top-0  backdrop-blur-sm">
-        <Icon size={16} className="text-muted-foreground/60" />
-        <h2 className="text-sm font-medium">{label}</h2>
+      <div className="flex items-center gap-1.5 pt-4 pb-1 px-4 sticky top-0 z-10 bg-canvas">
+        <h2 className="font-mono text-2xs font-normal uppercase tracking-loose text-muted-foreground">
+          {label}
+        </h2>
       </div>
-      <nav aria-label={label} className="flex flex-col gap-px pb-3 p-2">
+      <nav aria-label={label} className="flex flex-col gap-px pb-2 px-2 pt-1">
         {children}
       </nav>
     </div>
@@ -855,7 +923,7 @@ const SearchableBlock = ({
   blockKey,
   className,
   children,
-  icon: Icon,
+  icon: _icon,
   isSearchOpen,
   onCloseSearch,
   onOpenSearch,
@@ -895,15 +963,16 @@ const SearchableBlock = ({
       data-testid={`navigation-search-block-${blockKey}`}
       {...props}
     >
-      <div className="relative flex items-center gap-1 pt-4 pb-2 px-4 sticky top-0 backdrop-blur-sm min-h-10">
+      <div className="relative flex items-center gap-1 pt-4 pb-1 px-4 sticky top-0 z-10 bg-canvas min-h-10">
         <div
           className={cn(
             "flex items-center gap-1 transition-opacity duration-200",
             isSearchOpen && "opacity-0 pointer-events-none",
           )}
         >
-          <Icon size={16} className="text-muted-foreground/60" />
-          <h2 className="text-sm font-medium">{title}</h2>
+          <h2 className="font-mono text-2xs font-normal uppercase tracking-loose text-muted-foreground">
+            {title}
+          </h2>
         </div>
 
         <div
@@ -916,7 +985,7 @@ const SearchableBlock = ({
         >
           <button
             aria-label={searchAriaLabel}
-            className="flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             onClick={onOpenSearch}
             type="button"
           >
@@ -924,7 +993,7 @@ const SearchableBlock = ({
           </button>
           <button
             aria-label={refreshAriaLabel}
-            className="flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             onClick={onRefresh}
             type="button"
           >
@@ -941,9 +1010,14 @@ const SearchableBlock = ({
               : "opacity-0 scale-x-0 pointer-events-none",
           )}
         >
+          {/* Same pill as the table search: round, with the icon inside. */}
+          <Search
+            aria-hidden
+            className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
+          />
           <Input
             aria-label={searchAriaLabel}
-            className="h-9 w-full bg-background shadow-none"
+            className="h-8 w-full rounded-full bg-background pl-8 shadow-none"
             onChange={(event) => {
               setSearchTerm(event.currentTarget.value);
             }}
@@ -961,7 +1035,7 @@ const SearchableBlock = ({
           />
         </div>
       </div>
-      <nav aria-label={title} className="flex flex-col gap-px pb-3 p-2">
+      <nav aria-label={title} className="flex flex-col gap-px pb-2 px-2 pt-1">
         {children}
       </nav>
     </div>
@@ -1017,7 +1091,7 @@ const SchemaSelector = () => {
   const isInitialIntrospectionLoad = isFetching && !hasResolvedIntrospection;
 
   return (
-    <div className="flex items-center gap-1 pt-4 pb-2 px-4 sticky top-0 backdrop-blur-sm">
+    <div className="flex items-center gap-1 pt-4 pb-2 px-4">
       <Select
         value={schemaParam}
         onValueChange={(schemaParam) => {

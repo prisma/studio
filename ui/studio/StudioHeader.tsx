@@ -8,6 +8,8 @@ interface StudioHeaderProps {
   children?: React.ReactNode;
   className?: string;
   endContent?: React.ReactNode;
+  /** Names the current view so every screen says where you are. */
+  title?: string;
 }
 
 export function StudioHeader(props: StudioHeaderProps) {
@@ -15,7 +17,9 @@ export function StudioHeader(props: StudioHeaderProps) {
   return (
     <div
       className={cn(
-        "bg-studio-header-background flex w-full rounded-t-lg border-b border-border bg-card p-2 py-3",
+        "flex w-full border-b border-border bg-card px-2 py-2.5",
+        // Header icons at 14px with a finer stroke, in scale with 14px labels.
+        "[&_button_svg]:size-3.5 [&_button_svg]:stroke-[1.75]",
         props.className,
       )}
     >
@@ -25,8 +29,9 @@ export function StudioHeader(props: StudioHeaderProps) {
             aria-label={
               isNavigationOpen ? "Close navigation" : "Open navigation"
             }
-            variant="outline"
+            variant="ghost"
             size="icon"
+            className="size-8 text-muted-foreground hover:text-foreground"
             onClick={toggleNavigation}
           >
             {isNavigationOpen ? (
@@ -35,6 +40,15 @@ export function StudioHeader(props: StudioHeaderProps) {
               <PanelLeftOpen data-icon="inline-start" />
             )}
           </Button>
+          {props.title ? (
+            // Long table and stream names truncate so the controls stay usable.
+            <h1
+              className="min-w-0 truncate pr-1 font-sans text-base font-semibold text-foreground"
+              title={props.title}
+            >
+              {props.title}
+            </h1>
+          ) : null}
           {props.children}
         </div>
 

@@ -389,22 +389,22 @@ describe("QueriesView", () => {
     expect(
       tooltip
         ?.querySelector('[data-testid="queries-activity-tooltip-queries"]')
-        ?.querySelector(".bg-sky-500"),
+        ?.querySelector(".bg-prism-cyan"),
     ).not.toBeNull();
     expect(
       tooltip
         ?.querySelector('[data-testid="queries-activity-tooltip-queries"]')
-        ?.querySelector(".text-sky-600"),
+        ?.querySelector(".text-foreground"),
     ).not.toBeNull();
     expect(
       tooltip
         ?.querySelector('[data-testid="queries-activity-tooltip-latency"]')
-        ?.querySelector(".bg-emerald-500"),
+        ?.querySelector(".bg-prism-yellow"),
     ).not.toBeNull();
     expect(
       tooltip
         ?.querySelector('[data-testid="queries-activity-tooltip-latency"]')
-        ?.querySelector(".text-emerald-600"),
+        ?.querySelector(".text-foreground"),
     ).not.toBeNull();
 
     const oneHourButton = container.querySelector(

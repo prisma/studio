@@ -214,8 +214,7 @@ const FilterListItems = ({
             let showLeadingOp = false;
             let leadingOpVal: "and" | "or" | undefined;
             let onLeadingOpChangeFn:
-              | ((value: "and" | "or") => void)
-              | undefined;
+              ((value: "and" | "or") => void) | undefined;
             let isLeadingOpTargetLast = false;
 
             if (index > 0) {

@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { SchemaVisualization } from "./Visualiser";
+import { getKeyTooltipText, SchemaVisualization } from "./Visualiser";
 
 function cloneMockValue<T>(value: T): T {
   return structuredClone(value);
@@ -146,6 +146,9 @@ vi.mock("reactflow", async () => {
     Controls: () => null,
     Handle: () => null,
     MiniMap: () => null,
+    Panel: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+    useReactFlow: () => ({ fitView() {}, zoomIn() {}, zoomOut() {} }),
+    useViewport: () => ({ x: 0, y: 0, zoom: 1 }),
     Position: {
       Bottom: "bottom",
       Left: "left",
@@ -199,6 +202,24 @@ async function flush(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
+
+describe("getKeyTooltipText", () => {
+  const foreignKeyTo = { column: "ID", table: "Account" };
+
+  it("keeps the referenced table and column case for a primary key that is also a foreign key", () => {
+    expect(
+      getKeyTooltipText({ foreignKeyTo, isForeignKey: true, isPrimary: true }),
+    ).toBe("Primary key, foreign key to Account.ID");
+  });
+
+  it("labels plain primary and foreign keys", () => {
+    expect(getKeyTooltipText({ isPrimary: true })).toBe("Primary key");
+    expect(getKeyTooltipText({ foreignKeyTo, isForeignKey: true })).toBe(
+      "Foreign key to Account.ID",
+    );
+    expect(getKeyTooltipText({ isForeignKey: true })).toBe("Foreign key");
+  });
+});
 
 describe("SchemaVisualization", () => {
   beforeEach(() => {

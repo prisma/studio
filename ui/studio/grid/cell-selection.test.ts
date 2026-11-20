@@ -3,11 +3,22 @@ import { describe, expect, it } from "vitest";
 import {
   buildClipboardText,
   buildPasteChanges,
+  getRangeCellCount,
   normalizeSelectionRange,
   parseClipboardMatrix,
 } from "./cell-selection";
 
 describe("cell-selection", () => {
+  it("counts only the cells a range still covers after rows or columns shrink", () => {
+    const range = { columnEnd: 1, columnStart: 0, rowEnd: 2, rowStart: 0 };
+
+    expect(getRangeCellCount({ columnCount: 2, range, rowCount: 3 })).toBe(6);
+    // The selection outlived a refresh that left two rows: four cells are copied.
+    expect(getRangeCellCount({ columnCount: 2, range, rowCount: 2 })).toBe(4);
+    expect(getRangeCellCount({ columnCount: 1, range, rowCount: 3 })).toBe(3);
+    expect(getRangeCellCount({ columnCount: 2, range, rowCount: 0 })).toBe(0);
+  });
+
   it("normalizes reversed ranges", () => {
     const range = normalizeSelectionRange({
       start: { columnId: "name", columnIndex: 2, rowIndex: 4 },

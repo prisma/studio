@@ -164,7 +164,9 @@ function AppearanceCommandItem(props: {
       value={value}
       className={cn(
         "justify-between gap-3",
-        disabled ? "text-muted-foreground/55" : "text-foreground hover:bg-secondary/85",
+        disabled
+          ? "text-muted-foreground/55"
+          : "text-foreground hover:bg-secondary/85",
       )}
     >
       <span className="flex min-w-0 items-center gap-2.5">
@@ -705,7 +707,7 @@ function StudioCommandPalette() {
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogContent
           container={portalContainer}
-          className="w-[min(38rem,calc(100vw-2rem))] max-w-none overflow-hidden rounded-xl border border-border bg-background p-0 font-sans shadow-[0_16px_36px_rgba(15,23,42,0.12)]"
+          className="w-[min(38rem,calc(100vw-2rem))] max-w-none overflow-hidden rounded-xl border border-border bg-background p-0 font-sans shadow-lg"
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             inputRef.current?.focus();

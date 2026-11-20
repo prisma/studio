@@ -164,7 +164,9 @@ describe("WriteableCell", () => {
           <tbody>
             <tr>
               <WriteableCell
-                cellComponent={<span>Very long organization settings value</span>}
+                cellComponent={
+                  <span>Very long organization settings value</span>
+                }
                 inputComponent={<div data-testid="editor-input">editor</div>}
                 isEditorOpen={false}
                 linkComponent={<button type="button">Open relation</button>}
@@ -175,7 +177,9 @@ describe("WriteableCell", () => {
       );
     });
 
-    const contentRow = container.querySelector("[data-studio-cell-content] > div");
+    const contentRow = container.querySelector(
+      "[data-studio-cell-content] > div",
+    );
     if (!(contentRow instanceof HTMLDivElement)) {
       throw new Error("Could not find writable content row");
     }

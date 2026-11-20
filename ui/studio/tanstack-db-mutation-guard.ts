@@ -174,7 +174,9 @@ function isStrictModeEnabledFromWindow(): boolean {
 }
 
 function shouldInstallDefaultInstrumentation(): boolean {
-  return process.env.NODE_ENV === "development" || isStrictModeEnabledFromWindow();
+  return (
+    process.env.NODE_ENV === "development" || isStrictModeEnabledFromWindow()
+  );
 }
 
 function getDefaultGuardMode(): MutationGuardMode {

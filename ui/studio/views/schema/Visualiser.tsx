@@ -1,4 +1,4 @@
-import { AlertCircle, Key, SquareArrowRight } from "lucide-react";
+import { AlertCircle, SquareArrowRight } from "lucide-react";
 import {
   type FC,
   JSX,
@@ -11,7 +11,6 @@ import {
 import ReactFlow, {
   Background,
   ConnectionLineType,
-  Controls,
   type Edge,
   // EdgeMarker, // TODO: Add EdgeMarkers for relationship type
   Handle,
@@ -38,6 +37,8 @@ import type {
   Table,
 } from "../../../hooks/use-schema-visualization";
 import { cn } from "../../../lib/utils";
+import { CanvasZoomControls } from "../../CanvasZoomControls";
+import { ColumnBadge } from "../../ColumnBadge";
 import {
   applySchemaNodePositions,
   createFallbackLayoutedSchemaNodes,
@@ -73,6 +74,27 @@ const IconWithTooltip: FC<{
   </Tooltip>
 );
 
+/**
+ * Tooltip for the key badge. Table and column names keep their case; only the
+ * fixed label is lowercased when it follows "Primary key".
+ */
+export function getKeyTooltipText(
+  field: Pick<
+    SchemaNodeData["fields"][number],
+    "foreignKeyTo" | "isForeignKey" | "isPrimary"
+  >,
+): string {
+  const foreignKeyTarget = field.foreignKeyTo
+    ? ` to ${field.foreignKeyTo.table}.${field.foreignKeyTo.column}`
+    : "";
+
+  if (field.isPrimary && field.isForeignKey) {
+    return `Primary key, foreign key${foreignKeyTarget}`;
+  }
+
+  return field.isPrimary ? "Primary key" : `Foreign key${foreignKeyTarget}`;
+}
+
 const TableNode: FC<NodeProps<SchemaNodeData>> = memo(({ data }) => {
   const {
     metadata: { activeSchema },
@@ -98,43 +120,34 @@ const TableNode: FC<NodeProps<SchemaNodeData>> = memo(({ data }) => {
       return icons;
     }
 
-    // Icon for Primary Key
-    if (field.isPrimary) {
+    // Two fixed slots so names align: the key (primary wins when a column is
+    // both), then nullable. Same badges and order as the legend.
+    if (field.isPrimary || field.isForeignKey) {
+      const tooltipText = getKeyTooltipText(field);
+
       icons.push(
         <IconWithTooltip
-          key="pk"
-          iconElement={<Key className="size-3 text-primary" />}
-          tooltipText="Primary Key"
-          className="flex size-5 items-center justify-center rounded-full bg-muted p-0.5 text-muted-foreground"
+          key="key"
+          iconElement={
+            <ColumnBadge
+              kind={field.isPrimary ? "primary-key" : "foreign-key"}
+            />
+          }
+          tooltipText={tooltipText}
+          className="flex"
         />,
       );
-    } else if (field.isNullable) {
-      // Icon for Nullable (only if not a Primary Key, as PKs usually aren't nullable)
+    } else {
+      icons.push(<span key="key" aria-hidden className="block size-[18px]" />);
+    }
+
+    if (field.isNullable) {
       icons.push(
         <IconWithTooltip
           key="nullable"
-          iconElement={
-            <span className="inline-flex size-4 items-center justify-center text-center text-muted-foreground">
-              ?
-            </span>
-          }
+          iconElement={<ColumnBadge kind="nullable" />}
           tooltipText="Nullable"
-          className="flex size-5 items-center justify-center rounded-full bg-muted p-0.5 text-muted-foreground"
-        />,
-      );
-    }
-
-    // Additional Icon for Foreign Key
-    if (field.isForeignKey) {
-      const fkTooltip = field.foreignKeyTo
-        ? `Foreign Key to ${field.foreignKeyTo.table}.${field.foreignKeyTo.column}`
-        : "Foreign Key";
-      icons.push(
-        <IconWithTooltip
-          key="fk"
-          iconElement={<Key className="size-3" />}
-          tooltipText={fkTooltip}
-          className="flex size-5 items-center justify-center rounded-full bg-primary p-0.5 text-primary-foreground"
+          className="flex"
         />,
       );
     }
@@ -145,8 +158,8 @@ const TableNode: FC<NodeProps<SchemaNodeData>> = memo(({ data }) => {
     <TooltipProvider delayDuration={300}>
       <div
         className={cn(
-          "min-w-[280px] shadow-xl rounded-md border border-border bg-card",
-          isNoTablesNode && "border-orange-400",
+          "min-w-[280px] shadow-md rounded-lg border border-border bg-card",
+          isNoTablesNode && "border-prism-yellow",
         )}
       >
         <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />
@@ -198,18 +211,17 @@ const TableNode: FC<NodeProps<SchemaNodeData>> = memo(({ data }) => {
               <div
                 key={index}
                 className={cn(
-                  "flex items-center gap-2 py-2 text-sm text-foreground",
-                  field.isPrimary && "text-primary",
+                  "flex items-center gap-2 py-1.5 text-sm text-foreground",
+                  field.isPrimary && "font-medium",
                 )}
               >
-                {/* Container for icons, allows multiple icons side-by-side */}
-                <div className="flex items-center gap-1 min-w-[calc(1.25rem*2+0.25rem)]">
+                <div className="flex w-[calc(18px*2+0.25rem)] shrink-0 items-center gap-1">
                   {getFieldIcons(field).map((iconComponent, idx) => (
                     <div key={idx}>{iconComponent}</div>
                   ))}
                 </div>
                 <span className="flex-1 truncate max-w-44">{field.name}</span>
-                <span className="text-xs text-muted-foreground font-mono truncate">
+                <span className="font-mono text-xs text-muted-foreground truncate">
                   {field.type}
                 </span>
               </div>
@@ -453,16 +465,12 @@ export function SchemaVisualization({
     [setManualNodePositions, setNodePositions],
   );
 
-  const controlStyles = cn(
-    "shadow-sm",
-    "[&_button]:border [&_button]:border-input [&_button]:bg-background [&_button]:shadow-sm hover:[&_button]:bg-accent hover:[&_button]:text-accent-foreground",
-    "[&_button_>_svg]:fill-foreground",
-  );
-
   const miniMapStyles = cn(
-    "bg-muted/70 backdrop-blur-sm",
-    "[&_svg_>_rect]:fill-muted-foreground/80",
-    "[&_svg_>_path]:fill-background [&_svg_>_path]:opacity-50",
+    "overflow-hidden rounded-md border border-border bg-background shadow-xs",
+    // Target the SVG shapes: Tailwind reads the "__" in React Flow's class names as spaces.
+    // Nodes are rects; the viewport mask is the path.
+    "[&_svg_rect]:fill-border",
+    "[&_svg_path]:fill-secondary [&_svg_path]:opacity-70",
   );
 
   return (
@@ -479,9 +487,10 @@ export function SchemaVisualization({
           nodeTypes={nodeTypes}
           fitView
           fitViewOptions={{ padding: 0.2 }}
+          proOptions={{ hideAttribution: true }}
         >
-          <Background className="bg-muted" gap={16} />
-          <Controls showInteractive={false} className={controlStyles} />
+          <Background className="bg-muted/40" gap={20} size={1.5} />
+          <CanvasZoomControls />
           <MiniMap pannable className={miniMapStyles} />
         </ReactFlow>
       </div>

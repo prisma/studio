@@ -30,8 +30,7 @@ export interface EnumDiffNodeData {
 }
 
 export type MigrationDiffNode =
-  | Node<ModelDiffNodeData>
-  | Node<EnumDiffNodeData>;
+  Node<ModelDiffNodeData> | Node<EnumDiffNodeData>;
 
 export function estimateModelNodeHeight(model: ModelDiff): number {
   const detailRows = model.fields.reduce(
@@ -219,7 +218,7 @@ export function buildDiffGraph(
           stroke: removed
             ? "var(--destructive)"
             : added
-              ? "oklch(0.7 0.15 160)"
+              ? "var(--success)"
               : "var(--muted-foreground)",
           strokeDasharray: removed ? "3 3" : added ? undefined : "5 5",
           strokeWidth: added || removed ? 2 : 1,

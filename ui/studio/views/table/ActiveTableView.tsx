@@ -1,6 +1,16 @@
 import { useIsMutating } from "@tanstack/react-query";
 import { type ColumnDef, type ColumnPinningState } from "@tanstack/react-table";
-import { ChevronDown, DatabaseZap, History, RefreshCw } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Columns3Cog,
+  Copy,
+  History,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Undo2,
+} from "lucide-react";
 import {
   type Dispatch,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -1595,37 +1605,48 @@ export function ActiveTableView(_props: ViewProps) {
   return (
     <>
       <StudioHeader
+        title={activeTable.name}
         className={
           editingFilter.filters.length > 0 ? "border-b-0 pb-2" : undefined
         }
         endContent={
           <>
-            {tableHistoryUrl ? (
-              <Button
-                aria-label={tableHistoryAriaLabel ?? "Open table history"}
-                variant="outline"
-                size="icon"
-                asChild
-              >
-                <a href={tableHistoryUrl}>
-                  <History data-icon="inline-start" />
-                </a>
-              </Button>
-            ) : null}
+            {/* Ghost icon actions, each named on hover; schema and rows read differently. */}
             <TooltipProvider delayDuration={200}>
+              {tableHistoryUrl ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      aria-label={tableHistoryAriaLabel ?? "Open table history"}
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 text-muted-foreground hover:text-foreground"
+                      asChild
+                    >
+                      <a href={tableHistoryUrl}>
+                        <History data-icon="inline-start" />
+                      </a>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" align="end">
+                    Table history
+                  </TooltipContent>
+                </Tooltip>
+              ) : null}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     aria-label="Refresh schema"
-                    variant="outline"
+                    variant="ghost"
                     size="icon"
+                    className="size-8 text-muted-foreground hover:text-foreground"
                     onClick={() => void refreshSchema()}
                     disabled={isIntrospectionRefetching}
                   >
-                    <DatabaseZap
+                    <Columns3Cog
                       data-icon="inline-start"
                       className={cn(
-                        isIntrospectionRefetching && "animate-spin",
+                        isIntrospectionRefetching && "animate-pulse",
                       )}
                     />
                   </Button>
@@ -1634,19 +1655,27 @@ export function ActiveTableView(_props: ViewProps) {
                   Refresh schema
                 </TooltipContent>
               </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    aria-label="Refresh table"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 text-muted-foreground hover:text-foreground"
+                    onClick={() => void reload()}
+                    disabled={isRefreshingTable}
+                  >
+                    <RefreshCw
+                      data-icon="inline-start"
+                      className={cn(isRefreshingTable && "animate-spin")}
+                    />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" align="end">
+                  Refresh rows
+                </TooltipContent>
+              </Tooltip>
             </TooltipProvider>
-            <Button
-              aria-label="Refresh table"
-              variant="outline"
-              size="icon"
-              onClick={() => void reload()}
-              disabled={isRefreshingTable}
-            >
-              <RefreshCw
-                data-icon="inline-start"
-                className={cn(isRefreshingTable && "animate-spin")}
-              />
-            </Button>
           </>
         }
       >
@@ -1671,13 +1700,22 @@ export function ActiveTableView(_props: ViewProps) {
           totalEditingFilters={totalEditingFilters}
         />
         <Button
-          variant="outline"
-          className="h-9 px-5"
-          onClick={newStagedRow}
+          variant="ghost"
+          className="h-8 gap-1.5 px-2.5 text-muted-foreground hover:text-foreground"
+          onClick={(event) => {
+            // Hand focus to the new row so the button doesn't stay highlighted.
+            event.currentTarget.blur();
+            newStagedRow();
+          }}
           disabled={isInserting > 0}
         >
+          <Plus data-icon="inline-start" />
           Insert row
         </Button>
+        {/* Selection actions sit in their own group. */}
+        {(hasSelectionExport || (isSelecting && selectedRowCount > 0)) && (
+          <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-border" />
+        )}
         {hasSelectionExport && (
           <DropdownMenu
             open={isSelectionExportOpen}
@@ -1693,14 +1731,15 @@ export function ActiveTableView(_props: ViewProps) {
               <Button
                 aria-expanded={isSelectionExportOpen}
                 aria-label="Copy selection as"
-                variant="outline"
+                variant="ghost"
                 className={cn(
-                  "h-9 shrink-0 gap-1.5 px-3 font-sans",
-                  isSelectionExportOpen && "bg-accent text-accent-foreground",
+                  "h-8 shrink-0 gap-1.5 px-2.5 font-sans text-muted-foreground hover:text-foreground",
+                  isSelectionExportOpen && "bg-secondary text-foreground",
                 )}
               >
-                <span>copy as</span>
-                <ChevronDown className="size-3.5 text-muted-foreground" />
+                <Copy data-icon="inline-start" />
+                <span>Copy as</span>
+                <ChevronDown className="size-3.5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
@@ -1752,39 +1791,46 @@ export function ActiveTableView(_props: ViewProps) {
             </DropdownMenuContent>
           </DropdownMenu>
         )}
+        {isSelecting && selectedRowCount > 0 && (
+          <Button
+            variant="ghost"
+            className="h-8 gap-1.5 px-2.5 font-sans text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => setDeleteDialogOpen(true)}
+          >
+            <Trash2 data-icon="inline-start" />
+            {deleteSelectionLabel}
+          </Button>
+        )}
         {hasStagedChanges && (
           <>
-            <Button
-              className="h-9 border border-emerald-300 bg-emerald-100 px-5 font-sans text-emerald-950 hover:bg-emerald-200"
-              onClick={() => setSaveDialogOpen(true)}
-            >
-              {getSaveStagedRowsLabel(totalStagedRowCount)}
-            </Button>
+            {/* Unsaved edits: Discard, then Save as the one primary action. */}
+            <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-border" />
             <Button
               data-wiggle-animation={
                 discardWiggleAnimationKey
                   ? `${discardWiggleAnimationKey}-${discardWiggleCount}`
                   : undefined
               }
-              variant="outline"
+              variant="ghost"
               className={cn(
-                "h-9 border-amber-300 bg-amber-100 px-4 font-sans text-amber-950 hover:border-amber-400 hover:bg-amber-200 motion-safe:origin-center motion-safe:will-change-transform",
+                "h-8 gap-1.5 px-2.5 font-sans text-muted-foreground hover:text-foreground motion-safe:origin-center motion-safe:will-change-transform",
                 discardWiggleAnimationClassName,
               )}
               onClick={() => setDiscardDialogOpen(true)}
             >
+              <Undo2 data-icon="inline-start" />
               Discard edits
             </Button>
+            {/* The one outlined action among ghosts: clearly "commit", not a black block. */}
+            <Button
+              variant="outline"
+              className="h-8 gap-1.5 px-3 font-sans"
+              onClick={() => setSaveDialogOpen(true)}
+            >
+              <Check data-icon="inline-start" />
+              {getSaveStagedRowsLabel(totalStagedRowCount)}
+            </Button>
           </>
-        )}
-        {isSelecting && selectedRowCount > 0 && (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setDeleteDialogOpen(true)}
-          >
-            {deleteSelectionLabel}
-          </Button>
         )}
       </StudioHeader>
       <InlineTableFiltersHeaderRow
@@ -2423,7 +2469,7 @@ function BinaryAlertDialog(props: BinaryAlertDialogProps) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent
-        className="max-w-[280px] gap-2.5 p-3 font-sans"
+        className="max-w-[280px] gap-4 rounded-lg p-4 font-sans"
         onKeyDown={(event) =>
           handleBinaryDialogKeyDown({
             event,
@@ -2440,11 +2486,11 @@ function BinaryAlertDialog(props: BinaryAlertDialogProps) {
       >
         <AlertDialogHeader className="gap-0 text-left">
           <AlertDialogTitle className="sr-only">{title}</AlertDialogTitle>
-          <AlertDialogDescription className="font-sans text-[13px] leading-5 text-foreground">
+          <AlertDialogDescription className="font-sans text-sm leading-5 font-medium text-foreground">
             {prompt}
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <AlertDialogFooter className="flex-row justify-end gap-1.5">
+        <AlertDialogFooter className="flex-row justify-end gap-2">
           <AlertDialogAction
             ref={primaryButtonRef}
             size="sm"
@@ -2457,7 +2503,7 @@ function BinaryAlertDialog(props: BinaryAlertDialogProps) {
           <AlertDialogCancel
             ref={secondaryButtonRef}
             size="sm"
-            variant="secondary"
+            variant="outline"
             onClick={handleSecondaryAction}
           >
             {secondaryLabel}

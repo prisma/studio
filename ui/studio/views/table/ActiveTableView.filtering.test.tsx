@@ -786,10 +786,10 @@ function queryConfirmationDialog() {
 }
 
 function expectConfirmationFocusRing(button: HTMLButtonElement | undefined) {
-  expect(button?.className).toContain("focus:ring-2");
-  expect(button?.className).toContain("focus:ring-ring");
-  expect(button?.className).toContain("focus:ring-offset-2");
-  expect(button?.className).toContain("focus:ring-offset-background");
+  // Focus ring shared with every other button (no offset ring), in the ring
+  // token so it stays visible against the dialog surface.
+  expect(button?.className).toContain("focus-visible:ring-2");
+  expect(button?.className).toContain("focus-visible:ring-ring");
 }
 
 function getOpenEditorInput(): HTMLInputElement | HTMLTextAreaElement {
@@ -890,9 +890,7 @@ function renderView() {
 
 function getFocusedCellState() {
   return localUiStateStore.get("datagrid:public.users:focused-cell") as
-    | { columnId: string; rowIndex: number }
-    | null
-    | undefined;
+    { columnId: string; rowIndex: number } | null | undefined;
 }
 
 beforeEach(() => {
@@ -1433,8 +1431,7 @@ describe("ActiveTableView filtering", () => {
       );
 
       const filter = JSON.parse(createUrlArgs?.filterParam ?? "{}") as
-        | FilterGroup
-        | Record<string, unknown>;
+        FilterGroup | Record<string, unknown>;
 
       expect(filter).toMatchObject({
         after: "and",
@@ -1498,8 +1495,8 @@ describe("ActiveTableView filtering", () => {
     expect(dialog).not.toBeNull();
     expect(dialog?.className).toContain("font-sans");
     expect(dialog?.className).toContain("max-w-[280px]");
-    expect(dialog?.className).toContain("gap-2.5");
-    expect(dialog?.className).toContain("p-3");
+    expect(dialog?.className).toContain("gap-4");
+    expect(dialog?.className).toContain("p-4");
 
     const prompt = dialog?.querySelector("p");
 
@@ -2025,7 +2022,7 @@ describe("ActiveTableView filtering", () => {
         "ps-staged-cell",
       );
       expect(view.getGridCell("email", 0).className).toContain(
-        "after:border-amber-300",
+        "before:bg-staged-cell-background",
       );
 
       dispatchKeyboard("Enter");
@@ -2628,7 +2625,7 @@ describe("ActiveTableView filtering", () => {
       expect(dialog?.className).toContain("border-border");
       expect(dialog?.className).toContain("bg-card");
       expect(dialog?.className).toContain("text-card-foreground");
-      expect(dialog?.className).toContain("shadow-2xl");
+      expect(dialog?.className).toContain("shadow-lg");
       expect(dialogButtons).toHaveLength(2);
       expect(dialogButtons[0]?.textContent?.trim()).toBe("yes, discard");
       expect(dialogButtons[1]?.textContent?.trim()).toBe("no, keep editing");
@@ -2636,10 +2633,8 @@ describe("ActiveTableView filtering", () => {
       expect(dialogButtons[0]?.className).toContain(
         "text-destructive-foreground",
       );
-      expect(dialogButtons[1]?.className).toContain("bg-secondary");
-      expect(dialogButtons[1]?.className).toContain(
-        "text-secondary-foreground",
-      );
+      expect(dialogButtons[1]?.className).toContain("border-input");
+      expect(dialogButtons[1]?.className).toContain("text-foreground");
       expectConfirmationFocusRing(dialogButtons[0]);
       expect(document.activeElement).toBe(dialogButtons[0]);
 
@@ -2969,16 +2964,14 @@ describe("ActiveTableView filtering", () => {
       expect(dialog?.className).toContain("border-border");
       expect(dialog?.className).toContain("bg-card");
       expect(dialog?.className).toContain("text-card-foreground");
-      expect(dialog?.className).toContain("shadow-2xl");
+      expect(dialog?.className).toContain("shadow-lg");
       expect(dialogButtons).toHaveLength(2);
       expect(dialogButtons[0]?.textContent?.trim()).toBe("yes, write to db");
       expect(dialogButtons[1]?.textContent?.trim()).toBe("no, keep editing");
-      expect(dialogButtons[0]?.className).toContain("bg-primary");
-      expect(dialogButtons[0]?.className).toContain("text-primary-foreground");
-      expect(dialogButtons[1]?.className).toContain("bg-secondary");
-      expect(dialogButtons[1]?.className).toContain(
-        "text-secondary-foreground",
-      );
+      expect(dialogButtons[0]?.className).toContain("bg-foreground");
+      expect(dialogButtons[0]?.className).toContain("text-background");
+      expect(dialogButtons[1]?.className).toContain("border-input");
+      expect(dialogButtons[1]?.className).toContain("text-foreground");
       expectConfirmationFocusRing(dialogButtons[0]);
       expect(document.activeElement).toBe(dialogButtons[0]);
 
@@ -3057,8 +3050,7 @@ describe("ActiveTableView filtering", () => {
       expect(
         (
           updateManyMutateMock.mock.calls[0]?.[1] as
-            | { onSuccess?: unknown }
-            | undefined
+            { onSuccess?: unknown } | undefined
         )?.onSuccess,
       ).toBeTypeOf("function");
       expect(queryConfirmationDialog()).toBeNull();
@@ -3069,7 +3061,7 @@ describe("ActiveTableView filtering", () => {
 
   it("only shows copy-as actions while rows or cells are selected", () => {
     const view = renderView();
-    const copyAsTrigger = findButtonByText("copy as");
+    const copyAsTrigger = findButtonByText("Copy as");
 
     expect(copyAsTrigger).toBeUndefined();
 
@@ -3123,7 +3115,7 @@ describe("ActiveTableView filtering", () => {
     gridColumnOrderState = ["id", "email", "created_at"];
 
     const view = renderView();
-    const copyAsTrigger = findButtonByText("copy as");
+    const copyAsTrigger = findButtonByText("Copy as");
 
     expect(copyAsTrigger).toBeDefined();
     expect(copyAsTrigger?.className).toContain("font-sans");
@@ -3200,7 +3192,7 @@ describe("ActiveTableView filtering", () => {
     gridColumnOrderState = ["id", "email", "created_at"];
 
     const view = renderView();
-    const copyAsTrigger = findButtonByText("copy as");
+    const copyAsTrigger = findButtonByText("Copy as");
 
     expect(copyAsTrigger).toBeDefined();
 
@@ -3289,7 +3281,7 @@ describe("ActiveTableView filtering", () => {
     };
 
     const view = renderView();
-    const copyAsTrigger = findButtonByText("copy as");
+    const copyAsTrigger = findButtonByText("Copy as");
 
     expect(copyAsTrigger).toBeDefined();
 
@@ -3570,9 +3562,10 @@ describe("ActiveTableView filtering", () => {
     expect(aiFilterShell.className).toContain("overflow-hidden");
     expect(aiFilterShell.className).toContain("border");
     expect(aiInput.className).toContain("border-0");
-    expect(insertRowButton.className).toContain("h-9");
+    expect(insertRowButton.className).toContain("h-8");
     expect(headerEndControls.className).toContain("pl-2");
-    expect(headerEndControls.querySelectorAll("button")).toHaveLength(1);
+    // Refresh schema and Refresh rows.
+    expect(headerEndControls.querySelectorAll("button")).toHaveLength(2);
     expect(filterChevron).not.toBeNull();
     expect(
       container.querySelector('button[aria-label="Apply AI filter"]'),

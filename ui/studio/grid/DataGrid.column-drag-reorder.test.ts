@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   getColumnPinningZone,
-  resolveDirectionalColumnDragTarget,
   resolveColumnDragDropTarget,
   resolveColumnDragReorder,
+  resolveDirectionalColumnDragTarget,
 } from "./DataGrid";
 
 const BASE_COLUMN_ORDER = [
@@ -24,9 +24,7 @@ const BASE_COLUMN_PINNING: ColumnPinningState = {
 describe("column drag reorder", () => {
   it("classifies pinning zones from current pinning state", () => {
     expect(getColumnPinningZone("id", BASE_COLUMN_PINNING)).toBe("left");
-    expect(getColumnPinningZone("bit_col", BASE_COLUMN_PINNING)).toBe(
-      "center",
-    );
+    expect(getColumnPinningZone("bit_col", BASE_COLUMN_PINNING)).toBe("center");
     expect(
       getColumnPinningZone("right_col", {
         ...BASE_COLUMN_PINNING,

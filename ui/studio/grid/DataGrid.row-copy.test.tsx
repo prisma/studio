@@ -138,6 +138,17 @@ function renderGrid(args?: { rows?: GridRow[] }) {
   };
 }
 
+async function flushClipboardWrite() {
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
+function getCopyAnnouncement(): string | null | undefined {
+  return document.querySelector('[data-studio="content"] > [role="status"]')
+    ?.textContent;
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   document.body.innerHTML = "";
@@ -173,7 +184,7 @@ describe("DataGrid row copy behavior", () => {
     cleanup();
   });
 
-  it("copies all selected rows when copying from any selected row cell", () => {
+  it("copies all selected rows when copying from any selected row cell", async () => {
     createSelection({ isCollapsed: true });
     const writeText = mockClipboardWriteText();
     const { cleanup, getCell, getSelectedRowCount } = renderGrid();
@@ -207,6 +218,37 @@ describe("DataGrid row copy behavior", () => {
       "org_acme\tAcme Labs\norg_globex\tGlobex Corp",
     );
     expect(getSelectedRowCount()).toBe(2);
+    await flushClipboardWrite();
+    expect(getCopyAnnouncement()).toBe("Copied 4 cells");
+
+    cleanup();
+  });
+
+  it("announces one cell when the copied cell itself contains tabs and newlines", async () => {
+    createSelection({ isCollapsed: true });
+    const writeText = mockClipboardWriteText();
+    const multilineValue = "first line\nsecond line\twith a tab";
+    const { cleanup, getCell } = renderGrid({
+      rows: [{ __ps_rowid: "row_1", id: "org_acme", name: multilineValue }],
+    });
+
+    dispatchMouse(getCell(0, "name"), "contextmenu", { button: 2 });
+
+    const copyButton = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Copy",
+    );
+
+    if (!(copyButton instanceof HTMLButtonElement)) {
+      throw new Error("Could not find cell copy button");
+    }
+
+    act(() => {
+      copyButton.click();
+    });
+
+    expect(writeText).toHaveBeenCalledWith(multilineValue);
+    await flushClipboardWrite();
+    expect(getCopyAnnouncement()).toBe("Copied");
 
     cleanup();
   });

@@ -47,7 +47,7 @@ function Calendar({
   const _footerClassName = cn("pt-3 text-xs", props.footerClassName);
   const _weekdaysClassName = cn("flex", props.weekdaysClassName);
   const _weekdayClassName = cn(
-    "w-9 text-xs font-normal text-muted-foreground",
+    "w-9 pb-1 text-[11px] font-normal text-muted-foreground",
     props.weekdayClassName,
   );
   const _captionLabelClassName = cn(
@@ -55,7 +55,7 @@ function Calendar({
     props.captionLabelClassName,
   );
 
-  const _monthGridClassName = cn("mx-auto mt-4", props.monthGridClassName);
+  const _monthGridClassName = cn("mx-auto mt-1", props.monthGridClassName);
   const _weekClassName = cn("mt-0 flex w-max items-start", props.weekClassName);
   const _dayClassName = cn(
     "flex size-9 flex-1 items-center justify-center p-0 text-xs",
@@ -84,12 +84,14 @@ function Calendar({
     props.rangeMiddleClassName,
   );
   const _selectedClassName = cn(
-    "[&>button]:bg-primary [&>button]:text-primary-foreground [&>button]:hover:bg-primary [&>button]:hover:text-primary-foreground",
-    "[&[aria-selected]>button]:bg-primary [&[aria-selected]>button]:text-primary-foreground",
+    // Selection language shared with the sidebar's selected item: soft grey chip.
+    "[&>button]:bg-sidebar-active [&>button]:font-semibold [&>button]:text-foreground [&>button]:hover:bg-sidebar-active",
+    "[&[aria-selected]>button]:bg-sidebar-active [&[aria-selected]>button]:text-foreground",
     props.selectedClassName,
   );
   const _todayClassName = cn(
-    "[&>button]:font-bold [&>button]:text-accent-foreground",
+    // Today: a small brand-cyan dot under the number instead of bold text.
+    "[&>button]:relative [&>button]:after:absolute [&>button]:after:bottom-1 [&>button]:after:left-1/2 [&>button]:after:size-1 [&>button]:after:-translate-x-1/2 [&>button]:after:rounded-full [&>button]:after:bg-prism-cyan [&>button]:after:content-['']",
     props.todayClassName,
   );
   const _outsideClassName = cn(

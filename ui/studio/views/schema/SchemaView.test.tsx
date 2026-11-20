@@ -120,7 +120,7 @@ describe("SchemaView", () => {
     document.body.innerHTML = "";
   });
 
-  it("renders compact legend badges with size-based dimensions", () => {
+  it("renders the legend in card-slot order: primary key, foreign key, nullable", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -129,14 +129,13 @@ describe("SchemaView", () => {
       root.render(<SchemaView />);
     });
 
-    const legendBadges = Array.from(
-      container.querySelectorAll('[data-testid="studio-header"] span.size-5'),
-    );
+    const legendItems = Array.from(
+      container.querySelectorAll(
+        '[data-testid="studio-header"] ul[aria-label="Legend"] li',
+      ),
+    ).map((item) => item.textContent?.trim());
 
-    expect(legendBadges).toHaveLength(3);
-    expect(
-      legendBadges.every((badge) => badge.className.includes("size-5")),
-    ).toBe(true);
+    expect(legendItems).toEqual(["Primary key", "Foreign key", "?Nullable"]);
 
     act(() => {
       root.unmount();

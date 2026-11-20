@@ -64,6 +64,9 @@ devDependencies:
   '@codemirror/lang-sql':
     specifier: 6.10.0
     version: 6.10.0
+  '@codemirror/language':
+    specifier: 6.12.2
+    version: 6.12.2
   '@codemirror/lint':
     specifier: 6.9.5
     version: 6.9.5
@@ -91,6 +94,9 @@ devDependencies:
   '@eslint/js':
     specifier: 8.57.0
     version: 8.57.0
+  '@lezer/highlight':
+    specifier: 1.2.3
+    version: 1.2.3
   '@modelcontextprotocol/ext-apps':
     specifier: 2.0.3
     version: 2.0.3(@modelcontextprotocol/client@2.3.1)(@modelcontextprotocol/core@2.3.1)(react-dom@19.2.4)(react@19.2.4)(zod@4.6.5)

@@ -1,22 +1,8 @@
-import {
-  AlertCircle,
-  CheckCircle,
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  TriangleAlertIcon,
-} from "lucide-react";
+import { Check, ChevronRight, Copy, X } from "lucide-react";
 import { toast } from "sonner";
 
-import { Query } from "../../../../data";
-import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "../../../components/ui/card";
+import { TableCell, TableRow } from "../../../components/ui/table";
 import { useUiState } from "../../../hooks/use-ui-state";
 import { cn } from "../../../lib/utils";
 import { StudioOperationEvent } from "../../Studio";
@@ -25,149 +11,175 @@ interface OperationEventEntryProps {
   event: StudioOperationEvent;
 }
 
-const formatTimestamp = (timestamp: string) => {
-  return new Date(timestamp).toLocaleTimeString();
-};
+export const OPERATION_EVENT_COLUMN_COUNT = 5;
 
-const getQueryPreview = (query?: Query<unknown>): string => {
-  if (!query || !query.sql) return "No query";
-  const sqlPreview = query.sql.substring(0, 100);
-  return query.sql.length > 100 ? `${sqlPreview}...` : sqlPreview;
-};
+const LABEL_CLASSES =
+  "font-mono text-2xs uppercase tracking-loose text-muted-foreground";
 
+const formatTimestamp = (timestamp: string) =>
+  new Date(timestamp).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    hourCycle: "h23",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+
+function getErrorMessages(error: Error): string[] {
+  return error instanceof AggregateError
+    ? error.errors.map((inner: Error) => inner.message)
+    : [error.message];
+}
+
+/**
+ * One Console log row: status, operation, a one-line SQL preview (or the error
+ * message when it failed), status and time. Clicking the row opens the full SQL,
+ * parameters and copy underneath; failed rows start open.
+ */
 export function OperationEventEntry({ event }: OperationEventEntryProps) {
-  const [isQueryExpanded, setIsQueryExpanded] = useUiState<boolean>(
+  const isError = event.name === "studio_operation_error";
+  const [isExpanded, setIsExpanded] = useUiState<boolean>(
     `operation-event:${event.eventId}:query-expanded`,
-    false,
+    isError,
     { cleanupOnUnmount: true },
   );
-  const isError = event.name === "studio_operation_error";
+  const { error, operation, query } = event.payload;
+  const errorMessages = isError && error ? getErrorMessages(error) : [];
+  const preview = errorMessages[0] ?? query?.sql ?? "No query";
+  const detailsId = `operation-event-${event.eventId}-details`;
 
   return (
-    <div className="flex flex-col gap-2">
-      <Card
+    <>
+      <TableRow
         className={cn(
-          "w-full rounded-sm border-ring/20 overflow-clip shadow-none",
+          "group/row cursor-pointer border-border text-xs hover:bg-muted/70",
+          isExpanded && "border-b-0 bg-muted/40",
         )}
+        data-operation-status={isError ? "error" : "success"}
+        onClick={() => setIsExpanded(!isExpanded)}
       >
-        <CardHeader
+        <TableCell className="py-2.5 pr-0 pl-3">
+          <span className="flex items-center gap-1.5">
+            {/* Disclosure cue: the row expands, the chevron turns down. */}
+            <ChevronRight
+              aria-hidden
+              className={cn(
+                "size-3.5 shrink-0 text-muted-foreground transition-transform duration-150 group-hover/row:text-foreground motion-reduce:transition-none",
+                isExpanded && "rotate-90 text-foreground",
+              )}
+            />
+            {/* Just the mark in the brand colour: a column of filled circles gets loud. */}
+            {isError ? (
+              <X
+                aria-hidden
+                className="size-4 shrink-0 text-prism-red"
+                strokeWidth={2.5}
+              />
+            ) : (
+              <Check
+                aria-hidden
+                className="size-4 shrink-0 text-prism-cyan"
+                strokeWidth={2.5}
+              />
+            )}
+          </span>
+        </TableCell>
+        <TableCell className="truncate px-3 py-2.5 font-mono font-medium text-foreground">
+          {operation}
+        </TableCell>
+        <TableCell className="px-3 py-2.5">
+          {/* The row is clickable; this button carries the state for keyboards and screen readers. */}
+          <button
+            aria-controls={detailsId}
+            aria-expanded={isExpanded}
+            className={cn(
+              "block w-full truncate rounded-sm text-left font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+              isError ? "text-foreground" : "text-muted-foreground",
+            )}
+            onClick={(clickEvent) => {
+              clickEvent.stopPropagation();
+              setIsExpanded(!isExpanded);
+            }}
+            title={isExpanded ? "Hide details" : "Show details"}
+            type="button"
+          >
+            {preview}
+          </button>
+        </TableCell>
+        <TableCell
           className={cn(
-            "p-3 font-normal",
-            isError
-              ? "border-red-500/60 bg-red-500/10"
-              : "border-green-500/60 bg-green-500/10",
+            "px-3 py-2.5",
+            isError ? "text-foreground" : "text-muted-foreground",
           )}
         >
-          <CardTitle className="flex items-center justify-between font-mono text-xs">
-            <div className="flex items-center gap-2">
-              {isError ? (
-                <AlertCircle size={16} className="text-red-500" />
-              ) : (
-                <CheckCircle size={16} className="text-green-500" />
-              )}
-              <span className="">
-                {event.payload.operation}, {formatTimestamp(event.timestamp)}
-              </span>
-            </div>
-            <Badge
-              variant={isError ? "destructive" : "success"}
-              className="font-normal text-xs"
-            >
-              {event.name === "studio_operation_success" ? "Success" : "Error"}
-            </Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3 p-3">
-          {event.payload.query && (
-            <div data-response-type="query" className="flex flex-col gap-2">
-              <div className="flex items-center justify-between relative">
-                <button
-                  type="button"
-                  onClick={() => setIsQueryExpanded(!isQueryExpanded)}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                  aria-expanded={isQueryExpanded}
-                >
-                  {isQueryExpanded ? (
-                    <ChevronDown size={12} />
-                  ) : (
-                    <ChevronRight size={12} />
-                  )}
-                  SQL Query
-                </button>
-                <Button
-                  aria-label="Copy SQL query"
-                  variant="outline"
-                  size="icon"
-                  className="size-6"
-                  onClick={() => {
-                    void navigator.clipboard.writeText(
-                      event.payload.query?.sql || "",
-                    );
-                    toast.success("Query copied to clipboard");
-                  }}
-                >
-                  <Copy data-icon="inline-start" />
-                </Button>
-              </div>
-              <div
-                className={cn(
-                  "p-3 bg-secondary/50 border border-border rounded-sm text-xs font-mono overflow-x-auto",
-                  isQueryExpanded
-                    ? "block whitespace-pre-wrap max-h-64 overflow-y-auto"
-                    : "max-h-10 overflow-hidden",
-                )}
-              >
-                {isQueryExpanded
-                  ? event.payload.query.sql
-                  : getQueryPreview(event.payload.query)}
-              </div>
-              {
-                <div className="flex flex-col gap-1">
-                  <span className="text-xs text-muted-foreground">
-                    Parameters
-                  </span>
-                  <div className="p-3 bg-secondary/50 border border-border rounded-sm text-xs font-mono overflow-x-auto">
-                    {JSON.stringify(
-                      event.payload.query.parameters || [],
-                      null,
-                      2,
-                    )}
+          {isError ? "Error" : "Success"}
+        </TableCell>
+        <TableCell className="py-2.5 pr-4 pl-3 text-right font-mono text-muted-foreground tabular-nums">
+          {formatTimestamp(event.timestamp)}
+        </TableCell>
+      </TableRow>
+      {isExpanded ? (
+        <TableRow
+          className="border-border bg-muted/40 hover:bg-muted/40"
+          id={detailsId}
+        >
+          <TableCell
+            className="pt-1 pr-4 pb-4 pl-17"
+            colSpan={OPERATION_EVENT_COLUMN_COUNT}
+          >
+            <div className="flex flex-col gap-3">
+              {query ? (
+                <div data-response-type="query" className="flex flex-col gap-2">
+                  <span className={LABEL_CLASSES}>SQL</span>
+                  <div className="relative rounded-md border border-border bg-background">
+                    <pre className="max-h-64 overflow-y-auto py-2 pr-10 pl-3 font-mono text-xs leading-5 whitespace-pre-wrap text-foreground">
+                      {query.sql}
+                    </pre>
+                    <Button
+                      aria-label="Copy SQL query"
+                      className="absolute top-1 right-1 size-7 text-muted-foreground hover:text-foreground [&_svg]:size-3.5"
+                      onClick={() => {
+                        void navigator.clipboard
+                          .writeText(query.sql || "")
+                          .then(
+                            () => toast.success("Query copied to clipboard"),
+                            () => toast.error("Couldn't copy the query"),
+                          );
+                      }}
+                      size="icon"
+                      variant="ghost"
+                    >
+                      <Copy data-icon="inline-start" />
+                    </Button>
                   </div>
-                </div>
-              }
-            </div>
-          )}
-          {isError && event.payload.error && (
-            <div data-response-type="error" className="flex flex-col gap-2">
-              <div className="flex items-center justify-between relative">
-                <span className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-                  <TriangleAlertIcon size={12} />
-                  Error Details
-                </span>
-              </div>
-              {event.payload.error.adapterSource ? (
-                <div className="flex flex-col gap-1">
-                  <span className="text-xs text-muted-foreground">Adapter</span>
-                  <div className="p-3 bg-secondary/50 border border-border rounded-sm text-xs font-mono overflow-x-auto">
-                    {event.payload.error.adapterSource}
+                  <div className="flex min-w-0 items-baseline gap-2 text-xs">
+                    <span className={cn("shrink-0", LABEL_CLASSES)}>
+                      Parameters
+                    </span>
+                    <code className="min-w-0 break-all font-mono text-muted-foreground">
+                      {JSON.stringify(query.parameters || [])}
+                    </code>
                   </div>
                 </div>
               ) : null}
-              <div className="p-3 bg-secondary/50 border border-red-400/20 rounded-sm text-xs font-mono overflow-x-auto">
-                <pre className="text-xs text-red-400 whitespace-pre-wrap font-mono">
-                  {event.payload.error instanceof AggregateError
-                    ? event.payload.error.errors.map(
-                        (err: Error, index: number) => (
-                          <div key={index}>{err.message}</div>
-                        ),
-                      )
-                    : event.payload.error.message}
-                </pre>
-              </div>
+              {isError && error ? (
+                <div data-response-type="error" className="flex flex-col gap-2">
+                  {error.adapterSource ? (
+                    <div className="flex items-baseline gap-2 text-xs">
+                      <span className={LABEL_CLASSES}>Adapter</span>
+                      <code className="font-mono text-muted-foreground">
+                        {error.adapterSource}
+                      </code>
+                    </div>
+                  ) : null}
+                  <pre className="overflow-x-auto rounded-md border-l-2 border-prism-red bg-prism-red/8 px-3 py-2 font-mono text-xs leading-5 whitespace-pre-wrap text-foreground">
+                    {errorMessages.join("\n")}
+                  </pre>
+                </div>
+              ) : null}
             </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+          </TableCell>
+        </TableRow>
+      ) : null}
+    </>
   );
 }
