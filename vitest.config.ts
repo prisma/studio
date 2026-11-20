@@ -87,6 +87,9 @@ export default defineConfig({
       {
         resolve: resolveAlias,
         test: {
+          env: {
+            TZ: "UTC",
+          },
           environment: "happy-dom", // or "jsdom"
           exclude: [...configDefaults.exclude, ...localTestExcludes],
           include: ["ui/**/*.test.{ts,tsx}"],

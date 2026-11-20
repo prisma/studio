@@ -62,6 +62,14 @@ export function parseClipboardMatrix(text: string): string[][] {
   return lines.map((line) => line.split("\t"));
 }
 
+/** Number of cells a selection range covers. */
+export function getRangeCellCount(range: GridSelectionRange): number {
+  return (
+    (range.rowEnd - range.rowStart + 1) *
+    (range.columnEnd - range.columnStart + 1)
+  );
+}
+
 export function buildClipboardText(args: {
   range: GridSelectionRange;
   rows: Record<string, unknown>[];

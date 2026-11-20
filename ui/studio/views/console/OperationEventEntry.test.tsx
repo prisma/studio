@@ -10,9 +10,12 @@ type UseUiStateReturn = readonly [
   (value: boolean | ((previous: boolean) => boolean)) => void,
 ];
 
-const { useUiStateMock } = vi.hoisted(() => ({
+const { toastMock, useUiStateMock } = vi.hoisted(() => ({
+  toastMock: { error: vi.fn(), success: vi.fn() },
   useUiStateMock: vi.fn<(key: string, initial: boolean) => UseUiStateReturn>(),
 }));
+
+vi.mock("sonner", () => ({ toast: toastMock }));
 
 vi.mock("../../../hooks/use-ui-state", () => ({
   useUiState: useUiStateMock,
@@ -118,6 +121,54 @@ describe("OperationEventEntry", () => {
     ).not.toBeNull();
     // The disclosure chevron turns down while the row is open.
     expect(container.querySelector("tr svg.rotate-90")).not.toBeNull();
+
+    cleanup();
+  });
+
+  it("confirms a copy only after the clipboard write succeeds", async () => {
+    useUiStateMock.mockImplementation(() => [true, vi.fn()]);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const { container, cleanup } = renderEntry(successEvent);
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Copy SQL query"]')!
+        .click();
+      await Promise.resolve();
+    });
+
+    expect(writeText).toHaveBeenCalledWith(
+      "select * from organizations limit $1",
+    );
+    expect(toastMock.success).toHaveBeenCalledWith("Query copied to clipboard");
+    expect(toastMock.error).not.toHaveBeenCalled();
+
+    cleanup();
+  });
+
+  it("reports a failed copy instead of claiming success", async () => {
+    useUiStateMock.mockImplementation(() => [true, vi.fn()]);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: vi.fn().mockRejectedValue(new Error("NotAllowedError")),
+      },
+    });
+    const { container, cleanup } = renderEntry(successEvent);
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Copy SQL query"]')!
+        .click();
+      await Promise.resolve();
+    });
+
+    expect(toastMock.error).toHaveBeenCalledWith("Couldn't copy the query");
+    expect(toastMock.success).not.toHaveBeenCalled();
 
     cleanup();
   });

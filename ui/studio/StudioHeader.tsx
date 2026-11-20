@@ -41,7 +41,11 @@ export function StudioHeader(props: StudioHeaderProps) {
             )}
           </Button>
           {props.title ? (
-            <h1 className="shrink-0 pr-1 font-sans text-base font-semibold text-foreground">
+            // Long table and stream names truncate so the controls stay usable.
+            <h1
+              className="min-w-0 truncate pr-1 font-sans text-base font-semibold text-foreground"
+              title={props.title}
+            >
               {props.title}
             </h1>
           ) : null}

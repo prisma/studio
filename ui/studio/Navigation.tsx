@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import PrismaWordmark from "../../assets/prisma-wordmark.svg";
 import PrismaWordmarkWhite from "../../assets/prisma-wordmark-white.svg";
+import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
   Select,
@@ -511,9 +512,9 @@ export function Navigation({ className }: NavigationProps) {
   );
   // Views read as product chrome (sans + icon); tables are data identifiers (mono).
   const navigationItemClasses =
-    "py-1.5 font-sans text-sm font-normal text-muted-foreground hover:bg-sidebar-active/50 hover:text-foreground transition-colors cursor-pointer data-[active=true]:bg-sidebar-active data-[active=true]:text-foreground data-[active=true]:font-medium  outline-none focus-visible:text-foreground [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground data-[active=true]:[&_svg]:text-foreground";
+    "py-1.5 font-sans text-sm font-normal text-muted-foreground hover:bg-sidebar-active/50 hover:text-foreground transition-colors cursor-pointer data-[active=true]:bg-sidebar-active data-[active=true]:text-foreground data-[active=true]:font-medium outline-none focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground data-[active=true]:[&_svg]:text-foreground";
   const tableItemClasses =
-    "py-1 font-mono text-sm font-normal text-muted-foreground hover:bg-sidebar-active/50 hover:text-foreground transition-colors cursor-pointer data-[active=true]:bg-sidebar-active data-[active=true]:text-foreground data-[active=true]:font-medium  outline-none focus-visible:text-foreground";
+    "py-1 font-mono text-sm font-normal text-muted-foreground hover:bg-sidebar-active/50 hover:text-foreground transition-colors cursor-pointer data-[active=true]:bg-sidebar-active data-[active=true]:text-foreground data-[active=true]:font-medium outline-none focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
 
   return (
     <div
@@ -875,17 +876,18 @@ function CommandMenuHint() {
 
   return (
     <div className="sticky bottom-0 mt-auto bg-canvas px-2 pt-2 pb-3">
-      <button
+      <Button
         aria-label="Open command menu"
-        className="flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-sidebar-active/50 hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+        className="h-auto w-full justify-between px-2.5 py-1.5 font-normal text-muted-foreground hover:bg-sidebar-active/50 hover:text-foreground focus-visible:bg-sidebar-active/50 focus-visible:text-foreground"
         onClick={() => commandPalette.open()}
         type="button"
+        variant="ghost"
       >
         <span className="truncate">Commands</span>
         <kbd className="shrink-0 rounded-sm border border-border bg-background px-1 py-px font-mono text-2xs text-muted-foreground">
           {isMacPlatform() ? "⌘K" : "Ctrl K"}
         </kbd>
-      </button>
+      </Button>
     </div>
   );
 }

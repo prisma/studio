@@ -106,10 +106,7 @@ const AlertDialogAction = React.forwardRef<
   <Button asChild size={size} variant={variant}>
     <AlertDialogPrimitive.Action
       ref={ref}
-      className={cn(
-        "focus-visible:ring-2 focus-visible:ring-foreground/15",
-        className,
-      )}
+      className={cn("focus-visible:ring-2 focus-visible:ring-ring", className)}
       {...props}
     />
   </Button>
@@ -124,10 +121,7 @@ const AlertDialogCancel = React.forwardRef<
   <Button asChild size={size} variant={variant}>
     <AlertDialogPrimitive.Cancel
       ref={ref}
-      className={cn(
-        "focus-visible:ring-2 focus-visible:ring-foreground/15",
-        className,
-      )}
+      className={cn("focus-visible:ring-2 focus-visible:ring-ring", className)}
       {...props}
     />
   </Button>

@@ -138,8 +138,12 @@ export function OperationEventEntry({ event }: OperationEventEntryProps) {
                       aria-label="Copy SQL query"
                       className="absolute top-1 right-1 size-7 text-muted-foreground hover:text-foreground [&_svg]:size-3.5"
                       onClick={() => {
-                        void navigator.clipboard.writeText(query.sql || "");
-                        toast.success("Query copied to clipboard");
+                        void navigator.clipboard
+                          .writeText(query.sql || "")
+                          .then(
+                            () => toast.success("Query copied to clipboard"),
+                            () => toast.error("Couldn't copy the query"),
+                          );
                       }}
                       size="icon"
                       variant="ghost"

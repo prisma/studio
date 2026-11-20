@@ -3,7 +3,6 @@ import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
-  countCopiedCells,
   DataGridCopyFeedback,
   getCopyFeedbackLabel,
   type GridCopyFeedback,
@@ -50,11 +49,31 @@ describe("DataGridCopyFeedback", () => {
     document.body.innerHTML = "";
   });
 
-  it("labels single and multi-cell copies", () => {
-    expect(countCopiedCells("a")).toBe(1);
-    expect(countCopiedCells("a\tb\nc\td\ne\tf")).toBe(6);
-    expect(getCopyFeedbackLabel("ada@example.com")).toBe("Copied");
-    expect(getCopyFeedbackLabel("a\tb\nc\td")).toBe("Copied 4 cells");
+  it("labels single and multi-cell copies from the selection size", () => {
+    expect(getCopyFeedbackLabel(1)).toBe("Copied");
+    expect(getCopyFeedbackLabel(4)).toBe("Copied 4 cells");
+  });
+
+  it("hides the cue when the grid scrolls, so it never sits on another row", () => {
+    const { container, cleanup } = renderFeedback({
+      cellSelector: 'td[data-grid-row-index="0"][data-grid-column-id="email"]',
+      key: 4,
+      label: "Copied",
+      ok: true,
+    });
+
+    expect(container.querySelector("[data-copy-feedback]")).not.toBeNull();
+
+    act(() => {
+      container.querySelector("table")!.dispatchEvent(new Event("scroll"));
+    });
+
+    expect(container.querySelector("[data-copy-feedback]")).toBeNull();
+    expect(container.querySelector('[role="status"]')?.textContent).toBe(
+      "Copied",
+    );
+
+    cleanup();
   });
 
   it("shows a confirmation inside the copied cell and announces it", () => {

@@ -71,6 +71,7 @@ import type { CellProps } from "../cell/Cell";
 import {
   buildClipboardText,
   buildPasteChanges,
+  getRangeCellCount,
   type GridCellCoordinate,
   type GridPasteChange,
   isCellInRange,
@@ -1438,6 +1439,13 @@ export function DataGrid(props: DataGridProps) {
     table,
   ]);
 
+  const getSelectedRowCellCount = useCallback(
+    () =>
+      table.getRowModel().rows.filter((row) => row.getIsSelected()).length *
+      selectableColumnIds.length,
+    [selectableColumnIds.length, table],
+  );
+
   const focusedCellCopyTarget = useMemo(() => {
     if (!focusedCell) {
       return null;
@@ -1601,7 +1609,13 @@ export function DataGrid(props: DataGridProps) {
         focusedCell
           ? `td[data-grid-visual-row-index="${focusedCell.rowIndex}"][data-grid-column-id="${CSS.escape(focusedCell.columnId)}"]`
           : null,
-        getCopyFeedbackLabel(text),
+        getCopyFeedbackLabel(
+          hasRowSelection
+            ? getSelectedRowCellCount()
+            : hasCellSelection && selectionRange
+              ? getRangeCellCount(selectionRange)
+              : 1,
+        ),
         true,
       );
     };
@@ -1673,6 +1687,7 @@ export function DataGrid(props: DataGridProps) {
     focusedCellCopyTarget,
     getFocusedCellClipboardText,
     getSelectedClipboardText,
+    getSelectedRowCellCount,
     getSelectedRowClipboardText,
     hasRowSelection,
     onPasteSelection,
@@ -2539,16 +2554,21 @@ export function DataGrid(props: DataGridProps) {
     );
   }
 
-  const getContextMenuCopyText = useCallback((): string => {
+  const getContextMenuCopy = useCallback((): {
+    cellCount: number;
+    text: string;
+  } => {
+    const nothing = { cellCount: 0, text: "" };
+
     if (!contextMenuTarget) {
-      return "";
+      return nothing;
     }
 
     const { columnId, rowIndex } = contextMenuTarget;
     const row = table.getRowModel().rows[rowIndex];
 
     if (!row) {
-      return "";
+      return nothing;
     }
 
     const isRowSelectorCell = columnId === ROW_SELECTOR_COLUMN_ID;
@@ -2563,38 +2583,48 @@ export function DataGrid(props: DataGridProps) {
         rowIndex,
       });
 
-    if (isRowSelectorCell) {
-      if (hasRowSelection && isRowSelected) {
-        return getSelectedRowClipboardText();
-      }
-
-      return getRowClipboardText(rowIndex);
+    if (hasRowSelection && isRowSelected) {
+      return {
+        cellCount: getSelectedRowCellCount(),
+        text: getSelectedRowClipboardText(),
+      };
     }
 
-    if (hasRowSelection && isRowSelected) {
-      return getSelectedRowClipboardText();
+    if (isRowSelectorCell) {
+      return {
+        cellCount: selectableColumnIds.length,
+        text: getRowClipboardText(rowIndex),
+      };
     }
 
     if (isSelected) {
       const selectedText = getSelectedClipboardText();
       if (selectedText) {
-        return selectedText;
+        return {
+          cellCount: getRangeCellCount(selectionRange),
+          text: selectedText,
+        };
       }
     }
 
     if (columnIndex == null) {
-      return "";
+      return nothing;
     }
 
-    return getSingleCellClipboardText(rowIndex, columnIndex);
+    return {
+      cellCount: 1,
+      text: getSingleCellClipboardText(rowIndex, columnIndex),
+    };
   }, [
     columnIndexById,
     contextMenuTarget,
     getRowClipboardText,
     getSelectedClipboardText,
+    getSelectedRowCellCount,
     getSelectedRowClipboardText,
     getSingleCellClipboardText,
     hasRowSelection,
+    selectableColumnIds.length,
     selectionRange,
     table,
   ]);
@@ -2626,7 +2656,7 @@ export function DataGrid(props: DataGridProps) {
 
   const handleContextMenuCopyAction = useCallback(() => {
     setGridInteractionSuppressionWindow();
-    const copyText = getContextMenuCopyText();
+    const { cellCount, text: copyText } = getContextMenuCopy();
 
     if (!copyText && copyText !== "") {
       return;
@@ -2639,13 +2669,13 @@ export function DataGrid(props: DataGridProps) {
     void navigator.clipboard
       .writeText(copyText)
       .then(() => {
-        showCopyFeedback(cellSelector, getCopyFeedbackLabel(copyText), true);
+        showCopyFeedback(cellSelector, getCopyFeedbackLabel(cellCount), true);
       })
       .catch((error) => {
         console.error("Failed to copy to clipboard:", error);
         showCopyFeedback(cellSelector, "Couldn't copy", false);
       });
-  }, [contextMenuTarget, getContextMenuCopyText, showCopyFeedback]);
+  }, [contextMenuTarget, getContextMenuCopy, showCopyFeedback]);
 
   return (
     <>

@@ -12,16 +12,12 @@ export interface GridCopyFeedback {
 
 export const COPY_FEEDBACK_DURATION_MS = 1200;
 
-/** Number of cells in tab/newline separated clipboard text, for the cue label. */
-export function countCopiedCells(text: string): number {
-  return text
-    .split("\n")
-    .reduce((total, line) => total + line.split("\t").length, 0);
-}
-
-export function getCopyFeedbackLabel(text: string): string {
-  const cells = countCopiedCells(text);
-  return cells > 1 ? `Copied ${cells} cells` : "Copied";
+/**
+ * Label for the cue. The count comes from the selection, never from the copied
+ * text: a single cell can hold tabs and newlines of its own.
+ */
+export function getCopyFeedbackLabel(cellCount: number): string {
+  return cellCount > 1 ? `Copied ${cellCount} cells` : "Copied";
 }
 
 /**
@@ -61,6 +57,19 @@ export function DataGridCopyFeedback(props: {
       right: containerRect.right - cellRect.right + 6,
       top: cellRect.top - containerRect.top + cellRect.height / 2,
     });
+
+    // The cue is positioned once, so it would drift onto another row if the grid
+    // scrolled underneath it. Drop it instead; the announcement already happened.
+    const hideOnScroll = () => setPosition(null);
+
+    container.addEventListener("scroll", hideOnScroll, {
+      capture: true,
+      passive: true,
+    });
+
+    return () => {
+      container.removeEventListener("scroll", hideOnScroll, { capture: true });
+    };
   }, [containerRef, feedback]);
 
   return (

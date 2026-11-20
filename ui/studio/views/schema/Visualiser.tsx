@@ -74,6 +74,27 @@ const IconWithTooltip: FC<{
   </Tooltip>
 );
 
+/**
+ * Tooltip for the key badge. Table and column names keep their case; only the
+ * fixed label is lowercased when it follows "Primary key".
+ */
+export function getKeyTooltipText(
+  field: Pick<
+    SchemaNodeData["fields"][number],
+    "foreignKeyTo" | "isForeignKey" | "isPrimary"
+  >,
+): string {
+  const foreignKeyTarget = field.foreignKeyTo
+    ? ` to ${field.foreignKeyTo.table}.${field.foreignKeyTo.column}`
+    : "";
+
+  if (field.isPrimary && field.isForeignKey) {
+    return `Primary key, foreign key${foreignKeyTarget}`;
+  }
+
+  return field.isPrimary ? "Primary key" : `Foreign key${foreignKeyTarget}`;
+}
+
 const TableNode: FC<NodeProps<SchemaNodeData>> = memo(({ data }) => {
   const {
     metadata: { activeSchema },
@@ -102,15 +123,7 @@ const TableNode: FC<NodeProps<SchemaNodeData>> = memo(({ data }) => {
     // Two fixed slots so names align: the key (primary wins when a column is
     // both), then nullable. Same badges and order as the legend.
     if (field.isPrimary || field.isForeignKey) {
-      const foreignKeyText = field.foreignKeyTo
-        ? `Foreign key to ${field.foreignKeyTo.table}.${field.foreignKeyTo.column}`
-        : "Foreign key";
-      const tooltipText =
-        field.isPrimary && field.isForeignKey
-          ? `Primary key, ${foreignKeyText.toLowerCase()}`
-          : field.isPrimary
-            ? "Primary key"
-            : foreignKeyText;
+      const tooltipText = getKeyTooltipText(field);
 
       icons.push(
         <IconWithTooltip

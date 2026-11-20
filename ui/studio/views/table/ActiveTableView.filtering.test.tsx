@@ -786,9 +786,10 @@ function queryConfirmationDialog() {
 }
 
 function expectConfirmationFocusRing(button: HTMLButtonElement | undefined) {
-  // Soft focus ring shared with every other button (no dark offset ring).
+  // Focus ring shared with every other button (no offset ring), in the ring
+  // token so it stays visible against the dialog surface.
   expect(button?.className).toContain("focus-visible:ring-2");
-  expect(button?.className).toContain("focus-visible:ring-foreground/15");
+  expect(button?.className).toContain("focus-visible:ring-ring");
 }
 
 function getOpenEditorInput(): HTMLInputElement | HTMLTextAreaElement {
@@ -2624,7 +2625,7 @@ describe("ActiveTableView filtering", () => {
       expect(dialog?.className).toContain("border-border");
       expect(dialog?.className).toContain("bg-card");
       expect(dialog?.className).toContain("text-card-foreground");
-      expect(dialog?.className).toContain("shadow-2xl");
+      expect(dialog?.className).toContain("shadow-lg");
       expect(dialogButtons).toHaveLength(2);
       expect(dialogButtons[0]?.textContent?.trim()).toBe("yes, discard");
       expect(dialogButtons[1]?.textContent?.trim()).toBe("no, keep editing");
@@ -2632,10 +2633,8 @@ describe("ActiveTableView filtering", () => {
       expect(dialogButtons[0]?.className).toContain(
         "text-destructive-foreground",
       );
-      expect(dialogButtons[1]?.className).toContain("bg-secondary");
-      expect(dialogButtons[1]?.className).toContain(
-        "text-secondary-foreground",
-      );
+      expect(dialogButtons[1]?.className).toContain("border-input");
+      expect(dialogButtons[1]?.className).toContain("text-foreground");
       expectConfirmationFocusRing(dialogButtons[0]);
       expect(document.activeElement).toBe(dialogButtons[0]);
 
@@ -2965,16 +2964,14 @@ describe("ActiveTableView filtering", () => {
       expect(dialog?.className).toContain("border-border");
       expect(dialog?.className).toContain("bg-card");
       expect(dialog?.className).toContain("text-card-foreground");
-      expect(dialog?.className).toContain("shadow-2xl");
+      expect(dialog?.className).toContain("shadow-lg");
       expect(dialogButtons).toHaveLength(2);
       expect(dialogButtons[0]?.textContent?.trim()).toBe("yes, write to db");
       expect(dialogButtons[1]?.textContent?.trim()).toBe("no, keep editing");
-      expect(dialogButtons[0]?.className).toContain("bg-primary");
-      expect(dialogButtons[0]?.className).toContain("text-primary-foreground");
-      expect(dialogButtons[1]?.className).toContain("bg-secondary");
-      expect(dialogButtons[1]?.className).toContain(
-        "text-secondary-foreground",
-      );
+      expect(dialogButtons[0]?.className).toContain("bg-foreground");
+      expect(dialogButtons[0]?.className).toContain("text-background");
+      expect(dialogButtons[1]?.className).toContain("border-input");
+      expect(dialogButtons[1]?.className).toContain("text-foreground");
       expectConfirmationFocusRing(dialogButtons[0]);
       expect(document.activeElement).toBe(dialogButtons[0]);
 
@@ -3567,7 +3564,8 @@ describe("ActiveTableView filtering", () => {
     expect(aiInput.className).toContain("border-0");
     expect(insertRowButton.className).toContain("h-8");
     expect(headerEndControls.className).toContain("pl-2");
-    expect(headerEndControls.querySelectorAll("button")).toHaveLength(1);
+    // Refresh schema and Refresh rows.
+    expect(headerEndControls.querySelectorAll("button")).toHaveLength(2);
     expect(filterChevron).not.toBeNull();
     expect(
       container.querySelector('button[aria-label="Apply AI filter"]'),
