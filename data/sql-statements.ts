@@ -1,3 +1,5 @@
+import type { SqlEditorDialect } from "./adapter";
+
 export interface SqlStatementSegment {
   from: number;
   statement: string;
@@ -9,6 +11,7 @@ interface ParseState {
     | "normal"
     | "single-quote"
     | "double-quote"
+    | "backtick-quote"
     | "line-comment"
     | "block-comment"
     | "dollar-quote";
@@ -16,7 +19,13 @@ interface ParseState {
   dollarQuoteDelimiter: string;
 }
 
-export function splitTopLevelSqlStatements(sql: string): SqlStatementSegment[] {
+export function splitTopLevelSqlStatements(
+  sql: string,
+  options?: { dialect?: SqlEditorDialect },
+): SqlStatementSegment[] {
+  // MySQL treats backslash as an escape inside quoted strings, quotes
+  // identifiers with backticks, and starts line comments with `#`.
+  const isMySql = options?.dialect === "mysql";
   const state: ParseState = {
     blockCommentDepth: 0,
     dollarQuoteDelimiter: "",
@@ -31,6 +40,11 @@ export function splitTopLevelSqlStatements(sql: string): SqlStatementSegment[] {
     const nextChar = sql[index + 1];
 
     if (state.mode === "single-quote") {
+      if (isMySql && char === "\\") {
+        index += 2;
+        continue;
+      }
+
       if (char === "'" && nextChar === "'") {
         index += 2;
         continue;
@@ -45,12 +59,31 @@ export function splitTopLevelSqlStatements(sql: string): SqlStatementSegment[] {
     }
 
     if (state.mode === "double-quote") {
+      if (isMySql && char === "\\") {
+        index += 2;
+        continue;
+      }
+
       if (char === '"' && nextChar === '"') {
         index += 2;
         continue;
       }
 
       if (char === '"') {
+        state.mode = "normal";
+      }
+
+      index += 1;
+      continue;
+    }
+
+    if (state.mode === "backtick-quote") {
+      if (char === "`" && nextChar === "`") {
+        index += 2;
+        continue;
+      }
+
+      if (char === "`") {
         state.mode = "normal";
       }
 
@@ -116,9 +149,21 @@ export function splitTopLevelSqlStatements(sql: string): SqlStatementSegment[] {
       continue;
     }
 
+    if (isMySql && char === "`") {
+      state.mode = "backtick-quote";
+      index += 1;
+      continue;
+    }
+
     if (char === "-" && nextChar === "-") {
       state.mode = "line-comment";
       index += 2;
+      continue;
+    }
+
+    if (isMySql && char === "#") {
+      state.mode = "line-comment";
+      index += 1;
       continue;
     }
 
@@ -155,11 +200,12 @@ export function splitTopLevelSqlStatements(sql: string): SqlStatementSegment[] {
 
 export function getTopLevelSqlStatementAtCursor(args: {
   cursorIndex: number;
+  dialect?: SqlEditorDialect;
   sql: string;
 }): SqlStatementSegment | null {
-  const { sql } = args;
+  const { dialect, sql } = args;
   const cursorIndex = clamp(args.cursorIndex, 0, sql.length);
-  const segments = splitTopLevelSqlStatements(sql);
+  const segments = splitTopLevelSqlStatements(sql, { dialect });
 
   if (segments.length === 0) {
     return null;
