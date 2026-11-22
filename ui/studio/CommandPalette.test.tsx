@@ -9,6 +9,7 @@ import {
   useRegisterCommandPaletteActions,
 } from "./CommandPalette";
 import { Navigation } from "./Navigation";
+import { SQL_RUN_CONFIRMATION_UI_STATE_KEY } from "./views/sql/sql-run-confirmation";
 import { createActiveTableCommandPaletteActions } from "./views/table/active-table-command-actions";
 
 interface NavigationMockValue {
@@ -1324,6 +1325,65 @@ describe("Studio command palette", () => {
     });
 
     expect(onRender).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("toggles SQL run confirmation from the palette and keeps it in sync with the stored setting", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StudioCommandPaletteProvider />);
+    });
+
+    act(() => {
+      keyDown("k", { metaKey: true });
+    });
+
+    const input = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Search commands"]',
+    );
+
+    if (!(input instanceof HTMLInputElement)) {
+      throw new Error("Expected command palette input");
+    }
+
+    act(() => {
+      inputText(input, "don't ask again");
+    });
+
+    const label = "Confirm before running SQL that changes data";
+    expect(getCommandItemByText(label)).toBeDefined();
+    expect(getSwitchByLabel(label)?.getAttribute("aria-checked")).toBe("true");
+
+    act(() => {
+      getSwitchByLabel(label)?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+    });
+
+    expect(uiStateStore.get(SQL_RUN_CONFIRMATION_UI_STATE_KEY)).toBe(false);
+    expect(getSwitchByLabel(label)?.getAttribute("aria-checked")).toBe("false");
+
+    act(() => {
+      inputText(input, "confirm");
+    });
+    act(() => {
+      getCommandItemByText(label)?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+    });
+
+    expect(uiStateStore.get(SQL_RUN_CONFIRMATION_UI_STATE_KEY)).toBe(true);
+    expect(getSwitchByLabel(label)?.getAttribute("aria-checked")).toBe("true");
+    expect(
+      document.querySelector('input[aria-label="Search commands"]'),
+    ).not.toBeNull();
 
     act(() => {
       root.unmount();

@@ -17,6 +17,7 @@ This document is normative for the Studio `Cmd/Ctrl+K` command palette.
 - The next section MUST show table navigation results for the active schema. With no query it shows the first 3 tables; with a query it shows the top 3 matches.
 - When more than 3 tables exist, the tables section MUST append an `x more...` affordance. Selecting it MUST close the palette and hand off to the existing sidebar table-search UI, opening that input and seeding it with the current palette query.
 - The next section MUST expose Studio appearance controls: a `Match system theme` toggle and a single-line `Studio theme` segmented control with `Light` and `Dark` options.
+- The next section (`Safety`) MUST expose a `Confirm before running SQL that changes data` switch bound to the same persistent `sql:confirm-before-changes` UI state the SQL view reads (`useSqlRunConfirmationSetting`). It MUST NOT dismiss the palette when toggled.
 - The final section MUST expose navigation to `Visualizer`, `Console`, and `SQL`.
 - Filtering MUST apply to commands and tables immediately as the user types.
 - The palette popup MUST render inside the Studio `.ps` scope so it inherits Studio styling and remains centered as a modal surface in embedded hosts.

@@ -221,7 +221,7 @@ This keeps table cells, copies, and other row-backed UI surfaces from drifting w
 
 `Cmd/Ctrl+K` opens a compact Studio command palette that immediately focuses search and filters available actions as you type.
 A quiet `Commands ⌘K` row (`Ctrl K` off macOS) is pinned to the bottom of the sidebar, so people who don't know the shortcut can find the palette and learn it; clicking it opens the palette.
-In table view it surfaces context-aware actions like row search, AI filtering, insert row, refresh, and page navigation, while the lower sections jump to tables and core Studio views.
+In table view it surfaces context-aware actions like row search, AI filtering, insert row, refresh, and page navigation, while the lower sections jump to tables and core Studio views. Settings rows for the theme and for confirming SQL that changes data toggle in place without closing the palette.
 Table navigation stays intentionally short by showing only the first 3 tables by default and the top 3 matches while filtering. If more tables exist, the palette shows an `x more...` entry that hands off into the existing sidebar table search so users keep one consistent table-filtering UI.
 `Search rows` and `Filter with AI` work in two modes: typing the command name keeps them as focus actions for the existing toolbar inputs, while free text turns them into direct `Search rows: ...` and `Filter with AI: ...` actions that execute immediately. Keyboard selection stays active from the moment the palette opens, so arrow keys can move through results before any typing, and the list auto-scrolls the active result into view as you move into lower sections.
 
@@ -282,6 +282,13 @@ Keyboard execution supports `Cmd/Ctrl+Enter`, and in multi-statement scripts it 
 Large SQL result sets stay responsive while you keep editing the query because result-grid rendering is isolated from editor keystrokes unless the executed result itself changes.
 Long SQL lines wrap inside the editor instead of stretching the overall page wider, so writing large queries stays readable on narrow viewports.
 The SQL editor panel is height-capped and scrolls internally, so a long query cannot push the `Run SQL` button off screen or squeeze the result grid out of view.
+
+## Confirm Before SQL That Changes Data
+
+The SQL tab asks before running a statement that changes data or schema, so one stray `Run SQL` or `Cmd/Ctrl+Enter` cannot wipe a table. Reads (`SELECT`, `EXPLAIN`, `SHOW`, ...) never prompt.
+Statements that remove data broadly (`DELETE`/`UPDATE` without `WHERE`, `DROP`, `TRUNCATE`, `ALTER TABLE ... DROP`, including the same behind `EXPLAIN ANALYZE` or a `WITH`) get a red warning that names the table, with `cancel` focused so a repeated `Enter` backs out. Other writes, and anything Studio cannot classify, get a plain "Run this ...?" prompt.
+The plain prompt has a "Don't ask again" box for people who run writes all day; it only takes effect when the run is confirmed, is stored per browser, and can be switched back on from the command palette (`Confirm before running SQL that changes data`). The red warning cannot be silenced.
+Detection is a small comment- and string-aware classifier in `data/sql-statement-risk.ts`, not a SQL parser: when unsure, Studio asks.
 
 ## AI SQL Generation
 
