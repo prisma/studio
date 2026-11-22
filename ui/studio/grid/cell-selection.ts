@@ -1,3 +1,8 @@
+import {
+  type ColumnDatatypesById,
+  formatBytesAsHex,
+} from "../../lib/format-bytes";
+
 export interface GridCellCoordinate {
   rowIndex: number;
   columnId: string;
@@ -86,8 +91,10 @@ export function buildClipboardText(args: {
   range: GridSelectionRange;
   rows: Record<string, unknown>[];
   columnIds: string[];
+  /** Lets bytes columns copy as hex, matching what the cell shows. */
+  columns?: ColumnDatatypesById;
 }): string {
-  const { columnIds, range, rows } = args;
+  const { columnIds, columns, range, rows } = args;
   const lines: string[] = [];
 
   for (let rowIndex = range.rowStart; rowIndex <= range.rowEnd; rowIndex++) {
@@ -110,7 +117,7 @@ export function buildClipboardText(args: {
         continue;
       }
 
-      values.push(stringifyCellValue(row[columnId]));
+      values.push(stringifyCellValue(row[columnId], columns?.[columnId]));
     }
 
     lines.push(values.join("\t"));
@@ -188,9 +195,18 @@ export function buildPasteChanges(args: {
   return changes;
 }
 
-function stringifyCellValue(value: unknown): string {
+function stringifyCellValue(
+  value: unknown,
+  column?: ColumnDatatypesById[string],
+): string {
   if (value == null) {
     return "";
+  }
+
+  const bytesHex = column ? formatBytesAsHex(value, column.datatype) : null;
+
+  if (bytesHex != null) {
+    return bytesHex;
   }
 
   if (typeof value === "object") {

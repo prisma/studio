@@ -9,6 +9,7 @@ import {
   vi,
 } from "vitest";
 
+import { formatBytesAsHex } from "../../ui/lib/format-bytes";
 import type { Table } from "../adapter";
 import type { Executor } from "../executor";
 import { createPGLiteExecutor } from "../pglite";
@@ -1521,6 +1522,147 @@ describe("postgres-core/dml", () => {
           "transformations": undefined,
         }
       `);
+    });
+  });
+
+  describe("bytes columns", () => {
+    const bytesTable: Table = {
+      columns: {
+        id: {
+          datatype: {
+            group: "numeric",
+            isArray: false,
+            isNative: true,
+            name: "int4",
+            options: [],
+            schema: "pg_catalog",
+          },
+          defaultValue: null,
+          fkColumn: null,
+          fkSchema: null,
+          fkTable: null,
+          isAutoincrement: false,
+          isComputed: false,
+          isRequired: true,
+          name: "id",
+          nullable: false,
+          pkPosition: 1,
+          schema: "public",
+          table: "bytes_files",
+        },
+        payload: {
+          datatype: {
+            group: "string",
+            isArray: false,
+            isNative: true,
+            name: "bytea",
+            options: [],
+            schema: "pg_catalog",
+          },
+          defaultValue: null,
+          fkColumn: null,
+          fkSchema: null,
+          fkTable: null,
+          isAutoincrement: false,
+          isComputed: false,
+          isRequired: false,
+          name: "payload",
+          nullable: true,
+          pkPosition: null,
+          schema: "public",
+          table: "bytes_files",
+        },
+        label: {
+          datatype: {
+            group: "string",
+            isArray: false,
+            isNative: true,
+            name: "text",
+            options: [],
+            schema: "pg_catalog",
+          },
+          defaultValue: null,
+          fkColumn: null,
+          fkSchema: null,
+          fkTable: null,
+          isAutoincrement: false,
+          isComputed: false,
+          isRequired: false,
+          name: "label",
+          nullable: true,
+          pkPosition: null,
+          schema: "public",
+          table: "bytes_files",
+        },
+      },
+      name: "bytes_files",
+      schema: "public",
+    };
+
+    beforeAll(async () => {
+      await pglite.exec(`
+        create table "public"."bytes_files" ("id" int primary key, "payload" bytea, "label" text);
+        insert into "public"."bytes_files" values
+          (1, '\\x48656c6c6f'::bytea, 'a'), (2, '\\x'::bytea, 'b'), (3, null, 'c');
+      `);
+    });
+
+    async function readPayloadHex(): Promise<(string | null)[]> {
+      return (
+        await pglite.query<{ hex: string | null }>(
+          `select encode("payload", 'hex') as "hex" from "public"."bytes_files" order by "id"`,
+        )
+      ).rows.map((row) => row.hex);
+    }
+
+    // Rows as the grid receives them: through the BFF's JSON serialisation.
+    async function selectGridRows(): Promise<Record<string, unknown>[]> {
+      const [error, rows] = await executor.execute(
+        getSelectQuery({
+          pageIndex: 0,
+          pageSize: 10,
+          sortOrder: [{ column: "id", direction: "asc" }],
+          table: bytesTable,
+        }),
+      );
+
+      expect(error).toBeNull();
+
+      return JSON.parse(JSON.stringify(rows)) as Record<string, unknown>[];
+    }
+
+    it("reaches the grid as values that format as hex", async () => {
+      const rows = await selectGridRows();
+      const { datatype } = bytesTable.columns.payload!;
+
+      expect(
+        rows.map((row) => formatBytesAsHex(row.payload, datatype)),
+      ).toEqual(["\\x48656c6c6f", "\\x", null]);
+      expect(rows[2]?.payload).toBeNull();
+    });
+
+    it("leaves bytes untouched when another column of the row is edited", async () => {
+      const before = await readPayloadHex();
+      const [row] = await selectGridRows();
+      const query = getUpdateQuery({
+        changes: { label: "renamed" },
+        row: row!,
+        table: bytesTable,
+      });
+      const [setClause] = query.sql.split(" where ");
+
+      expect(setClause).not.toContain("payload");
+      expect(
+        query.parameters.some(
+          (parameter) => typeof parameter === "object" && parameter !== null,
+        ),
+      ).toBe(false);
+
+      const [error] = await executor.execute(query);
+
+      expect(error).toBeNull();
+      expect(await readPayloadHex()).toEqual(before);
+      expect(before).toEqual(["48656c6c6f", "", null]);
     });
   });
 });

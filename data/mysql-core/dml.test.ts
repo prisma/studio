@@ -9,6 +9,7 @@ import {
   vi,
 } from "vitest";
 
+import { formatBytesAsHex } from "../../ui/lib/format-bytes";
 import type { Table } from "../adapter";
 import type { Executor } from "../executor";
 import { createMySQL2Executor } from "../mysql2";
@@ -1312,6 +1313,155 @@ describeMysql("mysql-core/dml", () => {
           "transformations": undefined,
         }
       `);
+    });
+  });
+
+  describe("bytes columns", () => {
+    const bytesTable: Table = {
+      columns: {
+        id: {
+          datatype: {
+            group: "numeric",
+            isArray: false,
+            isNative: true,
+            name: "int",
+            options: [],
+            schema: "studio",
+          },
+          defaultValue: null,
+          fkColumn: null,
+          fkSchema: null,
+          fkTable: null,
+          isAutoincrement: false,
+          isComputed: false,
+          isRequired: true,
+          name: "id",
+          nullable: false,
+          pkPosition: 1,
+          schema: "studio",
+          table: "bytes_files",
+        },
+        payload: {
+          datatype: {
+            group: "string",
+            isArray: false,
+            isNative: true,
+            name: "blob",
+            options: [],
+            schema: "studio",
+          },
+          defaultValue: null,
+          fkColumn: null,
+          fkSchema: null,
+          fkTable: null,
+          isAutoincrement: false,
+          isComputed: false,
+          isRequired: false,
+          name: "payload",
+          nullable: true,
+          pkPosition: null,
+          schema: "studio",
+          table: "bytes_files",
+        },
+        label: {
+          datatype: {
+            group: "string",
+            isArray: false,
+            isNative: true,
+            name: "text",
+            options: [],
+            schema: "studio",
+          },
+          defaultValue: null,
+          fkColumn: null,
+          fkSchema: null,
+          fkTable: null,
+          isAutoincrement: false,
+          isComputed: false,
+          isRequired: false,
+          name: "label",
+          nullable: true,
+          pkPosition: null,
+          schema: "studio",
+          table: "bytes_files",
+        },
+      },
+      name: "bytes_files",
+      schema: "studio",
+    };
+
+    beforeAll(async () => {
+      await pool.query("drop table if exists `bytes_files`");
+      await pool.query(
+        "create table `bytes_files` (`id` int primary key, `payload` blob, `label` text)",
+      );
+      await pool.query(
+        "insert into `bytes_files` values (1, X'48656C6C6F', 'a'), (2, X'', 'b'), (3, null, 'c')",
+      );
+    });
+
+    afterAll(async () => {
+      await pool.query("drop table if exists `bytes_files`");
+    });
+
+    async function readPayloadHex(): Promise<(string | null)[]> {
+      return (
+        (
+          await pool.query(
+            "select case when `payload` is null then null else lower(hex(`payload`)) end as `hex` from `bytes_files` order by `id`",
+          )
+        )[0] as { hex: string | null }[]
+      ).map((row) => row.hex);
+    }
+
+    // Rows as the grid receives them: through the BFF's JSON serialisation.
+    async function selectGridRows(): Promise<Record<string, unknown>[]> {
+      const [error, rows] = await executor.execute(
+        getSelectQuery({
+          pageIndex: 0,
+          pageSize: 10,
+          sortOrder: [{ column: "id", direction: "asc" }],
+          table: bytesTable,
+        }),
+      );
+
+      expect(error).toBeNull();
+
+      return JSON.parse(JSON.stringify(rows)) as Record<string, unknown>[];
+    }
+
+    it("reaches the grid as values that format as hex", async () => {
+      const rows = await selectGridRows();
+      const { datatype } = bytesTable.columns.payload!;
+
+      expect(
+        rows.map((row) => formatBytesAsHex(row.payload, datatype)),
+      ).toEqual(["\\x48656c6c6f", "\\x", null]);
+      expect(rows[2]?.payload).toBeNull();
+    });
+
+    it("leaves bytes untouched when another column of the row is edited", async () => {
+      const before = await readPayloadHex();
+      const [row] = await selectGridRows();
+      const query = getUpdateQuery({
+        changes: { label: "renamed" },
+        row: row!,
+        table: bytesTable,
+      });
+      const [setClause] = query.sql.split(" where ");
+
+      expect(setClause).not.toContain("payload");
+      expect(
+        query.parameters.some(
+          (parameter) => typeof parameter === "object" && parameter !== null,
+        ),
+      ).toBe(false);
+
+      const [error] = await executor.execute(query);
+
+      expect(error).toBeNull();
+      expect(await readPayloadHex()).toEqual(before);
+      expect(before).toEqual(["48656c6c6f", "", null]);
     });
   });
 });

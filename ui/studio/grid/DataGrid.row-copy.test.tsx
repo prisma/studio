@@ -59,12 +59,17 @@ import {
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-function renderGrid(args?: { rows?: GridRow[] }) {
+function renderGrid(args?: {
+  columnDefs?: AccessorKeyColumnDefBase<Record<string, unknown>>[];
+  rows?: GridRow[];
+}) {
   const container = document.createElement("div");
   document.body.appendChild(container);
-  const columnDefs = createReadOnlyColumns({
-    includeRowSelector: true,
-  }) as AccessorKeyColumnDefBase<Record<string, unknown>>[];
+  const columnDefs =
+    args?.columnDefs ??
+    (createReadOnlyColumns({
+      includeRowSelector: true,
+    }) as AccessorKeyColumnDefBase<Record<string, unknown>>[]);
 
   const root = createRoot(container);
 
@@ -156,6 +161,55 @@ afterEach(() => {
 });
 
 describe("DataGrid row copy behavior", () => {
+  it("copies bytes cells as full hex using the column datatype", () => {
+    createSelection({ isCollapsed: true });
+    const writeText = mockClipboardWriteText();
+    const columnDefs = (
+      createReadOnlyColumns({
+        columnIds: ["id", "payload"],
+        includeRowSelector: true,
+      }) as AccessorKeyColumnDefBase<Record<string, unknown>>[]
+    ).map((columnDef) =>
+      columnDef.accessorKey === "payload"
+        ? {
+            ...columnDef,
+            meta: {
+              datatype: { group: "string", isArray: false, name: "bytea" },
+            },
+          }
+        : columnDef,
+    );
+    const { cleanup, getCell } = renderGrid({
+      columnDefs,
+      rows: [
+        {
+          __ps_rowid: "row_1",
+          id: "file_1",
+          payload: { type: "Buffer", data: [72, 101, 108, 108, 111] },
+        },
+      ],
+    });
+
+    dispatchMouse(getCell(0, "__ps_select"), "mousedown", { button: 2 });
+    dispatchMouse(getCell(0, "__ps_select"), "contextmenu", { button: 2 });
+
+    const copyButton = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Copy",
+    );
+
+    if (!(copyButton instanceof HTMLButtonElement)) {
+      throw new Error("Could not find row-selector copy button");
+    }
+
+    act(() => {
+      copyButton.click();
+    });
+
+    expect(writeText).toHaveBeenCalledWith("file_1\t\\x48656c6c6f");
+
+    cleanup();
+  });
+
   it("copies the full row when using Copy from first-column spacer cell", () => {
     createSelection({ isCollapsed: true });
     const writeText = mockClipboardWriteText();
