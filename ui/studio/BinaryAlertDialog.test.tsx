@@ -96,9 +96,10 @@ describe("BinaryAlertDialog", () => {
     dialog.cleanup();
   });
 
-  it("can focus the safe button first and render a control in the button row", () => {
+  it("can focus the safe button first and render a control above the buttons", () => {
     const dialog = renderDialog({
-      footerStart: <p>extra content</p>,
+      control: <p>extra content</p>,
+      layout: "comfortable",
       initialFocus: "secondary",
     });
 

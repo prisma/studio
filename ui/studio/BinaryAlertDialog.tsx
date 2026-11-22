@@ -70,18 +70,19 @@ function handleBinaryDialogKeyDown(args: {
 }
 
 export type BinaryAlertDialogProps = {
-  /** Extra classes for the dialog surface, for example a wider max width. */
-  className?: string;
-  /**
-   * Optional control shown at the start of the button row, such as a
-   * "Don't ask again" checkbox. The buttons stay right-aligned.
-   */
-  footerStart?: ReactNode;
+  /** Optional control shown above the buttons, such as a checkbox. */
+  control?: ReactNode;
   /**
    * Which button receives focus when the dialog opens. Enter activates the
    * focused button, so destructive confirmations should focus `secondary`.
    */
   initialFocus?: "primary" | "secondary";
+  /**
+   * `compact` (default): small dialog with right-aligned buttons, used for
+   * quick table-view confirmations. `comfortable`: fixed-width dialog with
+   * roomier spacing and two equal full-width buttons, for longer prompts.
+   */
+  layout?: "comfortable" | "compact";
   onCloseAutoFocus?: (event: Event) => void;
   onOpenChange: (open: boolean) => void;
   onPrimaryAction: () => void;
@@ -103,9 +104,9 @@ export type BinaryAlertDialogProps = {
  */
 export function BinaryAlertDialog(props: BinaryAlertDialogProps) {
   const {
-    className,
-    footerStart,
+    control,
     initialFocus = "primary",
+    layout = "compact",
     onCloseAutoFocus,
     onOpenChange,
     onPrimaryAction,
@@ -118,6 +119,8 @@ export function BinaryAlertDialog(props: BinaryAlertDialogProps) {
     secondaryLabel,
     title,
   } = props;
+  const isComfortable = layout === "comfortable";
+  const buttonSize = isComfortable ? "default" : "sm";
   const primaryButtonRef = useRef<HTMLButtonElement | null>(null);
   const secondaryButtonRef = useRef<HTMLButtonElement | null>(null);
 
@@ -129,8 +132,10 @@ export function BinaryAlertDialog(props: BinaryAlertDialogProps) {
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent
         className={cn(
-          "max-w-[280px] gap-4 rounded-xl bg-background p-4 font-sans",
-          className,
+          "rounded-xl bg-background font-sans",
+          isComfortable
+            ? "w-[360px] max-w-[calc(100vw-2rem)] gap-5 p-5"
+            : "max-w-[280px] gap-4 p-4",
         )}
         onCloseAutoFocus={onCloseAutoFocus}
         onKeyDown={(event) =>
@@ -152,34 +157,37 @@ export function BinaryAlertDialog(props: BinaryAlertDialogProps) {
       >
         <AlertDialogHeader className="gap-0 text-left">
           <AlertDialogTitle className="sr-only">{title}</AlertDialogTitle>
-          <AlertDialogDescription className="font-sans text-sm leading-5 font-medium text-pretty text-foreground">
-            {prompt}
+          <AlertDialogDescription className="font-sans text-sm leading-5 font-medium text-foreground">
+            <span className="block text-balance">{prompt}</span>
             {promptDetail ? (
-              <span className="mt-1 block font-normal text-muted-foreground">
+              <span className="mt-1.5 block font-normal text-muted-foreground">
                 {promptDetail}
               </span>
             ) : null}
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <AlertDialogFooter className="flex-row items-center justify-end gap-2">
-          {footerStart ? (
-            <div className="mr-auto flex min-w-0 items-center">
-              {footerStart}
-            </div>
-          ) : null}
+        {control}
+        <AlertDialogFooter
+          className={
+            isComfortable
+              ? "grid grid-cols-2 gap-2"
+              : "flex-row items-center justify-end gap-2"
+          }
+        >
           <AlertDialogAction
             ref={primaryButtonRef}
-            size="sm"
+            size={buttonSize}
             variant={primaryVariant}
-            className={primaryClassName}
+            className={cn(isComfortable && "w-full", primaryClassName)}
             onClick={onPrimaryAction}
           >
             {primaryLabel}
           </AlertDialogAction>
           <AlertDialogCancel
             ref={secondaryButtonRef}
-            size="sm"
+            size={buttonSize}
             variant="outline"
+            className={cn(isComfortable && "w-full")}
             onClick={handleSecondaryAction}
           >
             {secondaryLabel}

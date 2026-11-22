@@ -320,8 +320,8 @@ function SqlRunConfirmationDialog(props: {
       promptDetail={copy.promptDetail}
       secondaryLabel="cancel"
       title={copy.title}
-      className="max-w-[340px]"
-      footerStart={
+      layout="comfortable"
+      control={
         isDanger ? null : (
           <div className="flex items-center gap-2">
             <Checkbox

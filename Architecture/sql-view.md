@@ -68,7 +68,12 @@ SQL result visualization is governed by:
   explaining how to turn confirmation back on.
 - Cancel and Escape MUST run nothing and MUST return focus to the editor.
 - Confirmation dialogs MUST use the shared
-  [`BinaryAlertDialog`](../ui/studio/BinaryAlertDialog.tsx).
+  [`BinaryAlertDialog`](../ui/studio/BinaryAlertDialog.tsx) with
+  `layout="comfortable"` (fixed width, two equal full-width buttons, the
+  "Don't ask again" checkbox passed as `control` above them). Prompts MUST
+  describe the effect in plain words without SQL keywords, render table names
+  as monospace chips, and put "Studio can't undo this." on a quieter second
+  line.
 - The classifier MUST stay conservative: comments, string literals and
   parenthesised subqueries MUST NOT affect `WHERE` detection, and anything it
   does not recognise MUST classify as `unknown`, never `safe`.
