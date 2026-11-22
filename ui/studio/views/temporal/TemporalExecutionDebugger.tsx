@@ -4,30 +4,43 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
+  Database,
   Download,
+  MoreHorizontal,
   Play,
   RefreshCw,
+  RotateCcw,
   Send,
   StopCircle,
   Terminal,
+  Waves,
   XCircle,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import type { TemporalFollowMode, TemporalGroupedSpan } from "@/data/temporal";
 import { Badge } from "@/ui/components/ui/badge";
 import { Button } from "@/ui/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/ui/components/ui/dropdown-menu";
 import { Input } from "@/ui/components/ui/input";
 import { Label } from "@/ui/components/ui/label";
 import { Skeleton } from "@/ui/components/ui/skeleton";
 import { Textarea } from "@/ui/components/ui/textarea";
+import { useNavigation } from "@/ui/hooks/use-navigation";
 import {
   useTemporalActions,
   useTemporalWorkflowDetail,
 } from "@/ui/hooks/use-temporal";
 import { cn } from "@/ui/lib/utils";
 
+import { useStudio } from "../../context";
 import { StudioHeader } from "../../StudioHeader";
 import {
   formatBytes,
@@ -36,9 +49,12 @@ import {
   parseJsonArgsText,
   safeJsonPretty,
   spanBarClasses,
-  statusBadgeClasses,
-  statusDotClasses,
 } from "./temporal-utils";
+import {
+  TemporalConfirmDialog,
+  TemporalFollowControl,
+  WorkflowStatusBadge,
+} from "./TemporalPrimitives";
 import type { TemporalStartPreset } from "./TemporalStartSheet";
 
 interface TemporalExecutionDebuggerProps {
@@ -74,8 +90,11 @@ export function TemporalExecutionDebugger(
       workflowId,
     });
 
+  const { hasDatabase, streamsUrl } = useStudio();
+  const { setSearchParam, setStreamParam, setViewParam } = useNavigation();
   const {
     queryWorkflow,
+    resetStickyTaskQueue,
     signalWorkflow,
     updateWorkflow,
     cancelWorkflow,
@@ -86,6 +105,7 @@ export function TemporalExecutionDebugger(
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
   const [rawFilter, setRawFilter] = useState("");
   const [expandedRawId, setExpandedRawId] = useState<number | null>(null);
+  const [terminateConfirmOpen, setTerminateConfirmOpen] = useState(false);
 
   // Right inspector state
   const [inspectorTab, setInspectorTab] = useState<
@@ -94,7 +114,7 @@ export function TemporalExecutionDebugger(
   const [interactKind, setInteractKind] = useState<
     "query" | "signal" | "update"
   >("query");
-  const [interactName, setInteractName] = useState("transferStatus");
+  const [interactName, setInteractName] = useState("getState");
   const [interactArgs, setInteractArgs] = useState("[]");
   const [interactOutput, setInteractOutput] = useState<{
     durationMs?: number;
@@ -107,6 +127,28 @@ export function TemporalExecutionDebugger(
   const spans = useMemo(() => data?.spans ?? [], [data?.spans]);
   const rawEvents = useMemo(() => data?.rawEvents ?? [], [data?.rawEvents]);
   const totalDurationMs = data?.totalDurationMs ?? 1;
+
+  // Match default query/signal name to the inspected WorkflowType
+  useEffect(() => {
+    if (!execution?.workflowType) return;
+    if (interactKind === "query") {
+      setInteractName(
+        execution.workflowType === "MoneyTransfer"
+          ? "transferStatus"
+          : execution.workflowType === "ChargeOrder"
+            ? "orderStatus"
+            : "getState",
+      );
+    } else if (interactKind === "signal") {
+      setInteractName(
+        execution.workflowType === "MoneyTransfer"
+          ? "approveDeposit"
+          : execution.workflowType === "SubscriptionRenewal"
+            ? "renewNow"
+            : "cancelOrder",
+      );
+    }
+  }, [execution?.workflowType, interactKind]);
 
   const retryingActivity = useMemo(
     () =>
@@ -237,23 +279,10 @@ export function TemporalExecutionDebugger(
       <StudioHeader
         endContent={
           <div className="flex items-center gap-1.5">
-            <div className="inline-flex rounded-md border border-border bg-secondary p-0.5 text-[11px]">
-              {(["paused", "live", "tail"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => onFollowModeChange(mode)}
-                  className={cn(
-                    "rounded px-2 py-0.5 capitalize transition-colors",
-                    followMode === mode
-                      ? "bg-background font-medium text-foreground shadow-2xs"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {mode}
-                </button>
-              ))}
-            </div>
+            <TemporalFollowControl
+              value={followMode}
+              onChange={onFollowModeChange}
+            />
             <Button
               variant="outline"
               size="sm"
@@ -262,7 +291,10 @@ export function TemporalExecutionDebugger(
               aria-label="Refresh execution"
             >
               <RefreshCw
-                className={cn("size-3.5", isFetching && "animate-spin")}
+                className={cn(
+                  "size-3.5",
+                  isFetching && "motion-safe:animate-spin",
+                )}
               />
             </Button>
             <Button
@@ -276,72 +308,88 @@ export function TemporalExecutionDebugger(
               <Play className="mr-1 size-3" />
               Clone &amp; Re-run
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={handleDownloadReplayJson}
-              disabled={!data}
-              title="Download canonical replay JSON"
-            >
-              <Download className="mr-1 size-3" />
-              Replay JSON
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={() => void handleCopyCli()}
-              title="Copy temporal CLI command"
-            >
-              <Terminal className="size-3.5" />
-            </Button>
-            {isRunning ? (
-              <>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
                   size="sm"
                   className="h-7 px-2 text-xs"
-                  onClick={() =>
-                    void cancelWorkflow
-                      .mutateAsync({ runId: execution.runId, workflowId })
-                      .then(() =>
-                        toast.success(`Cancel requested for ${workflowId}`),
-                      )
-                      .catch((e) =>
-                        toast.error(e instanceof Error ? e.message : String(e)),
-                      )
-                  }
+                  aria-label="Workflow actions"
+                  data-testid="temporal-debugger-actions"
                 >
-                  <XCircle className="mr-1 size-3" />
-                  Cancel
+                  <MoreHorizontal className="size-3.5" />
                 </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="h-7 px-2 text-xs"
-                  onClick={() =>
-                    void terminateWorkflow
-                      .mutateAsync({ runId: execution.runId, workflowId })
-                      .then(() => toast.success(`Terminated ${workflowId}`))
-                      .catch((e) =>
-                        toast.error(e instanceof Error ? e.message : String(e)),
-                      )
-                  }
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem
+                  disabled={!data}
+                  onClick={handleDownloadReplayJson}
                 >
-                  <StopCircle className="mr-1 size-3" />
-                  Terminate
-                </Button>
-              </>
-            ) : null}
+                  <Download className="mr-2 size-3.5" />
+                  Download Replay JSON
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => void handleCopyCli()}>
+                  <Terminal className="mr-2 size-3.5" />
+                  Copy temporal CLI
+                </DropdownMenuItem>
+                {execution ? (
+                  <DropdownMenuItem
+                    onClick={() =>
+                      void resetStickyTaskQueue
+                        .mutateAsync({ runId: execution.runId, workflowId })
+                        .then(() =>
+                          toast.success(`Sticky queue reset for ${workflowId}`),
+                        )
+                        .catch((e) =>
+                          toast.error(
+                            e instanceof Error ? e.message : String(e),
+                          ),
+                        )
+                    }
+                  >
+                    <RotateCcw className="mr-2 size-3.5" />
+                    Reset Sticky Queue
+                  </DropdownMenuItem>
+                ) : null}
+                {isRunning && execution ? (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() =>
+                        void cancelWorkflow
+                          .mutateAsync({ runId: execution.runId, workflowId })
+                          .then(() =>
+                            toast.success(`Cancel requested for ${workflowId}`),
+                          )
+                          .catch((e) =>
+                            toast.error(
+                              e instanceof Error ? e.message : String(e),
+                            ),
+                          )
+                      }
+                    >
+                      <XCircle className="mr-2 size-3.5" />
+                      Request Cancel
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={() => setTerminateConfirmOpen(true)}
+                    >
+                      <StopCircle className="mr-2 size-3.5" />
+                      Terminate Workflow
+                    </DropdownMenuItem>
+                  </>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         }
       >
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 px-2 text-xs text-muted-foreground"
+            className="h-7 shrink-0 px-2 text-xs text-muted-foreground"
             onClick={onBack}
             data-testid="temporal-back-to-grid"
           >
@@ -350,21 +398,10 @@ export function TemporalExecutionDebugger(
           </Button>
           {execution ? (
             <>
-              <Badge
-                variant="outline"
-                className={cn(
-                  "gap-1.5 text-[11px]",
-                  statusBadgeClasses(execution.status),
-                )}
-              >
-                <span
-                  className={cn(
-                    "size-1.5 rounded-full",
-                    statusDotClasses(execution.status),
-                  )}
-                />
-                {execution.status}
-              </Badge>
+              <WorkflowStatusBadge
+                status={execution.status}
+                className="shrink-0"
+              />
               <span className="truncate text-sm font-semibold text-foreground">
                 {execution.workflowType}
               </span>
@@ -373,7 +410,8 @@ export function TemporalExecutionDebugger(
               </span>
               <button
                 type="button"
-                className="hidden items-center gap-1 rounded border border-border bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground hover:text-foreground lg:inline-flex"
+                aria-label={`Copy run ID ${execution.runId}`}
+                className="hidden shrink-0 items-center gap-1 rounded border border-border bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground hover:text-foreground xl:inline-flex"
                 onClick={() => {
                   void navigator.clipboard.writeText(execution.runId);
                   toast.success("Copied Run ID");
@@ -385,7 +423,7 @@ export function TemporalExecutionDebugger(
               </button>
             </>
           ) : (
-            <span className="font-mono text-xs text-muted-foreground">
+            <span className="truncate font-mono text-xs text-muted-foreground">
               {workflowId}
             </span>
           )}
@@ -435,22 +473,51 @@ export function TemporalExecutionDebugger(
               </span>
               <span>Started {formatRelativeTime(execution.startTime)}</span>
             </div>
-            {execution.parentWorkflowId ? (
-              <button
-                type="button"
-                onClick={() => {
-                  if (execution.parentWorkflowId) {
-                    onOpenExecution(
-                      execution.parentWorkflowId,
-                      execution.parentRunId,
-                    );
-                  }
-                }}
-                className="rounded border border-border bg-card px-2 py-0.5 font-mono text-[10.5px] text-sky-600 hover:underline dark:text-sky-400"
-              >
-                Parent: {execution.parentWorkflowId} ↗
-              </button>
-            ) : null}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {execution.parentWorkflowId ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (execution.parentWorkflowId) {
+                      onOpenExecution(
+                        execution.parentWorkflowId,
+                        execution.parentRunId,
+                      );
+                    }
+                  }}
+                  className="rounded border border-border bg-card px-2 py-0.5 font-mono text-[10.5px] text-prism-cyan-600 hover:underline dark:text-prism-cyan-400"
+                >
+                  Parent: {execution.parentWorkflowId} ↗
+                </button>
+              ) : null}
+              {typeof streamsUrl === "string" ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void setStreamParam("app-events");
+                    void setSearchParam(execution.workflowId);
+                    void setViewParam("stream");
+                  }}
+                  className="inline-flex items-center gap-1 rounded border border-border bg-card px-2 py-0.5 text-[10.5px] text-muted-foreground hover:text-foreground"
+                >
+                  <Waves className="size-3" />
+                  Streams
+                </button>
+              ) : null}
+              {hasDatabase ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void setSearchParam(execution.workflowId);
+                    void setViewParam("table");
+                  }}
+                  className="inline-flex items-center gap-1 rounded border border-border bg-card px-2 py-0.5 text-[10.5px] text-muted-foreground hover:text-foreground"
+                >
+                  <Database className="size-3" />
+                  Tables
+                </button>
+              ) : null}
+            </div>
           </div>
 
           {/* Conditional Diagnostic Callout Strip */}
@@ -489,7 +556,7 @@ export function TemporalExecutionDebugger(
                   {retryingActivity.maximumAttempts > 0
                     ? `/${retryingActivity.maximumAttempts}`
                     : ""}
-                  ) — {retryingActivity.lastFailure?.message}
+                  ): {retryingActivity.lastFailure?.message}
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
@@ -697,8 +764,12 @@ export function TemporalExecutionDebugger(
             </div>
 
             {/* Right Inspector Sheet: Interact / Pending / Meta */}
-            <aside className="flex min-h-0 flex-col bg-card">
-              <div className="grid grid-cols-3 border-b border-border bg-secondary/40 text-xs">
+            <aside className="flex min-h-0 flex-col border-t border-border bg-card lg:border-t-0">
+              <div
+                role="tablist"
+                aria-label="Execution inspector tabs"
+                className="grid grid-cols-3 border-b border-border bg-secondary/40 text-xs"
+              >
                 {(
                   [
                     { id: "interact", label: "Interact" },
@@ -712,9 +783,11 @@ export function TemporalExecutionDebugger(
                   <button
                     key={t.id}
                     type="button"
+                    role="tab"
+                    aria-selected={inspectorTab === t.id}
                     onClick={() => setInspectorTab(t.id)}
                     className={cn(
-                      "border-b-2 py-2 text-center font-medium transition-colors",
+                      "border-b-2 py-2 text-center font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                       inspectorTab === t.id
                         ? "border-primary bg-card text-foreground"
                         : "border-transparent text-muted-foreground hover:text-foreground",
@@ -937,6 +1010,27 @@ export function TemporalExecutionDebugger(
           </div>
         </div>
       )}
+
+      <TemporalConfirmDialog
+        confirmLabel="Terminate workflow"
+        defaultReason="Terminated via Prisma Studio"
+        description={`Terminate ${workflowId}? The execution stops immediately without running cleanup logic.`}
+        isPending={terminateWorkflow.isPending}
+        onConfirm={async (reason) => {
+          if (!execution) return;
+          await terminateWorkflow.mutateAsync({
+            reason: reason || "Terminated via Prisma Studio",
+            runId: execution.runId,
+            workflowId,
+          });
+          toast.success(`Terminated ${workflowId}`);
+        }}
+        onOpenChange={setTerminateConfirmOpen}
+        open={terminateConfirmOpen}
+        reasonLabel="Termination Reason"
+        showReasonInput
+        title="Terminate workflow execution?"
+      />
     </div>
   );
 }

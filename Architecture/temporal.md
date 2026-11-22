@@ -29,7 +29,17 @@ The BFF probes `GetSystemInfo` and `GetClusterInfo` once to build a `TemporalCap
 | `POST /v1/namespaces/:ns/workflows/:wfId/update` | `UpdateWorkflowExecution` |
 | `POST /v1/namespaces/:ns/workflows/:wfId/cancel` | `RequestCancelWorkflowExecution` |
 | `POST /v1/namespaces/:ns/workflows/:wfId/terminate` | `TerminateWorkflowExecution` |
+| `POST /v1/namespaces/:ns/workflows/:wfId/reset-sticky` | `ResetStickyTaskQueue` |
 | `POST /v1/namespaces/:ns/workflows/bulk` | Fan-out `Signal`, `Cancel`, or `Terminate` across selected executions |
+| `GET / POST /v1/namespaces/:ns/schedules` | `ListSchedules` + `DescribeSchedule` / `CreateSchedule` |
+| `GET / DELETE /v1/namespaces/:ns/schedules/:id` | `DescribeSchedule` + `ListScheduleMatchingTimes` / `DeleteSchedule` |
+| `POST /v1/namespaces/:ns/schedules/:id/{patch,matching-times}` | `PatchSchedule` (pause/unpause/trigger/backfill) / `ListScheduleMatchingTimes` |
+| `POST /v1/namespaces/:ns/schedules/bulk` | Bulk pause, resume, trigger, or delete schedules |
+| `GET /v1/namespaces/:ns/task-queues` | `DescribeTaskQueue` with transparent synthesized fallback on `slate-temporal-next` |
+| `GET /v1/cluster/overview` | `slate-temporal-next` `/readyz`, `/v1/info`, `/v1/storage`, `/v1/load`, `/v1/cell`, `/v1/placement` |
+| `GET /v1/cluster/traces` | `slate-temporal-next` `/v1/traces?drain=false|true` |
+| `PUT / DELETE /v1/cluster/admission` | `slate-temporal-next` admission control override & lift |
+| `POST /v1/cluster/shards/:id/handoff` | `slate-temporal-next` live shard handoff |
 
 ## History Grouping (`data/temporal/history-grouping.ts`)
 
@@ -37,4 +47,4 @@ Raw Temporal history events are paired into grouped execution spans (`activity`,
 
 ## URL State
 
-All Temporal navigation state lives in the URL hash via `useNavigation()` (`view=temporal`, `temporalNs`, `temporalWf`, `temporalRun`, `temporalFollow`). See [`Architecture/navigation-url-state.md`](navigation-url-state.md).
+All Temporal navigation state lives in the URL hash via `useNavigation()` (`view=temporal`, `temporalNs`, `temporalSection`, `temporalWf`, `temporalRun`, `temporalFollow`). See [`Architecture/navigation-url-state.md`](navigation-url-state.md).

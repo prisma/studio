@@ -1,16 +1,26 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type {
+  TemporalAdmissionUpdateInput,
   TemporalBulkActionRequest,
   TemporalBulkActionResponse,
+  TemporalBulkScheduleRequest,
+  TemporalBulkScheduleResponse,
   TemporalCapabilities,
+  TemporalClusterOverview,
+  TemporalClusterTracesResponse,
+  TemporalCreateScheduleInput,
   TemporalExecutionDetail,
   TemporalFollowMode,
+  TemporalListSchedulesResponse,
   TemporalListWorkflowsResponse,
   TemporalNamespace,
+  TemporalPatchScheduleInput,
   TemporalQueryResult,
+  TemporalScheduleDetail,
   TemporalStartWorkflowInput,
   TemporalStartWorkflowResult,
+  TemporalTaskQueuesResponse,
   TemporalUpdateResult,
 } from "@/data/temporal";
 
@@ -331,13 +341,360 @@ export function useTemporalActions(namespace: string) {
     },
   });
 
+  const resetStickyTaskQueue = useMutation({
+    mutationFn: (args: { runId?: string; workflowId: string }) =>
+      temporalFetch<{ ok: true }>(
+        temporalUrl!,
+        `/v1/namespaces/${encodeURIComponent(namespace)}/workflows/${encodeURIComponent(args.workflowId)}/reset-sticky`,
+        {
+          body: JSON.stringify({ runId: args.runId }),
+          method: "POST",
+        },
+      ),
+    onSuccess: async (_, vars) => {
+      await invalidate(vars.workflowId);
+    },
+  });
+
   return {
     bulkAction,
     cancelWorkflow,
     queryWorkflow,
+    resetStickyTaskQueue,
     signalWorkflow,
     startWorkflow,
     terminateWorkflow,
     updateWorkflow,
+  };
+}
+
+export function useTemporalSchedules(args: {
+  followMode: TemporalFollowMode;
+  namespace: string;
+}) {
+  const { temporalUrl } = useStudio();
+  const { followMode, namespace } = args;
+  const enabled =
+    typeof temporalUrl === "string" &&
+    temporalUrl.length > 0 &&
+    namespace.length > 0;
+
+  return useQuery<TemporalListSchedulesResponse>({
+    enabled,
+    placeholderData: (prev) => prev,
+    queryFn: () =>
+      temporalFetch<TemporalListSchedulesResponse>(
+        temporalUrl!,
+        `/v1/namespaces/${encodeURIComponent(namespace)}/schedules`,
+      ),
+    queryKey: ["temporal", "schedules", temporalUrl, namespace],
+    refetchInterval: followMode === "paused" ? false : 5_000,
+  });
+}
+
+export function useTemporalScheduleDetail(args: {
+  namespace: string;
+  scheduleId?: string;
+}) {
+  const { temporalUrl } = useStudio();
+  const { namespace, scheduleId } = args;
+  const enabled =
+    typeof temporalUrl === "string" &&
+    temporalUrl.length > 0 &&
+    namespace.length > 0 &&
+    typeof scheduleId === "string" &&
+    scheduleId.length > 0;
+
+  return useQuery<TemporalScheduleDetail>({
+    enabled,
+    placeholderData: (prev) => prev,
+    queryFn: () =>
+      temporalFetch<TemporalScheduleDetail>(
+        temporalUrl!,
+        `/v1/namespaces/${encodeURIComponent(namespace)}/schedules/${encodeURIComponent(scheduleId!)}`,
+      ),
+    queryKey: [
+      "temporal",
+      "schedule-detail",
+      temporalUrl,
+      namespace,
+      scheduleId,
+    ],
+  });
+}
+
+export function useTemporalScheduleActions(namespace: string) {
+  const { temporalUrl } = useStudio();
+  const queryClient = useQueryClient();
+
+  const invalidate = async (scheduleId?: string) => {
+    await queryClient.invalidateQueries({
+      queryKey: ["temporal", "schedules", temporalUrl, namespace],
+    });
+    if (scheduleId) {
+      await queryClient.invalidateQueries({
+        queryKey: [
+          "temporal",
+          "schedule-detail",
+          temporalUrl,
+          namespace,
+          scheduleId,
+        ],
+      });
+    }
+  };
+
+  const createSchedule = useMutation({
+    mutationFn: (input: TemporalCreateScheduleInput) =>
+      temporalFetch<{ ok: true; scheduleId: string }>(
+        temporalUrl!,
+        `/v1/namespaces/${encodeURIComponent(namespace)}/schedules`,
+        {
+          body: JSON.stringify(input),
+          method: "POST",
+        },
+      ),
+    onSuccess: async () => {
+      await invalidate();
+    },
+  });
+
+  const patchSchedule = useMutation({
+    mutationFn: (args: {
+      input: TemporalPatchScheduleInput;
+      scheduleId: string;
+    }) =>
+      temporalFetch<{ ok: true }>(
+        temporalUrl!,
+        `/v1/namespaces/${encodeURIComponent(namespace)}/schedules/${encodeURIComponent(args.scheduleId)}/patch`,
+        {
+          body: JSON.stringify(args.input),
+          method: "POST",
+        },
+      ),
+    onSuccess: async (_, vars) => {
+      await invalidate(vars.scheduleId);
+    },
+  });
+
+  const deleteSchedule = useMutation({
+    mutationFn: (scheduleId: string) =>
+      temporalFetch<{ ok: true }>(
+        temporalUrl!,
+        `/v1/namespaces/${encodeURIComponent(namespace)}/schedules/${encodeURIComponent(scheduleId)}`,
+        { method: "DELETE" },
+      ),
+    onSuccess: async () => {
+      await invalidate();
+    },
+  });
+
+  const previewMatchingTimes = useMutation({
+    mutationFn: (args: {
+      endTime: string;
+      scheduleId: string;
+      startTime: string;
+    }) =>
+      temporalFetch<{ times: string[] }>(
+        temporalUrl!,
+        `/v1/namespaces/${encodeURIComponent(namespace)}/schedules/${encodeURIComponent(args.scheduleId)}/matching-times`,
+        {
+          body: JSON.stringify({
+            endTime: args.endTime,
+            startTime: args.startTime,
+          }),
+          method: "POST",
+        },
+      ),
+  });
+
+  const bulkScheduleAction = useMutation({
+    mutationFn: (req: TemporalBulkScheduleRequest) =>
+      temporalFetch<TemporalBulkScheduleResponse>(
+        temporalUrl!,
+        `/v1/namespaces/${encodeURIComponent(namespace)}/schedules/bulk`,
+        {
+          body: JSON.stringify(req),
+          method: "POST",
+        },
+      ),
+    onSuccess: async () => {
+      await invalidate();
+    },
+  });
+
+  return {
+    bulkScheduleAction,
+    createSchedule,
+    deleteSchedule,
+    patchSchedule,
+    previewMatchingTimes,
+  };
+}
+
+export function useTemporalTaskQueues(args: {
+  followMode: TemporalFollowMode;
+  namespace: string;
+}) {
+  const { temporalUrl } = useStudio();
+  const { followMode, namespace } = args;
+  const enabled =
+    typeof temporalUrl === "string" &&
+    temporalUrl.length > 0 &&
+    namespace.length > 0;
+
+  return useQuery<TemporalTaskQueuesResponse>({
+    enabled,
+    placeholderData: (prev) => prev,
+    queryFn: () =>
+      temporalFetch<TemporalTaskQueuesResponse>(
+        temporalUrl!,
+        `/v1/namespaces/${encodeURIComponent(namespace)}/task-queues`,
+      ),
+    queryKey: ["temporal", "task-queues", temporalUrl, namespace],
+    refetchInterval: followMode === "paused" ? false : 4_000,
+  });
+}
+
+export function useTemporalClusterOverview(args: {
+  enabled?: boolean;
+  followMode: TemporalFollowMode;
+  window: string;
+}) {
+  const { temporalUrl } = useStudio();
+  const { enabled = true, followMode, window } = args;
+  const isReady =
+    enabled && typeof temporalUrl === "string" && temporalUrl.length > 0;
+
+  return useQuery<TemporalClusterOverview>({
+    enabled: isReady,
+    placeholderData: (prev) => prev,
+    queryFn: () =>
+      temporalFetch<TemporalClusterOverview>(
+        temporalUrl!,
+        `/v1/cluster/overview?window=${encodeURIComponent(window)}`,
+      ),
+    queryKey: ["temporal", "cluster-overview", temporalUrl, window],
+    refetchInterval: followMode === "paused" ? false : 3_000,
+  });
+}
+
+export function useTemporalClusterTraces(args: {
+  enabled?: boolean;
+  followMode: TemporalFollowMode;
+}) {
+  const { temporalUrl } = useStudio();
+  const { enabled = true, followMode } = args;
+  const isReady =
+    enabled && typeof temporalUrl === "string" && temporalUrl.length > 0;
+
+  return useQuery<TemporalClusterTracesResponse>({
+    enabled: isReady,
+    placeholderData: (prev) => prev,
+    queryFn: () =>
+      temporalFetch<TemporalClusterTracesResponse>(
+        temporalUrl!,
+        `/v1/cluster/traces?drain=false`,
+      ),
+    queryKey: ["temporal", "cluster-traces", temporalUrl],
+    refetchInterval: followMode === "paused" ? false : 5_000,
+  });
+}
+
+export function useTemporalClusterActions() {
+  const { temporalUrl } = useStudio();
+  const queryClient = useQueryClient();
+
+  const invalidateCluster = async () => {
+    await queryClient.invalidateQueries({
+      queryKey: ["temporal", "cluster-overview", temporalUrl, "10s"],
+    });
+    await queryClient.invalidateQueries({
+      queryKey: ["temporal", "cluster-overview", temporalUrl, "60s"],
+    });
+    await queryClient.invalidateQueries({
+      queryKey: ["temporal", "cluster-overview", temporalUrl, "1m"],
+    });
+    await queryClient.invalidateQueries({
+      queryKey: ["temporal", "cluster-overview", temporalUrl, "5m"],
+    });
+  };
+
+  const setAdmission = useMutation({
+    mutationFn: (input: TemporalAdmissionUpdateInput) =>
+      temporalFetch<Record<string, unknown>>(
+        temporalUrl!,
+        "/v1/cluster/admission",
+        {
+          body: JSON.stringify(input),
+          method: "PUT",
+        },
+      ),
+    onSuccess: async () => {
+      await invalidateCluster();
+    },
+  });
+
+  const liftAdmission = useMutation({
+    mutationFn: (input: {
+      class: "wait" | "existing" | "new" | "batch";
+      scope?: string;
+    }) =>
+      temporalFetch<Record<string, unknown>>(
+        temporalUrl!,
+        "/v1/cluster/admission",
+        {
+          body: JSON.stringify(input),
+          method: "DELETE",
+        },
+      ),
+    onSuccess: async () => {
+      await invalidateCluster();
+    },
+  });
+
+  const handoffShard = useMutation({
+    mutationFn: (input: { shardId: number; targetServerId: string }) =>
+      temporalFetch<Record<string, unknown>>(
+        temporalUrl!,
+        `/v1/cluster/shards/${input.shardId}/handoff`,
+        {
+          body: JSON.stringify({ to: input.targetServerId }),
+          method: "POST",
+        },
+      ),
+    onSuccess: async () => {
+      await invalidateCluster();
+    },
+  });
+
+  const drainTraces = useMutation({
+    mutationFn: () =>
+      temporalFetch<TemporalClusterTracesResponse>(
+        temporalUrl!,
+        "/v1/cluster/traces?drain=true",
+      ),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["temporal", "cluster-traces", temporalUrl],
+      });
+    },
+  });
+
+  const reloadTls = useMutation({
+    mutationFn: () =>
+      temporalFetch<Record<string, unknown>>(
+        temporalUrl!,
+        "/v1/cluster/tls/reload",
+        { method: "POST" },
+      ),
+  });
+
+  return {
+    drainTraces,
+    handoffShard,
+    liftAdmission,
+    reloadTls,
+    setAdmission,
   };
 }

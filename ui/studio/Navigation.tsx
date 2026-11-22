@@ -1,12 +1,15 @@
 import { Slot } from "@radix-ui/react-slot";
 import {
   Activity,
+  CalendarClock,
   Code2,
   History,
+  Layers,
   Network,
   RefreshCw,
   ScrollText,
   Search,
+  Server,
   Table2,
   Waves,
   Workflow,
@@ -1139,15 +1142,23 @@ const TemporalSection = (props: { itemClassName: string }) => {
     createUrl,
     setTemporalNsParam,
     setTemporalRunParam,
+    setTemporalSectionParam,
     setTemporalWfParam,
     setViewParam,
     temporalNsParam,
+    temporalSectionParam,
     viewParam,
   } = useNavigation();
   const { data: capabilities } = useTemporalCapabilities();
   const { data: namespaces = [] } = useTemporalNamespaces();
 
   const activeNamespace = temporalNsParam ?? namespaces[0]?.name ?? "default";
+  const activeSection =
+    temporalSectionParam === "schedules" ||
+    temporalSectionParam === "queues" ||
+    temporalSectionParam === "cluster"
+      ? temporalSectionParam
+      : "workflows";
   const { data: workflowList } = useTemporalWorkflows({
     followMode: viewParam === "temporal" ? "paused" : "live",
     namespace: activeNamespace,
@@ -1161,6 +1172,16 @@ const TemporalSection = (props: { itemClassName: string }) => {
     namespaces.length > 0
       ? namespaces.map((namespace) => namespace.name)
       : [activeNamespace];
+
+  const openSection = (
+    section: "workflows" | "schedules" | "queues" | "cluster",
+  ) => {
+    void setTemporalNsParam(activeNamespace);
+    void setTemporalSectionParam(section);
+    void setTemporalWfParam(null);
+    void setTemporalRunParam(null);
+    void setViewParam("temporal");
+  };
 
   return (
     <Navigation.Block
@@ -1183,9 +1204,8 @@ const TemporalSection = (props: { itemClassName: string }) => {
         >
           <SelectTrigger
             aria-label="Temporal namespace"
-            className="h-7 text-xs"
+            className="h-7 font-mono text-xs"
             data-testid="navigation-temporal-namespace"
-            label="Namespace"
           >
             <SelectValue placeholder="Namespace" />
           </SelectTrigger>
@@ -1193,7 +1213,7 @@ const TemporalSection = (props: { itemClassName: string }) => {
             {namespaceOptions.map((namespaceName) => (
               <SelectItem
                 key={namespaceName}
-                className="text-xs"
+                className="font-mono text-xs"
                 value={namespaceName}
               >
                 {namespaceName}
@@ -1206,13 +1226,14 @@ const TemporalSection = (props: { itemClassName: string }) => {
       <Navigation.Item
         asChild
         className={itemClassName}
-        isActive={viewParam === "temporal"}
+        isActive={viewParam === "temporal" && activeSection === "workflows"}
       >
         <a
           className="w-full justify-between"
           data-testid="navigation-temporal-workflows"
           href={createUrl({
             temporalNsParam: activeNamespace,
+            temporalSectionParam: "workflows",
             viewParam: "temporal",
           })}
           onClick={(event) => {
@@ -1227,10 +1248,7 @@ const TemporalSection = (props: { itemClassName: string }) => {
             }
 
             event.preventDefault();
-            void setTemporalNsParam(activeNamespace);
-            void setTemporalWfParam(null);
-            void setTemporalRunParam(null);
-            void setViewParam("temporal");
+            openSection("workflows");
           }}
         >
           <span className="flex min-w-0 items-center gap-2">
@@ -1240,7 +1258,7 @@ const TemporalSection = (props: { itemClassName: string }) => {
           <span className="flex shrink-0 items-center gap-1 tabular-nums">
             {runningCount > 0 ? (
               <span
-                className="rounded-full bg-blue-500/15 px-1.5 py-0.5 font-mono text-[10px] font-medium text-blue-600 dark:text-blue-400"
+                className="rounded-full bg-prism-cyan-500/15 px-1.5 py-0.5 font-mono text-[10px] font-medium text-prism-cyan-700 dark:text-prism-cyan-300"
                 title={`${runningCount} running`}
               >
                 {runningCount}
@@ -1248,7 +1266,7 @@ const TemporalSection = (props: { itemClassName: string }) => {
             ) : null}
             {failedCount > 0 ? (
               <span
-                className="rounded-full bg-red-500/15 px-1.5 py-0.5 font-mono text-[10px] font-medium text-red-600 dark:text-red-400"
+                className="rounded-full bg-destructive/15 px-1.5 py-0.5 font-mono text-[10px] font-medium text-destructive"
                 title={`${failedCount} failed`}
               >
                 {failedCount}
@@ -1257,6 +1275,106 @@ const TemporalSection = (props: { itemClassName: string }) => {
           </span>
         </a>
       </Navigation.Item>
+
+      {capabilities?.supportsSchedules !== false ? (
+        <Navigation.Item
+          asChild
+          className={itemClassName}
+          isActive={viewParam === "temporal" && activeSection === "schedules"}
+        >
+          <a
+            className="w-full"
+            data-testid="navigation-temporal-schedules"
+            href={createUrl({
+              temporalNsParam: activeNamespace,
+              temporalSectionParam: "schedules",
+              viewParam: "temporal",
+            })}
+            onClick={(event) => {
+              if (
+                event.button !== 0 ||
+                event.altKey ||
+                event.ctrlKey ||
+                event.metaKey ||
+                event.shiftKey
+              ) {
+                return;
+              }
+              event.preventDefault();
+              openSection("schedules");
+            }}
+          >
+            <CalendarClock aria-hidden />
+            Schedules
+          </a>
+        </Navigation.Item>
+      ) : null}
+
+      <Navigation.Item
+        asChild
+        className={itemClassName}
+        isActive={viewParam === "temporal" && activeSection === "queues"}
+      >
+        <a
+          className="w-full"
+          data-testid="navigation-temporal-queues"
+          href={createUrl({
+            temporalNsParam: activeNamespace,
+            temporalSectionParam: "queues",
+            viewParam: "temporal",
+          })}
+          onClick={(event) => {
+            if (
+              event.button !== 0 ||
+              event.altKey ||
+              event.ctrlKey ||
+              event.metaKey ||
+              event.shiftKey
+            ) {
+              return;
+            }
+            event.preventDefault();
+            openSection("queues");
+          }}
+        >
+          <Layers aria-hidden />
+          Task Queues
+        </a>
+      </Navigation.Item>
+
+      {capabilities?.supportsAdminApi ? (
+        <Navigation.Item
+          asChild
+          className={itemClassName}
+          isActive={viewParam === "temporal" && activeSection === "cluster"}
+        >
+          <a
+            className="w-full"
+            data-testid="navigation-temporal-cluster"
+            href={createUrl({
+              temporalNsParam: activeNamespace,
+              temporalSectionParam: "cluster",
+              viewParam: "temporal",
+            })}
+            onClick={(event) => {
+              if (
+                event.button !== 0 ||
+                event.altKey ||
+                event.ctrlKey ||
+                event.metaKey ||
+                event.shiftKey
+              ) {
+                return;
+              }
+              event.preventDefault();
+              openSection("cluster");
+            }}
+          >
+            <Server aria-hidden />
+            Cluster &amp; Shards
+          </a>
+        </Navigation.Item>
+      ) : null}
     </Navigation.Block>
   );
 };

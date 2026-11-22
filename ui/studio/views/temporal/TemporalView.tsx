@@ -1,14 +1,20 @@
 import { useMemo, useState } from "react";
 
-import type { TemporalFollowMode } from "@/data/temporal";
+import type { TemporalFollowMode, TemporalSection } from "@/data/temporal";
 import { useNavigation } from "@/ui/hooks/use-navigation";
-import { useTemporalWorkflows } from "@/ui/hooks/use-temporal";
+import {
+  useTemporalCapabilities,
+  useTemporalWorkflows,
+} from "@/ui/hooks/use-temporal";
 
+import { TemporalClusterView } from "./TemporalClusterView";
 import { TemporalExecutionDebugger } from "./TemporalExecutionDebugger";
+import { TemporalSchedulesView } from "./TemporalSchedulesView";
 import {
   type TemporalStartPreset,
   TemporalStartSheet,
 } from "./TemporalStartSheet";
+import { TemporalTaskQueuesView } from "./TemporalTaskQueuesView";
 import { TemporalWorkflowsGrid } from "./TemporalWorkflowsGrid";
 
 function normalizeFollowMode(
@@ -20,6 +26,13 @@ function normalizeFollowMode(
   return "tail";
 }
 
+function normalizeSection(raw: string | null | undefined): TemporalSection {
+  if (raw === "schedules" || raw === "queues" || raw === "cluster") {
+    return raw;
+  }
+  return "workflows";
+}
+
 export function TemporalView() {
   const {
     searchParam,
@@ -29,12 +42,22 @@ export function TemporalView() {
     temporalNsParam,
     temporalRunParam,
     setTemporalRunParam,
+    temporalSectionParam,
+    setTemporalSectionParam,
     temporalWfParam,
     setTemporalWfParam,
   } = useNavigation();
 
+  const { data: capabilities } = useTemporalCapabilities();
   const namespace = temporalNsParam || "default";
   const followMode = normalizeFollowMode(temporalFollowParam);
+  const rawSection = normalizeSection(temporalSectionParam);
+  const section: TemporalSection =
+    rawSection === "cluster" && !capabilities?.supportsAdminApi
+      ? "workflows"
+      : rawSection === "schedules" && capabilities?.supportsSchedules === false
+        ? "workflows"
+        : rawSection;
   const visibilityQuery = searchParam ?? "";
 
   const [startSheetOpen, setStartSheetOpen] = useState(false);
@@ -42,7 +65,7 @@ export function TemporalView() {
     null,
   );
 
-  // Pull known workflow types & task queues for Start/Clone autocomplete
+  // Pull known workflow types & task queues for Start/Clone and Schedule forms
   const { data: listData } = useTemporalWorkflows({
     followMode: "paused",
     namespace,
@@ -75,6 +98,7 @@ export function TemporalView() {
   };
 
   const openExecution = (workflowId: string, runId?: string) => {
+    void setTemporalSectionParam("workflows");
     void setTemporalWfParam(workflowId);
     void setTemporalRunParam(runId ?? null);
   };
@@ -96,6 +120,28 @@ export function TemporalView() {
           onOpenExecution={openExecution}
           runId={temporalRunParam ?? undefined}
           workflowId={temporalWfParam}
+        />
+      ) : section === "schedules" ? (
+        <TemporalSchedulesView
+          followMode={followMode}
+          knownTaskQueues={knownTaskQueues}
+          knownWorkflowTypes={knownWorkflowTypes}
+          namespace={namespace}
+          onFollowModeChange={(m) => void setTemporalFollowParam(m)}
+          onOpenExecution={openExecution}
+        />
+      ) : section === "queues" ? (
+        <TemporalTaskQueuesView
+          followMode={followMode}
+          namespace={namespace}
+          onFollowModeChange={(m) => void setTemporalFollowParam(m)}
+          onOpenExecution={openExecution}
+        />
+      ) : section === "cluster" ? (
+        <TemporalClusterView
+          followMode={followMode}
+          onFollowModeChange={(m) => void setTemporalFollowParam(m)}
+          onOpenExecution={openExecution}
         />
       ) : (
         <TemporalWorkflowsGrid

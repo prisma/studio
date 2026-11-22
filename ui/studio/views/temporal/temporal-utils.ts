@@ -52,18 +52,18 @@ export function formatBytes(bytes: number): string {
 export function statusBadgeClasses(status: TemporalWorkflowStatus): string {
   switch (status) {
     case "Running":
-      return "border-sky-500/40 bg-sky-500/10 text-sky-600 dark:text-sky-400";
+      return "border-prism-cyan-500/40 bg-prism-cyan-500/10 text-prism-cyan-700 dark:text-prism-cyan-300";
     case "Completed":
-      return "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
+      return "border-border bg-secondary/70 text-foreground";
     case "Failed":
-      return "border-destructive/50 bg-destructive/10 text-destructive";
+      return "border-destructive/40 bg-destructive/10 text-destructive";
     case "TimedOut":
-      return "border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400";
+      return "border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300";
     case "Canceled":
     case "Terminated":
       return "border-border bg-muted text-muted-foreground";
     case "ContinuedAsNew":
-      return "border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-400";
+      return "border-border bg-secondary text-foreground";
     default:
       return "border-border bg-secondary text-secondary-foreground";
   }
@@ -72,15 +72,15 @@ export function statusBadgeClasses(status: TemporalWorkflowStatus): string {
 export function statusDotClasses(status: TemporalWorkflowStatus): string {
   switch (status) {
     case "Running":
-      return "bg-sky-500";
+      return "bg-prism-cyan-500";
     case "Completed":
-      return "bg-emerald-500";
+      return "bg-foreground/60";
     case "Failed":
       return "bg-destructive";
     case "TimedOut":
       return "bg-amber-500";
     case "ContinuedAsNew":
-      return "bg-violet-500";
+      return "bg-foreground/60";
     default:
       return "bg-muted-foreground";
   }
@@ -95,10 +95,11 @@ export function spanBarClasses(
   if (status === "canceled") return "bg-muted-foreground/60";
   if (kind === "timer") return "bg-amber-400 dark:bg-amber-500";
   if (kind === "child-workflow" || kind === "signal" || kind === "update") {
-    return "bg-sky-500";
+    return "bg-prism-cyan-500";
   }
-  if (status === "running") return "bg-sky-500 animate-pulse";
-  return "bg-emerald-500";
+  if (status === "running")
+    return "bg-prism-cyan-500 motion-safe:animate-pulse";
+  return "bg-prism-cyan-600/80 dark:bg-prism-cyan-500/80";
 }
 
 export function safeJsonPretty(value: unknown): string {

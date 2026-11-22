@@ -2,6 +2,7 @@ import {
   Bookmark,
   ChevronDown,
   ChevronRight,
+  Database,
   ExternalLink,
   Play,
   Plus,
@@ -9,6 +10,7 @@ import {
   Search,
   Send,
   StopCircle,
+  Waves,
   X,
   XCircle,
 } from "lucide-react";
@@ -21,7 +23,6 @@ import type {
   TemporalWorkflowExecution,
   TemporalWorkflowStatus,
 } from "@/data/temporal";
-import { Badge } from "@/ui/components/ui/badge";
 import { Button } from "@/ui/components/ui/button";
 import { Checkbox } from "@/ui/components/ui/checkbox";
 import {
@@ -40,7 +41,16 @@ import {
   PopoverTrigger,
 } from "@/ui/components/ui/popover";
 import { Skeleton } from "@/ui/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/ui/components/ui/table";
 import { Textarea } from "@/ui/components/ui/textarea";
+import { useNavigation } from "@/ui/hooks/use-navigation";
 import {
   useTemporalActions,
   useTemporalCapabilities,
@@ -49,15 +59,20 @@ import {
 } from "@/ui/hooks/use-temporal";
 import { cn } from "@/ui/lib/utils";
 
+import { useStudio } from "../../context";
 import { StudioHeader } from "../../StudioHeader";
 import {
   formatDuration,
   formatRelativeTime,
   parseJsonArgsText,
   safeJsonPretty,
-  statusBadgeClasses,
-  statusDotClasses,
 } from "./temporal-utils";
+import {
+  TemporalConfirmDialog,
+  TemporalFollowControl,
+  WorkflowStatusBadge,
+  WorkflowStatusIcon,
+} from "./TemporalPrimitives";
 import type { TemporalStartPreset } from "./TemporalStartSheet";
 
 const STATUS_FILTERS: Array<{
@@ -111,6 +126,8 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
   const [bulkSignalOpen, setBulkSignalOpen] = useState(false);
   const [bulkSignalName, setBulkSignalName] = useState("approveDeposit");
   const [bulkSignalArgs, setBulkSignalArgs] = useState("[]");
+  const [bulkTerminateConfirmOpen, setBulkTerminateConfirmOpen] =
+    useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -288,23 +305,10 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
               </PopoverContent>
             </Popover>
 
-            <div className="inline-flex rounded-md border border-border bg-secondary p-0.5 text-[11px]">
-              {(["paused", "live", "tail"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => onFollowModeChange(mode)}
-                  className={cn(
-                    "rounded px-2 py-0.5 capitalize transition-colors",
-                    followMode === mode
-                      ? "bg-background font-medium text-foreground shadow-2xs"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {mode}
-                </button>
-              ))}
-            </div>
+            <TemporalFollowControl
+              value={followMode}
+              onChange={onFollowModeChange}
+            />
 
             <Button
               variant="outline"
@@ -314,7 +318,10 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
               aria-label="Refresh workflows"
             >
               <RefreshCw
-                className={cn("size-3.5", isFetching && "animate-spin")}
+                className={cn(
+                  "size-3.5",
+                  isFetching && "motion-safe:animate-spin",
+                )}
               />
             </Button>
 
@@ -401,11 +408,9 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
               )}
             >
               {item.status !== "All" ? (
-                <span
-                  className={cn(
-                    "size-1.5 rounded-full",
-                    statusDotClasses(item.status),
-                  )}
+                <WorkflowStatusIcon
+                  status={item.status}
+                  className="size-3 shrink-0"
                 />
               ) : null}
               <span>{item.label}</span>
@@ -463,26 +468,26 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
             </div>
           </div>
         ) : (
-          <table className="w-full border-collapse text-xs">
-            <thead className="sticky top-0 z-10 bg-secondary/95 backdrop-blur-xs">
-              <tr className="border-b border-border text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
-                <th className="w-9 px-3 py-2 text-left">
+          <Table className="text-xs">
+            <TableHeader className="sticky top-0 z-10 bg-secondary/95 backdrop-blur-xs">
+              <TableRow className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground hover:bg-transparent">
+                <TableHead className="h-8 w-9 px-3">
                   <Checkbox
                     checked={allSelected}
                     onCheckedChange={toggleSelectAll}
                     aria-label="Select all workflows"
                   />
-                </th>
-                <th className="w-7 py-2" />
-                <th className="px-2 py-2 text-left">Status</th>
-                <th className="px-2 py-2 text-left">Workflow</th>
-                <th className="px-2 py-2 text-left">Task Queue</th>
-                <th className="px-2 py-2 text-left">Started</th>
-                <th className="px-2 py-2 text-right">Duration</th>
-                <th className="px-3 py-2 text-right">Events</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
+                </TableHead>
+                <TableHead className="h-8 w-7 px-0" />
+                <TableHead className="h-8 px-2">Status</TableHead>
+                <TableHead className="h-8 px-2">Workflow</TableHead>
+                <TableHead className="h-8 px-2">Task Queue</TableHead>
+                <TableHead className="h-8 px-2">Started</TableHead>
+                <TableHead className="h-8 px-2 text-right">Duration</TableHead>
+                <TableHead className="h-8 px-3 text-right">Events</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {executions.map((exec, index) => {
                 const key = rowKey(exec);
                 const isSelected = selectedKeys.has(key);
@@ -507,8 +512,8 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
                   />
                 );
               })}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
       </div>
 
@@ -556,7 +561,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
               size="sm"
               className="h-7 text-xs"
               disabled={bulkAction.isPending}
-              onClick={() => void runBulkAction("terminate")}
+              onClick={() => setBulkTerminateConfirmOpen(true)}
             >
               <StopCircle className="mr-1 size-3" />
               Bulk Terminate
@@ -652,6 +657,32 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <TemporalConfirmDialog
+        confirmLabel={`Terminate ${selectedExecutions.length} workflow${selectedExecutions.length === 1 ? "" : "s"}`}
+        defaultReason="Bulk terminated via Prisma Studio"
+        description={`This immediately stops ${selectedExecutions.length} selected workflow execution${selectedExecutions.length === 1 ? "" : "s"} without running cleanup handlers.`}
+        isPending={bulkAction.isPending}
+        onConfirm={async (reason) => {
+          const res = await bulkAction.mutateAsync({
+            action: "terminate",
+            items: selectedExecutions.map((e) => ({
+              runId: e.runId,
+              workflowId: e.workflowId,
+            })),
+            reason: reason || "Bulk terminated via Prisma Studio",
+          });
+          toast.success(
+            `Bulk terminate: ${res.succeeded} succeeded${res.failed > 0 ? `, ${res.failed} failed` : ""}`,
+          );
+          setSelectedKeys(new Set());
+        }}
+        onOpenChange={setBulkTerminateConfirmOpen}
+        open={bulkTerminateConfirmOpen}
+        reasonLabel="Termination Reason"
+        showReasonInput
+        title="Terminate selected workflows?"
+      />
     </div>
   );
 }
@@ -681,6 +712,8 @@ function WorkflowGridRow(props: {
     onFocus,
   } = props;
 
+  const { hasDatabase, streamsUrl } = useStudio();
+  const { setSearchParam, setStreamParam, setViewParam } = useNavigation();
   const { data: detail, isLoading: isDetailLoading } =
     useTemporalWorkflowDetail({
       enabled: isExpanded,
@@ -692,7 +725,7 @@ function WorkflowGridRow(props: {
 
   return (
     <>
-      <tr
+      <TableRow
         onClick={onFocus}
         className={cn(
           "transition-colors hover:bg-secondary/50",
@@ -701,14 +734,14 @@ function WorkflowGridRow(props: {
         )}
         data-testid={`temporal-wf-row-${execution.workflowId}`}
       >
-        <td className="px-3 py-2">
+        <TableCell className="px-3 py-2">
           <Checkbox
             checked={isSelected}
             onCheckedChange={onToggleSelect}
             aria-label={`Select ${execution.workflowId}`}
           />
-        </td>
-        <td className="py-2">
+        </TableCell>
+        <TableCell className="px-0 py-2">
           <button
             type="button"
             onClick={(e) => {
@@ -717,7 +750,7 @@ function WorkflowGridRow(props: {
             }}
             aria-label={`Expand ${execution.workflowId}`}
             data-testid={`temporal-expand-${execution.workflowId}`}
-            className="flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
+            className="flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {isExpanded ? (
               <ChevronDown className="size-3.5" />
@@ -725,32 +758,21 @@ function WorkflowGridRow(props: {
               <ChevronRight className="size-3.5" />
             )}
           </button>
-        </td>
-        <td className="px-2 py-2">
-          <Badge
-            variant="outline"
-            className={cn(
-              "gap-1.5 text-[10.5px]",
-              statusBadgeClasses(execution.status),
-            )}
-          >
-            <span
-              className={cn(
-                "size-1.5 rounded-full",
-                statusDotClasses(execution.status),
-              )}
-            />
-            {execution.status}
-          </Badge>
-        </td>
-        <td className="px-2 py-2">
+        </TableCell>
+        <TableCell className="px-2 py-2">
+          <WorkflowStatusBadge
+            status={execution.status}
+            className="text-[10.5px]"
+          />
+        </TableCell>
+        <TableCell className="px-2 py-2">
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               onOpen();
             }}
-            className="group flex items-baseline gap-2 text-left"
+            className="group flex items-baseline gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <span className="font-semibold text-foreground group-hover:underline">
               {execution.workflowType}
@@ -759,30 +781,30 @@ function WorkflowGridRow(props: {
               {execution.workflowId}
             </span>
           </button>
-        </td>
-        <td className="px-2 py-2 font-mono text-[11px] text-muted-foreground">
+        </TableCell>
+        <TableCell className="px-2 py-2 font-mono text-[11px] text-muted-foreground">
           {execution.taskQueue}
-        </td>
-        <td
+        </TableCell>
+        <TableCell
           className="px-2 py-2 text-[11px] text-muted-foreground"
           title={execution.startTime}
         >
           {formatRelativeTime(execution.startTime)}
-        </td>
-        <td className="px-2 py-2 text-right font-mono text-[11px] tabular-nums text-foreground">
+        </TableCell>
+        <TableCell className="px-2 py-2 text-right font-mono text-[11px] tabular-nums text-foreground">
           {formatDuration(execution.durationMs)}
-        </td>
-        <td className="px-3 py-2 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+        </TableCell>
+        <TableCell className="px-3 py-2 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
           {execution.historyLength}
-        </td>
-      </tr>
+        </TableCell>
+      </TableRow>
 
       {isExpanded ? (
-        <tr
-          className="bg-secondary/30"
+        <TableRow
+          className="bg-secondary/30 hover:bg-secondary/30"
           data-testid={`temporal-expanded-${execution.workflowId}`}
         >
-          <td colSpan={8} className="px-6 py-3">
+          <TableCell colSpan={8} className="px-6 py-3">
             {isDetailLoading || !detail ? (
               <div className="grid grid-cols-2 gap-3">
                 <Skeleton className="h-16 w-full" />
@@ -821,7 +843,7 @@ function WorkflowGridRow(props: {
                         {detail.failure.message}
                       </pre>
                     ) : detail.execution.pendingActivities?.length ? (
-                      <pre className="max-h-28 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-amber-700 dark:text-amber-400">
+                      <pre className="max-h-28 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-amber-700 dark:text-amber-300">
                         {detail.execution.pendingActivities
                           .map(
                             (a) =>
@@ -830,7 +852,7 @@ function WorkflowGridRow(props: {
                           .join("\n")}
                       </pre>
                     ) : (
-                      <pre className="max-h-28 overflow-auto font-mono text-[11px] text-emerald-700 dark:text-emerald-400">
+                      <pre className="max-h-28 overflow-auto font-mono text-[11px] text-foreground">
                         {detail.result !== undefined
                           ? safeJsonPretty(detail.result)
                           : `${detail.spans.length} spans · ${detail.execution.status}`}
@@ -866,11 +888,40 @@ function WorkflowGridRow(props: {
                     <Play className="mr-1 size-3" />
                     Clone &amp; Re-run
                   </Button>
+                  {typeof streamsUrl === "string" ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs text-muted-foreground"
+                      onClick={() => {
+                        void setStreamParam("app-events");
+                        void setSearchParam(execution.workflowId);
+                        void setViewParam("stream");
+                      }}
+                    >
+                      <Waves className="mr-1 size-3" />
+                      Search Streams
+                    </Button>
+                  ) : null}
+                  {hasDatabase ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs text-muted-foreground"
+                      onClick={() => {
+                        void setSearchParam(execution.workflowId);
+                        void setViewParam("table");
+                      }}
+                    >
+                      <Database className="mr-1 size-3" />
+                      Search Tables
+                    </Button>
+                  ) : null}
                 </div>
               </div>
             )}
-          </td>
-        </tr>
+          </TableCell>
+        </TableRow>
       ) : null}
     </>
   );

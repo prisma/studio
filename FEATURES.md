@@ -32,9 +32,9 @@ In that mode the shell hides schema selection, table navigation, and database-on
 
 ## Temporal Workbench
 
-Studio can optionally connect to a Temporal server (`slate-temporal-next` or standard Temporal servers like `temporal server start-dev`) via a same-origin gRPC BFF configured through `temporalUrl`, adding a `Temporal` namespace switcher and `Workflows` entry in the sidebar.
-The Workflows Grid provides Visibility search, saved triage views, live status count pills, `Paused`/`Live`/`Tail` follow modes, inline row expansion for inputs/outputs/failures, keyboard navigation, and multi-select bulk Signal, Cancel, and Terminate actions.
-Opening a workflow launches the Execution Debugger with a failure/retry diagnostic strip, synchronized Gantt timeline, grouped spans or raw history event views, Replay JSON export, CLI copy, a right-hand live Query/Signal/Update inspector, and a Start / Clone & Re-run workflow playground sheet.
+Studio can optionally connect to a Temporal server (`slate-temporal-next` or standard Temporal servers like `temporal server start-dev`) via a same-origin gRPC BFF configured through `temporalUrl`, adding a `Temporal` namespace switcher with `Workflows`, `Schedules`, `Task Queues`, and (when Admin HTTP is enabled) `Cluster & Shards` in the sidebar.
+The Workflows Grid and Execution Debugger provide Visibility search, saved triage views, live status count pills with icon-differentiated states, inline row expansion, confirmed bulk actions, cross-surface links to Streams and Tables, a failure/retry diagnostic strip, synchronized Gantt timeline, grouped spans or raw history events, Replay JSON export, a live Query/Signal/Update inspector, and a Start / Clone & Re-run sheet.
+Schedules add multi-select bulk pause (with shared maintenance note), bulk resume/trigger/delete, upcoming fire previews, and a visual backfill runner that previews exact matching times before firing; Task Queues expose live pollers or transparent synthesized queue health with sticky-queue reset; and Cluster & Shards surfaces live `slate-temporal-next` readiness, SlateDB storage/compaction, shard load, TTL-bounded admission overrides, shard handoff, and sampled traces.
 
 ## Local Streams Development Override
 

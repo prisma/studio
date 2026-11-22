@@ -58,6 +58,17 @@ type QueryKey =
       string | undefined,
       string | undefined,
     ]
+  | ["temporal", "schedules", string | undefined, string]
+  | [
+      "temporal",
+      "schedule-detail",
+      string | undefined,
+      string,
+      string | undefined,
+    ]
+  | ["temporal", "task-queues", string | undefined, string]
+  | ["temporal", "cluster-overview", string | undefined, string]
+  | ["temporal", "cluster-traces", string | undefined]
   | [
       "streams",
       string,

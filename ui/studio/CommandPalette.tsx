@@ -1,12 +1,15 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BetweenVerticalStart,
+  CalendarClock,
   Database,
   FileCode2,
   GalleryVerticalEnd,
   Laptop,
+  Layers,
   Moon,
   Search,
+  Server,
   Sun,
   Workflow,
 } from "lucide-react";
@@ -526,20 +529,69 @@ function StudioCommandPalette() {
     ];
 
     if (typeof temporalUrl === "string") {
-      items.push({
-        disabled: false,
-        icon: Workflow,
-        id: "view:temporal",
-        keywords: ["temporal", "workflows", "executions", "debugger"],
-        label: "Temporal Workflows",
-        onSelect: () => {
-          window.location.hash = createUrl({
-            temporalNsParam: temporalNsParam ?? "default",
-            viewParam: "temporal",
-          });
+      const ns = temporalNsParam ?? "default";
+      items.push(
+        {
+          disabled: false,
+          icon: Workflow,
+          id: "view:temporal:workflows",
+          keywords: ["temporal", "workflows", "executions", "debugger"],
+          label: "Temporal Workflows",
+          onSelect: () => {
+            window.location.hash = createUrl({
+              temporalNsParam: ns,
+              temporalSectionParam: "workflows",
+              viewParam: "temporal",
+            });
+          },
+          section: "views",
         },
-        section: "views",
-      });
+        {
+          disabled: false,
+          icon: CalendarClock,
+          id: "view:temporal:schedules",
+          keywords: ["temporal", "schedules", "cron", "backfill"],
+          label: "Temporal Schedules",
+          onSelect: () => {
+            window.location.hash = createUrl({
+              temporalNsParam: ns,
+              temporalSectionParam: "schedules",
+              viewParam: "temporal",
+            });
+          },
+          section: "views",
+        },
+        {
+          disabled: false,
+          icon: Layers,
+          id: "view:temporal:queues",
+          keywords: ["temporal", "task queues", "pollers", "workers"],
+          label: "Temporal Task Queues",
+          onSelect: () => {
+            window.location.hash = createUrl({
+              temporalNsParam: ns,
+              temporalSectionParam: "queues",
+              viewParam: "temporal",
+            });
+          },
+          section: "views",
+        },
+        {
+          disabled: false,
+          icon: Server,
+          id: "view:temporal:cluster",
+          keywords: ["temporal", "cluster", "shards", "admission", "slatedb"],
+          label: "Temporal Cluster & Shards",
+          onSelect: () => {
+            window.location.hash = createUrl({
+              temporalNsParam: ns,
+              temporalSectionParam: "cluster",
+              viewParam: "temporal",
+            });
+          },
+          section: "views",
+        },
+      );
     }
 
     return items.filter((item) =>

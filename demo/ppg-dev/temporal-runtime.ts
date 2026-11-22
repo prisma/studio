@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -699,6 +699,80 @@ async function seedDemoWorkflows(client: TemporalGrpcBffClient): Promise<void> {
   } catch {
     // ignore
   }
+
+  // Seed realistic schedules for the Schedules Workbench
+  const schedulesToSeed = [
+    {
+      args: [
+        { amountCents: 19900, currency: "USD", orderId: "reconcile-batch" },
+      ],
+      intervalSeconds: 900,
+      notes: "Reconciles settled Stripe charges every 15 minutes",
+      overlapPolicy: "SKIP" as const,
+      paused: false,
+      scheduleId: "nightly-billing-reconcile",
+      taskQueue: "billing",
+      workflowIdPrefix: "billing-reconcile",
+      workflowType: "ChargeOrder",
+    },
+    {
+      args: [{ plan: "pro", sweep: true }],
+      intervalSeconds: 300,
+      notes: "Checks expiring subscriptions and schedules renewal runs",
+      overlapPolicy: "BUFFER_ONE" as const,
+      paused: false,
+      scheduleId: "subscription-renewal-sweep",
+      taskQueue: "default",
+      workflowIdPrefix: "sub-sweep",
+      workflowType: "SubscriptionRenewal",
+    },
+    {
+      args: [
+        {
+          amountCents: 50000,
+          fromAccount: "treasury_main",
+          toAccount: "ledger_cold",
+        },
+      ],
+      cronExpression: "0 2 * * 1",
+      notes: "Paused for Q4 ledger schema cutover",
+      overlapPolicy: "SKIP" as const,
+      paused: true,
+      scheduleId: "weekly-ledger-export",
+      taskQueue: "billing",
+      workflowIdPrefix: "ledger-export",
+      workflowType: "MoneyTransfer",
+    },
+  ];
+
+  for (const sched of schedulesToSeed) {
+    try {
+      await client.createSchedule(ns, sched);
+    } catch {
+      // ignore if already exists
+    }
+  }
+}
+
+function mintLocalAdminKey(binPath: string): {
+  adminKey: string;
+  adminToken: string;
+} | null {
+  try {
+    const out = execFileSync(
+      binPath,
+      ["admin", "token", "new", "--id", "studio-demo"],
+      { encoding: "utf8" },
+    );
+    const tokenMatch = out.match(/^token:\s*(\S+)/m);
+    const keyMatch = out.match(/^admin-key:\s*(\S+)/m);
+    if (tokenMatch?.[1] && keyMatch?.[1]) {
+      return { adminKey: keyMatch[1], adminToken: tokenMatch[1] };
+    }
+  } catch {
+    // fall back to unauthenticated /readyz-only mode
+  }
+  return null;
 }
 
 export async function startDemoTemporalRuntime(): Promise<DemoTemporalRuntime | null> {
@@ -741,31 +815,37 @@ export async function startDemoTemporalRuntime(): Promise<DemoTemporalRuntime | 
   );
   const address = `127.0.0.1:${grpcPort}`;
   const adminUrl = `http://127.0.0.1:${adminPort}`;
+  const minted = mintLocalAdminKey(binPath);
 
-  const child = spawn(
-    binPath,
-    [
-      "serve",
-      "--listen",
-      address,
-      "--admin-listen",
-      `127.0.0.1:${adminPort}`,
-      "--insecure-local",
-      "--shards",
-      "1",
-      "--store",
-      "memory",
-      "--namespace",
-      "default",
-      "--namespace",
-      "staging",
-    ],
-    { stdio: "ignore" },
-  );
+  const serveArgs = [
+    "serve",
+    "--listen",
+    address,
+    "--admin-listen",
+    `127.0.0.1:${adminPort}`,
+    "--insecure-local",
+    "--shards",
+    "1",
+    "--store",
+    "memory",
+    "--namespace",
+    "default",
+    "--namespace",
+    "staging",
+  ];
+  if (minted) {
+    serveArgs.push("--admin-key", minted.adminKey);
+  }
+
+  const child = spawn(binPath, serveArgs, { stdio: "ignore" });
 
   await waitForReadyz(adminUrl, child);
 
-  const client = new TemporalGrpcBffClient({ address, adminUrl });
+  const client = new TemporalGrpcBffClient({
+    address,
+    adminToken: minted?.adminToken,
+    adminUrl,
+  });
   const stopWorker = startDemoTemporalWorker(client, "default", [
     "billing",
     "default",

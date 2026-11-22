@@ -221,6 +221,8 @@ function useNavigationInternal() {
     useQueryState("temporalFollow");
   const [temporalNsParam, setTemporalNsParam] = useQueryState("temporalNs");
   const [temporalRunParam, setTemporalRunParam] = useQueryState("temporalRun");
+  const [temporalSectionParam, setTemporalSectionParam] =
+    useQueryState("temporalSection");
   const [temporalWfParam, setTemporalWfParam] = useQueryState("temporalWf");
   const [viewParam, setViewParam] = useQueryState("view", {
     defaultValue: defaults.view,
@@ -288,6 +290,7 @@ function useNavigationInternal() {
     temporalFollowParam,
     temporalNsParam,
     temporalRunParam,
+    temporalSectionParam,
     temporalWfParam,
     viewParam: resolvedViewParam,
     setFilterParam: setFilterParam as NuqsSetNullableValue<string>,
@@ -314,6 +317,8 @@ function useNavigationInternal() {
       setTemporalFollowParam as NuqsSetNullableValue<string>,
     setTemporalNsParam: setTemporalNsParam as NuqsSetNullableValue<string>,
     setTemporalRunParam: setTemporalRunParam as NuqsSetNullableValue<string>,
+    setTemporalSectionParam:
+      setTemporalSectionParam as NuqsSetNullableValue<string>,
     setTemporalWfParam: setTemporalWfParam as NuqsSetNullableValue<string>,
     setViewParam: setViewParam as NuqsSetNullableValue<string>,
   };

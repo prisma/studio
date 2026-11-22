@@ -31,6 +31,7 @@ export type StateKey =
   | "temporalFollow"
   | "temporalNs"
   | "temporalRun"
+  | "temporalSection"
   | "temporalWf"
   | "sort"
   | "schema"
