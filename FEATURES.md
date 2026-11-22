@@ -286,7 +286,7 @@ The SQL editor panel is height-capped and scrolls internally, so a long query ca
 ## Confirm Before SQL That Changes Data
 
 The SQL tab asks before running a statement that changes data or schema, so one stray `Run SQL` or `Cmd/Ctrl+Enter` cannot wipe a table. Reads (`SELECT`, `EXPLAIN`, `SHOW`, ...) never prompt.
-Statements that remove data broadly (`DELETE`/`UPDATE` without `WHERE`, `DROP`, `TRUNCATE`, `ALTER TABLE ... DROP`, including the same behind `EXPLAIN ANALYZE` or a `WITH`) get a red warning that names the table, with `cancel` focused so a repeated `Enter` backs out. Other writes, and anything Studio cannot classify, get a plain "Run this ...?" prompt.
+Statements that remove data broadly (`DELETE`/`UPDATE` without `WHERE`, `DROP`, `TRUNCATE`, `ALTER TABLE ... DROP`, including the same behind `EXPLAIN ANALYZE` or a `WITH`) get a red warning that names the table, with `cancel` focused so a repeated `Enter` backs out. Other writes, and anything Studio cannot classify, get a plain prompt. Both say in everyday words what will happen ("This will delete every row in orders.", "This will add rows to orders.") and why Studio is asking ("Studio can't undo this."), so people who did not write the SQL can still decide.
 The plain prompt has a "Don't ask again" box for people who run writes all day; it only takes effect when the run is confirmed, is stored per browser, and can be switched back on from the command palette (`Confirm before running SQL that changes data`). The red warning cannot be silenced.
 Detection is a small comment- and string-aware classifier in `data/sql-statement-risk.ts`, not a SQL parser: when unsure, Studio asks.
 

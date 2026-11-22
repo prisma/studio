@@ -292,6 +292,7 @@ function SqlRunConfirmationDialog(props: {
       primaryLabel={copy.primaryLabel}
       primaryVariant={copy.primaryVariant}
       prompt={copy.prompt}
+      promptDetail={copy.promptDetail}
       secondaryLabel="cancel"
       title={copy.title}
       className="max-w-[340px]"

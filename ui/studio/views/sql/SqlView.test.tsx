@@ -2368,18 +2368,14 @@ describe("SqlView run confirmation", () => {
   });
 
   it.each([
+    ["DELETE FROM t", "This will delete every row in t.", "delete all rows"],
+    ["UPDATE t SET a=1", "This will change every row in t.", "change all rows"],
     [
-      "DELETE FROM t",
-      "This DELETE has no WHERE clause and will delete every row in t.",
-      "delete all rows",
+      "DROP TABLE t",
+      "This will delete the table t and all of its data.",
+      "delete table",
     ],
-    [
-      "UPDATE t SET a=1",
-      "This UPDATE has no WHERE clause and will change every row in t.",
-      "update all rows",
-    ],
-    ["DROP TABLE t", "This will permanently drop the table t.", "drop table"],
-    ["TRUNCATE t", "This will remove every row from t.", "empty table"],
+    ["TRUNCATE t", "This will delete every row in t.", "delete all rows"],
   ])(
     "asks before running %j with the strong warning",
     async (sql, prompt, primaryLabel) => {
@@ -2389,6 +2385,7 @@ describe("SqlView run confirmation", () => {
       await flush();
 
       expect(getDialog()?.textContent).toContain(prompt);
+      expect(getDialog()?.textContent).toContain("Studio can't undo this.");
       const primary = getDialogButton(primaryLabel);
       expect(primary?.className).toContain("destructive");
       // Cancel is focused so a stray Enter never confirms a destructive run.
@@ -2412,25 +2409,54 @@ describe("SqlView run confirmation", () => {
   );
 
   it.each([
-    ["DELETE FROM t WHERE id = 1", "Run this DELETE on t?"],
-    ["ALTER TABLE t ADD c int", "Run this ALTER on t?"],
-    ["INSERT INTO t VALUES (1)", "Run this INSERT on t?"],
+    [
+      "DELETE FROM t WHERE id = 1",
+      "This will delete some rows from t.",
+      "delete rows",
+    ],
+    [
+      "UPDATE t SET a = 1 WHERE id = 1",
+      "This will change data in t.",
+      "change data",
+    ],
+    [
+      "ALTER TABLE t ADD c int",
+      "This will change the columns or settings of the table t.",
+      "run",
+    ],
+    ["INSERT INTO t VALUES (1)", "This will add rows to t.", "add rows"],
     [
       "call refresh_all()",
-      "Run this statement? Studio could not tell what it does.",
+      "Studio can't tell what this SQL does.",
+      "run anyway",
     ],
-  ])("asks before running %j with the plain prompt", async (sql, prompt) => {
-    const { harness, rawSpy } = setup(sql);
+  ])(
+    "asks before running %j in plain language",
+    async (sql, prompt, primaryLabel) => {
+      const { harness, rawSpy } = setup(sql);
 
-    clickRunButton(harness.container);
-    await flush();
+      clickRunButton(harness.container);
+      await flush();
 
-    expect(getDialog()?.textContent).toContain(prompt);
-    expect(getDialogButton("run")?.className).not.toContain("destructive");
-    expect(rawSpy).not.toHaveBeenCalled();
+      expect(getDialog()?.textContent).toContain(prompt);
+      // No SQL keywords in the question itself.
+      const descriptionId = getDialog()?.getAttribute("aria-describedby") ?? "";
+      expect(document.getElementById(descriptionId)?.textContent).toContain(
+        prompt,
+      );
+      // Says why Studio is asking.
+      expect(getDialog()?.textContent).toContain("can't undo");
+      expect(document.getElementById(descriptionId)?.textContent).not.toMatch(
+        /\b(UPDATE|DELETE|INSERT|ALTER|WHERE)\b/,
+      );
+      const primary = getDialogButton(primaryLabel);
+      expect(primary).toBeDefined();
+      expect(primary?.className).not.toContain("destructive");
+      expect(rawSpy).not.toHaveBeenCalled();
 
-    harness.cleanup();
-  });
+      harness.cleanup();
+    },
+  );
 
   it("guards the keyboard run path and confirms with Cmd/Ctrl+Enter", async () => {
     const { harness, rawSpy } = setup("DELETE FROM t WHERE id = 1");
@@ -2531,7 +2557,7 @@ describe("SqlView run confirmation", () => {
       );
     });
     act(() => {
-      getDialogButton("run")?.dispatchEvent(
+      getDialogButton("change data")?.dispatchEvent(
         new MouseEvent("click", { bubbles: true }),
       );
     });

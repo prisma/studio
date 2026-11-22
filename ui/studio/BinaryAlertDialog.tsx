@@ -90,6 +90,8 @@ export type BinaryAlertDialogProps = {
   primaryLabel: string;
   primaryVariant?: ButtonProps["variant"];
   prompt: string;
+  /** Optional quieter second line under the prompt, such as a consequence. */
+  promptDetail?: string;
   secondaryLabel: string;
   title: string;
 };
@@ -112,6 +114,7 @@ export function BinaryAlertDialog(props: BinaryAlertDialogProps) {
     primaryLabel,
     primaryVariant = "default",
     prompt,
+    promptDetail,
     secondaryLabel,
     title,
   } = props;
@@ -126,7 +129,7 @@ export function BinaryAlertDialog(props: BinaryAlertDialogProps) {
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent
         className={cn(
-          "max-w-[280px] gap-4 rounded-lg p-4 font-sans",
+          "max-w-[280px] gap-4 rounded-xl bg-background p-4 font-sans",
           className,
         )}
         onCloseAutoFocus={onCloseAutoFocus}
@@ -149,8 +152,13 @@ export function BinaryAlertDialog(props: BinaryAlertDialogProps) {
       >
         <AlertDialogHeader className="gap-0 text-left">
           <AlertDialogTitle className="sr-only">{title}</AlertDialogTitle>
-          <AlertDialogDescription className="font-sans text-sm leading-5 font-medium text-foreground">
+          <AlertDialogDescription className="font-sans text-sm leading-5 font-medium text-pretty text-foreground">
             {prompt}
+            {promptDetail ? (
+              <span className="mt-1 block font-normal text-muted-foreground">
+                {promptDetail}
+              </span>
+            ) : null}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter className="flex-row items-center justify-end gap-2">

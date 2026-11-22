@@ -30,42 +30,45 @@ export function shouldConfirmSqlRun(args: {
 
 export interface SqlRunConfirmationCopy {
   primaryLabel: string;
+  promptDetail: string;
   primaryVariant: ButtonProps["variant"];
   prompt: string;
   title: string;
 }
 
+const NO_UNDO = "Studio can't undo this.";
+
+/**
+ * Plain-language dialog copy: say what will happen to the data, then why
+ * Studio is asking (there is no undo). SQL keywords stay out of the prompt so
+ * people who did not write the statement can still decide.
+ */
 export function getSqlRunConfirmationCopy(
   risk: SqlStatementRisk,
 ): SqlRunConfirmationCopy {
   const { statementType, target } = risk;
+  const table = target ?? "the table";
 
   if (risk.kind === "danger") {
     const danger = (prompt: string, primaryLabel: string) => ({
       primaryLabel,
       primaryVariant: "destructive" as const,
       prompt,
+      promptDetail: NO_UNDO,
       title: "Confirm destructive SQL",
     });
 
     if (risk.reason === "no-where" && statementType === "UPDATE") {
       return danger(
-        `This UPDATE has no WHERE clause and will change every row in ${target ?? "the table"}.`,
-        "update all rows",
+        `This will change every row in ${table}.`,
+        "change all rows",
       );
     }
 
-    if (risk.reason === "no-where") {
+    if (risk.reason === "no-where" || statementType === "TRUNCATE") {
       return danger(
-        `This DELETE has no WHERE clause and will delete every row in ${target ?? "the table"}.`,
+        `This will delete every row in ${table}.`,
         "delete all rows",
-      );
-    }
-
-    if (statementType === "TRUNCATE") {
-      return danger(
-        `This will remove every row from ${target ?? "the table"}.`,
-        "empty table",
       );
     }
 
@@ -73,36 +76,59 @@ export function getSqlRunConfirmationCopy(
       const objectKind = statementType.slice("DROP ".length).toLowerCase();
 
       return danger(
-        `This will permanently drop the ${objectKind} ${target}.`,
-        `drop ${objectKind}`,
+        objectKind === "table"
+          ? `This will delete the table ${target} and all of its data.`
+          : `This will delete the ${objectKind} ${target}.`,
+        `delete ${objectKind}`,
       );
     }
 
     if (statementType === "ALTER" && target) {
       return danger(
-        `This ALTER permanently removes part of ${target}.`,
-        "run anyway",
+        `This will remove part of the table ${target}, along with the data in it.`,
+        "remove it",
       );
     }
 
-    return danger("This statement cannot be undone.", "run anyway");
+    return danger(`This will delete data.`, "run anyway");
   }
 
-  if (risk.kind === "write" && statementType) {
-    return {
-      primaryLabel: "run",
-      primaryVariant: "default",
-      prompt: target
-        ? `Run this ${statementType} on ${target}?`
-        : `Run this ${statementType} statement?`,
-      title: "Confirm SQL that changes data",
-    };
+  const write = (prompt: string, primaryLabel = "run") => ({
+    primaryLabel,
+    primaryVariant: "default" as const,
+    prompt,
+    promptDetail: NO_UNDO,
+    title: "Confirm SQL that changes data",
+  });
+
+  if (risk.kind === "write") {
+    switch (statementType) {
+      case "UPDATE":
+        return write(`This will change data in ${table}.`, "change data");
+      case "DELETE":
+        return write(
+          `This will delete some rows from ${table}.`,
+          "delete rows",
+        );
+      case "INSERT":
+      case "REPLACE":
+        return write(`This will add rows to ${table}.`, "add rows");
+      case "ALTER":
+        return write(
+          target
+            ? `This will change the columns or settings of the table ${target}.`
+            : "This will change how your database is set up.",
+        );
+      default:
+        return write("This will change your database.");
+    }
   }
 
   return {
-    primaryLabel: "run",
+    primaryLabel: "run anyway",
     primaryVariant: "default",
-    prompt: "Run this statement? Studio could not tell what it does.",
+    prompt: "Studio can't tell what this SQL does.",
+    promptDetail: "If it changes data, Studio can't undo it.",
     title: "Confirm SQL that changes data",
   };
 }
