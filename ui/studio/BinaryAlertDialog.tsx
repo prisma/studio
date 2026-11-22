@@ -16,6 +16,7 @@ import {
   AlertDialogTitle,
 } from "../components/ui/alert-dialog";
 import type { ButtonProps } from "../components/ui/button";
+import { cn } from "../lib/utils";
 
 function handleBinaryDialogKeyDown(args: {
   event: ReactKeyboardEvent<HTMLDivElement>;
@@ -69,8 +70,13 @@ function handleBinaryDialogKeyDown(args: {
 }
 
 export type BinaryAlertDialogProps = {
-  /** Extra content rendered between the prompt and the buttons. */
-  children?: ReactNode;
+  /** Extra classes for the dialog surface, for example a wider max width. */
+  className?: string;
+  /**
+   * Optional control shown at the start of the button row, such as a
+   * "Don't ask again" checkbox. The buttons stay right-aligned.
+   */
+  footerStart?: ReactNode;
   /**
    * Which button receives focus when the dialog opens. Enter activates the
    * focused button, so destructive confirmations should focus `secondary`.
@@ -95,7 +101,8 @@ export type BinaryAlertDialogProps = {
  */
 export function BinaryAlertDialog(props: BinaryAlertDialogProps) {
   const {
-    children,
+    className,
+    footerStart,
     initialFocus = "primary",
     onCloseAutoFocus,
     onOpenChange,
@@ -118,7 +125,10 @@ export function BinaryAlertDialog(props: BinaryAlertDialogProps) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent
-        className="max-w-[280px] gap-4 rounded-lg p-4 font-sans"
+        className={cn(
+          "max-w-[280px] gap-4 rounded-lg p-4 font-sans",
+          className,
+        )}
         onCloseAutoFocus={onCloseAutoFocus}
         onKeyDown={(event) =>
           handleBinaryDialogKeyDown({
@@ -143,8 +153,12 @@ export function BinaryAlertDialog(props: BinaryAlertDialogProps) {
             {prompt}
           </AlertDialogDescription>
         </AlertDialogHeader>
-        {children}
-        <AlertDialogFooter className="flex-row justify-end gap-2">
+        <AlertDialogFooter className="flex-row items-center justify-end gap-2">
+          {footerStart ? (
+            <div className="mr-auto flex min-w-0 items-center">
+              {footerStart}
+            </div>
+          ) : null}
           <AlertDialogAction
             ref={primaryButtonRef}
             size="sm"

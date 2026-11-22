@@ -294,24 +294,27 @@ function SqlRunConfirmationDialog(props: {
       prompt={copy.prompt}
       secondaryLabel="cancel"
       title={copy.title}
-    >
-      {isDanger ? null : (
-        <div className="flex items-start gap-2">
-          <Checkbox
-            checked={shouldStopAsking}
-            className="mt-px"
-            id="sql-run-confirmation-stop-asking"
-            onCheckedChange={(checked) => onStopAskingChange(checked === true)}
-          />
-          <Label
-            className="text-xs leading-4 font-normal text-muted-foreground"
-            htmlFor="sql-run-confirmation-stop-asking"
-          >
-            Don&apos;t ask again before running SQL that changes data
-          </Label>
-        </div>
-      )}
-    </BinaryAlertDialog>
+      className="max-w-[340px]"
+      footerStart={
+        isDanger ? null : (
+          <div className="flex items-center gap-2">
+            <Checkbox
+              checked={shouldStopAsking}
+              id="sql-run-confirmation-stop-asking"
+              onCheckedChange={(checked) =>
+                onStopAskingChange(checked === true)
+              }
+            />
+            <Label
+              className="cursor-pointer text-sm font-normal whitespace-nowrap text-muted-foreground"
+              htmlFor="sql-run-confirmation-stop-asking"
+            >
+              Don&apos;t ask again
+            </Label>
+          </div>
+        )
+      }
+    />
   );
 }
 
