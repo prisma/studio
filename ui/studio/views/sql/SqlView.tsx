@@ -320,7 +320,6 @@ function SqlRunConfirmationDialog(props: {
       promptDetail={copy.promptDetail}
       secondaryLabel="cancel"
       title={copy.title}
-      layout="comfortable"
       control={
         isDanger ? null : (
           <div className="flex items-center gap-2">

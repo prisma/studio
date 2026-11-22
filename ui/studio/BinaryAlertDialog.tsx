@@ -77,12 +77,6 @@ export type BinaryAlertDialogProps = {
    * focused button, so destructive confirmations should focus `secondary`.
    */
   initialFocus?: "primary" | "secondary";
-  /**
-   * `compact` (default): small dialog with right-aligned buttons, used for
-   * quick table-view confirmations. `comfortable`: fixed-width dialog with
-   * roomier spacing and two equal full-width buttons, for longer prompts.
-   */
-  layout?: "comfortable" | "compact";
   onCloseAutoFocus?: (event: Event) => void;
   onOpenChange: (open: boolean) => void;
   onPrimaryAction: () => void;
@@ -98,15 +92,17 @@ export type BinaryAlertDialogProps = {
 };
 
 /**
- * Small two-button confirmation dialog shared by table and SQL views. Arrow
- * keys move between the buttons, Enter activates the focused one, and Escape
- * cancels.
+ * Two-button confirmation dialog shared by table and SQL views: a fixed-width
+ * surface with the prompt on top and two equal full-width buttons, so the
+ * layout stays balanced whatever the prompt length. The surface is slightly
+ * translucent with a backdrop blur, so it reads as floating over Studio while
+ * the prompt stays fully legible. Arrow keys move between
+ * the buttons, Enter activates the focused one, and Escape cancels.
  */
 export function BinaryAlertDialog(props: BinaryAlertDialogProps) {
   const {
     control,
     initialFocus = "primary",
-    layout = "compact",
     onCloseAutoFocus,
     onOpenChange,
     onPrimaryAction,
@@ -119,8 +115,6 @@ export function BinaryAlertDialog(props: BinaryAlertDialogProps) {
     secondaryLabel,
     title,
   } = props;
-  const isComfortable = layout === "comfortable";
-  const buttonSize = isComfortable ? "default" : "sm";
   const primaryButtonRef = useRef<HTMLButtonElement | null>(null);
   const secondaryButtonRef = useRef<HTMLButtonElement | null>(null);
 
@@ -131,12 +125,7 @@ export function BinaryAlertDialog(props: BinaryAlertDialogProps) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent
-        className={cn(
-          "rounded-xl bg-background font-sans",
-          isComfortable
-            ? "w-[360px] max-w-[calc(100vw-2rem)] gap-5 p-5"
-            : "max-w-[280px] gap-4 p-4",
-        )}
+        className="w-[360px] max-w-[calc(100vw-2rem)] gap-5 rounded-xl bg-background/85 p-5 font-sans backdrop-blur-md"
         onCloseAutoFocus={onCloseAutoFocus}
         onKeyDown={(event) =>
           handleBinaryDialogKeyDown({
@@ -167,27 +156,19 @@ export function BinaryAlertDialog(props: BinaryAlertDialogProps) {
           </AlertDialogDescription>
         </AlertDialogHeader>
         {control}
-        <AlertDialogFooter
-          className={
-            isComfortable
-              ? "grid grid-cols-2 gap-2"
-              : "flex-row items-center justify-end gap-2"
-          }
-        >
+        <AlertDialogFooter className="grid grid-cols-2 gap-2">
           <AlertDialogAction
             ref={primaryButtonRef}
-            size={buttonSize}
             variant={primaryVariant}
-            className={cn(isComfortable && "w-full", primaryClassName)}
+            className={cn("w-full", primaryClassName)}
             onClick={onPrimaryAction}
           >
             {primaryLabel}
           </AlertDialogAction>
           <AlertDialogCancel
             ref={secondaryButtonRef}
-            size={buttonSize}
             variant="outline"
-            className={cn(isComfortable && "w-full")}
+            className="w-full"
             onClick={handleSecondaryAction}
           >
             {secondaryLabel}
