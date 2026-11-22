@@ -77,9 +77,17 @@ export function DemoApp(props: {
   hasDatabase: boolean;
   seededAt?: string;
   streamsUrl?: string;
+  temporalUrl?: string;
 }) {
-  const { adapter, aiEnabled, bootId, hasDatabase, seededAt, streamsUrl } =
-    props;
+  const {
+    adapter,
+    aiEnabled,
+    bootId,
+    hasDatabase,
+    seededAt,
+    streamsUrl,
+    temporalUrl,
+  } = props;
   const llm: StudioLlm | undefined = aiEnabled
     ? async (request) => {
         const response = await fetch("/api/ai", {
@@ -172,6 +180,7 @@ export function DemoApp(props: {
           hasDatabase={hasDatabase}
           llm={llm}
           streamsUrl={streamsUrl}
+          temporalUrl={temporalUrl}
         />
       </main>
     </div>

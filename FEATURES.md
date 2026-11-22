@@ -30,6 +30,12 @@ The same demo entrypoint can also run against external development infrastructur
 Studio can run without a database connection when a Streams server is configured, which makes it usable as a focused event-log and stream-search tool.
 In that mode the shell hides schema selection, table navigation, and database-only views, defaults into the stream view, and keeps all Streams browsing, search, aggregation, and live/tail behavior working through the normal `/api/streams` proxy.
 
+## Temporal Workbench
+
+Studio can optionally connect to a Temporal server (`slate-temporal-next` or standard Temporal servers like `temporal server start-dev`) via a same-origin gRPC BFF configured through `temporalUrl`, adding a `Temporal` namespace switcher and `Workflows` entry in the sidebar.
+The Workflows Grid provides Visibility search, saved triage views, live status count pills, `Paused`/`Live`/`Tail` follow modes, inline row expansion for inputs/outputs/failures, keyboard navigation, and multi-select bulk Signal, Cancel, and Terminate actions.
+Opening a workflow launches the Execution Debugger with a failure/retry diagnostic strip, synchronized Gantt timeline, grouped spans or raw history event views, Replay JSON export, CLI copy, a right-hand live Query/Signal/Update inspector, and a Start / Clone & Re-run workflow playground sheet.
+
 ## Local Streams Development Override
 
 Studio's local development workflow can temporarily replace the published npm `@prisma/dev` package with the sibling source package from `../team-expansion/dev/server`, while also swapping its `@prisma/streams-local` dependency over to a built local Streams checkout.

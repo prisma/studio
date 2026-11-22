@@ -20,6 +20,7 @@ import { SchemaView } from "./views/schema/SchemaView";
 import { SqlView } from "./views/sql/SqlView";
 import { StreamView } from "./views/stream/StreamView";
 import { ActiveTableView } from "./views/table/ActiveTableView";
+import { TemporalView } from "./views/temporal/TemporalView";
 import { BasicView, ViewProps } from "./views/View";
 
 export type StudioLaunchedEventBase = {
@@ -69,6 +70,7 @@ export interface StudioProps {
   llm?: StudioLlm;
   onEvent?: (error: StudioEvent) => void;
   streamsUrl?: string;
+  temporalUrl?: string;
   /**
    * Custom theme configuration or CSS string from shadcn
    * Supports both parsed theme object and raw CSS string
@@ -86,6 +88,7 @@ export function Studio(props: StudioProps) {
     llm,
     onEvent,
     streamsUrl,
+    temporalUrl,
     theme,
   } = props;
 
@@ -101,6 +104,7 @@ export function Studio(props: StudioProps) {
       llm={llm}
       onEvent={onEvent}
       streamsUrl={streamsUrl}
+      temporalUrl={temporalUrl}
       theme={theme}
     >
       <StudioContent />
@@ -113,6 +117,7 @@ const views: Record<string, (props: ViewProps) => JSX.Element | null> = {
   table: ActiveTableView,
   queries: QueriesView,
   stream: StreamView,
+  temporal: TemporalView,
   console: ConsoleView,
   sql: SqlView,
   migrations: MigrationsView,
@@ -120,7 +125,8 @@ const views: Record<string, (props: ViewProps) => JSX.Element | null> = {
 };
 
 function StudioContent() {
-  const { hasDatabase, isNavigationOpen, streamsUrl } = useStudio();
+  const { hasDatabase, isNavigationOpen, streamsUrl, temporalUrl } =
+    useStudio();
   const {
     metadata: { activeTable },
     viewParam,
@@ -140,7 +146,7 @@ function StudioContent() {
     errorState != null &&
     !hasResolvedIntrospection;
   const shouldShowDatabaseUnavailableView =
-    !hasDatabase && viewParam !== "stream";
+    !hasDatabase && viewParam !== "stream" && viewParam !== "temporal";
 
   return (
     <div
@@ -185,6 +191,7 @@ function StudioContent() {
               ) : shouldShowDatabaseUnavailableView ? (
                 <DatabaseUnavailableView
                   hasStreamsServer={typeof streamsUrl === "string"}
+                  hasTemporalServer={typeof temporalUrl === "string"}
                 />
               ) : (
                 <View />
@@ -197,10 +204,18 @@ function StudioContent() {
   );
 }
 
-function DatabaseUnavailableView(props: { hasStreamsServer: boolean }) {
-  const description = props.hasStreamsServer
-    ? "This Studio session was started without a database URL. Select a stream from the sidebar to browse stream data."
-    : "This Studio session was started without a database URL.";
+function DatabaseUnavailableView(props: {
+  hasStreamsServer: boolean;
+  hasTemporalServer: boolean;
+}) {
+  const description =
+    props.hasStreamsServer && props.hasTemporalServer
+      ? "This Studio session was started without a database URL. Select a stream or Temporal workflow view from the sidebar."
+      : props.hasStreamsServer
+        ? "This Studio session was started without a database URL. Select a stream from the sidebar to browse stream data."
+        : props.hasTemporalServer
+          ? "This Studio session was started without a database URL. Select Temporal Workflows from the sidebar to inspect executions."
+          : "This Studio session was started without a database URL.";
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">

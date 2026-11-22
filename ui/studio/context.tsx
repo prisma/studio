@@ -257,6 +257,7 @@ interface StudioContextValue {
   llm?: StudioLlm;
   queryInsights?: Adapter["queryInsights"];
   streamsUrl?: string;
+  temporalUrl?: string;
   hasAiFilter: boolean;
   hasAiQueryRecommendations: boolean;
   hasAiSql: boolean;
@@ -303,6 +304,7 @@ export type StudioContextProviderProps = PropsWithChildren<{
   llm?: StudioLlm;
   onEvent?: (event: StudioEvent) => void;
   streamsUrl?: string;
+  temporalUrl?: string;
   theme?: CustomTheme | string;
 }>;
 
@@ -314,6 +316,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
     hasDatabase = true,
     llm,
     streamsUrl,
+    temporalUrl,
     theme,
   } = props;
 
@@ -858,6 +861,7 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
           llm,
           queryInsights,
           streamsUrl,
+          temporalUrl,
           hasAiFilter,
           hasAiQueryRecommendations,
           hasAiSql,

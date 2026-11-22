@@ -39,6 +39,25 @@ type QueryKey =
       string,
     ]
   | ["streams", string]
+  | ["temporal", "capabilities", string | undefined]
+  | ["temporal", "namespaces", string | undefined]
+  | ["temporal", "workflows", string | undefined, string]
+  | ["temporal", "workflows", string | undefined, string, string, number]
+  | [
+      "temporal",
+      "workflow-detail",
+      string | undefined,
+      string,
+      string | undefined,
+    ]
+  | [
+      "temporal",
+      "workflow-detail",
+      string | undefined,
+      string,
+      string | undefined,
+      string | undefined,
+    ]
   | [
       "streams",
       string,

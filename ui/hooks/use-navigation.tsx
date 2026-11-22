@@ -54,9 +54,16 @@ function getDefaultParams(args: {
   adapter: Adapter;
   hasDatabase: boolean;
   hasStreamsServer: boolean;
+  hasTemporalServer: boolean;
   introspection: AdapterIntrospectResult;
 }) {
-  const { adapter, hasDatabase, hasStreamsServer, introspection } = args;
+  const {
+    adapter,
+    hasDatabase,
+    hasStreamsServer,
+    hasTemporalServer,
+    introspection,
+  } = args;
   const { schemas } = introspection;
   const { defaultSchema } = adapter;
 
@@ -67,7 +74,13 @@ function getDefaultParams(args: {
   const pageSize = "25";
   const search = "";
   const searchScope = "table";
-  const view = !hasDatabase && hasStreamsServer ? "stream" : "table";
+  const view = !hasDatabase
+    ? hasStreamsServer
+      ? "stream"
+      : hasTemporalServer
+        ? "temporal"
+        : "table"
+    : "table";
 
   return {
     schema,
@@ -116,6 +129,7 @@ function useNavigationInternal() {
     hasQueryInsights,
     navigationTableNamesCollection,
     streamsUrl,
+    temporalUrl,
   } = useStudio();
   const { data: introspection, isFetching } = useIntrospection();
 
@@ -126,9 +140,10 @@ function useNavigationInternal() {
         adapter,
         hasDatabase,
         hasStreamsServer: typeof streamsUrl === "string",
+        hasTemporalServer: typeof temporalUrl === "string",
         introspection,
       }),
-    [adapter, hasDatabase, introspection, streamsUrl],
+    [adapter, hasDatabase, introspection, streamsUrl, temporalUrl],
   );
 
   useEffect(() => {
@@ -202,6 +217,11 @@ function useNavigationInternal() {
   const [tableParam, setTableParam] = useQueryState("table", {
     defaultValue: defaults.table,
   });
+  const [temporalFollowParam, setTemporalFollowParam] =
+    useQueryState("temporalFollow");
+  const [temporalNsParam, setTemporalNsParam] = useQueryState("temporalNs");
+  const [temporalRunParam, setTemporalRunParam] = useQueryState("temporalRun");
+  const [temporalWfParam, setTemporalWfParam] = useQueryState("temporalWf");
   const [viewParam, setViewParam] = useQueryState("view", {
     defaultValue: defaults.view,
   });
@@ -224,11 +244,17 @@ function useNavigationInternal() {
       ? activeTables[resolvedTableParam]
       : undefined;
   const resolvedViewParam =
-    !hasDatabase && typeof streamsUrl === "string"
-      ? "stream"
-      : viewParam === "queries" && !hasQueryInsights
-        ? defaults.view
-        : viewParam;
+    !hasDatabase && viewParam === "temporal" && typeof temporalUrl === "string"
+      ? "temporal"
+      : !hasDatabase && typeof streamsUrl === "string"
+        ? "stream"
+        : !hasDatabase && typeof temporalUrl === "string"
+          ? "temporal"
+          : viewParam === "queries" && !hasQueryInsights
+            ? defaults.view
+            : viewParam === "temporal" && typeof temporalUrl !== "string"
+              ? defaults.view
+              : viewParam;
 
   const metadata = useMemo(
     () => ({
@@ -259,6 +285,10 @@ function useNavigationInternal() {
     streamRoutingKeyParam,
     streamParam,
     tableParam,
+    temporalFollowParam,
+    temporalNsParam,
+    temporalRunParam,
+    temporalWfParam,
     viewParam: resolvedViewParam,
     setFilterParam: setFilterParam as NuqsSetNullableValue<string>,
     setMigrationParam: setMigrationParam as NuqsSetNullableValue<string>,
@@ -280,6 +310,11 @@ function useNavigationInternal() {
       setStreamRoutingKeyParam as NuqsSetNullableValue<string>,
     setStreamParam: setStreamParam as NuqsSetNullableValue<string>,
     setTableParam: setTableParam as NuqsSetNullableValue<string>,
+    setTemporalFollowParam:
+      setTemporalFollowParam as NuqsSetNullableValue<string>,
+    setTemporalNsParam: setTemporalNsParam as NuqsSetNullableValue<string>,
+    setTemporalRunParam: setTemporalRunParam as NuqsSetNullableValue<string>,
+    setTemporalWfParam: setTemporalWfParam as NuqsSetNullableValue<string>,
     setViewParam: setViewParam as NuqsSetNullableValue<string>,
   };
 }

@@ -9,6 +9,7 @@ import {
   Search,
   Table2,
   Waves,
+  Workflow,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -29,6 +30,11 @@ import { useHasMigrationHistory } from "../hooks/use-migrations";
 import { useNavigation } from "../hooks/use-navigation";
 import { useNavigationTableList } from "../hooks/use-navigation-table-list";
 import { useStreams } from "../hooks/use-streams";
+import {
+  useTemporalCapabilities,
+  useTemporalNamespaces,
+  useTemporalWorkflows,
+} from "../hooks/use-temporal";
 import { useUiState } from "../hooks/use-ui-state";
 import { isMacPlatform } from "../lib/platform";
 import { cn } from "../lib/utils";
@@ -61,6 +67,7 @@ export function Navigation({ className }: NavigationProps) {
     isDarkMode,
     navigationWidth,
     setNavigationWidth,
+    temporalUrl,
   } = useStudio();
   const { isFetching, activeTable } = metadata;
   const { errorState, hasResolvedIntrospection, isRefetching, refetch } =
@@ -847,6 +854,10 @@ export function Navigation({ className }: NavigationProps) {
         </Navigation.SearchableBlock>
       )}
 
+      {typeof temporalUrl === "string" ? (
+        <Navigation.TemporalSection itemClassName={navigationItemClasses} />
+      ) : null}
+
       {/* Wide invisible grab area; only a hairline at the page edge shows on hover or drag. */}
       <button
         aria-label="Resize navigation"
@@ -1122,7 +1133,136 @@ const SchemaSelector = () => {
   );
 };
 
+const TemporalSection = (props: { itemClassName: string }) => {
+  const { itemClassName } = props;
+  const {
+    createUrl,
+    setTemporalNsParam,
+    setTemporalRunParam,
+    setTemporalWfParam,
+    setViewParam,
+    temporalNsParam,
+    viewParam,
+  } = useNavigation();
+  const { data: capabilities } = useTemporalCapabilities();
+  const { data: namespaces = [] } = useTemporalNamespaces();
+
+  const activeNamespace = temporalNsParam ?? namespaces[0]?.name ?? "default";
+  const { data: workflowList } = useTemporalWorkflows({
+    followMode: viewParam === "temporal" ? "paused" : "live",
+    namespace: activeNamespace,
+    pageSize: 1,
+    query: "",
+  });
+
+  const failedCount = workflowList?.countsByStatus.Failed ?? 0;
+  const runningCount = workflowList?.countsByStatus.Running ?? 0;
+  const namespaceOptions =
+    namespaces.length > 0
+      ? namespaces.map((namespace) => namespace.name)
+      : [activeNamespace];
+
+  return (
+    <Navigation.Block
+      data-testid="navigation-temporal-block"
+      label={
+        capabilities?.serverKind === "slate-temporal-next"
+          ? "Temporal · Next"
+          : "Temporal"
+      }
+    >
+      <div className="px-2 pb-1.5">
+        <Select
+          value={activeNamespace}
+          onValueChange={(nextNamespace) => {
+            void setTemporalNsParam(nextNamespace);
+            void setTemporalWfParam(null);
+            void setTemporalRunParam(null);
+            void setViewParam("temporal");
+          }}
+        >
+          <SelectTrigger
+            aria-label="Temporal namespace"
+            className="h-7 text-xs"
+            data-testid="navigation-temporal-namespace"
+            label="Namespace"
+          >
+            <SelectValue placeholder="Namespace" />
+          </SelectTrigger>
+          <SelectContent>
+            {namespaceOptions.map((namespaceName) => (
+              <SelectItem
+                key={namespaceName}
+                className="text-xs"
+                value={namespaceName}
+              >
+                {namespaceName}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <Navigation.Item
+        asChild
+        className={itemClassName}
+        isActive={viewParam === "temporal"}
+      >
+        <a
+          className="w-full justify-between"
+          data-testid="navigation-temporal-workflows"
+          href={createUrl({
+            temporalNsParam: activeNamespace,
+            viewParam: "temporal",
+          })}
+          onClick={(event) => {
+            if (
+              event.button !== 0 ||
+              event.altKey ||
+              event.ctrlKey ||
+              event.metaKey ||
+              event.shiftKey
+            ) {
+              return;
+            }
+
+            event.preventDefault();
+            void setTemporalNsParam(activeNamespace);
+            void setTemporalWfParam(null);
+            void setTemporalRunParam(null);
+            void setViewParam("temporal");
+          }}
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <Workflow aria-hidden />
+            <span className="truncate">Workflows</span>
+          </span>
+          <span className="flex shrink-0 items-center gap-1 tabular-nums">
+            {runningCount > 0 ? (
+              <span
+                className="rounded-full bg-blue-500/15 px-1.5 py-0.5 font-mono text-[10px] font-medium text-blue-600 dark:text-blue-400"
+                title={`${runningCount} running`}
+              >
+                {runningCount}
+              </span>
+            ) : null}
+            {failedCount > 0 ? (
+              <span
+                className="rounded-full bg-red-500/15 px-1.5 py-0.5 font-mono text-[10px] font-medium text-red-600 dark:text-red-400"
+                title={`${failedCount} failed`}
+              >
+                {failedCount}
+              </span>
+            ) : null}
+          </span>
+        </a>
+      </Navigation.Item>
+    </Navigation.Block>
+  );
+};
+
 Navigation.Block = Block;
 Navigation.Item = Item;
 Navigation.SchemaSelector = SchemaSelector;
 Navigation.SearchableBlock = SearchableBlock;
+Navigation.TemporalSection = TemporalSection;

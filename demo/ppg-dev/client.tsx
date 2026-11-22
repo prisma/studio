@@ -59,6 +59,7 @@ async function bootstrap(): Promise<void> {
       seededAt={config.seededAt}
       aiEnabled={config.ai?.enabled === true}
       streamsUrl={config.streams?.url}
+      temporalUrl={config.temporal?.url}
     />,
   );
 }

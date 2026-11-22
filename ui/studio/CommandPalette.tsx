@@ -8,6 +8,7 @@ import {
   Moon,
   Search,
   Sun,
+  Workflow,
 } from "lucide-react";
 import {
   createContext,
@@ -338,10 +339,11 @@ function StudioCommandPalette() {
     isDarkMode,
     isNavigationOpen,
     setThemeMode,
+    temporalUrl,
     themeMode,
     toggleNavigation,
   } = useStudio();
-  const { createUrl, schemaParam } = useNavigation();
+  const { createUrl, schemaParam, temporalNsParam } = useNavigation();
   const { isOpen, setIsOpen, viewActions } = useCommandPaletteStateContext();
   const [query, setQuery] = useState("");
   const [, setTableSearchUiState] = useUiState<TableSearchUiState>(
@@ -523,6 +525,23 @@ function StudioCommandPalette() {
       },
     ];
 
+    if (typeof temporalUrl === "string") {
+      items.push({
+        disabled: false,
+        icon: Workflow,
+        id: "view:temporal",
+        keywords: ["temporal", "workflows", "executions", "debugger"],
+        label: "Temporal Workflows",
+        onSelect: () => {
+          window.location.hash = createUrl({
+            temporalNsParam: temporalNsParam ?? "default",
+            viewParam: "temporal",
+          });
+        },
+        section: "views",
+      });
+    }
+
     return items.filter((item) =>
       matchesCommandSearch({
         label: item.label,
@@ -530,7 +549,7 @@ function StudioCommandPalette() {
         query,
       }),
     );
-  }, [createUrl, query]);
+  }, [createUrl, query, temporalNsParam, temporalUrl]);
   useEffect(() => {
     if (!isOpen) {
       setQuery("");

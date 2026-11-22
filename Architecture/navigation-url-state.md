@@ -8,8 +8,9 @@ Navigation state MUST be URL-driven and managed through `useNavigation` + Nuqs. 
 
 This architecture governs:
 
-- active Studio view (`table`, `schema`, `console`, `sql`, `stream`, `queries`)
+- active Studio view (`table`, `schema`, `console`, `sql`, `stream`, `temporal`, `queries`)
 - active schema/table/stream
+- active Temporal namespace, workflow execution, run ID, and follow mode
 - active stream follow mode
 - active stream request-observability sheet lookup
 - active stream aggregation-panel visibility
@@ -44,6 +45,10 @@ Only keys declared in [`ui/hooks/nuqs.ts`](../ui/hooks/nuqs.ts) are allowed:
 - `stream`
 - `streamFollow`
 - `streamObserve`
+- `temporalNs`
+- `temporalWf`
+- `temporalRun`
+- `temporalFollow`
 - `aggregations`
 - `streamAggregationRange`
 - `filter`
