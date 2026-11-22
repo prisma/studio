@@ -28,7 +28,12 @@ export function shouldConfirmSqlRun(args: {
   return risk.kind === "danger" || isConfirmationEnabled;
 }
 
+/** Placeholder in `prompt` where the table or object name is rendered. */
+export const SQL_RUN_CONFIRMATION_NAME_TOKEN = "{name}";
+
 export interface SqlRunConfirmationCopy {
+  /** Table or object name for `SQL_RUN_CONFIRMATION_NAME_TOKEN`, if any. */
+  name: string | null;
   primaryLabel: string;
   promptDetail: string;
   primaryVariant: ButtonProps["variant"];
@@ -47,10 +52,12 @@ export function getSqlRunConfirmationCopy(
   risk: SqlStatementRisk,
 ): SqlRunConfirmationCopy {
   const { statementType, target } = risk;
-  const table = target ?? "the table";
+  const name = target ? SQL_RUN_CONFIRMATION_NAME_TOKEN : null;
+  const table = name ?? "the table";
 
   if (risk.kind === "danger") {
     const danger = (prompt: string, primaryLabel: string) => ({
+      name: target,
       primaryLabel,
       primaryVariant: "destructive" as const,
       prompt,
@@ -77,15 +84,15 @@ export function getSqlRunConfirmationCopy(
 
       return danger(
         objectKind === "table"
-          ? `This will delete the table ${target} and all of its data.`
-          : `This will delete the ${objectKind} ${target}.`,
+          ? `This will delete the table ${table} and all of its data.`
+          : `This will delete the ${objectKind} ${table}.`,
         `delete ${objectKind}`,
       );
     }
 
     if (statementType === "ALTER" && target) {
       return danger(
-        `This will remove part of the table ${target}, along with the data in it.`,
+        `This will remove part of the table ${table}, along with the data in it.`,
         "remove it",
       );
     }
@@ -94,6 +101,7 @@ export function getSqlRunConfirmationCopy(
   }
 
   const write = (prompt: string, primaryLabel = "run") => ({
+    name: target,
     primaryLabel,
     primaryVariant: "default" as const,
     prompt,
@@ -116,7 +124,7 @@ export function getSqlRunConfirmationCopy(
       case "ALTER":
         return write(
           target
-            ? `This will change the columns or settings of the table ${target}.`
+            ? `This will change the columns or settings of the table ${table}.`
             : "This will change how your database is set up.",
         );
       default:
@@ -125,6 +133,7 @@ export function getSqlRunConfirmationCopy(
   }
 
   return {
+    name: null,
     primaryLabel: "run anyway",
     primaryVariant: "default",
     prompt: "Studio can't tell what this SQL does.",

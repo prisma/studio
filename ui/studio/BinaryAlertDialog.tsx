@@ -89,7 +89,7 @@ export type BinaryAlertDialogProps = {
   primaryClassName?: string;
   primaryLabel: string;
   primaryVariant?: ButtonProps["variant"];
-  prompt: string;
+  prompt: ReactNode;
   /** Optional quieter second line under the prompt, such as a consequence. */
   promptDetail?: string;
   secondaryLabel: string;

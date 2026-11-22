@@ -2386,6 +2386,8 @@ describe("SqlView run confirmation", () => {
 
       expect(getDialog()?.textContent).toContain(prompt);
       expect(getDialog()?.textContent).toContain("Studio can't undo this.");
+      // The table name is set apart from the sentence.
+      expect(getDialog()?.querySelector("code")?.textContent).toBe("t");
       const primary = getDialogButton(primaryLabel);
       expect(primary?.className).toContain("destructive");
       // Cancel is focused so a stray Enter never confirms a destructive run.

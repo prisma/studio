@@ -58,6 +58,7 @@ import { createSqlLintSource } from "./sql-lint-source";
 import {
   getSqlRunConfirmationCopy,
   shouldConfirmSqlRun,
+  SQL_RUN_CONFIRMATION_NAME_TOKEN,
   useSqlRunConfirmationSetting,
 } from "./sql-run-confirmation";
 import {
@@ -269,6 +270,30 @@ const SqlResultGrid = memo(function SqlResultGrid(props: SqlResultGridProps) {
   );
 });
 
+/**
+ * Shows the table or object name in Studio's monospace chip, like the sidebar
+ * table list and the `⌘ Enter` hint, so it stands out from the sentence.
+ */
+function renderPromptWithName(prompt: string, name: string | null) {
+  if (!name) {
+    return prompt;
+  }
+
+  return prompt.split(SQL_RUN_CONFIRMATION_NAME_TOKEN).flatMap((part, index) =>
+    index === 0
+      ? [part]
+      : [
+          <code
+            className="rounded-sm border border-border bg-secondary px-1 py-px font-mono text-[0.92em] font-normal text-foreground [box-decoration-break:clone] [overflow-wrap:anywhere] [word-break:keep-all]"
+            key={index}
+          >
+            {name}
+          </code>,
+          part,
+        ],
+  );
+}
+
 function SqlRunConfirmationDialog(props: {
   onCloseAutoFocus: (event: Event) => void;
   onConfirm: () => void;
@@ -291,7 +316,7 @@ function SqlRunConfirmationDialog(props: {
       open={props.open}
       primaryLabel={copy.primaryLabel}
       primaryVariant={copy.primaryVariant}
-      prompt={copy.prompt}
+      prompt={renderPromptWithName(copy.prompt, copy.name)}
       promptDetail={copy.promptDetail}
       secondaryLabel="cancel"
       title={copy.title}
