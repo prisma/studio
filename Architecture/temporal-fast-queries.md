@@ -281,13 +281,20 @@ Done on 2026-11-23, without a server change:
 - The Studio server remembers for five minutes that a filter matched too many runs to copy.
 - It keeps the sample for the types and queues for 30 seconds and the schedule list for 10 seconds.
 
+Done on 2026-11-24, without a server change:
+
+- `getWorkflowDetail` caches decoded history by `(runId, historyLength)` so Live polling skips `GetWorkflowExecutionHistory` and Codec Server calls while no new event arrives.
+- When a history exceeds 2,000 events, `getWorkflowDetail` calls `GetWorkflowExecutionHistoryReverse` to append the latest 100 events, keeping closing failures and reset points visible on servers that support reverse history.
+- `listSchedules` parallelizes `DescribeSchedule` calls (8 at a time) and passes pagination tokens through to the UI.
+- Workflow Type diagrams extract Worker Build IDs from sampled `WorkflowTaskCompleted` events so operators can filter a diagram by code version without waiting for Proposal I.
+
 These follow from the server changes and belong in this repository:
 
 - Stop reading every run for the lists of types and queues, for Needs Attention and for the Task Queues screen, once B, E and F exist. This removes the 10,000-run limit on those screens.
 - Read the catalogue of H for the Workflow Types screen and the Start Workflow form, in place of a list call and a copy.
-- Group a type's diagram by code version (I). The step that needs no server change, grouping the sampled runs by the Build ID in their histories, can be done first.
+- Upgrade Build ID diagram filtering from the 40-run sample to full visibility counts and filtering once Proposal I lands.
 - Send the plain-text search as three calls (D).
-- Call `ListSchedules` without a `DescribeSchedule` per row, if the list entry carries the next run times. I did not check whether it does on our server.
+- Call `ListSchedules` without a `DescribeSchedule` per row once `ListSchedules` carries Task Queue and Overlap Policy (see 4.7).
 - Keep rows and counts as separate requests. A count for a custom filter stays the slowest call.
 
 ### 4.6 Order of work
@@ -306,6 +313,25 @@ These follow from the server changes and belong in this repository:
 | I: code version of each run                     | 20, per version               | H for the per-version rows |
 
 E, F and G do not depend on the Visibility plan and can start now. `main` is frozen for code until the plan's cost gate is decided, so none of these can merge before that.
+
+### 4.7 Additional Temporal-side improvements from the Studio review
+
+The review of Studio's Temporal Workbench identified five capabilities that are better solved on the Temporal / `slate-temporal-next` server than worked around in the BFF:
+
+1. **Include Task Queue and Overlap Policy in `ListSchedules` summaries.**
+   `ListSchedulesResponse.schedules[].info` currently omits `taskQueue` and `overlapPolicy`, forcing Studio to run `DescribeSchedule` for every schedule on the page (parallelized 8 at a time). Returning those two fields on the list entry removes the N+1 calls completely.
+
+2. **Incremental history reads (`after_event_id` or `wait_new_event` long-poll).**
+   Studio's BFF now skips `GetWorkflowExecutionHistory` while `historyLength` is unchanged. When a live run grows from 1,500 to 1,502 events, however, the BFF still has to re-read and re-decode all 1,502 events because `GetWorkflowExecutionHistory` starts from event 1 unless the caller keeps a previous `nextPageToken`. Supporting an explicit `first_event_id` (or `wait_new_event` long-poll from the last seen token) lets Studio fetch and codec-decode only the 2 new events.
+
+3. **`GetWorkflowExecutionHistoryReverse` in `slate-temporal-next` (Proposal G).**
+   Studio now calls `GetWorkflowExecutionHistoryReverse` whenever a run exceeds 2,000 events so closing failures and latest reset points remain visible. Standard Temporal already answers this call; implementing it in `slate-temporal-next` unlocks the same behavior there with no further Studio change.
+
+4. **Visibility-indexed Worker Build IDs (Proposal I).**
+   Studio now groups the 40 sampled histories by the Build ID on `WorkflowTaskCompleted`. Indexing `BuildIds` / `TemporalUsedWorkerDeploymentVersions` on the Visibility record lets Studio filter the Workflows Grid by version, show accurate per-version open counts before retiring old Workers, and sample runs of one specific version.
+
+5. **Operational workflow and activity RPCs in `slate-temporal-next`.**
+   Studio already wires `ResetWorkflowExecution`, `PauseWorkflowExecution`, `UnpauseWorkflowExecution`, `PauseActivity`, `UnpauseActivity`, `ResetActivity`, and `StartBatchOperation` behind capability flags. Implementing them in `slate-temporal-next` unlocks inline remediation in Needs Attention, activity controls in the Debugger, and server-side batch jobs without client-side fan-out.
 
 ## 5. Not verified
 
