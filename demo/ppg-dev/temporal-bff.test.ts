@@ -1036,3 +1036,67 @@ describe("TemporalGrpcBffClient.getWorkflowDetail truncated history tail", () =>
     client.close();
   });
 });
+
+describe("TemporalGrpcBffClient rolling sparkline history", () => {
+  it("records rolling 5-minute samples across getClusterOverview polls", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-24T00:00:00.000Z"));
+      const client = new TemporalGrpcBffClient({
+        address: "127.0.0.1:1",
+        adminUrl: "http://127.0.0.1:19999",
+      });
+      let lag = 2;
+
+      vi.spyOn(client, "adminFetch").mockImplementation((async (
+        adminPath: string,
+      ) => {
+        if (adminPath === "/readyz") {
+          return { phase: "serving", ready: true, subsystems: {} };
+        }
+        if (adminPath === "/v1/info") {
+          return { shard_count: 1, version: "0.1.0" };
+        }
+        if (adminPath === "/v1/storage") {
+          return { active_bytes: 1024, shards: [] };
+        }
+        if (adminPath.startsWith("/v1/load")) {
+          return {
+            health: { reasons: [], state: "ok", tags: [] },
+            shards: [
+              {
+                delay_ms: { progress: { last: lag } },
+                id: 0,
+                rates_per_s: {
+                  history_events: 12,
+                  runs_closed: 3,
+                  runs_opened: 4,
+                },
+                storage: { l0_ssts: 1, unflushed_bytes: 512 },
+              },
+            ],
+            worker_hint: { matcher_oldest_ready_ms: lag * 10 },
+          };
+        }
+        return null;
+      }) as never);
+
+      const first = await client.getClusterOverview();
+      expect(first.history).toHaveLength(1);
+      expect(first.shards[0]?.progressDelayHistory).toEqual([2]);
+
+      vi.advanceTimersByTime(3_000);
+      lag = 9;
+      const second = await client.getClusterOverview();
+      expect(second.history).toHaveLength(2);
+      expect(second.shards[0]?.progressDelayHistory).toEqual([2, 9]);
+      expect(second.history?.map((s) => s.matcherOldestReadyMs)).toEqual([
+        20, 90,
+      ]);
+
+      client.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

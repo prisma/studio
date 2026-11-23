@@ -57,6 +57,7 @@ import {
   TemporalStatusBadge,
   temporalTableHeadClass,
 } from "./TemporalPrimitives";
+import { TemporalSparkline, TemporalSparklineCard } from "./TemporalSparkline";
 
 const LOAD_WINDOWS = ["10s", "60s", "5m", "1h"];
 
@@ -299,6 +300,76 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
             </dl>
           </section>
 
+          {data.history && data.history.length > 0 ? (
+            <section
+              className="flex flex-col gap-2"
+              data-testid="temporal-cluster-sparklines"
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <h2 className="font-sans text-sm font-semibold text-foreground">
+                  Rolling 5-Minute Trends
+                </h2>
+                <span className="text-2xs text-muted-foreground">
+                  {data.history.length}{" "}
+                  {data.history.length === 1 ? "sample" : "samples"} in memory
+                </span>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <TemporalSparklineCard
+                  formatValue={(v) => `${v.toFixed(1)}/s`}
+                  label="Runs Opened / s"
+                  value={`${data.history[data.history.length - 1]!.runsOpenedPerS.toFixed(1)}/s`}
+                  values={data.history.map((s) => s.runsOpenedPerS)}
+                />
+                <TemporalSparklineCard
+                  formatValue={(v) => `${v.toFixed(1)}/s`}
+                  label="Runs Closed / s"
+                  value={`${data.history[data.history.length - 1]!.runsClosedPerS.toFixed(1)}/s`}
+                  values={data.history.map((s) => s.runsClosedPerS)}
+                />
+                <TemporalSparklineCard
+                  formatValue={(v) => `${v.toFixed(1)}/s`}
+                  label="History Events / s"
+                  value={`${data.history[data.history.length - 1]!.historyEventsPerS.toFixed(1)}/s`}
+                  values={data.history.map((s) => s.historyEventsPerS)}
+                />
+                <TemporalSparklineCard
+                  formatValue={(v) => formatDuration(v)}
+                  label="Oldest Ready Task"
+                  tone={
+                    data.workerHint.matcherOldestReadyMs > 5_000
+                      ? "warning"
+                      : "info"
+                  }
+                  value={formatDuration(data.workerHint.matcherOldestReadyMs)}
+                  values={data.history.map((s) => s.matcherOldestReadyMs)}
+                />
+                <TemporalSparklineCard
+                  formatValue={(v) => `${v.toFixed(2)}ms`}
+                  label="Max Progress Lag"
+                  tone={
+                    data.history[data.history.length - 1]!.progressDelayMs > 250
+                      ? "warning"
+                      : "info"
+                  }
+                  value={`${data.history[data.history.length - 1]!.progressDelayMs.toFixed(2)}ms`}
+                  values={data.history.map((s) => s.progressDelayMs)}
+                />
+                <TemporalSparklineCard
+                  formatValue={(v) => formatBytes(v)}
+                  label="Unflushed WAL"
+                  tone={
+                    data.history[data.history.length - 1]!.l0Ssts > 8
+                      ? "warning"
+                      : "muted"
+                  }
+                  value={`${formatBytes(data.history[data.history.length - 1]!.unflushedBytes)} · ${data.history[data.history.length - 1]!.l0Ssts} L0`}
+                  values={data.history.map((s) => s.unflushedBytes)}
+                />
+              </div>
+            </section>
+          ) : null}
+
           <section className="flex flex-col gap-3">
             <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
               <h2 className="font-sans text-sm font-semibold text-foreground">
@@ -400,7 +471,22 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
                         {shard.durableSeq}
                       </TableCell>
                       <TableCell className="whitespace-nowrap px-2 py-2.5 text-right font-mono tabular-nums text-muted-foreground">
-                        {shard.progressDelayMs.toFixed(2)}ms
+                        <div className="inline-flex items-center justify-end gap-2">
+                          {shard.progressDelayHistory &&
+                          shard.progressDelayHistory.length > 0 ? (
+                            <TemporalSparkline
+                              formatValue={(v) => `${v.toFixed(2)}ms`}
+                              height={18}
+                              label={`Shard ${shard.id} progress lag`}
+                              tone={
+                                shard.progressDelayMs > 250 ? "warning" : "info"
+                              }
+                              values={shard.progressDelayHistory}
+                              width={52}
+                            />
+                          ) : null}
+                          <span>{shard.progressDelayMs.toFixed(2)}ms</span>
+                        </div>
                       </TableCell>
                       <TableCell className="whitespace-nowrap px-2 py-2.5 text-right font-mono tabular-nums text-muted-foreground">
                         {shard.l0Ssts} L0 · {shard.compactionState}

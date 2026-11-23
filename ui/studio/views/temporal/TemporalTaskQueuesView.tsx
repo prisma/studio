@@ -41,6 +41,7 @@ import {
   temporalTableHeadClass,
   WorkflowStatusBadge,
 } from "./TemporalPrimitives";
+import { TemporalSparkline } from "./TemporalSparkline";
 
 interface TemporalTaskQueuesViewProps {
   followMode: TemporalFollowMode;
@@ -100,11 +101,24 @@ export function TemporalTaskQueuesView(props: TemporalTaskQueuesViewProps) {
           {queues.length === 1 ? "queue" : "queues"}
         </span>
         {typeof data?.matcherOldestReadyMs === "number" ? (
-          <span>
-            Oldest ready task{" "}
-            <span className="font-mono text-foreground">
-              {formatDuration(data.matcherOldestReadyMs)}
+          <span className="inline-flex items-center gap-2">
+            <span>
+              Oldest ready task{" "}
+              <span className="font-mono text-foreground">
+                {formatDuration(data.matcherOldestReadyMs)}
+              </span>
             </span>
+            {data.matcherOldestReadyHistory &&
+            data.matcherOldestReadyHistory.length > 0 ? (
+              <TemporalSparkline
+                formatValue={(v) => formatDuration(v)}
+                height={18}
+                label="Oldest ready task"
+                tone={data.matcherOldestReadyMs > 5_000 ? "warning" : "info"}
+                values={data.matcherOldestReadyHistory.map((p) => p.ms)}
+                width={56}
+              />
+            ) : null}
           </span>
         ) : null}
         {data ? (
@@ -165,6 +179,9 @@ export function TemporalTaskQueuesView(props: TemporalTaskQueuesViewProps) {
                 </TableHead>
                 <TableHead className={cn(temporalTableHeadClass, "text-right")}>
                   Pending Activities
+                </TableHead>
+                <TableHead className={temporalTableHeadClass}>
+                  5m Trend
                 </TableHead>
                 <TableHead className={cn(temporalTableHeadClass, "text-right")}>
                   Schedules
@@ -353,6 +370,24 @@ function TaskQueueRow(props: {
           value={queue.failedWorkflowCount}
         />
         <CountCell emphasize value={queue.pendingActivityCount} />
+        <TableCell className="px-2 py-2">
+          <TemporalSparkline
+            formatValue={(v) => `${v} active`}
+            height={18}
+            label={`Active load on ${queue.name}`}
+            tone={
+              queue.health === "stalled"
+                ? "danger"
+                : queue.health === "retrying" || queue.health === "backlogged"
+                  ? "warning"
+                  : "info"
+            }
+            values={(queue.history ?? []).map(
+              (point) => point.activeWorkflowCount + point.pendingActivityCount,
+            )}
+            width={60}
+          />
+        </TableCell>
         <CountCell value={queue.scheduleCount} />
         <CountCell
           href={workflowsUrl(queueFilter)}
@@ -366,7 +401,7 @@ function TaskQueueRow(props: {
 
       {isExpanded ? (
         <TableRow className="border-border/60 bg-muted/20 hover:bg-muted/20">
-          <TableCell colSpan={11} className="px-4 py-4">
+          <TableCell colSpan={12} className="px-4 py-4">
             <div className="flex flex-col gap-4">
               {queue.workflowTypes.length > 0 ||
               queue.activityTypes.length > 0 ? (

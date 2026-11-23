@@ -510,6 +510,13 @@ export interface TemporalTaskQueuePoller {
   taskQueueType: "activity" | "workflow";
 }
 
+export interface TemporalTaskQueueSample {
+  activeWorkflowCount: number;
+  at: number;
+  pendingActivityCount: number;
+  retryingWorkflowCount: number;
+}
+
 export interface TemporalTaskQueueSummary {
   activeWorkflowCount: number;
   /** The Activity Types that Workflows schedule on this queue. */
@@ -517,6 +524,8 @@ export interface TemporalTaskQueueSummary {
   /** Null when the namespace is too large to count its closed runs. */
   failedWorkflowCount: number | null;
   health: "healthy" | "retrying" | "stalled" | "backlogged" | "idle";
+  /** Rolling 5-minute samples captured by the BFF. */
+  history?: TemporalTaskQueueSample[];
   lastActivityTime?: string;
   name: string;
   /** Activities scheduled on this queue that have not finished. */
@@ -549,6 +558,7 @@ export interface TemporalTaskQueuesResponse {
    * are then counted from the running runs only.
    */
   complete: boolean;
+  matcherOldestReadyHistory?: Array<{ at: number; ms: number }>;
   matcherOldestReadyMs?: number;
   /** False on a server that does not report which Workers poll a queue. */
   pollersSupported: boolean;
@@ -661,6 +671,17 @@ export interface TemporalClusterHealthReason {
   value: number;
 }
 
+export interface TemporalClusterHistorySample {
+  at: number;
+  historyEventsPerS: number;
+  l0Ssts: number;
+  matcherOldestReadyMs: number;
+  progressDelayMs: number;
+  runsClosedPerS: number;
+  runsOpenedPerS: number;
+  unflushedBytes: number;
+}
+
 export interface TemporalClusterShard {
   admissionMode: {
     batch: string;
@@ -684,6 +705,8 @@ export interface TemporalClusterShard {
   lifecycle: string;
   of: number;
   placementVersion: number;
+  /** Rolling 5-minute progress lag samples (ms) for this shard. */
+  progressDelayHistory?: number[];
   progressDelayMs: number;
   rateLimitPerS?: number | null;
   retentionLagS: number;
@@ -716,6 +739,8 @@ export interface TemporalClusterOverview {
     /** The server's own names for the kind of trouble, such as `hot_server`. */
     tags: string[];
   };
+  /** Rolling 5-minute samples captured by the BFF across polls. */
+  history?: TemporalClusterHistorySample[];
   info: {
     authMode: string;
     listen: string;

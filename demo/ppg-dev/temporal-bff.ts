@@ -29,6 +29,7 @@ import type {
   TemporalBulkScheduleResponse,
   TemporalCapabilities,
   TemporalClusterHealthReason,
+  TemporalClusterHistorySample,
   TemporalClusterOverview,
   TemporalClusterShard,
   TemporalClusterTracesResponse,
@@ -47,6 +48,7 @@ import type {
   TemporalStartWorkflowInput,
   TemporalStartWorkflowResult,
   TemporalTaskQueuePoller,
+  TemporalTaskQueueSample,
   TemporalTaskQueuesResponse,
   TemporalTaskQueueSummary,
   TemporalTypeInputsResponse,
@@ -443,6 +445,43 @@ interface CachedRunHistory {
 }
 
 const HISTORY_CACHE_MAX_KEPT = 32;
+const SPARKLINE_WINDOW_MS = 5 * 60_000;
+const SPARKLINE_MAX_POINTS = 120;
+const SPARKLINE_MIN_STEP_MS = 1_500;
+const SPARKLINE_MAX_KEYS = 64;
+
+function appendRingSample<T extends { at: number }>(
+  series: T[],
+  sample: T,
+  minStepMs = SPARKLINE_MIN_STEP_MS,
+): T[] {
+  const cutoff = sample.at - SPARKLINE_WINDOW_MS;
+  const pruned = series.filter((point) => point.at >= cutoff);
+
+  if (
+    pruned.length > 0 &&
+    sample.at - pruned[pruned.length - 1]!.at < minStepMs
+  ) {
+    pruned[pruned.length - 1] = sample;
+  } else {
+    pruned.push(sample);
+  }
+
+  return pruned.length > SPARKLINE_MAX_POINTS
+    ? pruned.slice(pruned.length - SPARKLINE_MAX_POINTS)
+    : pruned;
+}
+
+function setBoundedMap<K, V>(map: Map<K, V>, key: K, value: V, max: number) {
+  map.delete(key);
+  map.set(key, value);
+  for (const oldKey of map.keys()) {
+    if (map.size <= max) {
+      break;
+    }
+    map.delete(oldKey);
+  }
+}
 
 export class TemporalGrpcBffClient {
   #client: grpc.Client;
@@ -456,6 +495,10 @@ export class TemporalGrpcBffClient {
   /** The filters that matched too many runs to copy, and when the BFF found that. */
   #tooManyRuns = new Map<string, Remembered<null>>();
   #historyCache = new Map<string, CachedRunHistory>();
+  #clusterHistory: TemporalClusterHistorySample[] = [];
+  #shardProgressHistory = new Map<number, Array<{ at: number; ms: number }>>();
+  #taskQueueHistory = new Map<string, TemporalTaskQueueSample[]>();
+  #matcherReadyHistory: Array<{ at: number; ms: number }> = [];
   #bulkJobs = new Map<string, TemporalBulkJob & { abort: boolean }>();
 
   constructor(config: TemporalBffConfig) {
@@ -3009,14 +3052,46 @@ export class TemporalGrpcBffClient {
       }
     }
 
+    const sampledAt = Date.now();
+    if (typeof matcherOldestReadyMs === "number") {
+      this.#matcherReadyHistory = appendRingSample(this.#matcherReadyHistory, {
+        at: sampledAt,
+        ms: matcherOldestReadyMs,
+      });
+    }
+
+    const sortedQueues = Array.from(queueMap.values())
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((queue) => {
+        const key = `${namespace}\n${queue.name}`;
+        const nextHistory = appendRingSample(
+          this.#taskQueueHistory.get(key) ?? [],
+          {
+            activeWorkflowCount: queue.activeWorkflowCount,
+            at: sampledAt,
+            pendingActivityCount: queue.pendingActivityCount,
+            retryingWorkflowCount: queue.retryingWorkflowCount,
+          },
+        );
+        setBoundedMap(
+          this.#taskQueueHistory,
+          key,
+          nextHistory,
+          SPARKLINE_MAX_KEYS,
+        );
+
+        return { ...queue, history: nextHistory };
+      });
+
     return {
       ageMs: counted ? Date.now() - counted.takenAt : 0,
       complete,
+      ...(this.#matcherReadyHistory.length > 0
+        ? { matcherOldestReadyHistory: [...this.#matcherReadyHistory] }
+        : {}),
       matcherOldestReadyMs,
       pollersSupported: source === "describe-task-queue",
-      queues: Array.from(queueMap.values()).sort((a, b) =>
-        a.name.localeCompare(b.name),
-      ),
+      queues: sortedQueues,
       runningComplete: counted !== null,
       source,
     };
@@ -3303,6 +3378,60 @@ export class TemporalGrpcBffClient {
       unknown
     >;
 
+    const sampledAt = Date.now();
+    const matcherOldestReadyMs = Number(
+      workerHintRaw.matcher_oldest_ready_ms ?? 0,
+    );
+    const shardsWithHistory = shards.map((shard) => {
+      const nextSeries = appendRingSample(
+        this.#shardProgressHistory.get(shard.id) ?? [],
+        { at: sampledAt, ms: shard.progressDelayMs },
+      );
+      setBoundedMap(
+        this.#shardProgressHistory,
+        shard.id,
+        nextSeries,
+        SPARKLINE_MAX_KEYS,
+      );
+      return {
+        ...shard,
+        progressDelayHistory: nextSeries.map((point) => point.ms),
+      };
+    });
+
+    const maxProgressDelayMs = shards.reduce(
+      (max, s) => Math.max(max, s.progressDelayMs),
+      0,
+    );
+    const totalRunsOpenedPerS = shards.reduce(
+      (sum, s) => sum + s.runsOpenedPerS,
+      0,
+    );
+    const totalRunsClosedPerS = shards.reduce(
+      (sum, s) => sum + s.runsClosedPerS,
+      0,
+    );
+    const totalHistoryEventsPerS = shards.reduce(
+      (sum, s) => sum + s.historyEventsPerS,
+      0,
+    );
+    const totalL0Ssts = shards.reduce((sum, s) => sum + s.l0Ssts, 0);
+    const totalUnflushedBytes = shards.reduce(
+      (sum, s) => sum + s.unflushedBytes,
+      0,
+    );
+
+    this.#clusterHistory = appendRingSample(this.#clusterHistory, {
+      at: sampledAt,
+      historyEventsPerS: totalHistoryEventsPerS,
+      l0Ssts: totalL0Ssts,
+      matcherOldestReadyMs,
+      progressDelayMs: maxProgressDelayMs,
+      runsClosedPerS: totalRunsClosedPerS,
+      runsOpenedPerS: totalRunsOpenedPerS,
+      unflushedBytes: totalUnflushedBytes,
+    });
+
     return {
       admissionAvailable: true,
       cell: cellRaw,
@@ -3323,6 +3452,7 @@ export class TemporalGrpcBffClient {
         state: String(healthRaw.state ?? "ok"),
         tags: Array.isArray(healthRaw.tags) ? healthRaw.tags.map(String) : [],
       },
+      history: [...this.#clusterHistory],
       info: {
         authMode: String(auth.mode ?? "unknown"),
         listen: String(grpcInfo.listen ?? this.#config.address),
@@ -3358,13 +3488,11 @@ export class TemporalGrpcBffClient {
         ready: Boolean(readyz.ready),
         subsystems: readyz.subsystems ?? {},
       },
-      shards,
+      shards: shardsWithHistory,
       storageActiveBytes: Number(storageRaw.active_bytes ?? 0),
       window: safeWindow,
       workerHint: {
-        matcherOldestReadyMs: Number(
-          workerHintRaw.matcher_oldest_ready_ms ?? 0,
-        ),
+        matcherOldestReadyMs,
       },
     };
   }
