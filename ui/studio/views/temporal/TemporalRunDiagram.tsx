@@ -112,7 +112,9 @@ export function TemporalRunDiagram(props: {
   const openSteps = useMemo(
     () =>
       position === null
-        ? Object.entries(moment?.steps ?? {}).filter(([, step]) => step.openSpan)
+        ? Object.entries(moment?.steps ?? {}).filter(
+            ([, step]) => step.openSpan,
+          )
         : [],
     [moment?.steps, position],
   );

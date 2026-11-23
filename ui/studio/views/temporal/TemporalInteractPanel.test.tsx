@@ -115,13 +115,13 @@ describe("TemporalInteractPanel", () => {
     const input = container.querySelector<HTMLInputElement>(
       "#temporal-interact-name",
     )!;
-    const setter = Object.getOwnPropertyDescriptor(
+    const descriptor = Object.getOwnPropertyDescriptor(
       HTMLInputElement.prototype,
       "value",
-    )!.set!;
+    )!;
 
-    await act(async () => {
-      setter.call(input, "transferStatus");
+    act(() => {
+      descriptor.set!.call(input, "transferStatus");
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
@@ -131,6 +131,7 @@ describe("TemporalInteractPanel", () => {
           '[data-testid="temporal-interact-submit"]',
         )!
         .click();
+      await Promise.resolve();
     });
 
     expect(queryWorkflow).toHaveBeenCalledWith({

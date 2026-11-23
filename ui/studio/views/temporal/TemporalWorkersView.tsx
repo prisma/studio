@@ -16,7 +16,6 @@ import { useTemporalWorkers } from "@/ui/hooks/use-temporal";
 import { cn } from "@/ui/lib/utils";
 
 import { StudioHeader } from "../../StudioHeader";
-import { quoteFilterValue } from "./TemporalRunBreadcrumb";
 import {
   TemporalFollowControl,
   temporalIconScale,
@@ -25,6 +24,7 @@ import {
   temporalTableHeadClass,
   TemporalTime,
 } from "./TemporalPrimitives";
+import { quoteFilterValue } from "./TemporalRunBreadcrumb";
 
 /**
  * Workers, Worker Deployments and Nexus Endpoints. A list the server does not

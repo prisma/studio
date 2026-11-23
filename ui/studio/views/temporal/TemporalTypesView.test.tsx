@@ -198,13 +198,13 @@ describe("TemporalTypesView", () => {
     const input = container.querySelector<HTMLInputElement>(
       '[data-testid="temporal-type-filter"]',
     )!;
-    const setter = Object.getOwnPropertyDescriptor(
+    const descriptor = Object.getOwnPropertyDescriptor(
       HTMLInputElement.prototype,
       "value",
-    )!.set!;
+    )!;
 
     act(() => {
-      setter.call(input, "billing");
+      descriptor.set!.call(input, "billing");
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
