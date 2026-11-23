@@ -117,8 +117,8 @@ function withoutCollisions(labels: AxisLabel[]): AxisLabel[] {
  * `Architecture/non-standard-ui.md`, "Temporal Timeline".
  */
 export function TemporalTimeline(props: {
-  /** Span highlighted by an adjacent view, such as the Diagram stepper. */
-  highlightedSpanId?: string | null;
+  /** Spans highlighted by an adjacent view, such as the Diagram stepper. */
+  highlightedSpanIds?: readonly string[];
   namespace: string;
   onOpenExecution: (workflowId: string, runId?: string) => void;
   onSelectSpan: (spanId: string | null) => void;
@@ -128,7 +128,7 @@ export function TemporalTimeline(props: {
   totalDurationMs: number;
 }) {
   const {
-    highlightedSpanId,
+    highlightedSpanIds,
     namespace,
     onOpenExecution,
     onSelectSpan,
@@ -137,6 +137,10 @@ export function TemporalTimeline(props: {
     startTime,
     totalDurationMs,
   } = props;
+  const highlightedSet = useMemo(
+    () => new Set(highlightedSpanIds ?? []),
+    [highlightedSpanIds],
+  );
   const [zoom, setZoom] = useState(1);
   const [collapseIdle, setCollapseIdle] = useUiState(
     "temporal:timeline-collapse-idle",
@@ -279,17 +283,19 @@ export function TemporalTimeline(props: {
   // The panel is as tall as its rows, up to the height the user set.
   useEffect(measureRowsBelow, [height, rows.length]);
 
+  const firstHighlightedId = highlightedSpanIds?.[0] ?? null;
+
   useEffect(() => {
-    if (!highlightedSpanId || !scrollRef.current) {
+    if (!firstHighlightedId || !scrollRef.current) {
       return;
     }
 
     const rowElement = scrollRef.current.querySelector<HTMLElement>(
-      `[data-testid="temporal-timeline-row-${CSS.escape(highlightedSpanId)}"]`,
+      `[data-testid="temporal-timeline-row-${CSS.escape(firstHighlightedId)}"]`,
     );
 
     rowElement?.scrollIntoView({ block: "nearest" });
-  }, [highlightedSpanId]);
+  }, [firstHighlightedId]);
 
   const scale = useMemo(
     () =>
@@ -661,7 +667,7 @@ export function TemporalTimeline(props: {
           {rows.map((row) => {
             const { span } = row;
             const isSelected = !row.child && selectedSpanId === span.id;
-            const isHighlighted = !row.child && highlightedSpanId === span.id;
+            const isHighlighted = !row.child && highlightedSet.has(span.id);
             const isChildSpan =
               !row.child &&
               span.kind === "child-workflow" &&

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type {
   TemporalExecutionDetail,
   TemporalGroupedSpan,
+  TemporalTypeMapNode,
   TemporalTypeMapResponse,
 } from "@/data/temporal";
 import {
@@ -31,6 +32,7 @@ import {
 } from "./TemporalPrimitives";
 import {
   TemporalTypeMapCanvas,
+  TYPE_MAP_STEP_KINDS,
   typeMapStepName,
 } from "./TemporalTypeMapCanvas";
 
@@ -57,10 +59,12 @@ function openStepNote(span: TemporalGroupedSpan, nowMs: number): string {
  */
 export function TemporalRunDiagram(props: {
   detail: Pick<TemporalExecutionDetail, "execution" | "spans">;
+  /** Moves the stepper to this span when changed (for example, on timeline click). */
+  focusSpan?: { id: string; seq: number } | null;
   isError: boolean;
   map: TemporalTypeMapResponse | undefined;
-  /** Called with the span the stepper is currently on, so the timeline can highlight it. */
-  onActiveSpanChange?: (spanId: string | null) => void;
+  /** Called with the span(s) the stepper is currently on, so the timeline can highlight them. */
+  onActiveSpanIdsChange?: (spanIds: string[]) => void;
   /** Opens a span in the list of spans. */
   onOpenSpan?: (spanId: string) => void;
   onRetry: () => void;
@@ -71,9 +75,10 @@ export function TemporalRunDiagram(props: {
 }) {
   const {
     detail,
+    focusSpan,
     isError,
     map,
-    onActiveSpanChange,
+    onActiveSpanIdsChange,
     onOpenSpan,
     onRetry,
     onSelect,
@@ -87,31 +92,53 @@ export function TemporalRunDiagram(props: {
     chosenPosition === null || chosenPosition >= steps.length
       ? null
       : chosenPosition;
+
+  useEffect(() => {
+    if (!focusSpan) {
+      return;
+    }
+
+    const index = steps.findIndex((span) => span.id === focusSpan.id);
+
+    if (index >= 0) {
+      setChosenPosition(index);
+    }
+  }, [focusSpan, steps]);
+
   const moment = useMemo(
     () => (map ? runMomentOnTypeMap(detail, map, position) : null),
     [detail, map, position],
   );
-  const openSteps =
-    position === null
-      ? Object.entries(moment?.steps ?? {}).filter(([, step]) => step.openSpan)
-      : [];
+  const openSteps = useMemo(
+    () =>
+      position === null
+        ? Object.entries(moment?.steps ?? {}).filter(([, step]) => step.openSpan)
+        : [],
+    [moment?.steps, position],
+  );
   const now = useNow(1_000, openSteps.length > 0);
   const notes = Object.fromEntries(
     openSteps.map(([id, step]) => [id, openStepNote(step.openSpan!, now)]),
   );
   const hasDiagram = !isError && Boolean(map && moment);
-  const activeSpanId =
-    position !== null
-      ? (steps[position]?.id ?? null)
-      : (openSteps[0]?.[1].openSpan?.id ?? null);
+  const activeSpanIds = useMemo(() => {
+    if (position !== null) {
+      const current = steps[position];
+      return current ? [current.id] : [];
+    }
+
+    return openSteps
+      .map(([, step]) => step.openSpan?.id)
+      .filter((id): id is string => Boolean(id));
+  }, [openSteps, position, steps]);
 
   useEffect(() => {
-    onActiveSpanChange?.(activeSpanId);
+    onActiveSpanIdsChange?.(activeSpanIds);
 
     return () => {
-      onActiveSpanChange?.(null);
+      onActiveSpanIdsChange?.([]);
     };
-  }, [activeSpanId, onActiveSpanChange]);
+  }, [activeSpanIds, onActiveSpanIdsChange]);
 
   useEffect(() => {
     if (!hasDiagram || steps.length === 0) {
@@ -329,6 +356,124 @@ export function TemporalRunDiagram(props: {
           selectedId={selectedId}
         />
       </div>
+
+      {selectedId ? (
+        <RunNodeDetail
+          map={map}
+          moment={moment}
+          node={map.nodes.find((node) => node.id === selectedId) ?? null}
+          onJumpToStep={(index) => setChosenPosition(index)}
+          onOpenSpan={onOpenSpan}
+          steps={steps}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/** Shows how this run relates to the clicked node on the diagram, with step and span links. */
+function RunNodeDetail(props: {
+  map: TemporalTypeMapResponse;
+  moment: ReturnType<typeof runMomentOnTypeMap>;
+  node: TemporalTypeMapNode | null;
+  onJumpToStep: (index: number) => void;
+  onOpenSpan?: (spanId: string) => void;
+  steps: TemporalGroupedSpan[];
+}) {
+  const { map, moment, node, onJumpToStep, onOpenSpan, steps } = props;
+
+  if (!node || node.kind === "start") {
+    return null;
+  }
+
+  if (node.kind === "end") {
+    return (
+      <div
+        className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border px-4 py-2.5 text-xs text-muted-foreground"
+        data-testid="temporal-run-node-detail"
+      >
+        <span>
+          <span className="font-medium tabular-nums text-foreground">
+            {node.runCount} of {map.runCount}
+          </span>{" "}
+          sampled runs closed as{" "}
+          <span className="font-medium text-foreground">
+            {workflowStatusLabel(node.status ?? "Completed")}
+          </span>
+          .
+        </span>
+      </div>
+    );
+  }
+
+  const kind = TYPE_MAP_STEP_KINDS[node.kind];
+  const matches = steps
+    .map((span, index) => ({ index, span }))
+    .filter(({ span }) => typeMapStepId(span, map) === node.id);
+  const latest = matches.at(-1) ?? null;
+  const nextInfo = moment.next[node.id];
+
+  return (
+    <div
+      className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-border bg-muted/20 px-4 py-2.5 text-xs"
+      data-testid="temporal-run-node-detail"
+    >
+      <div className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1">
+        <span className="font-mono font-medium text-foreground">
+          {typeMapStepName(node)}
+        </span>
+        {kind.name === typeMapStepName(node) ? null : (
+          <span className="text-muted-foreground">{kind.name}</span>
+        )}
+        <span className="text-muted-foreground">
+          {matches.length > 0 ? (
+            <>
+              Taken{" "}
+              <span className="font-medium tabular-nums text-foreground">
+                {matches.length === 1 ? "once" : `${matches.length} times`}
+              </span>{" "}
+              in this run
+              {latest
+                ? ` (${TEMPORAL_SPAN_STATUS[latest.span.status].label}${latest.span.closedEventId === undefined ? "" : ` · ${formatDuration(latest.span.durationMs)}`})`
+                : ""}
+            </>
+          ) : nextInfo ? (
+            <>
+              Can come next ({nextInfo.runCount} of {map.runCount} recent runs)
+            </>
+          ) : (
+            "Not taken by this run"
+          )}
+        </span>
+        {node.medianDurationMs !== undefined ? (
+          <span className="text-muted-foreground">
+            Typical{" "}
+            <span className="font-mono tabular-nums text-foreground">
+              {formatDuration(node.medianDurationMs)}
+            </span>
+          </span>
+        ) : null}
+      </div>
+      {latest ? (
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Button
+            variant="outline"
+            size="xs"
+            onClick={() => onJumpToStep(latest.index)}
+          >
+            Jump to Step {latest.index + 1}
+          </Button>
+          {onOpenSpan ? (
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={() => onOpenSpan(latest.span.id)}
+            >
+              Open Span
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

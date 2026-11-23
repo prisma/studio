@@ -29,6 +29,13 @@ interface CanvasProps {
 
 // The canvas needs a browser's layout; the tests read what it is given.
 vi.mock("./TemporalTypeMapCanvas", () => ({
+  TYPE_MAP_STEP_KINDS: {
+    activity: { name: "Activity" },
+    "child-workflow": { name: "Child Workflow" },
+    signal: { name: "Signal" },
+    timer: { name: "Timer" },
+    update: { name: "Update" },
+  },
   TemporalTypeMapCanvas: (props: CanvasProps) => {
     canvasProps(props);
 
@@ -188,7 +195,7 @@ describe("TemporalRunDiagram", () => {
   let root: Root;
   let container: HTMLElement;
   const onOpenSpan = vi.fn();
-  const onActiveSpanChange = vi.fn();
+  const onActiveSpanIdsChange = vi.fn();
 
   beforeEach(() => {
     container = document.createElement("div");
@@ -218,7 +225,11 @@ describe("TemporalRunDiagram", () => {
   }
 
   /** A run that tracked the package and now waits on the Timer. */
-  function render() {
+  function render(overrides?: {
+    focusSpan?: { id: string; seq: number } | null;
+    selectedId?: string | null;
+    spans?: TemporalGroupedSpan[];
+  }) {
     act(() =>
       root.render(
         <TemporalRunDiagram
@@ -237,15 +248,16 @@ describe("TemporalRunDiagram", () => {
               workflowId: "shipment-1",
               workflowType: "shipment",
             },
-            spans: [activity(27, 29), timer({})],
+            spans: overrides?.spans ?? [activity(27, 29), timer({})],
           }}
+          focusSpan={overrides?.focusSpan}
           isError={false}
           map={map}
-          onActiveSpanChange={onActiveSpanChange}
+          onActiveSpanIdsChange={onActiveSpanIdsChange}
           onOpenSpan={onOpenSpan}
           onRetry={vi.fn()}
           onSelect={vi.fn()}
-          selectedId={null}
+          selectedId={overrides?.selectedId ?? null}
           typeUrl="#type"
         />,
       ),
@@ -327,15 +339,48 @@ describe("TemporalRunDiagram", () => {
     expect(stepper()).toContain("Now");
   });
 
-  it("reports the active span as the stepper moves so the timeline can highlight it", () => {
-    render();
-    // At Now on an open run, the open Timer span is active.
-    expect(onActiveSpanChange).toHaveBeenLastCalledWith("timer-33");
+  it("reports all active spans as the stepper moves so the timeline can highlight them", () => {
+    render({
+      spans: [
+        { ...activity(27, 29), closedEventId: undefined, status: "running" },
+        timer({}),
+      ],
+    });
+    // At Now with two parallel open steps, both spans are reported.
+    expect(onActiveSpanIdsChange).toHaveBeenLastCalledWith([
+      "activity-27",
+      "timer-33",
+    ]);
 
     press("First step");
-    expect(onActiveSpanChange).toHaveBeenLastCalledWith("activity-27");
+    expect(onActiveSpanIdsChange).toHaveBeenLastCalledWith(["activity-27"]);
 
     press("Next step");
-    expect(onActiveSpanChange).toHaveBeenLastCalledWith("timer-33");
+    expect(onActiveSpanIdsChange).toHaveBeenLastCalledWith(["timer-33"]);
+  });
+
+  it("jumps the stepper when focusSpan changes and shows node details when selected", () => {
+    render({
+      focusSpan: { id: "activity-27", seq: 1 },
+      selectedId: "activity:trackPackage",
+    });
+
+    expect(stepper()).toContain("Step 1 of 2trackPackage");
+    const detailText = container
+      .querySelector('[data-testid="temporal-run-node-detail"]')!
+      .textContent.replace(/\s+/g, " ");
+    expect(detailText).toContain("trackPackage");
+    expect(detailText).toContain("Taken once in this run");
+
+    act(() =>
+      [
+        ...container.querySelectorAll<HTMLButtonElement>(
+          '[data-testid="temporal-run-node-detail"] button',
+        ),
+      ]
+        .find((button) => button.textContent === "Open Span")!
+        .click(),
+    );
+    expect(onOpenSpan).toHaveBeenCalledWith("activity-27");
   });
 });

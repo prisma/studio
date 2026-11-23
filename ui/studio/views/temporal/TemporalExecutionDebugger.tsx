@@ -29,7 +29,7 @@ import type {
   TemporalGroupedSpan,
   TemporalTypeMapResponse,
 } from "@/data/temporal";
-import { timerProgress } from "@/data/temporal/type-map";
+import { timerProgress, typeMapStepId } from "@/data/temporal/type-map";
 import { Badge } from "@/ui/components/ui/badge";
 import { Button } from "@/ui/components/ui/button";
 import {
@@ -173,7 +173,11 @@ export function TemporalExecutionDebugger(
     "grouped",
   );
   const [diagramNodeId, setDiagramNodeId] = useState<string | null>(null);
-  const [diagramSpanId, setDiagramSpanId] = useState<string | null>(null);
+  const [diagramSpanIds, setDiagramSpanIds] = useState<string[]>([]);
+  const [diagramFocus, setDiagramFocus] = useState<{
+    id: string;
+    seq: number;
+  } | null>(null);
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
   // The diagram of the type is read only when something on screen shows it:
   // the Diagram tab, or the open row of a Timer.
@@ -811,16 +815,37 @@ export function TemporalExecutionDebugger(
             <div className="flex min-h-0 min-w-0 flex-col @max-4xl:shrink-0">
               {spans.length > 0 ? (
                 <TemporalTimeline
-                  highlightedSpanId={
-                    historyTab === "diagram" ? diagramSpanId : null
+                  highlightedSpanIds={
+                    historyTab === "diagram" ? diagramSpanIds : undefined
                   }
                   namespace={namespace}
                   onOpenExecution={onOpenExecution}
                   onSelectSpan={(spanId) => {
+                    if (historyTab === "diagram" && spanId) {
+                      const clicked = spans.find((span) => span.id === spanId);
+                      const nodeId =
+                        clicked && typeMap.data
+                          ? typeMapStepId(clicked, typeMap.data)
+                          : null;
+
+                      setDiagramFocus((prev) => ({
+                        id: spanId,
+                        seq: (prev?.seq ?? 0) + 1,
+                      }));
+
+                      if (nodeId) {
+                        setDiagramNodeId(nodeId);
+                      }
+
+                      return;
+                    }
+
                     setHistoryTab("grouped");
                     setSelectedSpanId(spanId);
                   }}
-                  selectedSpanId={selectedSpanId}
+                  selectedSpanId={
+                    historyTab === "grouped" ? selectedSpanId : null
+                  }
                   spans={spans}
                   startTime={execution.startTime}
                   totalDurationMs={totalDurationMs}
@@ -930,9 +955,10 @@ export function TemporalExecutionDebugger(
                 {historyTab === "diagram" ? (
                   <TemporalRunDiagram
                     detail={data}
+                    focusSpan={diagramFocus}
                     isError={typeMap.isError}
                     map={typeMap.data}
-                    onActiveSpanChange={setDiagramSpanId}
+                    onActiveSpanIdsChange={setDiagramSpanIds}
                     onOpenSpan={(spanId) => {
                       setSelectedSpanId(spanId);
                       setHistoryTab("grouped");
@@ -964,6 +990,10 @@ export function TemporalExecutionDebugger(
                               ? undefined
                               : (nodeId) => {
                                   setDiagramNodeId(nodeId);
+                                  setDiagramFocus((prev) => ({
+                                    id: span.id,
+                                    seq: (prev?.seq ?? 0) + 1,
+                                  }));
                                   setHistoryTab("diagram");
                                 }
                           }
