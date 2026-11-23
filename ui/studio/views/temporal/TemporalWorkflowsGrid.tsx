@@ -402,7 +402,8 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [executions, focusedIndex, onOpenExecution, toggleSelect]);
 
-  const runningTotal = countsByStatus.Running ?? 0;
+  const runningTotal =
+    (countsByStatus.Running ?? 0) + (countsByStatus.Paused ?? 0);
   const bulkCount = allMatchingSelected
     ? runningTotal
     : selectedExecutions.length;

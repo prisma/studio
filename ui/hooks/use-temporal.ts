@@ -312,7 +312,7 @@ export function useTemporalWorkflowDetail(args: {
     refetchInterval: (query) => {
       if (followMode === "paused") return false;
       const status = query.state.data?.execution.status;
-      if (status && status !== "Running") return false;
+      if (status && status !== "Running" && status !== "Paused") return false;
       return 2_000;
     },
   });

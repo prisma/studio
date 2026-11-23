@@ -850,3 +850,60 @@ describe("TemporalGrpcBffClient.listSchedules", () => {
     client.close();
   });
 });
+
+describe("TemporalGrpcBffClient.startBulkJob paused workflows", () => {
+  it("includes paused workflows when acting on all matching runs", async () => {
+    const client = new TemporalGrpcBffClient({ address: "127.0.0.1:1" });
+    const terminated: string[] = [];
+
+    vi.spyOn(client, "unary").mockImplementation(((
+      method: string,
+      _req: unknown,
+      _res: unknown,
+      request: { workflowExecution?: { workflowId?: string } },
+    ) => {
+      if (method === "ListWorkflowExecutions") {
+        return Promise.resolve({
+          executions: [
+            {
+              execution: { runId: "r1", workflowId: "wf-running" },
+              status: 1,
+              type: { name: "Order" },
+            },
+            {
+              execution: { runId: "r2", workflowId: "wf-paused" },
+              status: "WORKFLOW_EXECUTION_STATUS_PAUSED",
+              type: { name: "Order" },
+            },
+            {
+              execution: { runId: "r3", workflowId: "wf-completed" },
+              status: 2,
+              type: { name: "Order" },
+            },
+          ],
+        });
+      }
+
+      if (method === "TerminateWorkflowExecution") {
+        terminated.push(request.workflowExecution?.workflowId ?? "");
+      }
+
+      return Promise.resolve({});
+    }) as never);
+
+    let job = await client.startBulkJob("default", {
+      action: "terminate",
+      query: 'WorkflowType = "Order"',
+    });
+
+    expect(job.total).toBe(2);
+
+    await vi.waitFor(() => {
+      job = client.getBulkJob(job.id);
+      expect(job.state).toBe("completed");
+    });
+
+    expect(terminated.sort()).toEqual(["wf-paused", "wf-running"]);
+    client.close();
+  });
+});

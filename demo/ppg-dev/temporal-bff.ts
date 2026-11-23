@@ -2112,9 +2112,9 @@ export class TemporalGrpcBffClient {
         );
       }
 
-      // Only a running run can take a Signal, a cancellation or a termination.
+      // Only an open run (Running or Paused) can take a Signal, a cancellation or a termination.
       items = matching.value
-        .filter((run) => run.status === "Running")
+        .filter((run) => run.status === "Running" || run.status === "Paused")
         .map((run) => ({ runId: run.runId, workflowId: run.workflowId }));
     }
 
