@@ -293,19 +293,19 @@ async function main(): Promise<void> {
   seededAt = runtime.seededAt;
   streamsServerUrl = runtime.streamsServerUrl;
 
-  if (!isProduction) {
-    try {
-      temporalRuntime = await startDemoTemporalRuntime();
-      if (temporalRuntime) {
-        const activeTemporal = temporalRuntime;
-        cleanupCallbacks.push(() => activeTemporal.cleanup());
-        console.info(
-          `[demo] Temporal gRPC connected at ${activeTemporal.address} (BFF: http://localhost:${APP_PORT}${TEMPORAL_PROXY_BASE_PATH})`,
-        );
-      }
-    } catch (error) {
-      console.warn(`[demo] Temporal runtime skipped: ${toErrorMessage(error)}`);
+  // A bundled server has no local Temporal binary, so this connects only when
+  // its runtime named an external Temporal server (STUDIO_TEMPORAL_ADDRESS).
+  try {
+    temporalRuntime = await startDemoTemporalRuntime();
+    if (temporalRuntime) {
+      const activeTemporal = temporalRuntime;
+      cleanupCallbacks.push(() => activeTemporal.cleanup());
+      console.info(
+        `[demo] Temporal gRPC connected at ${activeTemporal.address} (BFF: http://localhost:${APP_PORT}${TEMPORAL_PROXY_BASE_PATH})`,
+      );
     }
+  } catch (error) {
+    console.warn(`[demo] Temporal runtime skipped: ${toErrorMessage(error)}`);
   }
 
   if (prebuiltAssets) {

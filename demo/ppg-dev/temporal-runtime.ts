@@ -783,6 +783,15 @@ export async function startDemoTemporalRuntime(): Promise<DemoTemporalRuntime | 
       adminToken: process.env.STUDIO_TEMPORAL_ADMIN_TOKEN,
       adminUrl: process.env.STUDIO_TEMPORAL_ADMIN_URL,
       apiKey: process.env.STUDIO_TEMPORAL_API_KEY,
+      ...(process.env.STUDIO_TEMPORAL_CODEC_ENDPOINT
+        ? {
+            codec: {
+              authorization: process.env.STUDIO_TEMPORAL_CODEC_AUTH,
+              encodeOutgoing: process.env.STUDIO_TEMPORAL_CODEC_ENCODE !== "0",
+              endpoint: process.env.STUDIO_TEMPORAL_CODEC_ENDPOINT,
+            },
+          }
+        : {}),
       tls: process.env.STUDIO_TEMPORAL_TLS === "1",
     });
     return {

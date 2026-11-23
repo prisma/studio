@@ -6,21 +6,31 @@ import {
   decodeFailure,
   decodePayloadMap,
   decodePayloads,
+  decodeSinglePayload,
   decodeTimestampIso,
   normalizeWorkflowStatus,
+  toProto3Json,
 } from "../../data/temporal/history-grouping";
+import { buildTypeMap, pickTypeMapSample } from "../../data/temporal/type-map";
 import type {
+  TemporalActivityOperation,
   TemporalAdmissionUpdateInput,
+  TemporalAttentionItem,
+  TemporalAttentionResponse,
   TemporalBulkActionRequest,
   TemporalBulkActionResponse,
+  TemporalBulkJob,
+  TemporalBulkJobRequest,
   TemporalBulkScheduleRequest,
   TemporalBulkScheduleResponse,
   TemporalCapabilities,
+  TemporalClusterHealthReason,
   TemporalClusterOverview,
   TemporalClusterShard,
   TemporalClusterTracesResponse,
   TemporalCreateScheduleInput,
   TemporalExecutionDetail,
+  TemporalFacets,
   TemporalListSchedulesResponse,
   TemporalListWorkflowsResponse,
   TemporalNamespace,
@@ -37,22 +47,50 @@ import type {
   TemporalTaskQueuePoller,
   TemporalTaskQueuesResponse,
   TemporalTaskQueueSummary,
+  TemporalTypeInputsResponse,
+  TemporalTypeMapResponse,
   TemporalUpdateResult,
+  TemporalWorker,
+  TemporalWorkersResponse,
   TemporalWorkflowExecution,
+  TemporalWorkflowSort,
+  TemporalWorkflowSortField,
   TemporalWorkflowStatus,
 } from "../../data/temporal/types";
+import {
+  callCodec,
+  decodePayloadsInPlace,
+  type RawTemporalPayload,
+  type TemporalCodecConfig,
+} from "./temporal-codec";
 
 const ws = proto.temporal.api.workflowservice.v1;
 const enums = proto.temporal.api.enums.v1;
 
 const WORKFLOW_SERVICE_PREFIX =
   "/temporal.api.workflowservice.v1.WorkflowService";
+const OPERATOR_SERVICE_PREFIX =
+  "/temporal.api.operatorservice.v1.OperatorService";
+const operator = proto.temporal.api.operatorservice.v1;
+
+/** The names of `IndexedValueType`, as a List Filter builder needs them. */
+const SEARCH_ATTRIBUTE_TYPES: Record<number, string> = {
+  1: "Text",
+  2: "Keyword",
+  3: "Int",
+  4: "Double",
+  5: "Bool",
+  6: "Datetime",
+  7: "KeywordList",
+};
 
 export interface TemporalBffConfig {
   address: string;
   adminToken?: string;
   adminUrl?: string;
   apiKey?: string;
+  /** The Codec Server that decodes payloads the application's Workers encode. */
+  codec?: TemporalCodecConfig;
   tls?: boolean;
 }
 
@@ -172,6 +210,10 @@ function normalizeExecutionInfo(
         ? { lastWorkerIdentity: pa.lastWorkerIdentity }
         : {}),
       maximumAttempts: pa.maximumAttempts ?? 0,
+      ...(pa.paused ? { paused: true } : {}),
+      ...(pa.activityOptions?.taskQueue?.name
+        ? { taskQueue: pa.activityOptions.taskQueue.name }
+        : {}),
       ...(decodeTimestampIso(pa.nextAttemptScheduleTime)
         ? {
             nextAttemptScheduleTime: decodeTimestampIso(
@@ -232,10 +274,167 @@ function normalizeExecutionInfo(
   };
 }
 
+/**
+ * slate-temporal-next refuses a project's fifth concurrent list or count call
+ * with RESOURCE_EXHAUSTED, so Studio queues its own calls below that. Lists and
+ * counts queue apart, because a count can take seconds and the rows of a new
+ * search must not wait for it.
+ */
+const MAX_CONCURRENT_VISIBILITY_CALLS = { count: 1, list: 2 };
+
+interface VisibilityLane {
+  inFlight: number;
+  waiters: Array<() => void>;
+}
+
+/**
+ * A server may end a list page before it is full and return a token for the
+ * rest: slate-temporal-next examines at most 10,000 runs per page. This is how
+ * many pages one list request follows.
+ */
+const MAX_LIST_PAGES_PER_REQUEST = 5;
+
+/**
+ * No server sorts a list by every column, and slate-temporal-next sorts by
+ * none. So the BFF sorts: it reads every run that matches the filter, up to
+ * this many, and keeps the sorted copy for a few seconds.
+ */
+const MAX_SORTED_RUNS = 10_000;
+const SORTED_RUNS_PAGE_SIZE = 1_000;
+const SORTED_RUNS_MIN_AGE_MS = 4_000;
+/**
+ * How long the BFF takes it that a filter still matches too many runs to copy.
+ * Finding that out again costs a read of `MAX_SORTED_RUNS` runs.
+ */
+const TOO_MANY_RUNS_RECHECK_MS = 5 * 60_000;
+const RUNNING_QUERY = 'ExecutionStatus = "Running"';
+const SORTED_OFFSET_TOKEN = /^offset:(\d+)$/;
+
+const WORKFLOW_SORT_FIELDS: Record<
+  TemporalWorkflowSortField,
+  (run: TemporalWorkflowExecution) => number | string
+> = {
+  // An open run has no close time; it sorts as the most recently closed.
+  CloseTime: (run) =>
+    run.closeTime ? Date.parse(run.closeTime) : Number.MAX_SAFE_INTEGER,
+  Duration: (run) => run.durationMs,
+  ExecutionStatus: (run) => run.status,
+  HistoryLength: (run) => run.historyLength,
+  StartTime: (run) => Date.parse(run.startTime),
+  TaskQueue: (run) => run.taskQueue,
+  WorkflowId: (run) => run.workflowId,
+  WorkflowType: (run) => run.workflowType,
+};
+
+export function isWorkflowSortField(
+  value: unknown,
+): value is TemporalWorkflowSortField {
+  return typeof value === "string" && value in WORKFLOW_SORT_FIELDS;
+}
+
+export function sortWorkflowRuns(
+  runs: TemporalWorkflowExecution[],
+  sort: TemporalWorkflowSort,
+): TemporalWorkflowExecution[] {
+  const read = WORKFLOW_SORT_FIELDS[sort.field];
+  const sign = sort.direction === "asc" ? 1 : -1;
+
+  return [...runs].sort((a, b) => {
+    const left = read(a);
+    const right = read(b);
+    const order =
+      typeof left === "number" && typeof right === "number"
+        ? left - right
+        : String(left).localeCompare(String(right));
+
+    // Equal values keep one fixed order, so a row never jumps between pages.
+    return order !== 0
+      ? order * sign
+      : a.workflowId.localeCompare(b.workflowId) ||
+          a.runId.localeCompare(b.runId);
+  });
+}
+
+/** A value the BFF read from the server, and what reading it cost. */
+interface Remembered<T> {
+  fetchMs: number;
+  takenAt: number;
+  value: T;
+}
+
+interface RememberedEntry {
+  latest?: Remembered<unknown>;
+  refresh?: Promise<Remembered<unknown>>;
+}
+
+const REMEMBERED_MAX_KEPT = 16;
+
+/** How many running Workflow Executions one attention check describes. */
+const MAX_ATTENTION_RUNS = 1_500;
+const ATTENTION_MIN_AGE_MS = 15_000;
+/** How many runs a Workflow Type's diagram is drawn from, and how much of each the BFF reads. */
+const TYPE_MAP_SAMPLE_RUNS = 40;
+const TYPE_MAP_CANDIDATE_RUNS = 300;
+const TYPE_MAP_HISTORY_PAGES = 2;
+const TYPE_MAP_HISTORY_PAGE_SIZE = 500;
+const TYPE_MAP_MIN_AGE_MS = 60_000;
+/** How many recent runs of a type the start form reads the input of. */
+const TYPE_INPUT_RUNS = 10;
+const TYPE_INPUTS_MIN_AGE_MS = 30_000;
+const FACETS_SAMPLE_MIN_AGE_MS = 30_000;
+/** The Task Queues screen counts schedules per queue; it need not list them on every poll. */
+const SCHEDULES_MIN_AGE_MS = 10_000;
+const DESCRIBE_CONCURRENCY = 12;
+/** A task nobody picked up for this long has no Worker polling its queue. */
+const NO_WORKER_AFTER_MS = 30_000;
+/** A run is slow when it runs this many times longer than 95% of closed runs of its type. */
+const LONG_RUNNING_FACTOR = 3;
+const LONG_RUNNING_MIN_SAMPLES = 20;
+const RECENT_FAILURE_WINDOW_MS = 60 * 60_000;
+const MAX_RECENT_FAILURES = 100;
+
+function percentile(sortedValues: number[], share: number): number {
+  return sortedValues[
+    Math.min(sortedValues.length - 1, Math.floor(sortedValues.length * share))
+  ]!;
+}
+
+function formatSpan(ms: number): string {
+  const seconds = Math.round(ms / 1000);
+
+  if (seconds < 90) return `${seconds}s`;
+  if (seconds < 90 * 60) return `${Math.round(seconds / 60)}m`;
+  return `${(seconds / 3600).toFixed(1)}h`;
+}
+
+async function forEachConcurrently<T>(
+  items: T[],
+  concurrency: number,
+  work: (item: T) => Promise<void>,
+): Promise<void> {
+  let index = 0;
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (index < items.length) {
+        await work(items[index++]!);
+      }
+    }),
+  );
+}
+
 export class TemporalGrpcBffClient {
   #client: grpc.Client;
   #config: TemporalBffConfig;
   #capabilitiesCache: TemporalCapabilities | null = null;
+  #visibilityLanes: Record<"count" | "list", VisibilityLane> = {
+    count: { inFlight: 0, waiters: [] },
+    list: { inFlight: 0, waiters: [] },
+  };
+  #remembered = new Map<string, RememberedEntry>();
+  /** The filters that matched too many runs to copy, and when the BFF found that. */
+  #tooManyRuns = new Map<string, Remembered<null>>();
+  #bulkJobs = new Map<string, TemporalBulkJob & { abort: boolean }>();
 
   constructor(config: TemporalBffConfig) {
     this.#config = config;
@@ -259,6 +458,41 @@ export class TemporalGrpcBffClient {
     request: Req,
     timeoutMs = 15_000,
   ): Promise<Res> {
+    return this.#call(
+      WORKFLOW_SERVICE_PREFIX,
+      method,
+      reqCodec,
+      resCodec,
+      request,
+      timeoutMs,
+    );
+  }
+
+  /** A call to the OperatorService: Search Attributes and Nexus Endpoints. */
+  operatorUnary<Req, Res>(
+    method: string,
+    reqCodec: { encode: (msg: Req) => { finish: () => Uint8Array } },
+    resCodec: Pick<ProtoCodec<Req, Res>, "decode">,
+    request: Req,
+  ): Promise<Res> {
+    return this.#call(
+      OPERATOR_SERVICE_PREFIX,
+      method,
+      reqCodec,
+      resCodec,
+      request,
+      10_000,
+    );
+  }
+
+  #call<Req, Res>(
+    servicePrefix: string,
+    method: string,
+    reqCodec: { encode: (msg: Req) => { finish: () => Uint8Array } },
+    resCodec: Pick<ProtoCodec<Req, Res>, "decode">,
+    request: Req,
+    timeoutMs: number,
+  ): Promise<Res> {
     const metadata = new grpc.Metadata();
     if (this.#config.apiKey) {
       metadata.set("authorization", `Bearer ${this.#config.apiKey}`);
@@ -267,7 +501,7 @@ export class TemporalGrpcBffClient {
 
     return new Promise<Res>((resolve, reject) => {
       this.#client.makeUnaryRequest(
-        `${WORKFLOW_SERVICE_PREFIX}/${method}`,
+        `${servicePrefix}/${method}`,
         (arg: Req) => Buffer.from(reqCodec.encode(arg).finish()),
         (buf: Buffer) => resCodec.decode(new Uint8Array(buf)),
         request,
@@ -282,6 +516,59 @@ export class TemporalGrpcBffClient {
         },
       );
     });
+  }
+
+  async #withVisibilitySlot<T>(
+    kind: "count" | "list",
+    call: () => Promise<T>,
+  ): Promise<T> {
+    const lane = this.#visibilityLanes[kind];
+
+    if (lane.inFlight >= MAX_CONCURRENT_VISIBILITY_CALLS[kind]) {
+      // The call that finishes hands its slot to the first waiter.
+      await new Promise<void>((resolve) => {
+        lane.waiters.push(resolve);
+      });
+    } else {
+      lane.inFlight++;
+    }
+
+    try {
+      return await call();
+    } finally {
+      const next = lane.waiters.shift();
+
+      if (next) {
+        next();
+      } else {
+        lane.inFlight--;
+      }
+    }
+  }
+
+  /**
+   * The payloads for arguments typed in Studio. With a Codec Server set they
+   * go through it first, so a Worker whose codec refuses plain payloads can read them.
+   */
+  async #encodeArgs(
+    namespace: string,
+    values: unknown[] | undefined,
+  ): Promise<proto.temporal.api.common.v1.IPayloads | undefined> {
+    const plain = encodeJsonPayloads(values);
+    const codec = this.#config.codec;
+
+    if (!plain?.payloads || !codec || codec.encodeOutgoing === false) {
+      return plain;
+    }
+
+    return {
+      payloads: await callCodec(
+        codec,
+        "encode",
+        namespace,
+        plain.payloads as RawTemporalPayload[],
+      ),
+    };
   }
 
   async getCapabilities(): Promise<TemporalCapabilities> {
@@ -322,11 +609,16 @@ export class TemporalGrpcBffClient {
     const caps: TemporalCapabilities = {
       address: this.#config.address,
       clusterName: clusterInfo?.clusterName || "active",
+      codec: this.#config.codec
+        ? { configured: true, endpoint: this.#config.codec.endpoint }
+        : { configured: false },
       persistenceStore,
+      nativeListOrder: isStn ? "workflow-id" : "newest-first",
       serverKind: isStn ? "slate-temporal-next" : "temporal",
       serverVersion:
         sysInfo?.serverVersion || clusterInfo?.serverVersion || "unknown",
       shardCount: clusterInfo?.historyShardCount ?? 1,
+      supportsActivityOperations: !isStn,
       supportsAdminApi,
       supportsCountGroupByStatus: Boolean(
         sysInfo?.capabilities?.countGroupByExecutionStatus ?? true,
@@ -335,6 +627,7 @@ export class TemporalGrpcBffClient {
       supportsNativeBatch: !isStn,
       supportsReset: !isStn,
       supportsSchedules: true,
+      supportsWorkflowPause: !isStn,
     };
     this.#capabilitiesCache = caps;
     return caps;
@@ -377,45 +670,851 @@ export class TemporalGrpcBffClient {
     }
   }
 
+  /**
+   * Reads a value at most once per `minAgeMs`. A caller gets the copy the BFF
+   * holds at once, and a copy that is too old is read again in the background,
+   * so only the first caller waits for the server.
+   */
+  async #remember<T>(
+    key: string,
+    minAgeMs: number,
+    read: () => Promise<T>,
+  ): Promise<Remembered<T>> {
+    let entry = this.#remembered.get(key);
+
+    // Re-insert, so the map keeps the keys used most recently.
+    this.#remembered.delete(key);
+    entry ??= {};
+    this.#remembered.set(key, entry);
+
+    for (const oldKey of this.#remembered.keys()) {
+      if (this.#remembered.size <= REMEMBERED_MAX_KEPT) {
+        break;
+      }
+
+      this.#remembered.delete(oldKey);
+    }
+
+    const latest = entry.latest as Remembered<T> | undefined;
+    const maxAgeMs = Math.max(minAgeMs, (latest?.fetchMs ?? 0) * 3);
+
+    if (latest && Date.now() - latest.takenAt < maxAgeMs) {
+      return latest;
+    }
+
+    const target = entry;
+    const startedAt = Date.now();
+    const refresh =
+      (target.refresh as Promise<Remembered<T>> | undefined) ??
+      read()
+        .then((value) => {
+          const result = {
+            fetchMs: Date.now() - startedAt,
+            takenAt: Date.now(),
+            value,
+          };
+
+          target.latest = result;
+          return result;
+        })
+        .finally(() => {
+          target.refresh = undefined;
+        });
+
+    target.refresh = refresh;
+    // A background refresh that fails keeps the copy the BFF holds.
+    refresh.catch(() => undefined);
+
+    return await (latest ?? refresh);
+  }
+
+  /** Every run that matches a filter, or null when more match than the BFF reads. */
+  async matchingRuns(
+    namespace: string,
+    query: string,
+  ): Promise<Remembered<TemporalWorkflowExecution[] | null>> {
+    const key = `runs\n${namespace}\n${query}`;
+    const tooMany = this.#tooManyRuns.get(key);
+
+    if (tooMany && Date.now() - tooMany.takenAt < TOO_MANY_RUNS_RECHECK_MS) {
+      return tooMany;
+    }
+
+    const remembered = await this.#readMatchingRuns(key, namespace, query);
+
+    this.#tooManyRuns.delete(key);
+
+    if (remembered.value === null) {
+      this.#tooManyRuns.set(key, { ...remembered, value: null });
+
+      for (const oldKey of this.#tooManyRuns.keys()) {
+        if (this.#tooManyRuns.size <= REMEMBERED_MAX_KEPT) {
+          break;
+        }
+
+        this.#tooManyRuns.delete(oldKey);
+      }
+    }
+
+    return remembered;
+  }
+
+  #readMatchingRuns(
+    key: string,
+    namespace: string,
+    query: string,
+  ): Promise<Remembered<TemporalWorkflowExecution[] | null>> {
+    return this.#remember(key, SORTED_RUNS_MIN_AGE_MS, async () => {
+      const runs: TemporalWorkflowExecution[] = [];
+      let pageToken: Uint8Array | undefined;
+
+      do {
+        const page = await this.#withVisibilitySlot("list", () =>
+          this.unary(
+            "ListWorkflowExecutions",
+            ws.ListWorkflowExecutionsRequest,
+            ws.ListWorkflowExecutionsResponse,
+            {
+              namespace,
+              nextPageToken: pageToken,
+              pageSize: SORTED_RUNS_PAGE_SIZE,
+              query,
+            },
+            30_000,
+          ),
+        );
+
+        for (const info of page.executions ?? []) {
+          runs.push(normalizeExecutionInfo(namespace, info));
+        }
+
+        pageToken =
+          page.nextPageToken && page.nextPageToken.length > 0
+            ? page.nextPageToken
+            : undefined;
+      } while (pageToken && runs.length <= MAX_SORTED_RUNS);
+
+      return runs.length > MAX_SORTED_RUNS ? null : runs;
+    });
+  }
+
+  /** The Workflow Types and Task Queues in use, from every run of the namespace. */
+  async getFacets(namespace: string): Promise<TemporalFacets> {
+    const all = await this.matchingRuns(namespace, "");
+    const firstPage = (query?: string) =>
+      this.listWorkflows({
+        includeCounts: false,
+        namespace,
+        pageSize: SORTED_RUNS_PAGE_SIZE,
+        query,
+      }).then((list) => list.executions);
+    // A server may list by Workflow ID, so one page of a large namespace holds few
+    // types. The running runs add the types and queues that are in use now.
+    // Two pages of 1,000 runs take seconds to read, so the BFF keeps them a while.
+    const sample: TemporalWorkflowExecution[] =
+      all.value ??
+      (
+        await this.#remember(
+          `facets-sample\n${namespace}`,
+          FACETS_SAMPLE_MIN_AGE_MS,
+          async () =>
+            (await Promise.all([firstPage(), firstPage(RUNNING_QUERY)])).flat(),
+        )
+      ).value;
+    const runs = [...new Map(sample.map((run) => [run.runId, run])).values()];
+    const taskQueues = new Map<string, number>();
+    const workflowTypes = new Map<
+      string,
+      { count: number; latest: TemporalWorkflowExecution }
+    >();
+
+    for (const run of runs) {
+      taskQueues.set(run.taskQueue, (taskQueues.get(run.taskQueue) ?? 0) + 1);
+
+      const type = workflowTypes.get(run.workflowType);
+
+      if (!type) {
+        workflowTypes.set(run.workflowType, { count: 1, latest: run });
+      } else {
+        type.count++;
+
+        if (run.startTime > type.latest.startTime) {
+          type.latest = run;
+        }
+      }
+    }
+
+    // A server without custom Search Attributes, or without this call, has none to offer.
+    const registered = await this.operatorUnary(
+      "ListSearchAttributes",
+      operator.ListSearchAttributesRequest,
+      operator.ListSearchAttributesResponse,
+      { namespace },
+    ).catch(() => null);
+
+    return {
+      complete: all.value !== null,
+      searchAttributes: Object.entries(registered?.customAttributes ?? {})
+        .map(([name, type]) => ({
+          name,
+          type: SEARCH_ATTRIBUTE_TYPES[Number(type)] ?? "Keyword",
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+      taskQueues: [...taskQueues]
+        .map(([name, count]) => ({ count, name }))
+        .sort((a, b) => b.count - a.count),
+      workflowTypes: [...workflowTypes]
+        .map(([name, { count, latest }]) => ({
+          count,
+          latestRun: { runId: latest.runId, workflowId: latest.workflowId },
+          name,
+        }))
+        .sort((a, b) => b.count - a.count),
+    };
+  }
+
+  /**
+   * Which Task Queue each Activity Type runs on, per Workflow Type. No list
+   * call reports the queues that only run Activities, so this reads the history
+   * of the newest closed run of every Workflow Type.
+   */
+  async #activityRouting(
+    namespace: string,
+  ): Promise<Map<string, Map<string, string>>> {
+    const remembered = await this.#remember(
+      `routing\n${namespace}`,
+      5 * 60_000,
+      async () => {
+        // In a namespace too large to copy, the running runs name the types.
+        const all =
+          (await this.matchingRuns(namespace, "")).value ??
+          (await this.matchingRuns(namespace, RUNNING_QUERY)).value ??
+          [];
+        // Two runs per type: the one with the longest history, and the newest
+        // completed one. Together they name most Activities the type schedules.
+        const samples = new Map<
+          string,
+          {
+            completed?: TemporalWorkflowExecution;
+            longest: TemporalWorkflowExecution;
+          }
+        >();
+
+        for (const run of all) {
+          const sample = samples.get(run.workflowType) ?? { longest: run };
+
+          if (run.historyLength > sample.longest.historyLength) {
+            sample.longest = run;
+          }
+
+          if (
+            run.status === "Completed" &&
+            (!sample.completed || run.startTime > sample.completed.startTime)
+          ) {
+            sample.completed = run;
+          }
+
+          samples.set(run.workflowType, sample);
+        }
+
+        const sampleRuns = [...samples.values()].flatMap((sample) =>
+          sample.completed && sample.completed !== sample.longest
+            ? [sample.longest, sample.completed]
+            : [sample.longest],
+        );
+        const routing = new Map<string, Map<string, string>>();
+
+        await forEachConcurrently(sampleRuns, 4, async (run) => {
+          const history = await this.unary(
+            "GetWorkflowExecutionHistory",
+            ws.GetWorkflowExecutionHistoryRequest,
+            ws.GetWorkflowExecutionHistoryResponse,
+            {
+              execution: { runId: run.runId, workflowId: run.workflowId },
+              maximumPageSize: 500,
+              namespace,
+            },
+          ).catch(() => null);
+          const queues =
+            routing.get(run.workflowType) ?? new Map<string, string>();
+
+          for (const event of history?.history?.events ?? []) {
+            const scheduled = event.activityTaskScheduledEventAttributes;
+
+            if (scheduled?.activityType?.name && scheduled.taskQueue?.name) {
+              queues.set(scheduled.activityType.name, scheduled.taskQueue.name);
+            }
+          }
+
+          routing.set(run.workflowType, queues);
+        });
+
+        return routing;
+      },
+    );
+
+    return remembered.value;
+  }
+
+  /**
+   * The runs of a Workflow Type that the BFF knows. In a namespace too large
+   * to copy that is one page of the type's runs, and the running ones, which
+   * that page may not hold; `complete` is then false.
+   */
+  async #runsOfType(
+    namespace: string,
+    workflowType: string,
+  ): Promise<{ complete: boolean; runs: TemporalWorkflowExecution[] }> {
+    const all = (await this.matchingRuns(namespace, "")).value;
+    const ofType = (runs: TemporalWorkflowExecution[]) =>
+      runs.filter((run) => run.workflowType === workflowType);
+
+    if (all) {
+      return { complete: true, runs: ofType(all) };
+    }
+
+    const [page, running] = await Promise.all([
+      this.listWorkflows({
+        includeCounts: false,
+        namespace,
+        pageSize: TYPE_MAP_CANDIDATE_RUNS,
+        query: `WorkflowType = "${workflowType.replaceAll('"', '\\"')}"`,
+      }),
+      this.matchingRuns(namespace, RUNNING_QUERY),
+    ]);
+
+    return {
+      complete: false,
+      runs: [
+        ...new Map(
+          [...page.executions, ...ofType(running.value ?? [])].map((run) => [
+            run.runId,
+            run,
+          ]),
+        ).values(),
+      ],
+    };
+  }
+
+  /**
+   * The inputs of the newest runs of a Workflow Type, for the form that starts
+   * a run of it. Reads the first history event of each run, which holds the
+   * input, and decodes them all with one codec request.
+   */
+  async getTypeInputs(
+    namespace: string,
+    workflowType: string,
+  ): Promise<TemporalTypeInputsResponse> {
+    const remembered = await this.#remember(
+      `type-inputs\n${namespace}\n${workflowType}`,
+      TYPE_INPUTS_MIN_AGE_MS,
+      async () => {
+        const { runs } = await this.#runsOfType(namespace, workflowType);
+        const newest = [...runs]
+          .sort((a, b) => b.startTime.localeCompare(a.startTime))
+          .slice(0, TYPE_INPUT_RUNS);
+        const started = new Array<Record<string, unknown> | null>(
+          newest.length,
+        ).fill(null);
+
+        await forEachConcurrently(
+          newest.map((run, index) => ({ index, run })),
+          6,
+          async ({ index, run }) => {
+            const history = await this.unary(
+              "GetWorkflowExecutionHistory",
+              ws.GetWorkflowExecutionHistoryRequest,
+              ws.GetWorkflowExecutionHistoryResponse,
+              {
+                execution: { runId: run.runId, workflowId: run.workflowId },
+                maximumPageSize: 1,
+                namespace,
+              },
+            ).catch(() => null);
+            const first = history?.history?.events?.[0];
+
+            if (first) {
+              started[index] =
+                proto.temporal.api.history.v1.HistoryEvent.toObject(
+                  proto.temporal.api.history.v1.HistoryEvent.create(first),
+                  {
+                    bytes: Buffer,
+                    defaults: false,
+                    enums: String,
+                    longs: Number,
+                  },
+                ) as Record<string, unknown>;
+            }
+          },
+        );
+
+        await decodePayloadsInPlace(
+          this.#config.codec,
+          namespace,
+          started.filter((event) => event !== null),
+        );
+
+        const queueCounts = new Map<string, number>();
+
+        for (const run of runs) {
+          queueCounts.set(
+            run.taskQueue,
+            (queueCounts.get(run.taskQueue) ?? 0) + 1,
+          );
+        }
+
+        return {
+          runs: newest.flatMap((run, index) => {
+            const event = started[index];
+
+            if (!event) {
+              return [];
+            }
+
+            const attributes = event.workflowExecutionStartedEventAttributes as
+              | {
+                  input?: {
+                    payloads?: Parameters<typeof decodeSinglePayload>[0][];
+                  };
+                }
+              | undefined;
+            const args = (attributes?.input?.payloads ?? []).map((payload) =>
+              decodeSinglePayload(payload),
+            );
+
+            return [
+              {
+                args,
+                // A payload that no codec decoded is a marker, not the value.
+                isEncoded: args.some(
+                  (arg) =>
+                    arg !== null &&
+                    typeof arg === "object" &&
+                    "$encodedPayload" in arg,
+                ),
+                runId: run.runId,
+                startTime: run.startTime,
+                status: run.status,
+                taskQueue: run.taskQueue,
+                workflowId: run.workflowId,
+              },
+            ];
+          }),
+          taskQueue: [...queueCounts].sort((a, b) => b[1] - a[1])[0]?.[0],
+        };
+      },
+    );
+
+    return remembered.value;
+  }
+
+  /**
+   * The diagram of a Workflow Type, drawn from the histories of a sample of its
+   * runs. Reads one or two history pages per sampled run and no payloads.
+   */
+  async getTypeMap(
+    namespace: string,
+    workflowType: string,
+  ): Promise<TemporalTypeMapResponse> {
+    const remembered = await this.#remember(
+      `type-map\n${namespace}\n${workflowType}`,
+      TYPE_MAP_MIN_AGE_MS,
+      async () => {
+        const { complete, runs: candidates } = await this.#runsOfType(
+          namespace,
+          workflowType,
+        );
+        const sample = pickTypeMapSample(candidates, TYPE_MAP_SAMPLE_RUNS);
+        const details = new Array<TemporalExecutionDetail | null>(
+          sample.length,
+        ).fill(null);
+        let truncatedRunCount = 0;
+
+        await forEachConcurrently(
+          sample.map((run, index) => ({ index, run })),
+          6,
+          async ({ index, run }) => {
+            const rawEvents: Record<string, unknown>[] = [];
+            let nextPageToken: Uint8Array | undefined;
+
+            for (let page = 0; page < TYPE_MAP_HISTORY_PAGES; page++) {
+              const history = await this.unary(
+                "GetWorkflowExecutionHistory",
+                ws.GetWorkflowExecutionHistoryRequest,
+                ws.GetWorkflowExecutionHistoryResponse,
+                {
+                  execution: { runId: run.runId, workflowId: run.workflowId },
+                  maximumPageSize: TYPE_MAP_HISTORY_PAGE_SIZE,
+                  namespace,
+                  nextPageToken,
+                },
+              ).catch(() => null);
+
+              for (const event of history?.history?.events ?? []) {
+                rawEvents.push(
+                  proto.temporal.api.history.v1.HistoryEvent.toObject(
+                    proto.temporal.api.history.v1.HistoryEvent.create(event),
+                    {
+                      bytes: Buffer,
+                      defaults: false,
+                      enums: String,
+                      longs: Number,
+                    },
+                  ) as Record<string, unknown>,
+                );
+              }
+
+              nextPageToken =
+                history?.nextPageToken && history.nextPageToken.length > 0
+                  ? history.nextPageToken
+                  : undefined;
+
+              if (!nextPageToken) {
+                break;
+              }
+            }
+
+            if (nextPageToken) {
+              truncatedRunCount++;
+            }
+
+            // A run whose history is gone or unreadable is left out.
+            if (rawEvents.length > 0) {
+              details[index] = buildExecutionDetail({
+                execution: run,
+                rawEvents,
+              });
+            }
+          },
+        );
+
+        return {
+          ...buildTypeMap(
+            details.filter(
+              (detail): detail is TemporalExecutionDetail => detail !== null,
+            ),
+          ),
+          candidateCount: candidates.length,
+          candidatesComplete: complete,
+          truncatedRunCount,
+          workflowType,
+        };
+      },
+    );
+
+    return { ...remembered.value, ageMs: Date.now() - remembered.takenAt };
+  }
+
+  /**
+   * Running Workflow Executions that will not finish without help, and recent
+   * failures. No Visibility filter finds a retrying Activity or a task with no
+   * Worker, so this describes every running run.
+   */
+  async getAttention(namespace: string): Promise<TemporalAttentionResponse> {
+    const remembered = await this.#remember(
+      `attention\n${namespace}`,
+      ATTENTION_MIN_AGE_MS,
+      async () => {
+        const all = (await this.matchingRuns(namespace, "")).value;
+        const running =
+          all?.filter((run) => run.status === "Running") ??
+          (await this.matchingRuns(namespace, RUNNING_QUERY)).value ??
+          (
+            await this.listWorkflows({
+              includeCounts: false,
+              namespace,
+              pageSize: SORTED_RUNS_PAGE_SIZE,
+              query: RUNNING_QUERY,
+            })
+          ).executions;
+        const checked = [...running]
+          .sort((a, b) => a.startTime.localeCompare(b.startTime))
+          .slice(0, MAX_ATTENTION_RUNS);
+        const items: TemporalAttentionItem[] = [];
+        const now = Date.now();
+        const base = (run: TemporalWorkflowExecution) => ({
+          runId: run.runId,
+          startTime: run.startTime,
+          status: run.status,
+          taskQueue: run.taskQueue,
+          workflowId: run.workflowId,
+          workflowType: run.workflowType,
+        });
+
+        // How long 95% of the closed runs of each type took.
+        const closedDurations = new Map<string, number[]>();
+
+        for (const run of all ?? []) {
+          if (run.status === "Completed" || run.status === "ContinuedAsNew") {
+            const durations = closedDurations.get(run.workflowType) ?? [];
+
+            durations.push(run.durationMs);
+            closedDurations.set(run.workflowType, durations);
+          }
+        }
+
+        const usualMs = new Map<string, number>();
+
+        for (const [type, durations] of closedDurations) {
+          if (durations.length >= LONG_RUNNING_MIN_SAMPLES) {
+            usualMs.set(
+              type,
+              percentile(
+                durations.sort((a, b) => a - b),
+                0.95,
+              ),
+            );
+          }
+        }
+
+        await forEachConcurrently(
+          checked,
+          DESCRIBE_CONCURRENCY,
+          async (run) => {
+            const described = await this.unary(
+              "DescribeWorkflowExecution",
+              ws.DescribeWorkflowExecutionRequest,
+              ws.DescribeWorkflowExecutionResponse,
+              {
+                execution: { runId: run.runId, workflowId: run.workflowId },
+                namespace,
+              },
+            ).catch(() => null);
+
+            if (!described) {
+              return;
+            }
+
+            const task = described.pendingWorkflowTask;
+            const taskScheduledAt = decodeTimestampIso(task?.scheduledTime);
+
+            if (task && (task.attempt ?? 1) > 1) {
+              items.push({
+                ...base(run),
+                attempt: task.attempt ?? 1,
+                detail: `The Workflow Task failed ${(task.attempt ?? 1) - 1} times. The Workflow code throws or is not deterministic.`,
+                kind: "workflow-task-failing",
+                since: taskScheduledAt,
+              });
+            } else if (
+              task &&
+              task.state ===
+                enums.PendingWorkflowTaskState
+                  .PENDING_WORKFLOW_TASK_STATE_SCHEDULED &&
+              taskScheduledAt &&
+              now - Date.parse(taskScheduledAt) > NO_WORKER_AFTER_MS
+            ) {
+              items.push({
+                ...base(run),
+                detail: `A Workflow Task has waited ${formatSpan(now - Date.parse(taskScheduledAt))} for a Worker on Task Queue ${run.taskQueue}.`,
+                kind: "no-worker",
+                since: taskScheduledAt,
+              });
+            }
+
+            for (const activity of described.pendingActivities ?? []) {
+              const activityType = activity.activityType?.name ?? "Activity";
+              const attempt = activity.attempt ?? 1;
+              const scheduledAt = decodeTimestampIso(activity.scheduledTime);
+              const scheduledInFuture =
+                scheduledAt !== undefined && Date.parse(scheduledAt) > now;
+
+              if (attempt > 1 || activity.lastFailure) {
+                const failure = decodeFailure(activity.lastFailure as never);
+
+                items.push({
+                  ...base(run),
+                  activityType,
+                  attempt,
+                  detail: failure?.message ?? "The last attempt failed.",
+                  kind: "activity-retrying",
+                  maximumAttempts: activity.maximumAttempts ?? 0,
+                  // While an Activity waits for its next attempt, a standard
+                  // Temporal server reports that attempt as the scheduled time.
+                  nextAttemptTime:
+                    decodeTimestampIso(activity.nextAttemptScheduleTime) ??
+                    (scheduledInFuture ? scheduledAt : undefined),
+                  since:
+                    decodeTimestampIso(activity.lastAttemptCompleteTime) ??
+                    decodeTimestampIso(activity.lastStartedTime) ??
+                    (scheduledInFuture ? undefined : scheduledAt),
+                });
+              } else if (
+                normalizePendingActivityState(activity.state) === "Scheduled" &&
+                scheduledAt &&
+                now - Date.parse(scheduledAt) > NO_WORKER_AFTER_MS
+              ) {
+                items.push({
+                  ...base(run),
+                  activityType,
+                  detail: `Activity ${activityType} has waited ${formatSpan(now - Date.parse(scheduledAt))} for a Worker.`,
+                  kind: "no-worker",
+                  since: scheduledAt,
+                });
+              }
+            }
+
+            const usual = usualMs.get(run.workflowType);
+
+            if (
+              usual &&
+              run.durationMs >
+                Math.max(usual * LONG_RUNNING_FACTOR, usual + 60_000)
+            ) {
+              items.push({
+                ...base(run),
+                detail: `Running for ${formatSpan(run.durationMs)}. 95% of ${run.workflowType} runs finish within ${formatSpan(usual)}.`,
+                kind: "long-running",
+                since: run.startTime,
+              });
+            }
+          },
+        );
+
+        const recentFailures = (all ?? [])
+          .filter(
+            (run) =>
+              (run.status === "Failed" || run.status === "TimedOut") &&
+              run.closeTime &&
+              now - Date.parse(run.closeTime) < RECENT_FAILURE_WINDOW_MS,
+          )
+          .sort((a, b) => b.closeTime!.localeCompare(a.closeTime!))
+          .slice(0, MAX_RECENT_FAILURES);
+
+        for (const run of recentFailures) {
+          items.push({
+            ...base(run),
+            detail:
+              run.status === "TimedOut"
+                ? `Timed out after ${formatSpan(run.durationMs)}.`
+                : `Failed after ${formatSpan(run.durationMs)}.`,
+            kind: "failed",
+            since: run.closeTime,
+          });
+        }
+
+        return {
+          checkedRunning: checked.length,
+          items,
+          totalRunning: running.length,
+        };
+      },
+    );
+
+    return { ...remembered.value, ageMs: Date.now() - remembered.takenAt };
+  }
+
   async listWorkflows(args: {
+    /** False skips the status counts, which cost a scan of the whole namespace. */
+    includeCounts?: boolean;
+    /** False skips the rows, for a caller that only wants the counts. */
+    includeList?: boolean;
     namespace: string;
     nextPageToken?: string;
     pageSize?: number;
     query?: string;
+    sort?: TemporalWorkflowSort;
   }): Promise<TemporalListWorkflowsResponse> {
-    const { namespace, query = "", pageSize = 50, nextPageToken } = args;
+    const {
+      includeCounts = true,
+      includeList = true,
+      namespace,
+      query = "",
+      pageSize = 50,
+      sort,
+    } = args;
     const countQuery = query.trim()
       ? `${query.trim()} GROUP BY ExecutionStatus`
       : "GROUP BY ExecutionStatus";
+    const sortedOffset = args.nextPageToken?.match(SORTED_OFFSET_TOKEN);
+    const matching = sort ? await this.matchingRuns(namespace, query) : null;
 
-    const [listRes, countRes] = await Promise.all([
-      this.unary(
-        "ListWorkflowExecutions",
-        ws.ListWorkflowExecutionsRequest,
-        ws.ListWorkflowExecutionsResponse,
-        {
-          namespace,
-          nextPageToken: nextPageToken
-            ? Buffer.from(nextPageToken, "base64")
-            : undefined,
-          pageSize,
-          query,
+    if (sort && matching?.value) {
+      const offset = sortedOffset ? Number(sortedOffset[1]) : 0;
+      const sortedRuns = sortWorkflowRuns(matching.value, sort);
+      const countsByStatus: Partial<Record<TemporalWorkflowStatus, number>> =
+        {};
+
+      for (const run of sortedRuns) {
+        countsByStatus[run.status] = (countsByStatus[run.status] ?? 0) + 1;
+      }
+
+      return {
+        countsByStatus,
+        executions: includeList
+          ? sortedRuns.slice(offset, offset + pageSize)
+          : [],
+        ...(offset + pageSize < sortedRuns.length
+          ? { nextPageToken: `offset:${offset + pageSize}` }
+          : {}),
+        sorted: {
+          ageMs: Date.now() - matching.takenAt,
+          rowCount: sortedRuns.length,
         },
-      ),
-      this.unary(
-        "CountWorkflowExecutions",
-        ws.CountWorkflowExecutionsRequest,
-        ws.CountWorkflowExecutionsResponse,
-        {
-          namespace,
-          query: countQuery,
-        },
-      ).catch(() => null),
+        totalCount: sortedRuns.length,
+      };
+    }
+
+    const listPages = async () => {
+      const executions: TemporalWorkflowExecution[] = [];
+      // An offset belongs to a sorted list, so it cannot continue this one.
+      let pageToken: Uint8Array | undefined =
+        args.nextPageToken && !sortedOffset
+          ? Buffer.from(args.nextPageToken, "base64")
+          : undefined;
+
+      for (
+        let page = 0;
+        includeList && page < MAX_LIST_PAGES_PER_REQUEST;
+        page++
+      ) {
+        const listRes = await this.#withVisibilitySlot("list", () =>
+          this.unary(
+            "ListWorkflowExecutions",
+            ws.ListWorkflowExecutionsRequest,
+            ws.ListWorkflowExecutionsResponse,
+            {
+              namespace,
+              nextPageToken: pageToken,
+              pageSize: pageSize - executions.length,
+              query,
+            },
+          ),
+        );
+
+        for (const info of listRes.executions ?? []) {
+          executions.push(normalizeExecutionInfo(namespace, info));
+        }
+
+        pageToken =
+          listRes.nextPageToken && listRes.nextPageToken.length > 0
+            ? listRes.nextPageToken
+            : undefined;
+
+        if (!pageToken || executions.length >= pageSize) {
+          break;
+        }
+      }
+
+      return { executions, pageToken };
+    };
+
+    const [{ executions, pageToken }, countRes] = await Promise.all([
+      listPages(),
+      includeCounts
+        ? this.#withVisibilitySlot("count", () =>
+            this.unary(
+              "CountWorkflowExecutions",
+              ws.CountWorkflowExecutionsRequest,
+              ws.CountWorkflowExecutionsResponse,
+              {
+                namespace,
+                query: countQuery,
+              },
+            ),
+          ).catch(() => null)
+        : null,
     ]);
-
-    const executions = (listRes.executions ?? []).map((info) =>
-      normalizeExecutionInfo(namespace, info),
-    );
 
     const countsByStatus: Partial<Record<TemporalWorkflowStatus, number>> = {};
     let totalCount = executions.length;
@@ -439,11 +1538,12 @@ export class TemporalGrpcBffClient {
     return {
       countsByStatus,
       executions,
-      ...(listRes.nextPageToken && listRes.nextPageToken.length > 0
+      ...(pageToken
+        ? { nextPageToken: Buffer.from(pageToken).toString("base64") }
+        : {}),
+      ...(sort
         ? {
-            nextPageToken: Buffer.from(listRes.nextPageToken).toString(
-              "base64",
-            ),
+            sortSkippedReason: `More than ${MAX_SORTED_RUNS.toLocaleString("en-US")} workflows match, so they are listed in the server's order. Add a filter to sort them.`,
           }
         : {}),
       totalCount,
@@ -470,18 +1570,12 @@ export class TemporalGrpcBffClient {
         namespace,
       },
     );
-
-    const execution = normalizeExecutionInfo(
-      namespace,
-      describeRes.workflowExecutionInfo,
-      {
-        pendingActivities: describeRes.pendingActivities,
-        pendingChildren: describeRes.pendingChildren,
-      },
-    );
+    const describedRunId =
+      describeRes.workflowExecutionInfo?.execution?.runId || runId;
 
     // Fetch up to 2,000 history events across pages (safe for browser payload size)
     const rawEvents: Record<string, unknown>[] = [];
+    const historyMessages: proto.temporal.api.history.v1.HistoryEvent[] = [];
     let nextPageToken: Uint8Array | undefined;
     for (let page = 0; page < 10; page += 1) {
       const histRes = await this.unary(
@@ -490,7 +1584,7 @@ export class TemporalGrpcBffClient {
         ws.GetWorkflowExecutionHistoryResponse,
         {
           execution: {
-            runId: execution.runId || runId,
+            runId: describedRunId,
             workflowId,
           },
           maximumPageSize: 200,
@@ -500,8 +1594,10 @@ export class TemporalGrpcBffClient {
       );
       const events = histRes.history?.events ?? [];
       for (const evt of events) {
+        const message = proto.temporal.api.history.v1.HistoryEvent.create(evt);
+        historyMessages.push(message);
         const obj = proto.temporal.api.history.v1.HistoryEvent.toObject(
-          proto.temporal.api.history.v1.HistoryEvent.create(evt),
+          message,
           {
             bytes: Buffer,
             defaults: false,
@@ -511,13 +1607,50 @@ export class TemporalGrpcBffClient {
         ) as Record<string, unknown>;
         rawEvents.push(obj);
       }
-      if (!histRes.nextPageToken || histRes.nextPageToken.length === 0) {
+      nextPageToken =
+        histRes.nextPageToken && histRes.nextPageToken.length > 0
+          ? histRes.nextPageToken
+          : undefined;
+
+      if (!nextPageToken) {
         break;
       }
-      nextPageToken = histRes.nextPageToken;
     }
 
-    return buildExecutionDetail({ execution, rawEvents });
+    // The history as the server stores it, in the form the SDKs' replayers read.
+    const rawHistoryJson = {
+      events: historyMessages.map((event) =>
+        toProto3Json(
+          proto.temporal.api.history.v1.HistoryEvent.toObject(event, {
+            bytes: String,
+            defaults: false,
+            enums: String,
+            longs: String,
+          }),
+        ),
+      ),
+    };
+
+    // One codec request for the whole run: its history, memo and pending Activities.
+    const codec = await decodePayloadsInPlace(this.#config.codec, namespace, [
+      describeRes,
+      rawEvents,
+    ]);
+    const execution = normalizeExecutionInfo(
+      namespace,
+      describeRes.workflowExecutionInfo,
+      {
+        pendingActivities: describeRes.pendingActivities,
+        pendingChildren: describeRes.pendingChildren,
+      },
+    );
+
+    return {
+      ...buildExecutionDetail({ execution, rawEvents }),
+      rawHistoryJson,
+      ...(codec.decoded > 0 || codec.encoded > 0 ? { codec } : {}),
+      ...(nextPageToken ? { historyTruncated: true } : {}),
+    };
   }
 
   async startWorkflow(
@@ -540,7 +1673,7 @@ export class TemporalGrpcBffClient {
     const requestId = crypto.randomUUID();
     const baseReq = {
       identity: "prisma-studio",
-      input: encodeJsonPayloads(input.args),
+      input: await this.#encodeArgs(namespace, input.args),
       memo: input.memo ? { fields: encodePayloadMap(input.memo) } : undefined,
       namespace,
       requestId,
@@ -575,7 +1708,7 @@ export class TemporalGrpcBffClient {
         ws.SignalWithStartWorkflowExecutionResponse,
         {
           ...baseReq,
-          signalInput: encodeJsonPayloads(input.signalArgs),
+          signalInput: await this.#encodeArgs(namespace, input.signalArgs),
           signalName: input.signalName.trim(),
         },
       );
@@ -610,12 +1743,13 @@ export class TemporalGrpcBffClient {
         },
         namespace: args.namespace,
         query: {
-          queryArgs: encodeJsonPayloads(args.args),
+          queryArgs: await this.#encodeArgs(args.namespace, args.args),
           queryType: args.queryType,
         },
       },
       10_000,
     );
+    await decodePayloadsInPlace(this.#config.codec, args.namespace, res);
 
     const durationMs = Math.round(performance.now() - t0);
     if (res.queryRejected) {
@@ -646,7 +1780,7 @@ export class TemporalGrpcBffClient {
       ws.SignalWorkflowExecutionResponse,
       {
         identity: "prisma-studio",
-        input: encodeJsonPayloads(args.args),
+        input: await this.#encodeArgs(args.namespace, args.args),
         namespace: args.namespace,
         requestId: crypto.randomUUID(),
         signalName: args.signalName,
@@ -676,7 +1810,7 @@ export class TemporalGrpcBffClient {
         namespace: args.namespace,
         request: {
           input: {
-            args: encodeJsonPayloads(args.args),
+            args: await this.#encodeArgs(args.namespace, args.args),
             name: args.updateName,
           },
           meta: {
@@ -698,6 +1832,7 @@ export class TemporalGrpcBffClient {
     );
 
     const durationMs = Math.round(performance.now() - t0);
+    await decodePayloadsInPlace(this.#config.codec, args.namespace, res);
     if (res.outcome?.failure) {
       return {
         durationMs,
@@ -839,6 +1974,237 @@ export class TemporalGrpcBffClient {
     };
   }
 
+  /**
+   * Starts a new run from the history up to one completed Workflow Task and
+   * terminates the current run. Signals that arrived after that point are
+   * applied to the new run again.
+   */
+  async resetWorkflow(args: {
+    eventId: number;
+    namespace: string;
+    reason?: string;
+    runId: string;
+    workflowId: string;
+  }): Promise<{ runId: string }> {
+    const res = await this.unary(
+      "ResetWorkflowExecution",
+      ws.ResetWorkflowExecutionRequest,
+      ws.ResetWorkflowExecutionResponse,
+      // `fromObject` turns the event id into the 64-bit integer the field holds.
+      ws.ResetWorkflowExecutionRequest.fromObject({
+        identity: "prisma-studio",
+        namespace: args.namespace,
+        reason: args.reason || "Reset via Prisma Studio",
+        requestId: crypto.randomUUID(),
+        workflowExecution: { runId: args.runId, workflowId: args.workflowId },
+        workflowTaskFinishEventId: args.eventId,
+      }),
+    );
+
+    this.#remembered.clear();
+
+    return { runId: res.runId ?? "" };
+  }
+
+  /** Pauses, unpauses or resets one pending Activity of a run. */
+  async activityOperation(args: {
+    activityId: string;
+    namespace: string;
+    operation: TemporalActivityOperation;
+    reason?: string;
+    runId?: string;
+    workflowId: string;
+  }): Promise<{ ok: true }> {
+    const request = {
+      execution: {
+        ...(args.runId ? { runId: args.runId } : {}),
+        workflowId: args.workflowId,
+      },
+      id: args.activityId,
+      identity: "prisma-studio",
+      namespace: args.namespace,
+    };
+
+    if (args.operation === "pause") {
+      await this.unary(
+        "PauseActivity",
+        ws.PauseActivityRequest,
+        ws.PauseActivityResponse,
+        { ...request, reason: args.reason || "Paused via Prisma Studio" },
+      );
+    } else if (args.operation === "unpause") {
+      await this.unary(
+        "UnpauseActivity",
+        ws.UnpauseActivityRequest,
+        ws.UnpauseActivityResponse,
+        request,
+      );
+    } else {
+      // A reset starts the attempts from one and runs the Activity at once.
+      await this.unary(
+        "ResetActivity",
+        ws.ResetActivityRequest,
+        ws.ResetActivityResponse,
+        { ...request, resetHeartbeat: true },
+      );
+    }
+
+    return { ok: true };
+  }
+
+  async setWorkflowPaused(args: {
+    namespace: string;
+    paused: boolean;
+    reason?: string;
+    runId?: string;
+    workflowId: string;
+  }): Promise<{ ok: true }> {
+    const request = {
+      identity: "prisma-studio",
+      namespace: args.namespace,
+      reason:
+        args.reason ||
+        `${args.paused ? "Paused" : "Resumed"} via Prisma Studio`,
+      requestId: crypto.randomUUID(),
+      runId: args.runId,
+      workflowId: args.workflowId,
+    };
+
+    if (args.paused) {
+      await this.unary(
+        "PauseWorkflowExecution",
+        ws.PauseWorkflowExecutionRequest,
+        ws.PauseWorkflowExecutionResponse,
+        request,
+      );
+    } else {
+      await this.unary(
+        "UnpauseWorkflowExecution",
+        ws.UnpauseWorkflowExecutionRequest,
+        ws.UnpauseWorkflowExecutionResponse,
+        request,
+      );
+    }
+
+    return { ok: true };
+  }
+
+  /**
+   * Starts a bulk action and returns at once. The job runs in this process: it
+   * acts on the given runs, or on every running run that matches `query`, six
+   * at a time, and `getBulkJob` reports how far it is.
+   */
+  async startBulkJob(
+    namespace: string,
+    req: TemporalBulkJobRequest,
+  ): Promise<TemporalBulkJob> {
+    let items = req.items;
+
+    if (!items) {
+      const matching = await this.matchingRuns(namespace, req.query ?? "");
+
+      if (!matching.value) {
+        throw Object.assign(
+          new Error(
+            `More than ${MAX_SORTED_RUNS.toLocaleString("en-US")} workflows match. Add a filter to act on fewer.`,
+          ),
+          { httpStatus: 412 },
+        );
+      }
+
+      // Only a running run can take a Signal, a cancellation or a termination.
+      items = matching.value
+        .filter((run) => run.status === "Running")
+        .map((run) => ({ runId: run.runId, workflowId: run.workflowId }));
+    }
+
+    const job: TemporalBulkJob & { abort: boolean } = {
+      abort: false,
+      action: req.action,
+      done: 0,
+      errors: [],
+      failed: 0,
+      id: crypto.randomUUID(),
+      ...(req.items ? {} : { query: req.query ?? "" }),
+      startedAt: new Date().toISOString(),
+      state: "running",
+      total: items.length,
+    };
+
+    this.#bulkJobs.set(job.id, job);
+
+    // Keep the newest jobs only; a finished job is read once or twice.
+    for (const oldId of this.#bulkJobs.keys()) {
+      if (this.#bulkJobs.size <= 20) {
+        break;
+      }
+
+      this.#bulkJobs.delete(oldId);
+    }
+
+    const targets = items;
+    let index = 0;
+
+    void forEachConcurrently(
+      Array.from({ length: Math.min(6, targets.length) }),
+      6,
+      async () => {
+        while (index < targets.length && !job.abort) {
+          const item = targets[index++]!;
+          const result = await this.bulkAction(namespace, {
+            action: req.action,
+            items: [item],
+            reason: req.reason,
+            signalArgs: req.signalArgs,
+            signalName: req.signalName,
+          });
+
+          job.done++;
+
+          if (result.failed > 0) {
+            job.failed++;
+
+            if (job.errors.length < 20) {
+              job.errors.push({
+                error: result.results[0]?.error ?? "failed",
+                workflowId: item.workflowId,
+              });
+            }
+          }
+        }
+      },
+    ).finally(() => {
+      job.state = job.abort && job.done < job.total ? "aborted" : "completed";
+      job.finishedAt = new Date().toISOString();
+      // The lists the BFF holds are stale now.
+      this.#remembered.clear();
+    });
+
+    return this.getBulkJob(job.id);
+  }
+
+  getBulkJob(id: string): TemporalBulkJob {
+    const job = this.#bulkJobs.get(id);
+
+    if (!job) {
+      throw Object.assign(new Error(`No bulk job ${id}`), { httpStatus: 404 });
+    }
+
+    const { abort: _abort, ...publicJob } = job;
+
+    return { ...publicJob, errors: [...job.errors] };
+  }
+
+  abortBulkJob(id: string): TemporalBulkJob {
+    const job = this.#bulkJobs.get(id);
+
+    if (job) {
+      job.abort = true;
+    }
+
+    return this.getBulkJob(id);
+  }
+
   async resetStickyTaskQueue(args: {
     namespace: string;
     runId?: string;
@@ -938,6 +2304,7 @@ export class TemporalGrpcBffClient {
       ws.DescribeScheduleResponse,
       { namespace, scheduleId },
     );
+    await decodePayloadsInPlace(this.#config.codec, namespace, desc);
 
     const summary = mapScheduleSummary(scheduleId, desc);
     const now = new Date();
@@ -1009,10 +2376,11 @@ export class TemporalGrpcBffClient {
       .filter((s): s is string => typeof s === "string" && s.length > 0);
   }
 
-  async createSchedule(
+  /** The spec, policies and action a schedule form describes. */
+  async #scheduleFromInput(
     namespace: string,
     input: TemporalCreateScheduleInput,
-  ): Promise<{ ok: true; scheduleId: string }> {
+  ): Promise<proto.temporal.api.schedule.v1.ISchedule> {
     const spec: proto.temporal.api.schedule.v1.IScheduleSpec = {};
     if (input.cronExpression && input.cronExpression.trim().length > 0) {
       spec.cronString = [input.cronExpression.trim()];
@@ -1031,7 +2399,41 @@ export class TemporalGrpcBffClient {
         seconds: input.jitterSeconds,
       });
     }
+    if (input.timezone && input.timezone.trim().length > 0) {
+      spec.timezoneName = input.timezone.trim();
+    }
 
+    return {
+      action: {
+        startWorkflow: {
+          input: await this.#encodeArgs(namespace, input.args ?? []),
+          taskQueue: { name: input.taskQueue },
+          workflowId: input.workflowIdPrefix || input.scheduleId,
+          workflowType: { name: input.workflowType },
+        },
+      },
+      policies: {
+        ...(input.catchupWindowSeconds
+          ? {
+              catchupWindow: proto.google.protobuf.Duration.fromObject({
+                seconds: input.catchupWindowSeconds,
+              }),
+            }
+          : {}),
+        overlapPolicy: overlapPolicyToEnum(input.overlapPolicy ?? "SKIP"),
+      },
+      spec,
+      state: {
+        notes: input.notes || "",
+        paused: Boolean(input.paused),
+      },
+    };
+  }
+
+  async createSchedule(
+    namespace: string,
+    input: TemporalCreateScheduleInput,
+  ): Promise<{ ok: true; scheduleId: string }> {
     await this.unary(
       "CreateSchedule",
       ws.CreateScheduleRequest,
@@ -1040,36 +2442,56 @@ export class TemporalGrpcBffClient {
         identity: "prisma-studio",
         namespace,
         requestId: crypto.randomUUID(),
-        schedule: {
-          action: {
-            startWorkflow: {
-              input: encodeJsonPayloads(input.args ?? []),
-              taskQueue: { name: input.taskQueue },
-              workflowId: input.workflowIdPrefix || input.scheduleId,
-              workflowType: { name: input.workflowType },
-            },
-          },
-          policies: {
-            ...(input.catchupWindowSeconds
-              ? {
-                  catchupWindow: proto.google.protobuf.Duration.fromObject({
-                    seconds: input.catchupWindowSeconds,
-                  }),
-                }
-              : {}),
-            overlapPolicy: overlapPolicyToEnum(input.overlapPolicy ?? "SKIP"),
-          },
-          spec,
-          state: {
-            notes: input.notes || "",
-            paused: Boolean(input.paused),
-          },
-        },
+        schedule: await this.#scheduleFromInput(namespace, input),
         scheduleId: input.scheduleId,
       },
     );
 
     return { ok: true, scheduleId: input.scheduleId };
+  }
+
+  /**
+   * Replaces a schedule's cadence, policies, action and notes. Whether it is
+   * paused and how many actions it has left stay as they are. The conflict
+   * token makes the server refuse the change if the schedule changed since it was read.
+   */
+  async updateSchedule(
+    namespace: string,
+    scheduleId: string,
+    input: TemporalCreateScheduleInput,
+  ): Promise<{ ok: true; scheduleId: string }> {
+    const current = await this.unary(
+      "DescribeSchedule",
+      ws.DescribeScheduleRequest,
+      ws.DescribeScheduleResponse,
+      { namespace, scheduleId },
+    );
+    const next = await this.#scheduleFromInput(namespace, {
+      ...input,
+      scheduleId,
+    });
+
+    await this.unary(
+      "UpdateSchedule",
+      ws.UpdateScheduleRequest,
+      ws.UpdateScheduleResponse,
+      {
+        conflictToken: current.conflictToken,
+        identity: "prisma-studio",
+        namespace,
+        requestId: crypto.randomUUID(),
+        schedule: {
+          ...next,
+          state: {
+            ...current.schedule?.state,
+            notes: input.notes || "",
+          },
+        },
+        scheduleId,
+      },
+    );
+
+    return { ok: true, scheduleId };
   }
 
   async patchSchedule(
@@ -1182,30 +2604,64 @@ export class TemporalGrpcBffClient {
 
   // ---------- Phase 2: Task Queues (Dual-Target) ----------
 
+  /**
+   * Every Task Queue of the namespace, counted from all its runs. Queues that
+   * only run Activities come from Workflow histories (`#activityRouting`), and
+   * retries come from the attention check, because no list call reports either.
+   *
+   * A namespace too large to copy is counted from its running runs: a count of
+   * the first page of all runs would be a count of whichever runs the server
+   * lists first. The failed and total counts are then not known.
+   */
   async listTaskQueues(namespace: string): Promise<TemporalTaskQueuesResponse> {
-    const wfList = await this.listWorkflows({
-      namespace,
-      pageSize: 100,
-      query: "",
-    });
-    const scheduleList = await this.listSchedules(namespace).catch(() => ({
-      schedules: [],
-    }));
+    const [all, scheduleList, attention, routing] = await Promise.all([
+      this.matchingRuns(namespace, ""),
+      this.#remember(`schedules\n${namespace}`, SCHEDULES_MIN_AGE_MS, () =>
+        this.listSchedules(namespace),
+      )
+        .then((remembered) => remembered.value)
+        .catch(() => ({ schedules: [] })),
+      this.getAttention(namespace).catch(() => null),
+      this.#activityRouting(namespace).catch(
+        () => new Map<string, Map<string, string>>(),
+      ),
+    ]);
+    const complete = all.value !== null;
+    const running = complete
+      ? null
+      : await this.matchingRuns(namespace, RUNNING_QUERY);
+    const runs =
+      all.value ??
+      running?.value ??
+      (
+        await this.listWorkflows({
+          includeCounts: false,
+          namespace,
+          pageSize: SORTED_RUNS_PAGE_SIZE,
+          query: RUNNING_QUERY,
+        })
+      ).executions;
+    const counted = all.value ? all : running?.value ? running : null;
 
     const queueMap = new Map<string, TemporalTaskQueueSummary>();
+    const typeCounts = new Map<string, Map<string, number>>();
     const ensureQueue = (name: string): TemporalTaskQueueSummary => {
       let existing = queueMap.get(name);
       if (!existing) {
         existing = {
           activeWorkflowCount: 0,
-          failedWorkflowCount: 0,
+          activityTypes: [],
+          failedWorkflowCount: complete ? 0 : null,
           health: "idle",
           name,
+          pendingActivityCount: 0,
           pendingBacklogCount: 0,
           pollers: [],
+          retryingActivityCount: 0,
           retryingWorkflowCount: 0,
           scheduleCount: 0,
-          totalWorkflowCount: 0,
+          totalWorkflowCount: complete ? 0 : null,
+          workflowTypes: [],
           workflows: [],
         };
         queueMap.set(name, existing);
@@ -1217,49 +2673,83 @@ export class TemporalGrpcBffClient {
       ensureQueue(sched.taskQueue || "default").scheduleCount += 1;
     }
 
-    // Enrich running workflows with DescribeWorkflowExecution to detect retrying activities
-    const retryingWfIds = new Set<string>();
-    for (const exec of wfList.executions) {
-      const q = ensureQueue(exec.taskQueue || "default");
-      q.totalWorkflowCount += 1;
-      if (exec.status === "Running") {
-        q.activeWorkflowCount += 1;
-        try {
-          const desc = await this.unary(
-            "DescribeWorkflowExecution",
-            ws.DescribeWorkflowExecutionRequest,
-            ws.DescribeWorkflowExecutionResponse,
-            {
-              execution: { runId: exec.runId, workflowId: exec.workflowId },
-              namespace,
-            },
-          );
-          if ((desc.pendingActivities ?? []).some((pa) => pa.lastFailure)) {
-            retryingWfIds.add(exec.workflowId);
-            q.retryingWorkflowCount += 1;
-          }
-        } catch {
-          // ignore
+    const retryingRunIds = new Set(
+      (attention?.items ?? [])
+        .filter((item) => item.kind === "activity-retrying")
+        .map((item) => item.runId),
+    );
+
+    for (const run of runs) {
+      const queue = ensureQueue(run.taskQueue || "default");
+      const counts = typeCounts.get(queue.name) ?? new Map<string, number>();
+
+      counts.set(run.workflowType, (counts.get(run.workflowType) ?? 0) + 1);
+      typeCounts.set(queue.name, counts);
+
+      if (queue.totalWorkflowCount !== null) {
+        queue.totalWorkflowCount += 1;
+      }
+
+      if (run.status === "Running") {
+        queue.activeWorkflowCount += 1;
+
+        if (retryingRunIds.has(run.runId)) {
+          queue.retryingWorkflowCount += 1;
         }
-      } else if (exec.status === "Failed") {
-        q.failedWorkflowCount += 1;
-      }
-
-      if (
-        !q.lastActivityTime ||
-        Date.parse(exec.startTime) > Date.parse(q.lastActivityTime)
+      } else if (
+        run.status === "Failed" &&
+        queue.failedWorkflowCount !== null
       ) {
-        q.lastActivityTime = exec.startTime;
+        queue.failedWorkflowCount += 1;
       }
 
-      q.workflows.push({
-        hasRetryingActivity: retryingWfIds.has(exec.workflowId),
-        runId: exec.runId,
-        startTime: exec.startTime,
-        status: exec.status,
-        workflowId: exec.workflowId,
-        workflowType: exec.workflowType,
+      if (!queue.lastActivityTime || run.startTime > queue.lastActivityTime) {
+        queue.lastActivityTime = run.startTime;
+      }
+
+      queue.workflows.push({
+        hasRetryingActivity: retryingRunIds.has(run.runId),
+        runId: run.runId,
+        startTime: run.startTime,
+        status: run.status,
+        workflowId: run.workflowId,
+        workflowType: run.workflowType,
       });
+    }
+
+    // The queue each Activity Type runs on, including queues no Workflow runs on.
+    for (const [workflowType, activityQueues] of routing) {
+      for (const [activityType, queueName] of activityQueues) {
+        const queue = ensureQueue(queueName);
+
+        if (!queue.activityTypes.includes(activityType)) {
+          queue.activityTypes.push(activityType);
+        }
+
+        for (const item of attention?.items ?? []) {
+          if (
+            item.workflowType === workflowType &&
+            item.activityType === activityType
+          ) {
+            queue.pendingActivityCount += 1;
+
+            if (item.kind === "activity-retrying") {
+              queue.retryingActivityCount += 1;
+            }
+          }
+        }
+      }
+    }
+
+    for (const queue of queueMap.values()) {
+      queue.activityTypes.sort();
+      queue.workflowTypes = [...(typeCounts.get(queue.name) ?? [])]
+        .map(([name, count]) => ({ count, name }))
+        .sort((a, b) => b.count - a.count);
+      // The newest runs first; the browser shows a few of them.
+      queue.workflows = queue.workflows
+        .sort((a, b) => b.startTime.localeCompare(a.startTime))
+        .slice(0, 25);
     }
 
     if (queueMap.size === 0) {
@@ -1267,35 +2757,43 @@ export class TemporalGrpcBffClient {
     }
 
     let source: TemporalTaskQueuesResponse["source"] = "synthesized";
-    for (const q of queueMap.values()) {
-      try {
-        const desc = await this.unary(
-          "DescribeTaskQueue",
-          ws.DescribeTaskQueueRequest,
-          ws.DescribeTaskQueueResponse,
-          {
-            includeTaskQueueStatus: true,
-            namespace,
-            taskQueue: {
-              kind: enums.TaskQueueKind.TASK_QUEUE_KIND_NORMAL,
-              name: q.name,
+    describeQueues: for (const q of queueMap.values()) {
+      for (const [taskQueueType, kind] of [
+        [enums.TaskQueueType.TASK_QUEUE_TYPE_WORKFLOW, "workflow"],
+        [enums.TaskQueueType.TASK_QUEUE_TYPE_ACTIVITY, "activity"],
+      ] as const) {
+        try {
+          const desc = await this.unary(
+            "DescribeTaskQueue",
+            ws.DescribeTaskQueueRequest,
+            ws.DescribeTaskQueueResponse,
+            {
+              includeTaskQueueStatus: true,
+              namespace,
+              taskQueue: {
+                kind: enums.TaskQueueKind.TASK_QUEUE_KIND_NORMAL,
+                name: q.name,
+              },
+              taskQueueType,
             },
-            taskQueueType: enums.TaskQueueType.TASK_QUEUE_TYPE_WORKFLOW,
-          },
-        );
-        source = "describe-task-queue";
-        q.pollers = (desc.pollers ?? []).map<TemporalTaskQueuePoller>((p) => ({
-          identity: p.identity || "worker",
-          lastAccessTime:
-            decodeTimestampIso(p.lastAccessTime as never) || undefined,
-          ratePerSecond: p.ratePerSecond || undefined,
-        }));
-        q.pendingBacklogCount = Number(
-          desc.taskQueueStatus?.backlogCountHint ?? 0,
-        );
-      } catch {
-        // UNIMPLEMENTED on slate-temporal-next -> synthesized mode
-        break;
+          );
+          source = "describe-task-queue";
+          q.pollers.push(
+            ...(desc.pollers ?? []).map<TemporalTaskQueuePoller>((p) => ({
+              identity: p.identity || "worker",
+              lastAccessTime:
+                decodeTimestampIso(p.lastAccessTime as never) || undefined,
+              ratePerSecond: p.ratePerSecond || undefined,
+              taskQueueType: kind,
+            })),
+          );
+          q.pendingBacklogCount += Number(
+            desc.taskQueueStatus?.backlogCountHint ?? 0,
+          );
+        } catch {
+          // UNIMPLEMENTED on slate-temporal-next: it does not report pollers.
+          break describeQueues;
+        }
       }
     }
 
@@ -1313,42 +2811,139 @@ export class TemporalGrpcBffClient {
       }
     }
 
+    const waitingByQueue = new Map<string, number>();
+
+    for (const item of attention?.items ?? []) {
+      if (item.kind === "no-worker") {
+        waitingByQueue.set(
+          item.taskQueue,
+          (waitingByQueue.get(item.taskQueue) ?? 0) + 1,
+        );
+      }
+    }
+
     for (const q of queueMap.values()) {
-      if (source === "describe-task-queue") {
-        if (q.activeWorkflowCount > 0 && q.pollers.length === 0) {
-          q.health = "stalled";
-        } else if (q.pendingBacklogCount > 10) {
-          q.health = "backlogged";
-        } else if (q.retryingWorkflowCount > 0) {
-          q.health = "retrying";
-        } else if (q.pollers.length > 0 || q.activeWorkflowCount > 0) {
-          q.health = "healthy";
-        } else {
-          q.health = "idle";
-        }
+      const hasWork = q.activeWorkflowCount > 0 || q.pendingActivityCount > 0;
+
+      if (
+        source === "describe-task-queue"
+          ? hasWork && q.pollers.length === 0
+          : (waitingByQueue.get(q.name) ?? 0) > 0
+      ) {
+        q.health = "stalled";
+      } else if (q.pendingBacklogCount > 10) {
+        q.health = "backlogged";
+      } else if (q.retryingWorkflowCount > 0 || q.retryingActivityCount > 0) {
+        q.health = "retrying";
+      } else if (hasWork || q.pollers.length > 0 || q.scheduleCount > 0) {
+        q.health = "healthy";
       } else {
-        if (
-          q.activeWorkflowCount > 0 &&
-          typeof matcherOldestReadyMs === "number" &&
-          matcherOldestReadyMs > 20_000
-        ) {
-          q.health = "stalled";
-        } else if (q.retryingWorkflowCount > 0) {
-          q.health = "retrying";
-        } else if (q.activeWorkflowCount > 0 || q.scheduleCount > 0) {
-          q.health = "healthy";
-        } else {
-          q.health = "idle";
-        }
+        q.health = "idle";
       }
     }
 
     return {
+      ageMs: counted ? Date.now() - counted.takenAt : 0,
+      complete,
       matcherOldestReadyMs,
+      pollersSupported: source === "describe-task-queue",
       queues: Array.from(queueMap.values()).sort((a, b) =>
         a.name.localeCompare(b.name),
       ),
+      runningComplete: counted !== null,
       source,
+    };
+  }
+
+  /**
+   * Workers, Worker Deployments and Nexus Endpoints. The Workers come from the
+   * pollers of every Task Queue, grouped by identity, because that works on
+   * every server that reports pollers and needs no Worker heartbeats.
+   */
+  async getWorkers(namespace: string): Promise<TemporalWorkersResponse> {
+    const [queues, deployments, endpoints] = await Promise.all([
+      this.listTaskQueues(namespace),
+      this.unary(
+        "ListWorkerDeployments",
+        ws.ListWorkerDeploymentsRequest,
+        ws.ListWorkerDeploymentsResponse,
+        { namespace, pageSize: 100 },
+      ).catch(() => null),
+      this.operatorUnary(
+        "ListNexusEndpoints",
+        operator.ListNexusEndpointsRequest,
+        operator.ListNexusEndpointsResponse,
+        { pageSize: 100 },
+      ).catch(() => null),
+    ]);
+    const workers = new Map<string, TemporalWorker>();
+
+    for (const queue of queues.queues) {
+      for (const poller of queue.pollers) {
+        const worker = workers.get(poller.identity) ?? {
+          identity: poller.identity,
+          taskQueues: [],
+        };
+
+        worker.taskQueues.push({
+          name: queue.name,
+          type: poller.taskQueueType,
+        });
+
+        if (
+          poller.lastAccessTime &&
+          (!worker.lastAccessTime ||
+            poller.lastAccessTime > worker.lastAccessTime)
+        ) {
+          worker.lastAccessTime = poller.lastAccessTime;
+        }
+
+        workers.set(poller.identity, worker);
+      }
+    }
+
+    return {
+      deployments: deployments
+        ? (deployments.workerDeployments ?? []).map((deployment) => ({
+            createTime: decodeTimestampIso(deployment.createTime),
+            currentVersion:
+              deployment.routingConfig?.currentDeploymentVersion?.buildId ||
+              deployment.routingConfig?.currentVersion ||
+              undefined,
+            name: deployment.name ?? "",
+            rampingPercentage:
+              deployment.routingConfig?.rampingVersionPercentage || undefined,
+            rampingVersion:
+              deployment.routingConfig?.rampingDeploymentVersion?.buildId ||
+              deployment.routingConfig?.rampingVersion ||
+              undefined,
+          }))
+        : null,
+      nexusEndpoints: endpoints
+        ? (endpoints.endpoints ?? []).map((endpoint) => {
+            const target = endpoint.spec?.target;
+            const description = decodeSinglePayload(
+              endpoint.spec?.description as never,
+            );
+
+            return {
+              createdTime: decodeTimestampIso(endpoint.createdTime),
+              ...(typeof description === "string" && description
+                ? { description }
+                : {}),
+              id: endpoint.id ?? "",
+              name: endpoint.spec?.name ?? "",
+              target: target?.worker
+                ? `${target.worker.namespace}/${target.worker.taskQueue}`
+                : (target?.external?.url ?? ""),
+            };
+          })
+        : null,
+      workers: queues.pollersSupported
+        ? [...workers.values()].sort((a, b) =>
+            a.identity.localeCompare(b.identity),
+          )
+        : null,
     };
   }
 
@@ -1442,6 +3037,19 @@ export class TemporalGrpcBffClient {
     const loadShards = Array.isArray(loadRaw.shards)
       ? (loadRaw.shards as Array<Record<string, unknown>>)
       : [];
+    const healthRaw = (loadRaw.health ?? {}) as Record<string, unknown>;
+    const healthReasons = (
+      Array.isArray(healthRaw.reasons)
+        ? (healthRaw.reasons as Array<Record<string, unknown>>)
+        : []
+    ).map<TemporalClusterHealthReason>((reason) => ({
+      ...(reason.scope === "shard" && typeof reason.shard === "number"
+        ? { shard: reason.shard }
+        : {}),
+      signal: String(reason.signal ?? ""),
+      unit: String(reason.unit ?? "count"),
+      value: Number(reason.value ?? 0),
+    }));
 
     const shards: TemporalClusterShard[] = loadShards.map((s) => {
       const id = Number(s.id ?? 0);
@@ -1478,6 +3086,7 @@ export class TemporalGrpcBffClient {
         effectLagMs: Number(delay.effect_lag ?? 0),
         generation: Number(s.generation ?? 0),
         health: String(s.health ?? "ok"),
+        healthReasons: healthReasons.filter((reason) => reason.shard === id),
         historyEventsPerS: Number(rates.history_events ?? 0),
         homeEntries: Number(s.home_entries ?? 0),
         hot: Boolean(s.hot),
@@ -1521,7 +3130,6 @@ export class TemporalGrpcBffClient {
       string,
       unknown
     >;
-    const healthRaw = (loadRaw.health ?? {}) as Record<string, unknown>;
     const memoryRaw = (loadRaw.memory ?? {}) as Record<string, unknown>;
     const workerHintRaw = (loadRaw.worker_hint ?? {}) as Record<
       string,
@@ -1544,10 +3152,9 @@ export class TemporalGrpcBffClient {
             : undefined,
       },
       health: {
-        reasons: Array.isArray(healthRaw.reasons)
-          ? healthRaw.reasons.map(String)
-          : [],
+        reasons: healthReasons,
         state: String(healthRaw.state ?? "ok"),
+        tags: Array.isArray(healthRaw.tags) ? healthRaw.tags.map(String) : [],
       },
       info: {
         authMode: String(auth.mode ?? "unknown"),
@@ -1741,6 +3348,73 @@ function formatScheduleSpecSummary(
   return "Custom schedule";
 }
 
+const CRON_FIELD_BOUNDS = {
+  dayOfMonth: [1, 31],
+  dayOfWeek: [0, 6],
+  hour: [0, 23],
+  minute: [0, 59],
+  month: [1, 12],
+} as const;
+
+/**
+ * Writes a structured calendar as the five-field cron expression it came from.
+ * Returns undefined for a calendar that five fields cannot express (seconds
+ * other than 0, or a year).
+ */
+export function structuredCalendarToCron(
+  calendar:
+    proto.temporal.api.schedule.v1.IStructuredCalendarSpec | null | undefined,
+): string | undefined {
+  if (!calendar) {
+    return undefined;
+  }
+
+  const seconds = calendar.second ?? [];
+  const onlySecondZero =
+    seconds.length === 0 ||
+    (seconds.length === 1 &&
+      (seconds[0]!.start ?? 0) === 0 &&
+      (seconds[0]!.end ?? 0) === 0);
+
+  if (!onlySecondZero || (calendar.year ?? []).length > 0) {
+    return undefined;
+  }
+
+  const field = (name: keyof typeof CRON_FIELD_BOUNDS): string => {
+    const [min, max] = CRON_FIELD_BOUNDS[name];
+    const ranges = calendar[name] ?? [];
+
+    if (ranges.length === 0) {
+      // An absent field means its lowest value, except day of week, which means every day.
+      return name === "dayOfWeek" ? "*" : String(min);
+    }
+
+    return ranges
+      .map((range) => {
+        const start = range.start ?? 0;
+        const end = Math.max(range.end ?? 0, start);
+        const step = range.step && range.step > 1 ? range.step : 1;
+        const span =
+          start === min && end === max
+            ? "*"
+            : start === end
+              ? String(start)
+              : `${start}-${end}`;
+
+        return step > 1 ? `${span}/${step}` : span;
+      })
+      .join(",");
+  };
+
+  return [
+    field("minute"),
+    field("hour"),
+    field("dayOfMonth"),
+    field("month"),
+    field("dayOfWeek"),
+  ].join(" ");
+}
+
 function mapScheduleSummary(
   scheduleId: string,
   desc: proto.temporal.api.workflowservice.v1.DescribeScheduleResponse,
@@ -1760,11 +3434,17 @@ function mapScheduleSummary(
   const intervalSeconds = sched?.spec?.interval?.[0]
     ? decodeDurationSeconds(sched.spec.interval[0].interval as never)
     : undefined;
-  const cronExpression = sched?.spec?.cronString?.[0] || undefined;
+  // A standard server stores a cron string as a structured calendar and returns that.
+  const cronExpression =
+    sched?.spec?.cronString?.[0] ||
+    structuredCalendarToCron(sched?.spec?.structuredCalendar?.[0]) ||
+    undefined;
 
   return {
     actionCount: Number(info?.actionCount ?? 0),
-    cadenceSummary: formatScheduleSpecSummary(sched?.spec),
+    cadenceSummary: cronExpression
+      ? `Cron ${cronExpression}`
+      : formatScheduleSpecSummary(sched?.spec),
     cronExpression,
     intervalSeconds,
     lastAction: recentActions[recentActions.length - 1],
@@ -1786,6 +3466,7 @@ function mapScheduleSummary(
     })),
     scheduleId,
     taskQueue: startWf?.taskQueue?.name || "default",
+    ...(sched?.spec?.timezoneName ? { timezone: sched.spec.timezoneName } : {}),
     workflowArgs: decodePayloads(startWf?.input as never),
     workflowIdPrefix: startWf?.workflowId || undefined,
     workflowType: startWf?.workflowType?.name || "Unknown",
@@ -1857,12 +3538,24 @@ export async function handleTemporalBffRequest(
         );
         const nextPageToken =
           url.searchParams.get("nextPageToken") ?? undefined;
+        const sortField = url.searchParams.get("sort");
         return Response.json(
           await client.listWorkflows({
+            includeCounts: url.searchParams.get("counts") !== "0",
+            includeList: url.searchParams.get("list") !== "0",
             namespace,
             nextPageToken,
             pageSize: Number.isFinite(pageSize) && pageSize > 0 ? pageSize : 50,
             query,
+            ...(isWorkflowSortField(sortField)
+              ? {
+                  sort: {
+                    direction:
+                      url.searchParams.get("dir") === "asc" ? "asc" : "desc",
+                    field: sortField,
+                  },
+                }
+              : {}),
           }),
         );
       }
@@ -1884,8 +3577,34 @@ export async function handleTemporalBffRequest(
       return Response.json(await client.bulkAction(namespace, body));
     }
 
+    const bulkJobsMatch = subPath.match(
+      /^\/v1\/namespaces\/([^/]+)\/bulk-jobs(?:\/([^/]+))?$/,
+    );
+    if (bulkJobsMatch) {
+      const namespace = decodeURIComponent(bulkJobsMatch[1]!);
+      const jobId = bulkJobsMatch[2];
+
+      if (!jobId && request.method === "POST") {
+        return Response.json(
+          await client.startBulkJob(
+            namespace,
+            (await request.json()) as TemporalBulkJobRequest,
+          ),
+          { status: 202 },
+        );
+      }
+
+      if (jobId && request.method === "GET") {
+        return Response.json(client.getBulkJob(jobId));
+      }
+
+      if (jobId && request.method === "DELETE") {
+        return Response.json(client.abortBulkJob(jobId));
+      }
+    }
+
     const actionMatch = subPath.match(
-      /^\/v1\/namespaces\/([^/]+)\/workflows\/([^/]+)\/(query|signal|update|cancel|terminate|reset-sticky)$/,
+      /^\/v1\/namespaces\/([^/]+)\/workflows\/([^/]+)\/(query|signal|update|cancel|terminate|reset-sticky|reset|activity|pause|unpause)$/,
     );
     if (actionMatch && request.method === "POST") {
       const namespace = decodeURIComponent(actionMatch[1]!);
@@ -1896,6 +3615,43 @@ export async function handleTemporalBffRequest(
         unknown
       >;
       const runId = typeof body.runId === "string" ? body.runId : undefined;
+
+      if (action === "reset") {
+        return Response.json(
+          await client.resetWorkflow({
+            eventId: Number(body.eventId),
+            namespace,
+            reason: typeof body.reason === "string" ? body.reason : undefined,
+            runId: runId ?? "",
+            workflowId,
+          }),
+        );
+      }
+
+      if (action === "activity") {
+        return Response.json(
+          await client.activityOperation({
+            activityId: String(body.activityId ?? ""),
+            namespace,
+            operation: body.operation as TemporalActivityOperation,
+            reason: typeof body.reason === "string" ? body.reason : undefined,
+            runId,
+            workflowId,
+          }),
+        );
+      }
+
+      if (action === "pause" || action === "unpause") {
+        return Response.json(
+          await client.setWorkflowPaused({
+            namespace,
+            paused: action === "pause",
+            reason: typeof body.reason === "string" ? body.reason : undefined,
+            runId,
+            workflowId,
+          }),
+        );
+      }
 
       if (action === "reset-sticky") {
         return Response.json(
@@ -2037,11 +3793,67 @@ export async function handleTemporalBffRequest(
           await client.getScheduleDetail(namespace, scheduleId),
         );
       }
+      if (request.method === "PUT") {
+        return Response.json(
+          await client.updateSchedule(
+            namespace,
+            scheduleId,
+            (await request.json()) as TemporalCreateScheduleInput,
+          ),
+        );
+      }
       if (request.method === "DELETE") {
         return Response.json(
           await client.deleteSchedule(namespace, scheduleId),
         );
       }
+    }
+
+    const workersMatch = subPath.match(/^\/v1\/namespaces\/([^/]+)\/workers$/);
+    if (workersMatch && request.method === "GET") {
+      return Response.json(
+        await client.getWorkers(decodeURIComponent(workersMatch[1]!)),
+      );
+    }
+
+    const facetsMatch = subPath.match(/^\/v1\/namespaces\/([^/]+)\/facets$/);
+    if (facetsMatch && request.method === "GET") {
+      return Response.json(
+        await client.getFacets(decodeURIComponent(facetsMatch[1]!)),
+      );
+    }
+
+    const typeInputsMatch = subPath.match(
+      /^\/v1\/namespaces\/([^/]+)\/workflow-types\/([^/]+)\/inputs$/,
+    );
+    if (typeInputsMatch && request.method === "GET") {
+      return Response.json(
+        await client.getTypeInputs(
+          decodeURIComponent(typeInputsMatch[1]!),
+          decodeURIComponent(typeInputsMatch[2]!),
+        ),
+      );
+    }
+
+    const typeMapMatch = subPath.match(
+      /^\/v1\/namespaces\/([^/]+)\/workflow-types\/([^/]+)\/map$/,
+    );
+    if (typeMapMatch && request.method === "GET") {
+      return Response.json(
+        await client.getTypeMap(
+          decodeURIComponent(typeMapMatch[1]!),
+          decodeURIComponent(typeMapMatch[2]!),
+        ),
+      );
+    }
+
+    const attentionMatch = subPath.match(
+      /^\/v1\/namespaces\/([^/]+)\/attention$/,
+    );
+    if (attentionMatch && request.method === "GET") {
+      return Response.json(
+        await client.getAttention(decodeURIComponent(attentionMatch[1]!)),
+      );
     }
 
     // ---------- Task Queues route ----------

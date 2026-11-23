@@ -11,7 +11,11 @@
  *
  * Usage (from the repo root):
  *
- *   bun demo/ppg-dev/build-compute.ts [outdir]
+ *   bun demo/ppg-dev/build-compute.ts [outdir] [--runtime-module <file>]
+ *
+ * `--runtime-module` names a module that exports `appPort` and `startRuntime`.
+ * Another Composer app uses it to run this server as one of its own services,
+ * with its own port and data sources, instead of the hosted demo's.
  *
  * Deploy:
  *
@@ -28,7 +32,17 @@ import { copyPrismaDevRuntimeAssets } from "@prisma/dev";
 import postcss, { type AcceptedPlugin } from "postcss";
 
 const studioRoot = resolve(import.meta.dirname, "../..");
-const outDir = resolve(process.argv[2] ?? "dist-compute");
+const runtimeModuleFlagIndex = process.argv.indexOf("--runtime-module");
+const runtimeModulePath =
+  runtimeModuleFlagIndex === -1
+    ? null
+    : resolve(process.argv[runtimeModuleFlagIndex + 1] ?? "");
+const outDirArgument = process.argv[2];
+const outDir = resolve(
+  outDirArgument && !outDirArgument.startsWith("--")
+    ? outDirArgument
+    : "dist-compute",
+);
 const require = createRequire(import.meta.url);
 
 if (
@@ -216,10 +230,18 @@ function generateAssetsModule(
     )
     .join(",\n");
 
+  const runtimeLines = runtimeModulePath
+    ? [
+        `export { appPort, startRuntime } from ${JSON.stringify(runtimeModulePath)};`,
+      ]
+    : [
+        `import service from ${JSON.stringify(join(studioRoot, "demo/ppg-dev/compute-service.ts"))};`,
+        `export { startComputeRuntime as startRuntime } from ${JSON.stringify(join(studioRoot, "demo/ppg-dev/compute-runtime.ts"))};`,
+        "export const appPort = service.port();",
+      ];
+
   return [
-    `import service from ${JSON.stringify(join(studioRoot, "demo/ppg-dev/compute-service.ts"))};`,
-    `export { startComputeRuntime as startRuntime } from ${JSON.stringify(join(studioRoot, "demo/ppg-dev/compute-runtime.ts"))};`,
-    "export const appPort = service.port();",
+    ...runtimeLines,
     `export const appScript = ${JSON.stringify(script)};`,
     `export const appStyles = ${JSON.stringify(styles)};`,
     `export const builtAssets = new Map([\n${mapEntries}\n]);`,
