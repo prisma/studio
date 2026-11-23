@@ -11,10 +11,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/components/ui/table";
+import { useNavigation } from "@/ui/hooks/use-navigation";
 import { useTemporalWorkers } from "@/ui/hooks/use-temporal";
 import { cn } from "@/ui/lib/utils";
 
 import { StudioHeader } from "../../StudioHeader";
+import { quoteFilterValue } from "./TemporalRunBreadcrumb";
 import {
   TemporalFollowControl,
   temporalIconScale,
@@ -34,8 +36,16 @@ export function TemporalWorkersView(props: {
   onFollowModeChange: (mode: TemporalFollowMode) => void;
 }) {
   const { followMode, namespace, onFollowModeChange } = props;
+  const { createUrl } = useNavigation();
   const { data, error, isError, isFetching, isLoading, refetch } =
     useTemporalWorkers({ followMode, namespace });
+  const queueUrl = (queueName: string) =>
+    createUrl({
+      searchParam: `TaskQueue = ${quoteFilterValue(queueName)}`,
+      temporalNsParam: namespace,
+      temporalSectionParam: "workflows",
+      viewParam: "temporal",
+    });
 
   return (
     <div
@@ -77,9 +87,16 @@ export function TemporalWorkersView(props: {
             <Skeleton className="h-9 w-full" />
           </div>
         ) : isError || !data ? (
-          <p className="p-10 text-center text-sm font-medium text-destructive">
-            {error instanceof Error ? error.message : "Could not load workers"}
-          </p>
+          <div className="flex flex-col items-center justify-center gap-3 p-10 text-sm text-muted-foreground">
+            <p className="font-medium text-destructive">
+              {error instanceof Error
+                ? error.message
+                : "Could not load workers"}
+            </p>
+            <Button variant="outline" size="sm" onClick={() => void refetch()}>
+              Retry
+            </Button>
+          </div>
         ) : (
           <div className="flex flex-col">
             <WorkersSection
@@ -92,12 +109,13 @@ export function TemporalWorkersView(props: {
                   </span>,
                   <span key="queues" className="flex flex-wrap gap-1.5">
                     {worker.taskQueues.map((queue) => (
-                      <span
+                      <a
                         key={`${queue.name}:${queue.type}`}
-                        className="rounded-md border border-border bg-card px-1.5 py-0.5 font-mono text-2xs"
+                        href={queueUrl(queue.name)}
+                        className="rounded-md border border-border bg-card px-1.5 py-0.5 font-mono text-2xs text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         {queue.name} · {queue.type}
-                      </span>
+                      </a>
                     ))}
                   </span>,
                   <TemporalTime key="time" iso={worker.lastAccessTime} />,
