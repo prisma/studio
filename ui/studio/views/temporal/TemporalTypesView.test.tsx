@@ -192,6 +192,31 @@ describe("TemporalTypesView", () => {
       ),
     ).toBe('WorkflowType = "orderFulfillment" AND ExecutionStatus = "Failed"');
   });
+
+  it("filters the Workflow Types sidebar by name", () => {
+    const container = render();
+    const input = container.querySelector<HTMLInputElement>(
+      '[data-testid="temporal-type-filter"]',
+    )!;
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!;
+
+    act(() => {
+      setter.call(input, "billing");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(
+      container.querySelector('[data-testid="temporal-type-orderFulfillment"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector(
+        '[data-testid="temporal-type-subscriptionBilling"]',
+      ),
+    ).not.toBeNull();
+  });
 });
 
 describe("openingViewport", () => {

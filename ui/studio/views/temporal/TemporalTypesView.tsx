@@ -1,5 +1,5 @@
-import { RefreshCw, Waypoints } from "lucide-react";
-import { useEffect, useState } from "react";
+import { RefreshCw, Search, Waypoints } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 import type {
   TemporalFollowMode,
@@ -9,6 +9,7 @@ import type {
   TemporalWorkflowStatus,
 } from "@/data/temporal";
 import { Button } from "@/ui/components/ui/button";
+import { Input } from "@/ui/components/ui/input";
 import { Skeleton } from "@/ui/components/ui/skeleton";
 import { useNavigation } from "@/ui/hooks/use-navigation";
 import { useTemporalFacets, useTemporalTypeMap } from "@/ui/hooks/use-temporal";
@@ -59,7 +60,18 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
   const { createUrl, setTemporalTypeParam, temporalTypeParam } =
     useNavigation();
   const facets = useTemporalFacets(namespace);
-  const types = facets.data?.workflowTypes ?? [];
+  const types = useMemo(
+    () => facets.data?.workflowTypes ?? [],
+    [facets.data?.workflowTypes],
+  );
+  const [typeSearch, setTypeSearch] = useState("");
+  const filteredTypes = useMemo(() => {
+    const q = typeSearch.trim().toLowerCase();
+    if (!q) {
+      return types;
+    }
+    return types.filter((type) => type.name.toLowerCase().includes(q));
+  }, [typeSearch, types]);
   const activeType = temporalTypeParam ?? types[0]?.name ?? null;
   const map = useTemporalTypeMap({
     followMode,
@@ -86,7 +98,7 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
   return (
     <div
       className={cn(
-        "flex h-full min-h-0 flex-col bg-background",
+        "@container flex h-full min-h-0 flex-col bg-background",
         temporalIconScale,
       )}
       data-testid="temporal-types-view"
@@ -116,45 +128,66 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
         <TemporalNamespaceBadge namespace={namespace} />
       </StudioHeader>
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 flex-col @3xl:flex-row">
         <nav
           aria-label="Workflow Types"
-          className="flex w-60 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border p-2"
+          className="flex max-h-44 w-full shrink-0 flex-col gap-1 border-b border-border p-2 @3xl:max-h-none @3xl:w-60 @3xl:border-r @3xl:border-b-0"
         >
-          {facets.isLoading ? (
-            Array.from({ length: 4 }).map((_, index) => (
-              <Skeleton key={index} className="h-8 w-full" />
-            ))
-          ) : types.length === 0 ? (
-            <p className="p-2 text-xs text-muted-foreground">
-              No Workflow has run in this namespace yet.
-            </p>
-          ) : (
-            types.map((type) => (
-              <button
-                key={type.name}
-                type="button"
-                aria-current={type.name === activeType ? "true" : undefined}
-                className={cn(
-                  "flex h-8 w-full items-center justify-between gap-2 rounded-md px-2 text-left text-xs focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                  type.name === activeType
-                    ? "bg-muted font-medium text-foreground"
-                    : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-                )}
-                data-testid={`temporal-type-${type.name}`}
-                onClick={() => void setTemporalTypeParam(type.name)}
-                title={type.name}
-              >
-                <span className="min-w-0 truncate font-mono">{type.name}</span>
-                {/* Without every run of the namespace the count is that of a sample. */}
-                {facets.data?.complete ? (
-                  <span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground">
-                    {type.count.toLocaleString("en-US")}
+          {types.length > 0 ? (
+            <div className="relative flex items-center pb-1">
+              <Search className="pointer-events-none absolute left-2.5 size-3.5 text-muted-foreground" />
+              <Input
+                aria-label="Filter Workflow Types"
+                value={typeSearch}
+                onChange={(e) => setTypeSearch(e.target.value)}
+                placeholder="Filter types"
+                className="h-7 pl-7 text-xs"
+                data-testid="temporal-type-filter"
+              />
+            </div>
+          ) : null}
+          <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
+            {facets.isLoading ? (
+              Array.from({ length: 4 }).map((_, index) => (
+                <Skeleton key={index} className="h-8 w-full" />
+              ))
+            ) : types.length === 0 ? (
+              <p className="p-2 text-xs text-muted-foreground">
+                No Workflow has run in this namespace yet.
+              </p>
+            ) : filteredTypes.length === 0 ? (
+              <p className="p-2 text-xs text-muted-foreground">
+                No Workflow Type matches this filter.
+              </p>
+            ) : (
+              filteredTypes.map((type) => (
+                <button
+                  key={type.name}
+                  type="button"
+                  aria-current={type.name === activeType ? "true" : undefined}
+                  className={cn(
+                    "flex h-8 w-full shrink-0 items-center justify-between gap-2 rounded-md px-2 text-left text-xs focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                    type.name === activeType
+                      ? "bg-muted font-medium text-foreground"
+                      : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+                  )}
+                  data-testid={`temporal-type-${type.name}`}
+                  onClick={() => void setTemporalTypeParam(type.name)}
+                  title={type.name}
+                >
+                  <span className="min-w-0 truncate font-mono">
+                    {type.name}
                   </span>
-                ) : null}
-              </button>
-            ))
-          )}
+                  {/* Without every run of the namespace the count is that of a sample. */}
+                  {facets.data?.complete ? (
+                    <span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground">
+                      {type.count.toLocaleString("en-US")}
+                    </span>
+                  ) : null}
+                </button>
+              ))
+            )}
+          </div>
         </nav>
 
         <div className="flex min-w-0 flex-1 flex-col">
