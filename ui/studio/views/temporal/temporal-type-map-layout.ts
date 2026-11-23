@@ -156,12 +156,12 @@ export async function layoutTypeMap(
       "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
       "elk.layered.cycleBreaking.strategy": "MODEL_ORDER",
       "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
-      "elk.layered.spacing.edgeEdgeBetweenLayers": "12",
-      "elk.layered.spacing.edgeNodeBetweenLayers": "16",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "36",
-      "elk.spacing.edgeEdge": "12",
-      "elk.spacing.edgeNode": "20",
-      "elk.spacing.nodeNode": "28",
+      "elk.layered.spacing.edgeEdgeBetweenLayers": "16",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "22",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "48",
+      "elk.spacing.edgeEdge": "18",
+      "elk.spacing.edgeNode": "28",
+      "elk.spacing.nodeNode": "36",
     },
   });
 

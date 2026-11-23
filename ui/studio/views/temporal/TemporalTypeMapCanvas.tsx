@@ -38,6 +38,7 @@ import { cn } from "@/ui/lib/utils";
 import { CanvasZoomControls } from "../../CanvasZoomControls";
 import {
   layoutTypeMap,
+  orderTypeMapNodes,
   roundedPath,
   type TypeMapLayout,
   typeMapNodeHasMarks,
@@ -45,7 +46,7 @@ import {
   type TypeMapPoint,
 } from "./temporal-type-map-layout";
 import { formatDuration } from "./temporal-utils";
-import { WorkflowStatusBadge } from "./TemporalPrimitives";
+import { WorkflowStatusBadge, workflowStatusLabel } from "./TemporalPrimitives";
 
 type StepKind = Exclude<TemporalTypeMapNode["kind"], "end" | "start">;
 
@@ -297,12 +298,116 @@ const StepNode = memo(function StepNode(props: NodeProps<TypeMapNodeData>) {
 const nodeTypes: NodeTypes = { end: EndNode, start: StartNode, step: StepNode };
 
 interface RoutedEdgeData {
-  count: string;
+  annotation: string;
+  isHighlighted: boolean;
   label?: TypeMapPoint;
   points: TypeMapPoint[];
+  tooltip: string;
 }
 
-/** An arrow along the route the layout found around the nodes, with its count of runs. */
+export interface TypeMapEdgeAnnotation {
+  label: string;
+  tooltip: string;
+}
+
+/**
+ * Builds the visible edge annotation and hover title for a transition between
+ * two steps on the workflow diagram.
+ */
+export function describeTypeMapEdge(params: {
+  edgeRunCount: number;
+  from?: TemporalTypeMapNode;
+  isLoop: boolean;
+  isNext?: boolean;
+  isTaken?: boolean;
+  isTakenNext?: boolean;
+  outgoingEdgeCount: number;
+  to?: TemporalTypeMapNode;
+  totalRuns: number;
+}): TypeMapEdgeAnnotation {
+  const {
+    edgeRunCount,
+    from,
+    isLoop,
+    isNext,
+    isTaken,
+    isTakenNext,
+    outgoingEdgeCount,
+    to,
+    totalRuns,
+  } = params;
+  const countText = edgeRunCount.toLocaleString("en-US");
+  const baseRuns = from && from.runCount > 0 ? from.runCount : totalRuns;
+  const pct =
+    baseRuns > 0
+      ? Math.min(100, Math.round((edgeRunCount / baseRuns) * 100))
+      : null;
+  const showPct = outgoingEdgeCount > 1 && pct !== null && pct < 100;
+  const countWithShare = showPct ? `${countText} (${pct}%)` : countText;
+
+  let role: string | null = null;
+  let roleDescription = "Transition";
+
+  if (isLoop) {
+    role = "↻ loop";
+    roleDescription = "Loops back to an earlier step";
+  } else if (to?.kind === "signal") {
+    role = "on signal";
+    roleDescription = "Triggered by a Signal";
+  } else if (to?.kind === "update") {
+    role = "on update";
+    roleDescription = "Triggered by an Update";
+  } else if (to?.kind === "end") {
+    const endLabel = workflowStatusLabel(to.status ?? "Completed");
+    role = endLabel.toLowerCase();
+    roleDescription = `Workflow closed as ${endLabel}`;
+  } else if (from?.kind === "start") {
+    role = "starts";
+    roleDescription = "First step of the workflow";
+  } else if (from?.kind === "timer") {
+    role = "after timer";
+    roleDescription = "Continues after the Timer";
+  } else if (to?.kind === "timer") {
+    role = "waits";
+    roleDescription = "Starts a Timer";
+  } else if (to?.kind === "child-workflow") {
+    role = "child";
+    roleDescription = "Starts a Child Workflow";
+  }
+
+  const baseLabel = role
+    ? `${role} · ${countWithShare}`
+    : `${countText} ${edgeRunCount === 1 ? "run" : "runs"}${showPct ? ` · ${pct}%` : ""}`;
+  const label = isTakenNext ? `next · ${baseLabel}` : baseLabel;
+
+  const fromName = from
+    ? from.kind === "start"
+      ? "Start"
+      : typeMapStepName(from)
+    : "Start";
+  const toName = to
+    ? to.kind === "end"
+      ? workflowStatusLabel(to.status ?? "Completed")
+      : typeMapStepName(to)
+    : "End";
+  const runNote = isTakenNext
+    ? "This run went here next"
+    : isTaken
+      ? "Taken by this run"
+      : isNext
+        ? "Possible next step"
+        : null;
+  const tooltipParts = [
+    `${fromName} → ${toName}`,
+    `${countText} of ${totalRuns.toLocaleString("en-US")} sampled runs${pct !== null ? ` (${pct}%)` : ""}`,
+    roleDescription,
+    ...(runNote ? [runNote] : []),
+  ];
+
+  return { label, tooltip: tooltipParts.join(" · ") };
+}
+
+/** An arrow along the route the layout found around the nodes, with its edge annotation. */
 const RoutedEdge = memo(function RoutedEdge(props: EdgeProps<RoutedEdgeData>) {
   const { data, markerEnd, style } = props;
 
@@ -310,40 +415,50 @@ const RoutedEdge = memo(function RoutedEdge(props: EdgeProps<RoutedEdgeData>) {
     return null;
   }
 
-  const height = 14;
-  const width = data.count.length * 6 + 8;
+  const height = 18;
+  const width = Math.max(26, Math.ceil(data.annotation.length * 6.1) + 14);
+  const pillOpacity = style?.opacity ?? 1;
 
   return (
-    <>
+    <g>
+      <title>{data.tooltip}</title>
       <BaseEdge
         markerEnd={markerEnd}
         path={roundedPath(data.points, 6)}
         style={style}
       />
       {data.label ? (
-        <g opacity={style?.opacity}>
+        <g data-testid="temporal-type-map-edge-label" opacity={pillOpacity}>
           <rect
-            fill="var(--background)"
+            fill="var(--card)"
             height={height}
-            rx={4}
+            rx={9}
+            stroke={data.isHighlighted ? "var(--foreground)" : "var(--border)"}
+            strokeOpacity={data.isHighlighted ? 0.45 : 0.9}
+            strokeWidth={data.isHighlighted ? 1 : 0.75}
             width={width}
             x={data.label.x - width / 2}
             y={data.label.y - height / 2}
           />
           <text
             dominantBaseline="central"
-            fill="var(--foreground)"
+            fill={
+              data.isHighlighted
+                ? "var(--foreground)"
+                : "var(--muted-foreground)"
+            }
             fontFamily="var(--font-mono)"
             fontSize={10}
+            fontWeight={data.isHighlighted ? 500 : 400}
             textAnchor="middle"
             x={data.label.x}
             y={data.label.y}
           >
-            {data.count}
+            {data.annotation}
           </text>
         </g>
       ) : null}
-    </>
+    </g>
   );
 });
 
@@ -378,9 +493,9 @@ export function openingViewport(
   };
 }
 
-/** The arrow is 1 to 3 px wide by the share of the sampled runs that took it. */
+/** The arrow is 1.5 to 3 px wide by the share of the sampled runs that took it. */
 function edgeWidth(runCount: number, totalRuns: number): number {
-  return 1 + 2 * (totalRuns > 0 ? runCount / totalRuns : 0);
+  return 1.5 + 1.5 * (totalRuns > 0 ? runCount / totalRuns : 0);
 }
 
 /**
@@ -486,6 +601,24 @@ export function TemporalTypeMapCanvas(props: {
   );
   // The arrows to the steps that can come next, drawn dashed.
   const nextEdges = useMemo(() => new Set(run?.path.nextEdgeIds ?? []), [run]);
+  const nodeById = useMemo(
+    () => new Map(map.nodes.map((node) => [node.id, node])),
+    [map.nodes],
+  );
+  const nodeOrder = useMemo(
+    () =>
+      new Map(orderTypeMapNodes(map).map((node, index) => [node.id, index])),
+    [map],
+  );
+  const outgoingCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    for (const edge of map.edges) {
+      counts.set(edge.from, (counts.get(edge.from) ?? 0) + 1);
+    }
+
+    return counts;
+  }, [map.edges]);
   const edges = useMemo<Array<Edge<RoutedEdgeData>>>(
     () =>
       layout?.shape !== shape
@@ -497,7 +630,10 @@ export function TemporalTypeMapCanvas(props: {
             // In the diagram of a run, the arrows the run took stand out.
             const isTaken = takenEdges?.has(edge.id) ?? false;
             const isNext = !isTaken && nextEdges.has(edge.id);
-            const isStrong = isOfSelected || (selectedId === null && isTaken);
+            const isTakenNext =
+              isNext && Boolean(run?.path.next?.[edge.to]?.isTaken);
+            const isStrong =
+              isOfSelected || (selectedId === null && (isTaken || isTakenNext));
             const isFaint =
               selectedId !== null
                 ? !isOfSelected
@@ -505,37 +641,71 @@ export function TemporalTypeMapCanvas(props: {
             const color = isStrong
               ? "var(--foreground)"
               : "var(--muted-foreground)";
+            const fromIndex = nodeOrder.get(edge.from);
+            const toIndex = nodeOrder.get(edge.to);
+            const isLoop =
+              fromIndex !== undefined &&
+              toIndex !== undefined &&
+              toIndex < fromIndex;
+            const annotation = describeTypeMapEdge({
+              edgeRunCount: edge.runCount,
+              from: nodeById.get(edge.from),
+              isLoop,
+              isNext,
+              isTaken,
+              isTakenNext,
+              outgoingEdgeCount: outgoingCounts.get(edge.from) ?? 1,
+              to: nodeById.get(edge.to),
+              totalRuns: map.runCount,
+            });
+            const markerSize = isStrong ? 38 : 34;
 
             return {
               data: {
-                count: edge.runCount.toLocaleString("en-US"),
+                annotation: annotation.label,
+                isHighlighted: isStrong || isNext,
                 ...layout.edges[edge.id],
                 points: layout.edges[edge.id]?.points ?? [],
+                tooltip: annotation.tooltip,
               },
               id: edge.id,
               markerEnd: {
                 color,
-                height: 14,
+                height: markerSize,
+                markerUnits: "userSpaceOnUse",
                 type: MarkerType.ArrowClosed,
-                width: 14,
+                width: markerSize,
               },
               source: edge.from,
               style: {
-                opacity: isFaint ? 0.35 : 1,
+                opacity: isFaint ? 0.45 : 1,
                 stroke: color,
                 ...(isNext ? { strokeDasharray: "5 4" } : {}),
                 strokeWidth: takenEdges
                   ? isTaken
-                    ? 2
-                    : 1
+                    ? 2.25
+                    : isNext
+                      ? 1.75
+                      : 1.4
                   : edgeWidth(edge.runCount, map.runCount),
               },
               target: edge.to,
               type: "routed",
-              zIndex: isStrong ? 1 : 0,
+              zIndex: isStrong ? 2 : isNext ? 1 : 0,
             };
           }),
-    [layout, map, nextEdges, selectedId, shape, takenEdges],
+    [
+      layout,
+      map,
+      nextEdges,
+      nodeById,
+      nodeOrder,
+      outgoingCounts,
+      run?.path.next,
+      selectedId,
+      shape,
+      takenEdges,
+    ],
   );
 
   if (nodes.length === 0) {
