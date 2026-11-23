@@ -168,33 +168,132 @@ function startDemoTemporalWorker(
     // Legacy query-only task (QueryWorkflow)
     if (task.query) {
       const qName = task.query.queryType ?? "";
-      const answer =
-        wfType === "MoneyTransfer"
-          ? {
-              attempts: completedActivities.has("deposit") ? 1 : 3,
-              depositApprovedBySignal: signals.some(
-                (s) => s.name === "approveDeposit" || s.name === "skipRetry",
-              ),
-              fraudHoldCleared: firedTimers.has("fraudHoldTimer"),
-              phase: completedActivities.has("deposit")
-                ? "completed"
-                : scheduledActivities.has("deposit")
-                  ? "depositing"
-                  : startedTimers.has("fraudHoldTimer")
-                    ? "fraud_hold"
-                    : "withdrawing",
-              query: qName,
-              refundable: completedActivities.has("withdraw"),
-              withdrawn: completedActivities.has("withdraw"),
-            }
-          : {
-              completedSteps: Array.from(completedActivities.keys()),
-              input,
-              query: qName,
-              signalsReceived: signals.map((s) => s.name),
-              workflowId: wfId,
-              workflowType: wfType,
-            };
+      let answer: unknown;
+
+      if (qName === "__temporal_workflow_metadata") {
+        const phase = completedActivities.has("deposit")
+          ? "Completed"
+          : scheduledActivities.has("deposit")
+            ? "Retrying depositFunds after withdrawFunds"
+            : startedTimers.has("fraudHoldTimer")
+              ? "Waiting on fraudHoldTimer"
+              : "Running withdrawFunds";
+
+        if (wfType === "MoneyTransfer") {
+          answer = {
+            currentDetails: `Phase: ${phase}`,
+            definition: {
+              queryDefinitions: [
+                {
+                  description:
+                    "Returns current phase, withdrawal status, and retry state.",
+                  name: "transferStatus",
+                },
+              ],
+              signalDefinitions: [
+                {
+                  description:
+                    "Approve deposit manually and complete the transfer.",
+                  name: "approveDeposit",
+                },
+                {
+                  description: "Skip remaining deposit retries and settle now.",
+                  name: "skipRetry",
+                },
+              ],
+              type: wfType,
+              updateDefinitions: [],
+            },
+          };
+        } else if (wfType === "SubscriptionRenewal") {
+          answer = {
+            currentDetails: startedTimers.has("renewalWindow")
+              ? "Waiting for renewalWindow timer or renewNow signal."
+              : "Starting renewal cycle.",
+            definition: {
+              queryDefinitions: [
+                {
+                  description:
+                    "Returns subscription input and received signals.",
+                  name: "renewalStatus",
+                },
+              ],
+              signalDefinitions: [
+                {
+                  description:
+                    "Trigger renewal immediately without waiting for the timer.",
+                  name: "renewNow",
+                },
+              ],
+              type: wfType,
+              updateDefinitions: [],
+            },
+          };
+        } else if (wfType === "ChargeOrder") {
+          answer = {
+            currentDetails: completedActivities.has("issueReceipt")
+              ? "Receipt issued."
+              : failedActivities.has("chargeCard")
+                ? "Card charge failed."
+                : "Processing order charge.",
+            definition: {
+              queryDefinitions: [
+                {
+                  description: "Returns completed order steps and input.",
+                  name: "orderStatus",
+                },
+              ],
+              signalDefinitions: [],
+              type: wfType,
+              updateDefinitions: [],
+            },
+          };
+        } else {
+          answer = {
+            definition: {
+              queryDefinitions: [],
+              signalDefinitions: [],
+              type: wfType,
+              updateDefinitions: [],
+            },
+          };
+        }
+      } else if (qName === "__stack_trace") {
+        answer =
+          wfType === "MoneyTransfer"
+            ? `at depositFunds (activities/banking.ts:42:9)\nat MoneyTransfer (workflows/moneyTransfer.ts:31:16)`
+            : wfType === "SubscriptionRenewal"
+              ? `at sleep("renewalWindow") (workflows/subscriptionRenewal.ts:18:10)\nat SubscriptionRenewal (workflows/subscriptionRenewal.ts:12:5)`
+              : `at ${wfType} (workflows/${wfType}.ts:1:1)`;
+      } else {
+        answer =
+          wfType === "MoneyTransfer"
+            ? {
+                attempts: completedActivities.has("deposit") ? 1 : 3,
+                depositApprovedBySignal: signals.some(
+                  (s) => s.name === "approveDeposit" || s.name === "skipRetry",
+                ),
+                fraudHoldCleared: firedTimers.has("fraudHoldTimer"),
+                phase: completedActivities.has("deposit")
+                  ? "completed"
+                  : scheduledActivities.has("deposit")
+                    ? "depositing"
+                    : startedTimers.has("fraudHoldTimer")
+                      ? "fraud_hold"
+                      : "withdrawing",
+                query: qName,
+                refundable: completedActivities.has("withdraw"),
+                withdrawn: completedActivities.has("withdraw"),
+              }
+            : {
+                completedSteps: Array.from(completedActivities.keys()),
+                input,
+                query: qName,
+                signalsReceived: signals.map((s) => s.name),
+                workflowId: wfId,
+                workflowType: wfType,
+              };
+      }
 
       await client.unary(
         "RespondQueryTaskCompleted",
