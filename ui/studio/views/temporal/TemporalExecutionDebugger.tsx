@@ -953,8 +953,10 @@ export function TemporalExecutionDebugger(
               {data.historyTruncated ? (
                 <p className="border-b border-border bg-amber-500/10 px-4 py-1.5 text-2xs text-foreground">
                   This run has {execution.historyLength.toLocaleString("en-US")}{" "}
-                  events. Studio shows the first{" "}
-                  {rawEvents.length.toLocaleString("en-US")}.
+                  events.{" "}
+                  {data.historyTailIncluded
+                    ? `Studio shows the first events and the latest events (${rawEvents.length.toLocaleString("en-US")} loaded).`
+                    : `Studio shows the first ${rawEvents.length.toLocaleString("en-US")}.`}
                 </p>
               ) : null}
 

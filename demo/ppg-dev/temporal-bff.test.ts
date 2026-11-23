@@ -907,3 +907,75 @@ describe("TemporalGrpcBffClient.startBulkJob paused workflows", () => {
     client.close();
   });
 });
+
+describe("TemporalGrpcBffClient.getWorkflowDetail truncated history tail", () => {
+  it("appends the tail via GetWorkflowExecutionHistoryReverse so closing failures still appear", async () => {
+    const client = new TemporalGrpcBffClient({ address: "127.0.0.1:1" });
+    let page = 0;
+
+    vi.spyOn(client, "unary").mockImplementation(((method: string) => {
+      if (method === "DescribeWorkflowExecution") {
+        return Promise.resolve({
+          workflowExecutionInfo: {
+            execution: { runId: "run-long", workflowId: "wf-long" },
+            historyLength: 2500,
+            status: 3,
+            type: { name: "LongWorkflow" },
+          },
+        });
+      }
+
+      if (method === "GetWorkflowExecutionHistory") {
+        page++;
+        return Promise.resolve({
+          history: {
+            events: [
+              {
+                eventId: page,
+                eventType: page === 1 ? 1 : 7,
+                ...(page === 1
+                  ? {
+                      workflowExecutionStartedEventAttributes: {
+                        workflowType: { name: "LongWorkflow" },
+                      },
+                    }
+                  : { workflowTaskCompletedEventAttributes: {} }),
+              },
+            ],
+          },
+          nextPageToken: Buffer.from(`p-${page}`),
+        });
+      }
+
+      if (method === "GetWorkflowExecutionHistoryReverse") {
+        return Promise.resolve({
+          history: {
+            events: [
+              {
+                eventId: 2500,
+                eventType: 3,
+                workflowExecutionFailedEventAttributes: {
+                  failure: { message: "boom at event 2500" },
+                },
+              },
+            ],
+          },
+        });
+      }
+
+      return Promise.resolve({});
+    }) as never);
+
+    const detail = await client.getWorkflowDetail({
+      namespace: "default",
+      runId: "run-long",
+      workflowId: "wf-long",
+    });
+
+    expect(detail.historyTruncated).toBe(true);
+    expect(detail.historyTailIncluded).toBe(true);
+    expect(detail.failure?.message).toBe("boom at event 2500");
+    expect(detail.rawEvents.at(-1)?.eventId).toBe(2500);
+    client.close();
+  });
+});

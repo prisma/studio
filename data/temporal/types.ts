@@ -209,6 +209,8 @@ export interface TemporalExecutionDetail {
   details?: string;
   execution: TemporalWorkflowExecution;
   failure?: TemporalFailureInfo;
+  /** True when the BFF also fetched the tail of a truncated history via reverse history. */
+  historyTailIncluded?: boolean;
   /** True when the run has more events than the BFF reads. */
   historyTruncated?: boolean;
   input?: unknown;

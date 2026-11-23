@@ -1621,6 +1621,51 @@ export class TemporalGrpcBffClient {
       }
     }
 
+    // When a history is truncated, read the latest events in reverse so the
+    // closing outcome, failure details, and latest reset points are still shown.
+    let historyTailIncluded = false;
+    if (nextPageToken) {
+      const reverseRes = await this.unary(
+        "GetWorkflowExecutionHistoryReverse",
+        ws.GetWorkflowExecutionHistoryReverseRequest,
+        ws.GetWorkflowExecutionHistoryReverseResponse,
+        {
+          execution: {
+            runId: describedRunId,
+            workflowId,
+          },
+          maximumPageSize: 100,
+          namespace,
+        },
+      ).catch(() => null);
+
+      const tailEvents = [...(reverseRes?.history?.events ?? [])].reverse();
+      if (tailEvents.length > 0) {
+        const seenIds = new Set(
+          rawEvents.map((event) => toNumber(event.eventId)),
+        );
+        for (const evt of tailEvents) {
+          const message =
+            proto.temporal.api.history.v1.HistoryEvent.create(evt);
+          const id = toNumber(message.eventId);
+          if (id > 0 && seenIds.has(id)) {
+            continue;
+          }
+          seenIds.add(id);
+          historyMessages.push(message);
+          rawEvents.push(
+            proto.temporal.api.history.v1.HistoryEvent.toObject(message, {
+              bytes: Buffer,
+              defaults: false,
+              enums: String,
+              longs: Number,
+            }) as Record<string, unknown>,
+          );
+          historyTailIncluded = true;
+        }
+      }
+    }
+
     // The history as the server stores it, in the form the SDKs' replayers read.
     const rawHistoryJson = {
       events: historyMessages.map((event) =>
@@ -1653,6 +1698,7 @@ export class TemporalGrpcBffClient {
       ...buildExecutionDetail({ execution, rawEvents }),
       rawHistoryJson,
       ...(codec.decoded > 0 || codec.encoded > 0 ? { codec } : {}),
+      ...(historyTailIncluded ? { historyTailIncluded: true } : {}),
       ...(nextPageToken ? { historyTruncated: true } : {}),
     };
   }
