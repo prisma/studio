@@ -41,6 +41,10 @@ vi.mock("@/ui/hooks/use-navigation", () => ({
   }),
 }));
 
+vi.mock("@/ui/hooks/use-streams", () => ({
+  useStreams: () => ({ streams: [] }),
+}));
+
 vi.mock("@/ui/hooks/use-ui-state", () => ({
   useUiState: <T,>(_key: string, initial: T) => [initial, vi.fn(), vi.fn()],
 }));

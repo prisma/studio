@@ -14,6 +14,7 @@ import { timerProgress } from "@/data/temporal/type-map";
 import { Button } from "@/ui/components/ui/button";
 import { Skeleton } from "@/ui/components/ui/skeleton";
 import { useNavigation } from "@/ui/hooks/use-navigation";
+import { useStreams } from "@/ui/hooks/use-streams";
 import { useTemporalWorkflowDetail } from "@/ui/hooks/use-temporal";
 import { cn } from "@/ui/lib/utils";
 
@@ -82,7 +83,13 @@ export function TemporalRunPreview(props: {
 }) {
   const { execution, namespace, onClone, onOpen, onOpenRun } = props;
   const { hasDatabase, streamsUrl } = useStudio();
-  const { createUrl, schemaParam, tableParam } = useNavigation();
+  const { createUrl, schemaParam, streamParam, tableParam } = useNavigation();
+  const { streams } = useStreams();
+  const targetStream =
+    streamParam ??
+    streams.find((stream) => stream.observability?.request?.eventsStream)
+      ?.observability?.request?.eventsStream ??
+    streams[0]?.name;
   const { data: detail, isLoading } = useTemporalWorkflowDetail({
     followMode: "paused",
     namespace,
@@ -174,7 +181,7 @@ export function TemporalRunPreview(props: {
               <a
                 href={createUrl({
                   searchParam: execution.workflowId,
-                  streamParam: "app-events",
+                  ...(targetStream ? { streamParam: targetStream } : {}),
                   viewParam: "stream",
                 })}
               >

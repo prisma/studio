@@ -43,6 +43,7 @@ import {
 import { Input } from "@/ui/components/ui/input";
 import { Skeleton } from "@/ui/components/ui/skeleton";
 import { useNavigation } from "@/ui/hooks/use-navigation";
+import { useStreams } from "@/ui/hooks/use-streams";
 import {
   useTemporalActions,
   useTemporalCapabilities,
@@ -152,7 +153,13 @@ export function TemporalExecutionDebugger(
   const { temporalEventParam, setTemporalEventParam } = useNavigation();
 
   const { hasDatabase, streamsUrl } = useStudio();
-  const { createUrl, schemaParam, tableParam } = useNavigation();
+  const { createUrl, schemaParam, streamParam, tableParam } = useNavigation();
+  const { streams } = useStreams();
+  const targetStream =
+    streamParam ??
+    streams.find((stream) => stream.observability?.request?.eventsStream)
+      ?.observability?.request?.eventsStream ??
+    streams[0]?.name;
   const {
     activityOperation,
     cancelWorkflow,
@@ -692,7 +699,7 @@ export function TemporalExecutionDebugger(
                   <a
                     href={createUrl({
                       searchParam: execution.workflowId,
-                      streamParam: "app-events",
+                      ...(targetStream ? { streamParam: targetStream } : {}),
                       viewParam: "stream",
                     })}
                   >
