@@ -494,9 +494,14 @@ export function useTemporalActions(namespace: string) {
   const queryClient = useQueryClient();
 
   const invalidate = async (workflowId?: string) => {
-    await queryClient.invalidateQueries({
-      queryKey: ["temporal", "workflows", temporalUrl, namespace],
-    });
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ["temporal", "workflows", temporalUrl, namespace],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["temporal", "attention", temporalUrl, namespace],
+      }),
+    ]);
     if (workflowId) {
       await queryClient.invalidateQueries({
         queryKey: [

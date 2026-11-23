@@ -1324,6 +1324,10 @@ export class TemporalGrpcBffClient {
 
                 items.push({
                   ...base(run),
+                  ...(activity.activityId
+                    ? { activityId: activity.activityId }
+                    : {}),
+                  ...(activity.paused ? { activityPaused: true } : {}),
                   activityType,
                   attempt,
                   detail: failure?.message ?? "The last attempt failed.",

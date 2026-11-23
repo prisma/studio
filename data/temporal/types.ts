@@ -382,6 +382,8 @@ export type TemporalAttentionKind =
   | "workflow-task-failing";
 
 export interface TemporalAttentionItem {
+  activityId?: string;
+  activityPaused?: boolean;
   activityType?: string;
   attempt?: number;
   /** One sentence that says what is wrong. */
