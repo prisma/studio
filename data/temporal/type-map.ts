@@ -2,12 +2,55 @@ import { formatTimerLength } from "./history-grouping";
 import type {
   TemporalExecutionDetail,
   TemporalGroupedSpan,
+  TemporalHistoryEvent,
   TemporalRunRef,
   TemporalTypeMap,
   TemporalTypeMapEdge,
   TemporalTypeMapNode,
   TemporalWorkflowExecution,
 } from "./types";
+
+/**
+ * Reads the newest Worker Build ID recorded on a run's `WorkflowTaskCompleted`
+ * events, checking both `deploymentVersion`, `deployment`, and `workerVersionStamp`.
+ */
+export function extractRunBuildId(
+  rawEvents: readonly TemporalHistoryEvent[],
+): string | undefined {
+  for (let i = rawEvents.length - 1; i >= 0; i--) {
+    const event = rawEvents[i]!;
+    if (event.eventType !== "WorkflowTaskCompleted") {
+      continue;
+    }
+
+    const attrs = event.attributes as {
+      deployment?: { buildId?: unknown; seriesName?: unknown };
+      deploymentVersion?: { buildId?: unknown; deploymentName?: unknown };
+      workerVersionStamp?: { buildId?: unknown };
+    };
+    const depVersion = attrs.deploymentVersion;
+    if (typeof depVersion?.buildId === "string" && depVersion.buildId) {
+      return typeof depVersion.deploymentName === "string" &&
+        depVersion.deploymentName
+        ? `${depVersion.deploymentName}:${depVersion.buildId}`
+        : depVersion.buildId;
+    }
+
+    const dep = attrs.deployment;
+    if (typeof dep?.buildId === "string" && dep.buildId) {
+      return typeof dep.seriesName === "string" && dep.seriesName
+        ? `${dep.seriesName}:${dep.buildId}`
+        : dep.buildId;
+    }
+
+    const stamp = attrs.workerVersionStamp;
+    if (typeof stamp?.buildId === "string" && stamp.buildId) {
+      return stamp.buildId;
+    }
+  }
+
+  return undefined;
+}
 
 export { formatTimerLength };
 

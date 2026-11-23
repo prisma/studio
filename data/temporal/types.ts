@@ -616,6 +616,12 @@ export interface TemporalTypeMap {
   timersMerged: boolean;
 }
 
+export interface TemporalTypeMapVersion {
+  buildId: string;
+  map: TemporalTypeMap;
+  runCount: number;
+}
+
 export interface TemporalTypeMapResponse extends TemporalTypeMap {
   ageMs: number;
   /** How many runs of the type the BFF chose the sample from. */
@@ -624,6 +630,8 @@ export interface TemporalTypeMapResponse extends TemporalTypeMap {
   candidatesComplete: boolean;
   /** Sampled runs whose history is longer than the BFF reads. */
   truncatedRunCount: number;
+  /** Per-Build-ID diagrams when the sampled runs span more than one Worker version. */
+  versions?: TemporalTypeMapVersion[];
   workflowType: string;
 }
 

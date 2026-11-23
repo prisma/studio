@@ -11,7 +11,11 @@ import {
   normalizeWorkflowStatus,
   toProto3Json,
 } from "../../data/temporal/history-grouping";
-import { buildTypeMap, pickTypeMapSample } from "../../data/temporal/type-map";
+import {
+  buildTypeMap,
+  extractRunBuildId,
+  pickTypeMapSample,
+} from "../../data/temporal/type-map";
 import type {
   TemporalActivityOperation,
   TemporalAdmissionUpdateInput,
@@ -1201,15 +1205,40 @@ export class TemporalGrpcBffClient {
           },
         );
 
+        const validDetails = details.filter(
+          (detail): detail is TemporalExecutionDetail => detail !== null,
+        );
+        const byVersion = new Map<string, TemporalExecutionDetail[]>();
+        let hasBuildId = false;
+
+        for (const detail of validDetails) {
+          const buildId = extractRunBuildId(detail.rawEvents);
+          if (buildId) {
+            hasBuildId = true;
+          }
+          const key = buildId ?? "unversioned";
+          const bucket = byVersion.get(key) ?? [];
+          bucket.push(detail);
+          byVersion.set(key, bucket);
+        }
+
+        const versions =
+          hasBuildId && byVersion.size > 1
+            ? [...byVersion.entries()]
+                .map(([buildId, group]) => ({
+                  buildId,
+                  map: buildTypeMap(group),
+                  runCount: group.length,
+                }))
+                .sort((a, b) => b.runCount - a.runCount)
+            : undefined;
+
         return {
-          ...buildTypeMap(
-            details.filter(
-              (detail): detail is TemporalExecutionDetail => detail !== null,
-            ),
-          ),
+          ...buildTypeMap(validDetails),
           candidateCount: candidates.length,
           candidatesComplete: complete,
           truncatedRunCount,
+          ...(versions ? { versions } : {}),
           workflowType,
         };
       },

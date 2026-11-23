@@ -79,11 +79,24 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
     workflowType: activeType,
   });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedBuildId, setSelectedBuildId] = useState<string | null>(null);
+  const activeVersion =
+    selectedBuildId && map.data?.versions
+      ? (map.data.versions.find((v) => v.buildId === selectedBuildId) ?? null)
+      : null;
+  const shownMap = useMemo(
+    () =>
+      map.data && activeVersion
+        ? { ...map.data, ...activeVersion.map }
+        : map.data,
+    [activeVersion, map.data],
+  );
   const selected =
-    map.data?.nodes.find((node) => node.id === selectedId) ?? null;
+    shownMap?.nodes.find((node) => node.id === selectedId) ?? null;
 
   useEffect(() => {
     setSelectedId(null);
+    setSelectedBuildId(null);
   }, [activeType]);
 
   const workflowsUrl = (filter: string) =>
@@ -211,7 +224,7 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
                 Retry
               </Button>
             </div>
-          ) : !map.data ? (
+          ) : !shownMap ? (
             <div className="flex flex-1 flex-col items-center gap-4 p-8">
               <Skeleton className="h-8 w-20 rounded-full" />
               <Skeleton className="h-14 w-60" />
@@ -221,17 +234,56 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
           ) : (
             <>
               <SampleLine
-                map={map.data}
+                map={shownMap}
                 workflowsUrl={workflowsUrl(typeFilter)}
               />
+              {map.data?.versions && map.data.versions.length > 1 ? (
+                <div
+                  className="flex flex-wrap items-center gap-1.5 border-b border-border bg-muted/20 px-4 py-1.5 text-xs"
+                  data-testid="temporal-type-versions"
+                >
+                  <span className="text-muted-foreground">Worker version:</span>
+                  <Button
+                    variant={selectedBuildId === null ? "secondary" : "ghost"}
+                    size="xs"
+                    onClick={() => {
+                      setSelectedBuildId(null);
+                      setSelectedId(null);
+                    }}
+                  >
+                    All ({map.data.runCount})
+                  </Button>
+                  {map.data.versions.map((version) => (
+                    <Button
+                      key={version.buildId}
+                      variant={
+                        selectedBuildId === version.buildId
+                          ? "secondary"
+                          : "ghost"
+                      }
+                      size="xs"
+                      className="font-mono"
+                      onClick={() => {
+                        setSelectedBuildId(version.buildId);
+                        setSelectedId(null);
+                      }}
+                    >
+                      {version.buildId}{" "}
+                      <span className="font-sans text-muted-foreground">
+                        ({version.runCount})
+                      </span>
+                    </Button>
+                  ))}
+                </div>
+              ) : null}
               <div className="min-h-0 flex-1">
-                {map.data.runCount === 0 ? (
+                {shownMap.runCount === 0 ? (
                   <p className="p-10 text-center text-sm text-muted-foreground">
                     No run of this type has a history that Studio can read.
                   </p>
                 ) : (
                   <TemporalTypeMapCanvas
-                    map={map.data}
+                    map={shownMap}
                     onSelect={setSelectedId}
                     selectedId={selectedId}
                   />
@@ -248,7 +300,7 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
                         )
                       : undefined
                   }
-                  totalRuns={map.data.runCount}
+                  totalRuns={shownMap.runCount}
                 />
               ) : null}
             </>

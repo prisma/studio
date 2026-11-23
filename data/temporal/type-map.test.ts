@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildTypeMap,
+  extractRunBuildId,
   formatTimerLength,
   pickTypeMapSample,
   runMomentOnTypeMap,
@@ -408,5 +409,32 @@ describe("pickTypeMapSample", () => {
     expect(sample).toHaveLength(8);
     expect(sample.map((item) => item.workflowId)).toContain("order-failed");
     expect(sample[0]!.workflowId).toBe("order-19");
+  });
+});
+
+describe("extractRunBuildId", () => {
+  it("reads the newest Worker Build ID from WorkflowTaskCompleted events", () => {
+    expect(
+      extractRunBuildId([
+        {
+          attributes: { workerVersionStamp: { buildId: "v1" } },
+          eventId: 4,
+          eventTime: "2026-11-23T10:00:00.000Z",
+          eventType: "WorkflowTaskCompleted",
+          offsetMs: 0,
+        },
+        {
+          attributes: {
+            deploymentVersion: { buildId: "v2", deploymentName: "billing" },
+          },
+          eventId: 9,
+          eventTime: "2026-11-23T10:00:01.000Z",
+          eventType: "WorkflowTaskCompleted",
+          offsetMs: 1000,
+        },
+      ]),
+    ).toBe("billing:v2");
+
+    expect(extractRunBuildId([])).toBeUndefined();
   });
 });
