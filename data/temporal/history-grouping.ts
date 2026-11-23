@@ -1,4 +1,5 @@
 import type {
+  TemporalActivityPolicy,
   TemporalExecutionDetail,
   TemporalFailureInfo,
   TemporalGroupedSpan,
@@ -576,8 +577,57 @@ export function buildExecutionDetail(args: {
           ? attributes.activityId
           : String(eventId);
       const input = decodePayloads(attributes.input as RawPayloads | undefined);
+      const retryRaw = attributes.retryPolicy as
+        | {
+            backoffCoefficient?: unknown;
+            initialInterval?: unknown;
+            maximumAttempts?: unknown;
+            maximumInterval?: unknown;
+          }
+        | undefined;
+      const policy: TemporalActivityPolicy = {
+        ...(typeof retryRaw?.backoffCoefficient === "number" &&
+        retryRaw.backoffCoefficient > 0
+          ? { backoffCoefficient: retryRaw.backoffCoefficient }
+          : {}),
+        ...(durationToMs(attributes.heartbeatTimeout)
+          ? { heartbeatTimeoutMs: durationToMs(attributes.heartbeatTimeout) }
+          : {}),
+        ...(durationToMs(retryRaw?.initialInterval)
+          ? { initialIntervalMs: durationToMs(retryRaw?.initialInterval) }
+          : {}),
+        ...(typeof retryRaw?.maximumAttempts === "number" &&
+        retryRaw.maximumAttempts > 0
+          ? { maximumAttempts: retryRaw.maximumAttempts }
+          : {}),
+        ...(durationToMs(retryRaw?.maximumInterval)
+          ? { maximumIntervalMs: durationToMs(retryRaw?.maximumInterval) }
+          : {}),
+        ...(durationToMs(attributes.scheduleToCloseTimeout)
+          ? {
+              scheduleToCloseTimeoutMs: durationToMs(
+                attributes.scheduleToCloseTimeout,
+              ),
+            }
+          : {}),
+        ...(durationToMs(attributes.scheduleToStartTimeout)
+          ? {
+              scheduleToStartTimeoutMs: durationToMs(
+                attributes.scheduleToStartTimeout,
+              ),
+            }
+          : {}),
+        ...(durationToMs(attributes.startToCloseTimeout)
+          ? {
+              startToCloseTimeoutMs: durationToMs(
+                attributes.startToCloseTimeout,
+              ),
+            }
+          : {}),
+      };
       const span: TemporalGroupedSpan = {
         activityId: actId,
+        ...(Object.keys(policy).length > 0 ? { activityPolicy: policy } : {}),
         attempt: 1,
         durationMs: 1,
         eventIds: [eventId],

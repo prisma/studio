@@ -63,10 +63,22 @@ export interface TemporalFailureInfo {
   type?: string;
 }
 
+export interface TemporalActivityPolicy {
+  backoffCoefficient?: number;
+  heartbeatTimeoutMs?: number;
+  initialIntervalMs?: number;
+  maximumAttempts?: number;
+  maximumIntervalMs?: number;
+  scheduleToCloseTimeoutMs?: number;
+  scheduleToStartTimeoutMs?: number;
+  startToCloseTimeoutMs?: number;
+}
+
 export interface TemporalPendingActivity {
   activityId: string;
   activityType: string;
   attempt: number;
+  expirationTime?: string;
   heartbeatDetails?: unknown;
   lastAttemptCompleteTime?: string;
   lastFailure?: TemporalFailureInfo;
@@ -159,6 +171,7 @@ export type TemporalSpanStatus =
 
 export interface TemporalGroupedSpan {
   activityId?: string;
+  activityPolicy?: TemporalActivityPolicy;
   attempt?: number;
   childRunId?: string;
   childWorkflowId?: string;

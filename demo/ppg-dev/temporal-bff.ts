@@ -199,6 +199,9 @@ function normalizeExecutionInfo(
       activityId: pa.activityId ?? "",
       activityType: pa.activityType?.name ?? "Activity",
       attempt: pa.attempt ?? 1,
+      ...(decodeTimestampIso(pa.expirationTime)
+        ? { expirationTime: decodeTimestampIso(pa.expirationTime) }
+        : {}),
       ...(pa.heartbeatDetails
         ? { heartbeatDetails: decodePayloads(pa.heartbeatDetails) }
         : {}),

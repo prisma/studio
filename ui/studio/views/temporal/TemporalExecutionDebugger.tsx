@@ -27,6 +27,7 @@ import type {
   TemporalExecutionDetail,
   TemporalFollowMode,
   TemporalGroupedSpan,
+  TemporalPendingActivity,
   TemporalTypeMapResponse,
 } from "@/data/temporal";
 import { timerProgress, typeMapStepId } from "@/data/temporal/type-map";
@@ -66,6 +67,7 @@ import {
 } from "./temporal-utils";
 import { TemporalFailurePanel } from "./TemporalFailurePanel";
 import { TemporalInteractPanel } from "./TemporalInteractPanel";
+import { TemporalPendingActivityCard } from "./TemporalPendingActivityCard";
 import {
   TEMPORAL_SPAN_STATUS,
   TemporalConfirmDialog,
@@ -1009,31 +1011,48 @@ export function TemporalExecutionDebugger(
                     </p>
                   ) : (
                     <div className="[&>*+*]:border-t [&>*+*]:border-border/60">
-                      {spans.map((span) => (
-                        <GroupedSpanRow
-                          key={span.id}
-                          isExpanded={selectedSpanId === span.id}
-                          onShowInDiagram={
-                            imported
-                              ? undefined
-                              : (nodeId) => {
-                                  setDiagramNodeId(nodeId);
-                                  setDiagramFocus((prev) => ({
-                                    id: span.id,
-                                    seq: (prev?.seq ?? 0) + 1,
-                                  }));
-                                  setHistoryTab("diagram");
-                                }
-                          }
-                          onToggle={() =>
-                            setSelectedSpanId((prev) =>
-                              prev === span.id ? null : span.id,
-                            )
-                          }
-                          span={span}
-                          typeMap={imported ? null : typeMap.data}
-                        />
-                      ))}
+                      {spans.map((span) => {
+                        const matchingPending =
+                          span.kind === "activity" &&
+                          span.activityId &&
+                          span.closedEventId === undefined
+                            ? pendingActivities.find(
+                                (pa) => pa.activityId === span.activityId,
+                              )
+                            : undefined;
+                        return (
+                          <GroupedSpanRow
+                            key={span.id}
+                            canAct={canAct}
+                            isExpanded={selectedSpanId === span.id}
+                            isPendingAction={activityOperation.isPending}
+                            onActivityOperation={runActivityOperation}
+                            onShowInDiagram={
+                              imported
+                                ? undefined
+                                : (nodeId) => {
+                                    setDiagramNodeId(nodeId);
+                                    setDiagramFocus((prev) => ({
+                                      id: span.id,
+                                      seq: (prev?.seq ?? 0) + 1,
+                                    }));
+                                    setHistoryTab("diagram");
+                                  }
+                            }
+                            onToggle={() =>
+                              setSelectedSpanId((prev) =>
+                                prev === span.id ? null : span.id,
+                              )
+                            }
+                            pendingActivity={matchingPending}
+                            span={span}
+                            supportsActivityOperations={
+                              capabilities?.supportsActivityOperations === true
+                            }
+                            typeMap={imported ? null : typeMap.data}
+                          />
+                        );
+                      })}
                     </div>
                   )
                 ) : filteredRawEvents.length === 0 ? (
@@ -1199,80 +1218,29 @@ export function TemporalExecutionDebugger(
                       No pending activities.
                     </p>
                   ) : (
-                    <div className="flex flex-col gap-3 text-xs">
-                      {pendingActivities.map((pa) => (
-                        <div
-                          key={pa.activityId}
-                          className="flex flex-col gap-2 rounded-md border border-border p-3"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="truncate font-mono font-medium text-foreground">
-                              {pa.activityType}
-                            </span>
-                            <Badge variant="outline">
-                              Attempt {pa.attempt}
-                              {pa.maximumAttempts > 0
-                                ? `/${pa.maximumAttempts}`
-                                : ""}
-                            </Badge>
-                          </div>
-                          <div className="text-2xs text-muted-foreground">
-                            ID{" "}
-                            <span className="font-mono text-foreground">
-                              {pa.activityId}
-                            </span>{" "}
-                            · State{" "}
-                            <span className="text-foreground">
-                              {pa.paused ? "Paused" : pa.state}
-                            </span>
-                            {pa.taskQueue ? (
-                              <>
-                                {" "}
-                                · Queue{" "}
-                                <span className="font-mono text-foreground">
-                                  {pa.taskQueue}
-                                </span>
-                              </>
-                            ) : null}
-                          </div>
-                          {canAct &&
-                          capabilities?.supportsActivityOperations ? (
-                            <div className="flex flex-wrap gap-1.5">
-                              <Button
-                                variant="outline"
-                                size="xs"
-                                disabled={activityOperation.isPending}
-                                onClick={() =>
-                                  runActivityOperation(
-                                    pa.activityId,
-                                    pa.paused ? "unpause" : "pause",
-                                  )
-                                }
-                              >
-                                {pa.paused ? <Play /> : <Pause />}
-                                {pa.paused ? "Unpause" : "Pause"}
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="xs"
-                                disabled={activityOperation.isPending}
-                                title="Start the attempts from one and run the Activity now"
-                                onClick={() =>
-                                  runActivityOperation(pa.activityId, "reset")
-                                }
-                              >
-                                <RotateCcw />
-                                Reset
-                              </Button>
-                            </div>
-                          ) : null}
-                          {pa.lastFailure ? (
-                            <div className="rounded-sm border border-destructive/30 bg-destructive/10 p-2 font-mono text-2xs text-foreground">
-                              {pa.lastFailure.message}
-                            </div>
-                          ) : null}
-                        </div>
-                      ))}
+                    <div className="flex flex-col gap-3">
+                      {pendingActivities.map((pa) => {
+                        const matchingSpan = spans.find(
+                          (span) =>
+                            span.kind === "activity" &&
+                            span.activityId === pa.activityId &&
+                            span.closedEventId === undefined,
+                        );
+                        return (
+                          <TemporalPendingActivityCard
+                            key={pa.activityId}
+                            canAct={canAct}
+                            isPendingAction={activityOperation.isPending}
+                            onActivityOperation={runActivityOperation}
+                            pending={pa}
+                            policy={matchingSpan?.activityPolicy}
+                            scheduledTimestamp={matchingSpan?.timestamp}
+                            supportsActivityOperations={
+                              capabilities?.supportsActivityOperations === true
+                            }
+                          />
+                        );
+                      })}
                     </div>
                   )
                 ) : inspectorTab === "related" ? (
@@ -1520,13 +1488,32 @@ function MetaBlock(props: {
 }
 
 function GroupedSpanRow(props: {
+  canAct: boolean;
   isExpanded: boolean;
+  isPendingAction: boolean;
+  onActivityOperation: (
+    activityId: string,
+    operation: TemporalActivityOperation,
+  ) => void;
   onShowInDiagram?: (nodeId: string) => void;
   onToggle: () => void;
+  pendingActivity?: TemporalPendingActivity;
   span: TemporalGroupedSpan;
+  supportsActivityOperations: boolean;
   typeMap?: TemporalTypeMapResponse | null;
 }) {
-  const { span, isExpanded, onShowInDiagram, onToggle, typeMap } = props;
+  const {
+    canAct,
+    span,
+    isExpanded,
+    isPendingAction,
+    onActivityOperation,
+    onShowInDiagram,
+    onToggle,
+    pendingActivity,
+    supportsActivityOperations,
+    typeMap,
+  } = props;
   const isTimer = span.kind === "timer";
   const isOpenTimer = isTimer && span.status === "running";
   // An open Timer counts down, so its row reads the time again every second.
@@ -1600,32 +1587,45 @@ function GroupedSpanRow(props: {
           span={span}
         />
       ) : isExpanded ? (
-        <div className="grid grid-cols-1 gap-4 border-t border-border/60 bg-muted/20 py-3 pr-4 pl-11 md:grid-cols-2">
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <TemporalSectionLabel>
-              Input
-              {span.queueWaitMs != null
-                ? ` · queue wait ${formatDuration(span.queueWaitMs)}`
-                : ""}
-            </TemporalSectionLabel>
-            <pre className="max-h-40 overflow-auto rounded-md border border-border bg-card p-3 font-mono text-xs text-foreground">
-              {safeJsonPretty(span.input)}
-            </pre>
-          </div>
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <TemporalSectionLabel>
-              {span.error ? "Failure" : "Output"}
-            </TemporalSectionLabel>
-            {span.error ? (
-              <TemporalFailurePanel
-                attempt={span.kind === "activity" ? span.attempt : undefined}
-                failure={span.error}
-              />
-            ) : (
+        <div className="flex flex-col gap-4 border-t border-border/60 bg-muted/20 py-3 pr-4 pl-11">
+          {pendingActivity ? (
+            <TemporalPendingActivityCard
+              canAct={canAct}
+              isPendingAction={isPendingAction}
+              onActivityOperation={onActivityOperation}
+              pending={pendingActivity}
+              policy={span.activityPolicy}
+              scheduledTimestamp={span.timestamp}
+              supportsActivityOperations={supportsActivityOperations}
+            />
+          ) : null}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="flex min-w-0 flex-col gap-1.5">
+              <TemporalSectionLabel>
+                Input
+                {span.queueWaitMs != null
+                  ? ` · queue wait ${formatDuration(span.queueWaitMs)}`
+                  : ""}
+              </TemporalSectionLabel>
               <pre className="max-h-40 overflow-auto rounded-md border border-border bg-card p-3 font-mono text-xs text-foreground">
-                {safeJsonPretty(span.output)}
+                {safeJsonPretty(span.input)}
               </pre>
-            )}
+            </div>
+            <div className="flex min-w-0 flex-col gap-1.5">
+              <TemporalSectionLabel>
+                {span.error ? "Failure" : "Output"}
+              </TemporalSectionLabel>
+              {span.error ? (
+                <TemporalFailurePanel
+                  attempt={span.kind === "activity" ? span.attempt : undefined}
+                  failure={span.error}
+                />
+              ) : (
+                <pre className="max-h-40 overflow-auto rounded-md border border-border bg-card p-3 font-mono text-xs text-foreground">
+                  {safeJsonPretty(span.output)}
+                </pre>
+              )}
+            </div>
           </div>
         </div>
       ) : null}
