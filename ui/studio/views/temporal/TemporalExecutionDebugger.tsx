@@ -1170,6 +1170,7 @@ export function TemporalExecutionDebugger(
                     runId={execution.runId}
                     spans={spans}
                     workflowId={workflowId}
+                    workflowType={execution.workflowType}
                   />
                 ) : inspectorTab === "pending" ? (
                   pendingActivities.length === 0 ? (

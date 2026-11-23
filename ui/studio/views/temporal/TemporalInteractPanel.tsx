@@ -1,4 +1,4 @@
-import { Play, Send } from "lucide-react";
+import { History, Play, Send } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -6,14 +6,15 @@ import type { TemporalGroupedSpan } from "@/data/temporal";
 import { Button } from "@/ui/components/ui/button";
 import { Input } from "@/ui/components/ui/input";
 import { Skeleton } from "@/ui/components/ui/skeleton";
-import { Textarea } from "@/ui/components/ui/textarea";
 import {
   type TemporalHandlerDefinition,
   useTemporalActions,
   useTemporalWorkflowMetadata,
 } from "@/ui/hooks/use-temporal";
+import { useUiState } from "@/ui/hooks/use-ui-state";
 
 import { parseJsonArgsText, safeJsonPretty } from "./temporal-utils";
+import { TemporalJsonEditor } from "./TemporalJsonEditor";
 import {
   TemporalField,
   TemporalSectionLabel,
@@ -77,14 +78,24 @@ function withHistoryNames(
   ];
 }
 
+interface RecentInteraction {
+  argsText: string;
+  kind: InteractKind;
+  name: string;
+}
+
+const MAX_RECENT_INTERACTIONS = 6;
+
 export function TemporalInteractPanel(props: {
   isRunning: boolean;
   namespace: string;
   runId?: string;
   spans: TemporalGroupedSpan[];
   workflowId: string;
+  workflowType?: string;
 }) {
-  const { isRunning, namespace, runId, spans, workflowId } = props;
+  const { isRunning, namespace, runId, spans, workflowId, workflowType } =
+    props;
   const metadata = useTemporalWorkflowMetadata({
     namespace,
     runId,
@@ -92,6 +103,25 @@ export function TemporalInteractPanel(props: {
   });
   const { queryWorkflow, signalWorkflow, updateWorkflow } =
     useTemporalActions(namespace);
+  const [recentByType, setRecentByType] = useUiState<
+    Record<string, RecentInteraction[]>
+  >("temporal:recent-interactions", {}, { persistent: true });
+  const recentKey = workflowType || "__default__";
+  const recent = recentByType[recentKey] ?? [];
+
+  const rememberInteraction = (entry: RecentInteraction) => {
+    setRecentByType((prev) => {
+      const current = prev[recentKey] ?? [];
+      const next = [
+        entry,
+        ...current.filter(
+          (item) => !(item.kind === entry.kind && item.name === entry.name),
+        ),
+      ].slice(0, MAX_RECENT_INTERACTIONS);
+
+      return { ...prev, [recentKey]: next };
+    });
+  };
 
   const run = async (
     kind: InteractKind,
@@ -183,7 +213,7 @@ export function TemporalInteractPanel(props: {
         </div>
       ) : null}
 
-      {!isRunning && hasHandlers ? (
+      {!isRunning ? (
         <p className="text-2xs text-muted-foreground">
           This run is closed. It still answers Queries, but takes no Signal or
           Update.
@@ -233,7 +263,13 @@ export function TemporalInteractPanel(props: {
         </p>
       ) : null}
 
-      <CustomInteraction collapsed={hasHandlers} onRun={run} />
+      <CustomInteraction
+        collapsed={hasHandlers}
+        isRunning={isRunning}
+        onRemember={rememberInteraction}
+        onRun={run}
+        recent={recent}
+      />
     </div>
   );
 }
@@ -311,13 +347,15 @@ function HandlerRow(props: {
         </p>
       ) : null}
       {argsOpen ? (
-        <Textarea
-          aria-label={`Arguments for ${handler.name} (JSON array)`}
+        <TemporalJsonEditor
+          ariaLabel={`Arguments for ${handler.name} (JSON array)`}
+          id={`temporal-handler-args-${kind}-${handler.name}`}
+          isInvalid={Boolean(parseJsonArgsText(argsText).error)}
+          minHeight="60px"
+          onChange={setArgsText}
+          onSubmit={submitTypedArgs}
+          samples={[]}
           value={argsText}
-          onChange={(e) => setArgsText(e.target.value)}
-          rows={2}
-          className="font-mono text-xs md:text-xs"
-          spellCheck={false}
         />
       ) : null}
       {output ? <InteractOutputBlock output={output} /> : null}
@@ -327,19 +365,26 @@ function HandlerRow(props: {
 
 function CustomInteraction(props: {
   collapsed: boolean;
+  isRunning: boolean;
+  onRemember: (entry: RecentInteraction) => void;
   onRun: (
     kind: InteractKind,
     name: string,
     args: unknown[],
   ) => Promise<InteractOutput>;
+  recent: RecentInteraction[];
 }) {
-  const { collapsed, onRun } = props;
+  const { collapsed, isRunning, onRemember, onRun, recent } = props;
   const [isOpen, setIsOpen] = useState(false);
   const [kind, setKind] = useState<InteractKind>("query");
   const [name, setName] = useState("");
   const [argsText, setArgsText] = useState("[]");
   const [isPending, setIsPending] = useState(false);
   const [output, setOutput] = useState<InteractOutput | null>(null);
+  const effectiveKind: InteractKind = isRunning ? kind : "query";
+  const visibleRecent = isRunning
+    ? recent
+    : recent.filter((item) => item.kind === "query");
 
   if (collapsed && !isOpen) {
     return (
@@ -362,31 +407,69 @@ function CustomInteraction(props: {
       return;
     }
 
-    if (!name.trim()) {
+    const trimmedName = name.trim();
+
+    if (!trimmedName) {
       setOutput({ error: "Enter a name first", label: "Validation" });
       return;
     }
 
+    onRemember({ argsText, kind: effectiveKind, name: trimmedName });
     setIsPending(true);
-    setOutput(await onRun(kind, name.trim(), parsed.args ?? []));
+    setOutput(await onRun(effectiveKind, trimmedName, parsed.args ?? []));
     setIsPending(false);
   };
 
   return (
     <div className="flex flex-col gap-4">
-      <TemporalSegmentedControl
-        ariaLabel="Interaction type"
-        className="w-full"
-        onChange={(next) => {
-          setKind(next);
-          setOutput(null);
-        }}
-        options={KIND_OPTIONS}
-        value={kind}
-      />
+      {isRunning ? (
+        <TemporalSegmentedControl
+          ariaLabel="Interaction type"
+          className="w-full"
+          onChange={(next) => {
+            setKind(next);
+            setOutput(null);
+          }}
+          options={KIND_OPTIONS}
+          value={effectiveKind}
+        />
+      ) : null}
+      {visibleRecent.length > 0 ? (
+        <div
+          className="flex flex-col gap-1.5"
+          data-testid="temporal-interact-recent"
+        >
+          <span className="flex items-center gap-1 text-2xs text-muted-foreground">
+            <History className="size-3" />
+            Recent for this Workflow Type
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            {visibleRecent.map((item) => (
+              <Button
+                key={`${item.kind}:${item.name}`}
+                type="button"
+                variant="outline"
+                size="xs"
+                className="font-mono font-normal"
+                onClick={() => {
+                  setKind(item.kind);
+                  setName(item.name);
+                  setArgsText(item.argsText);
+                  setOutput(null);
+                }}
+              >
+                <span className="font-sans text-muted-foreground">
+                  {KIND_LABEL[item.kind]}
+                </span>{" "}
+                {item.name}
+              </Button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <TemporalField
         htmlFor="temporal-interact-name"
-        label={`${KIND_LABEL[kind]} Name`}
+        label={`${KIND_LABEL[effectiveKind]} Name`}
       >
         <Input
           id="temporal-interact-name"
@@ -396,13 +479,15 @@ function CustomInteraction(props: {
         />
       </TemporalField>
       <TemporalField htmlFor="temporal-interact-args" label="Arguments (JSON)">
-        <Textarea
+        <TemporalJsonEditor
+          ariaLabel="Arguments (JSON)"
           id="temporal-interact-args"
+          isInvalid={Boolean(parseJsonArgsText(argsText).error)}
+          minHeight="76px"
+          onChange={setArgsText}
+          onSubmit={() => void submit()}
+          samples={[]}
           value={argsText}
-          onChange={(e) => setArgsText(e.target.value)}
-          rows={3}
-          className="font-mono text-xs md:text-xs"
-          spellCheck={false}
         />
       </TemporalField>
       <Button
@@ -412,7 +497,7 @@ function CustomInteraction(props: {
         data-testid="temporal-interact-submit"
       >
         <Send />
-        {SUBMIT_LABEL[kind]}
+        {SUBMIT_LABEL[effectiveKind]}
       </Button>
       {output ? <InteractOutputBlock output={output} /> : null}
     </div>

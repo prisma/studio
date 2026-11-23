@@ -129,13 +129,23 @@ export function TemporalJsonEditor(props: {
   handle?: RefObject<TemporalJsonEditorHandle | null>;
   id?: string;
   isInvalid?: boolean;
+  minHeight?: string;
   onChange: (value: string) => void;
   /** Runs for Cmd+Enter or Ctrl+Enter. */
   onSubmit?: () => void;
   samples?: unknown[][];
   value: string;
 }) {
-  const { ariaLabel, handle, id, isInvalid, onChange, onSubmit, value } = props;
+  const {
+    ariaLabel,
+    handle,
+    id,
+    isInvalid,
+    minHeight = "148px",
+    onChange,
+    onSubmit,
+    value,
+  } = props;
   // The extensions are made once; they read what is current through these.
   const samples = useRef<unknown[][]>([]);
   const submit = useRef(onSubmit);
@@ -214,7 +224,7 @@ export function TemporalJsonEditor(props: {
       )}
       extensions={extensions}
       maxHeight="320px"
-      minHeight="148px"
+      minHeight={minHeight}
       onChange={onChange}
       onCreateEditor={(view) => {
         if (handle) {
