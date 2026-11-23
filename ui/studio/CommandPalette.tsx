@@ -2,6 +2,8 @@ import type { LucideIcon } from "lucide-react";
 import {
   BetweenVerticalStart,
   CalendarClock,
+  CircleAlert,
+  Cpu,
   Database,
   FileCode2,
   GalleryVerticalEnd,
@@ -11,6 +13,7 @@ import {
   Search,
   Server,
   Sun,
+  Waypoints,
   Workflow,
 } from "lucide-react";
 import {
@@ -44,6 +47,11 @@ import { Switch } from "../components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group";
 import { useNavigation } from "../hooks/use-navigation";
 import { useNavigationTableList } from "../hooks/use-navigation-table-list";
+import {
+  useTemporalCapabilities,
+  useTemporalSchedules,
+  useTemporalWorkflows,
+} from "../hooks/use-temporal";
 import { useUiState } from "../hooks/use-ui-state";
 import { cn } from "../lib/utils";
 import { useStudio } from "./context";
@@ -51,6 +59,7 @@ import {
   TABLE_SEARCH_UI_STATE_KEY,
   type TableSearchUiState,
 } from "./navigation-ui-state";
+import { toVisibilityQuery } from "./views/temporal/temporal-utils";
 
 const COMMAND_PALETTE_UI_STATE_KEY = "studio:command-palette";
 
@@ -90,7 +99,7 @@ interface CommandPaletteItem {
   keywords?: string[];
   label: string;
   onSelect: (query: string) => void | Promise<void>;
-  section: "context" | "tables" | "views";
+  section: "context" | "schedules" | "tables" | "views" | "workflows";
 }
 
 const CommandPaletteContext = createContext<
@@ -346,6 +355,7 @@ function StudioCommandPalette() {
     themeMode,
     toggleNavigation,
   } = useStudio();
+  const { data: temporalCapabilities } = useTemporalCapabilities();
   const { createUrl, schemaParam, temporalNsParam } = useNavigation();
   const { isOpen, setIsOpen, viewActions } = useCommandPaletteStateContext();
   const [query, setQuery] = useState("");
@@ -548,6 +558,21 @@ function StudioCommandPalette() {
         },
         {
           disabled: false,
+          icon: CircleAlert,
+          id: "view:temporal:attention",
+          keywords: ["temporal", "attention", "stuck", "retrying", "failed"],
+          label: "Temporal Needs Attention",
+          onSelect: () => {
+            window.location.hash = createUrl({
+              temporalNsParam: ns,
+              temporalSectionParam: "attention",
+              viewParam: "temporal",
+            });
+          },
+          section: "views",
+        },
+        {
+          disabled: false,
           icon: CalendarClock,
           id: "view:temporal:schedules",
           keywords: ["temporal", "schedules", "cron", "backfill"],
@@ -576,7 +601,45 @@ function StudioCommandPalette() {
           },
           section: "views",
         },
-        {
+      );
+
+      items.push({
+        disabled: false,
+        icon: Waypoints,
+        id: "view:temporal:types",
+        keywords: ["temporal", "workflow types", "diagram", "steps", "map"],
+        label: "Temporal Workflow Types",
+        onSelect: () => {
+          window.location.hash = createUrl({
+            temporalNsParam: ns,
+            temporalSectionParam: "types",
+            viewParam: "temporal",
+          });
+        },
+        section: "views",
+      });
+
+      // The sidebar shows these two screens only on a server that has them.
+      if (temporalCapabilities?.supportsDescribeTaskQueue) {
+        items.push({
+          disabled: false,
+          icon: Cpu,
+          id: "view:temporal:workers",
+          keywords: ["temporal", "workers", "deployments", "nexus"],
+          label: "Temporal Workers",
+          onSelect: () => {
+            window.location.hash = createUrl({
+              temporalNsParam: ns,
+              temporalSectionParam: "workers",
+              viewParam: "temporal",
+            });
+          },
+          section: "views",
+        });
+      }
+
+      if (temporalCapabilities?.supportsAdminApi !== false) {
+        items.push({
           disabled: false,
           icon: Server,
           id: "view:temporal:cluster",
@@ -590,8 +653,8 @@ function StudioCommandPalette() {
             });
           },
           section: "views",
-        },
-      );
+        });
+      }
     }
 
     return items.filter((item) =>
@@ -601,7 +664,92 @@ function StudioCommandPalette() {
         query,
       }),
     );
-  }, [createUrl, query, temporalNsParam, temporalUrl]);
+  }, [createUrl, query, temporalCapabilities, temporalNsParam, temporalUrl]);
+  // Workflows and schedules come from the Temporal server, so the palette asks
+  // for them only once typing has paused.
+  const temporalNamespace = temporalNsParam ?? "default";
+  const [temporalSearch, setTemporalSearch] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => setTemporalSearch(query.trim()), 200);
+
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  const isTemporalSearchActive =
+    typeof temporalUrl === "string" && isOpen && temporalSearch.length >= 2;
+  const { data: matchingWorkflows } = useTemporalWorkflows({
+    enabled: isTemporalSearchActive,
+    followMode: "paused",
+    includeCounts: false,
+    namespace: temporalNamespace,
+    pageSize: 6,
+    query: toVisibilityQuery(temporalSearch),
+  });
+  const { data: scheduleList } = useTemporalSchedules({
+    enabled: isTemporalSearchActive,
+    followMode: "paused",
+    namespace: temporalNamespace,
+  });
+  const workflowItems = useMemo<CommandPaletteItem[]>(
+    () =>
+      isTemporalSearchActive
+        ? (matchingWorkflows?.executions ?? []).map((run) => ({
+            disabled: false,
+            icon: Workflow,
+            id: `workflow:${run.workflowId}:${run.runId}`,
+            label: `${run.workflowId} · ${run.workflowType} · ${run.status}`,
+            onSelect: () => {
+              window.location.hash = createUrl({
+                temporalNsParam: temporalNamespace,
+                temporalRunParam: run.runId,
+                temporalSectionParam: "workflows",
+                temporalWfParam: run.workflowId,
+                viewParam: "temporal",
+              });
+            },
+            section: "workflows",
+          }))
+        : [],
+    [createUrl, isTemporalSearchActive, matchingWorkflows, temporalNamespace],
+  );
+  const scheduleItems = useMemo<CommandPaletteItem[]>(
+    () =>
+      isTemporalSearchActive
+        ? (scheduleList?.schedules ?? [])
+            .filter((schedule) =>
+              matchesCommandSearch({
+                keywords: [schedule.workflowType],
+                label: schedule.scheduleId,
+                query: temporalSearch,
+              }),
+            )
+            .slice(0, 6)
+            .map((schedule) => ({
+              disabled: false,
+              icon: CalendarClock,
+              id: `schedule:${schedule.scheduleId}`,
+              label: `${schedule.scheduleId} · ${schedule.cadenceSummary}`,
+              onSelect: () => {
+                window.location.hash = createUrl({
+                  temporalNsParam: temporalNamespace,
+                  temporalScheduleParam: schedule.scheduleId,
+                  temporalSectionParam: "schedules",
+                  viewParam: "temporal",
+                });
+              },
+              section: "schedules",
+            }))
+        : [],
+    [
+      createUrl,
+      isTemporalSearchActive,
+      scheduleList,
+      temporalNamespace,
+      temporalSearch,
+    ],
+  );
+
   useEffect(() => {
     if (!isOpen) {
       setQuery("");
@@ -807,6 +955,14 @@ function StudioCommandPalette() {
               {renderSection({
                 items: tableItems,
                 label: "Tables",
+              })}
+              {renderSection({
+                items: workflowItems,
+                label: "Workflows",
+              })}
+              {renderSection({
+                items: scheduleItems,
+                label: "Schedules",
               })}
               {renderAppearanceSection()}
               {renderSection({

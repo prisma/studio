@@ -1,17 +1,15 @@
 import {
+  ArrowDown,
+  ArrowUp,
   Bookmark,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
-  Database,
-  ExternalLink,
-  Play,
+  Columns3,
+  FileUp,
   Plus,
-  RefreshCw,
-  Search,
   Send,
   StopCircle,
-  Waves,
-  X,
   XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -19,10 +17,13 @@ import { toast } from "sonner";
 
 import type {
   TemporalBulkActionKind,
+  TemporalExecutionDetail,
   TemporalFollowMode,
   TemporalWorkflowExecution,
-  TemporalWorkflowStatus,
+  TemporalWorkflowSort,
+  TemporalWorkflowSortField,
 } from "@/data/temporal";
+import { buildExecutionDetailFromHistory } from "@/data/temporal";
 import { Button } from "@/ui/components/ui/button";
 import { Checkbox } from "@/ui/components/ui/checkbox";
 import {
@@ -33,6 +34,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/ui/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/ui/components/ui/dropdown-menu";
 import { Input } from "@/ui/components/ui/input";
 import { Label } from "@/ui/components/ui/label";
 import {
@@ -40,6 +49,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/ui/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/ui/components/ui/select";
 import { Skeleton } from "@/ui/components/ui/skeleton";
 import {
   Table,
@@ -52,54 +68,86 @@ import {
 import { Textarea } from "@/ui/components/ui/textarea";
 import { useNavigation } from "@/ui/hooks/use-navigation";
 import {
-  useTemporalActions,
+  useTemporalBulkJob,
   useTemporalCapabilities,
-  useTemporalWorkflowDetail,
+  useTemporalFacets,
+  useTemporalWorkflowCounts,
   useTemporalWorkflows,
 } from "@/ui/hooks/use-temporal";
 import { cn } from "@/ui/lib/utils";
 
-import { useStudio } from "../../context";
 import { StudioHeader } from "../../StudioHeader";
 import {
-  formatDuration,
-  formatRelativeTime,
+  useWorkflowColumns,
+  type WorkflowColumn,
+} from "./temporal-grid-columns";
+import {
+  MAX_TEMPORAL_SAVED_VIEWS,
+  TEMPORAL_BUILT_IN_VIEWS,
+  useTemporalRecentFilters,
+  useTemporalSavedViews,
+} from "./temporal-saved-views";
+import {
+  isShortcutBlockedTarget,
   parseJsonArgsText,
-  safeJsonPretty,
+  pluralize,
+  summarizeIds,
+  toVisibilityQuery,
 } from "./temporal-utils";
+import { TemporalFilterBuilder } from "./TemporalFilterBuilder";
 import {
   TemporalConfirmDialog,
   TemporalFollowControl,
-  WorkflowStatusBadge,
-  WorkflowStatusIcon,
+  temporalIconScale,
+  TemporalNamespaceBadge,
+  temporalTableHeadClass,
+  TemporalTimeFormatControl,
 } from "./TemporalPrimitives";
+import {
+  type TemporalQueryPhase,
+  TemporalQueryStatusButton,
+} from "./TemporalQueryStatusButton";
+import { TemporalRunPreview } from "./TemporalRunPreview";
+import { TemporalSearchField } from "./TemporalSearchField";
 import type { TemporalStartPreset } from "./TemporalStartSheet";
+import {
+  statusPresetOfQuery,
+  TemporalStatusFilterBar,
+} from "./TemporalStatusFilterBar";
 
-const STATUS_FILTERS: Array<{
-  label: string;
-  status: TemporalWorkflowStatus | "All";
-}> = [
-  { label: "All", status: "All" },
-  { label: "Running", status: "Running" },
-  { label: "Failed", status: "Failed" },
-  { label: "Timed Out", status: "TimedOut" },
-  { label: "Completed", status: "Completed" },
-  { label: "Canceled", status: "Canceled" },
-  { label: "Terminated", status: "Terminated" },
-];
+const PAGE_SIZES = [50, 100, 250];
 
-const SAVED_VIEWS = [
-  { label: "All Executions", query: "" },
-  { label: "Failed Workflows", query: 'ExecutionStatus = "Failed"' },
-  { label: "Running Workflows", query: 'ExecutionStatus = "Running"' },
-  { label: "Billing Queue", query: 'TaskQueue = "billing"' },
-  { label: "ChargeOrder Runs", query: 'WorkflowType = "ChargeOrder"' },
-];
+const SORT_FIELDS: ReadonlySet<string> = new Set<TemporalWorkflowSortField>([
+  "CloseTime",
+  "Duration",
+  "ExecutionStatus",
+  "HistoryLength",
+  "StartTime",
+  "TaskQueue",
+  "WorkflowId",
+  "WorkflowType",
+]);
+
+/** Reads the `sort` URL value, for example `StartTime:desc`. */
+function parseWorkflowSort(
+  raw: string | null | undefined,
+): TemporalWorkflowSort | null {
+  const [field, direction] = (raw ?? "").split(":");
+
+  return field && SORT_FIELDS.has(field)
+    ? {
+        direction: direction === "asc" ? "asc" : "desc",
+        field: field as TemporalWorkflowSortField,
+      }
+    : null;
+}
 
 interface TemporalWorkflowsGridProps {
   followMode: TemporalFollowMode;
   namespace: string;
   onFollowModeChange: (mode: TemporalFollowMode) => void;
+  /** Opens a run that was read from a history file. */
+  onImportHistory: (detail: TemporalExecutionDetail) => void;
   onOpenExecution: (workflowId: string, runId?: string) => void;
   onOpenStart: (preset?: TemporalStartPreset | null) => void;
   onQueryChange: (query: string) => void;
@@ -113,58 +161,177 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
     followMode,
     onQueryChange,
     onFollowModeChange,
+    onImportHistory,
     onOpenExecution,
     onOpenStart,
   } = props;
+  const historyFileRef = useRef<HTMLInputElement | null>(null);
+  const importHistoryFile = async (file: File) => {
+    try {
+      onImportHistory(
+        buildExecutionDetailFromHistory({
+          history: JSON.parse(await file.text()) as unknown,
+          workflowId: file.name.replace(/\.json$/i, ""),
+        }),
+      );
+    } catch (err) {
+      toast.error(
+        `Could not read ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  };
 
   const [draftQuery, setDraftQuery] = useState(query);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
-  const [focusedIndex, setFocusedIndex] = useState<number>(0);
+  const [focusedIndex, setFocusedIndex] = useState<number>(-1);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(
     () => new Set(),
   );
   const [bulkSignalOpen, setBulkSignalOpen] = useState(false);
-  const [bulkSignalName, setBulkSignalName] = useState("approveDeposit");
+  const [bulkSignalName, setBulkSignalName] = useState("");
   const [bulkSignalArgs, setBulkSignalArgs] = useState("[]");
+  const [bulkCancelConfirmOpen, setBulkCancelConfirmOpen] = useState(false);
   const [bulkTerminateConfirmOpen, setBulkTerminateConfirmOpen] =
     useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const { sortParam, setSortParam } = useNavigation();
+  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]!);
+  // The token that loads each page after the first, in page order.
+  const [pageTokens, setPageTokens] = useState<string[]>([]);
 
   useEffect(() => {
     setDraftQuery(query);
   }, [query]);
 
   const { data: capabilities } = useTemporalCapabilities();
-  const { data, isLoading, isError, error, refetch, isFetching } =
-    useTemporalWorkflows({
-      followMode,
-      namespace,
-      query,
-    });
+  // Plain text, such as a pasted ID, becomes a search on IDs and types.
+  const visibilityQuery = toVisibilityQuery(query);
+  const isPlainTextSearch = visibilityQuery !== query.trim();
+  // A server that lists by Workflow Id shows the newest runs first instead.
+  const sort =
+    parseWorkflowSort(sortParam) ??
+    (capabilities?.nativeListOrder === "workflow-id"
+      ? ({ direction: "desc", field: "StartTime" } as const)
+      : undefined);
+  const sortKey = sort ? `${sort.field}:${sort.direction}` : "";
 
-  const { bulkAction } = useTemporalActions(namespace);
+  useEffect(() => {
+    setPageTokens([]);
+    setSelectedKeys(new Set());
+    setAllMatchingSelected(false);
+    setFocusedIndex(-1);
+  }, [namespace, pageSize, sortKey, visibilityQuery]);
+
+  const toggleSort = (field: TemporalWorkflowSortField) => {
+    // First click sorts descending, the second ascending, the third clears the sort.
+    if (sort?.field !== field || !sortParam) {
+      void setSortParam(`${field}:desc`);
+    } else if (sort.direction === "desc") {
+      void setSortParam(`${field}:asc`);
+    } else {
+      void setSortParam(null);
+    }
+  };
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    hasCounts,
+    isCounting,
+    isFetching,
+    isPlaceholderData,
+  } = useTemporalWorkflows({
+    followMode,
+    namespace,
+    pageSize,
+    pageToken: pageTokens.at(-1),
+    query: visibilityQuery,
+    sort,
+  });
+
+  const { data: namespaceCounts } = useTemporalWorkflowCounts({
+    followMode,
+    namespace,
+  });
+  const { clearRecentFilters, recentFilters, rememberFilter } =
+    useTemporalRecentFilters();
+  const hasRowsOfQuery = data !== undefined && !isPlaceholderData && !isError;
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const refresh = () => {
+    setIsRefreshing(true);
+    void refetch().finally(() => setIsRefreshing(false));
+  };
+  // A query the user asked for: a new filter, sort or page, or a refresh.
+  const queryPhase: TemporalQueryPhase | null =
+    isLoading || isPlaceholderData || isRefreshing
+      ? "rows"
+      : isCounting
+        ? "count"
+        : null;
+
+  useEffect(() => {
+    const text = query.trim();
+
+    if (hasRowsOfQuery && statusPresetOfQuery(text) === null) {
+      rememberFilter(text);
+    }
+  }, [hasRowsOfQuery, query, rememberFilter]);
+
+  const bulkJob = useTemporalBulkJob(namespace);
+  // True when the bulk bar acts on every match of the filter, not only on this page.
+  const [allMatchingSelected, setAllMatchingSelected] = useState(false);
+  const isBulkPending =
+    bulkJob.start.isPending || bulkJob.job?.state === "running";
+  const { saveView, views: savedViews } = useTemporalSavedViews();
+  const [saveViewOpen, setSaveViewOpen] = useState(false);
+  const [saveViewName, setSaveViewName] = useState("");
+  const isQuerySaved = [...TEMPORAL_BUILT_IN_VIEWS, ...savedViews].some(
+    (view) =>
+      view.query === query.trim() && (view.sort ?? "") === (sortParam ?? ""),
+  );
 
   const executions = useMemo(() => data?.executions ?? [], [data?.executions]);
+  const { data: facets } = useTemporalFacets(namespace);
+  const {
+    available: availableColumns,
+    columns,
+    resetColumns,
+    setColumnWidth,
+    shownIds: shownColumnIds,
+    toggleColumn,
+    widthOf,
+  } = useWorkflowColumns(executions);
+  // The checkbox column and the expand column come before the data columns.
+  const FIXED_COLUMNS_WIDTH = 72;
+  const tableWidth =
+    FIXED_COLUMNS_WIDTH +
+    columns.reduce((sum, column) => sum + widthOf(column), 0);
+  const flexColumnId = (
+    columns.find((column) => column.id === "workflowId") ??
+    columns.find((column) => column.id === "type") ??
+    columns.at(-1)
+  )?.id;
   const countsByStatus = data?.countsByStatus ?? {};
   const totalCount = data?.totalCount ?? executions.length;
+  const firstRowNumber = pageTokens.length * pageSize + 1;
+  const hasNextPage = Boolean(data?.nextPageToken) && !isPlaceholderData;
+  const goToNextPage = () => {
+    if (data?.nextPageToken) {
+      setPageTokens((tokens) => [...tokens, data.nextPageToken!]);
+      setSelectedKeys(new Set());
+      setFocusedIndex(-1);
+    }
+  };
+  const goToPreviousPage = () => {
+    setPageTokens((tokens) => tokens.slice(0, -1));
+    setSelectedKeys(new Set());
+    setFocusedIndex(-1);
+  };
 
   const rowKey = (exec: TemporalWorkflowExecution) =>
     `${exec.workflowId}::${exec.runId}`;
-
-  const activeStatusFilter = useMemo<TemporalWorkflowStatus | "All">(() => {
-    const match = query.trim().match(/^ExecutionStatus\s*=\s*"([A-Za-z]+)"$/);
-    if (!match) return "All";
-    return match[1] as TemporalWorkflowStatus;
-  }, [query]);
-
-  const knownWorkflowTypes = useMemo(
-    () => Array.from(new Set(executions.map((e) => e.workflowType))),
-    [executions],
-  );
-  const knownTaskQueues = useMemo(
-    () => Array.from(new Set(executions.map((e) => e.taskQueue))),
-    [executions],
-  );
 
   const toggleSelect = useCallback((key: string) => {
     setSelectedKeys((prev) => {
@@ -191,24 +358,25 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
     () => executions.filter((e) => selectedKeys.has(rowKey(e))),
     [executions, selectedKeys],
   );
+  const selectedSummary = `${pluralize(selectedExecutions.length, "workflow")} (${summarizeIds(selectedExecutions.map((e) => e.workflowId))})`;
+
+  const applyQuery = (nextQuery: string) => {
+    setDraftQuery(nextQuery);
+    onQueryChange(nextQuery);
+  };
 
   // Keyboard navigation (j/k, Space, Enter, /)
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const inInput =
-        target &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable);
+      if (isShortcutBlockedTarget(event.target, event.key)) return;
 
-      if (event.key === "/" && !inInput) {
+      if (event.key === "/") {
         event.preventDefault();
         searchInputRef.current?.focus();
         return;
       }
 
-      if (inInput || executions.length === 0) return;
+      if (executions.length === 0) return;
 
       if (event.key === "j" || event.key === "ArrowDown") {
         event.preventDefault();
@@ -234,32 +402,39 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [executions, focusedIndex, onOpenExecution, toggleSelect]);
 
+  const runningTotal = countsByStatus.Running ?? 0;
+  const bulkCount = allMatchingSelected
+    ? runningTotal
+    : selectedExecutions.length;
+  const bulkSummary = allMatchingSelected
+    ? `${pluralize(runningTotal, "running workflow")} matching ${query.trim() ? "this search" : "in this namespace"}`
+    : selectedSummary;
+
   const runBulkAction = async (
     action: TemporalBulkActionKind,
-    opts?: { signalArgs?: unknown[]; signalName?: string },
+    opts?: { reason?: string; signalArgs?: unknown[]; signalName?: string },
   ) => {
-    if (selectedExecutions.length === 0) return;
+    if (bulkCount === 0) return;
+    setBulkSignalOpen(false);
+
     try {
-      const res = await bulkAction.mutateAsync({
+      await bulkJob.start.mutateAsync({
         action,
-        items: selectedExecutions.map((e) => ({
-          runId: e.runId,
-          workflowId: e.workflowId,
-        })),
-        reason: `Bulk ${action} via Prisma Studio`,
+        ...(allMatchingSelected
+          ? { query: visibilityQuery }
+          : {
+              items: selectedExecutions.map((e) => ({
+                runId: e.runId,
+                workflowId: e.workflowId,
+              })),
+            }),
+        reason: opts?.reason || `Bulk ${action} via Prisma Studio`,
         ...(opts?.signalName
           ? { signalArgs: opts.signalArgs, signalName: opts.signalName }
           : {}),
       });
-      if (res.failed === 0) {
-        toast.success(`Bulk ${action}: ${res.succeeded} workflow(s) updated`);
-      } else {
-        toast.warning(
-          `Bulk ${action}: ${res.succeeded} succeeded, ${res.failed} failed`,
-        );
-      }
       setSelectedKeys(new Set());
-      setBulkSignalOpen(false);
+      setAllMatchingSelected(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : `Bulk ${action} failed`);
     }
@@ -267,244 +442,310 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
 
   return (
     <div
-      className="flex h-full min-h-0 flex-col bg-background"
+      className={cn(
+        "@container flex h-full min-h-0 flex-col bg-background",
+        temporalIconScale,
+      )}
       data-testid="temporal-workflows-grid"
     >
       <StudioHeader
         title="Workflows"
         endContent={
-          <div className="flex items-center gap-1.5">
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 px-2 text-xs"
-                >
-                  <Bookmark className="mr-1 size-3" />
-                  Views
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-56 p-1.5">
-                <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Saved Visibility Views
-                </div>
-                {SAVED_VIEWS.map((view) => (
-                  <button
-                    key={view.label}
-                    type="button"
-                    onClick={() => {
-                      setDraftQuery(view.query);
-                      onQueryChange(view.query);
-                    }}
-                    className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs hover:bg-secondary"
-                  >
-                    <span>{view.label}</span>
-                  </button>
-                ))}
-              </PopoverContent>
-            </Popover>
+          <>
+            {/* A narrow page keeps the search field usable and drops the rare controls. */}
+            <span className="contents @max-2xl:hidden">
+              <TemporalFollowControl
+                value={followMode}
+                onChange={onFollowModeChange}
+              />
+            </span>
 
-            <TemporalFollowControl
-              value={followMode}
-              onChange={onFollowModeChange}
+            <TemporalQueryStatusButton
+              isError={isError}
+              isPolling={isFetching}
+              onRefresh={refresh}
+              phase={queryPhase}
+              queryKey={[
+                namespace,
+                visibilityQuery,
+                sort ? `${sort.field}:${sort.direction}` : "",
+                pageTokens.at(-1) ?? "",
+              ].join("\n")}
             />
 
+            <input
+              ref={historyFileRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              aria-label="History JSON file"
+              data-testid="temporal-import-history-input"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+
+                if (file) {
+                  void importHistoryFile(file);
+                }
+
+                event.target.value = "";
+              }}
+            />
             <Button
               variant="outline"
               size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={() => void refetch()}
-              aria-label="Refresh workflows"
+              className="w-8 px-0 @max-2xl:hidden"
+              aria-label="Open a history file"
+              title="Open a history JSON file from the Temporal CLI, the Temporal UI or Studio"
+              onClick={() => historyFileRef.current?.click()}
             >
-              <RefreshCw
-                className={cn(
-                  "size-3.5",
-                  isFetching && "motion-safe:animate-spin",
-                )}
-              />
+              <FileUp />
             </Button>
 
             <Button
               size="sm"
-              className="h-7 px-2.5 text-xs"
-              onClick={() =>
-                onOpenStart({
-                  taskQueue: knownTaskQueues[0],
-                  workflowType: knownWorkflowTypes[0],
-                })
-              }
+              onClick={() => onOpenStart(null)}
               data-testid="temporal-start-workflow-btn"
             >
-              <Plus className="mr-1 size-3.5" />
-              Start
+              <Plus />
+              <span className="@max-3xl:sr-only">Start Workflow</span>
             </Button>
-          </div>
+          </>
         }
       >
-        <form
-          className="relative flex max-w-xl flex-1 items-center"
-          onSubmit={(e) => {
-            e.preventDefault();
-            onQueryChange(draftQuery.trim());
-          }}
-        >
-          <Search className="pointer-events-none absolute left-2.5 size-3.5 text-muted-foreground" />
-          <Input
-            ref={searchInputRef}
-            value={draftQuery}
-            onChange={(e) => setDraftQuery(e.target.value)}
-            placeholder='Visibility query (e.g. TaskQueue = "billing" AND ExecutionStatus = "Failed")'
-            className="h-8 pr-7 pl-8 font-mono text-xs"
-            data-testid="temporal-visibility-search"
-          />
-          {draftQuery.length > 0 ? (
-            <button
-              type="button"
-              aria-label="Clear visibility query"
-              onClick={() => {
-                setDraftQuery("");
-                onQueryChange("");
-              }}
-              className="absolute right-2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="size-3.5" />
-            </button>
-          ) : null}
-        </form>
+        <span className="contents @max-3xl:hidden">
+          <TemporalNamespaceBadge namespace={namespace} />
+        </span>
+        <TemporalSearchField
+          draft={draftQuery}
+          facets={facets}
+          inputRef={searchInputRef}
+          onClear={() => applyQuery("")}
+          onDraftChange={setDraftQuery}
+          onSubmit={onQueryChange}
+        />
+        <TemporalFilterBuilder
+          facets={facets}
+          onApply={applyQuery}
+          query={query}
+        />
+        {query.trim().length > 0 && !isQuerySaved ? (
+          <Popover open={saveViewOpen} onOpenChange={setSaveViewOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                data-testid="temporal-save-view"
+              >
+                <Bookmark />
+                <span className="max-xl:sr-only">Save View</span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-72">
+              <form
+                className="flex flex-col gap-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+
+                  if (!saveViewName.trim()) {
+                    return;
+                  }
+
+                  saveView({
+                    name: saveViewName.trim(),
+                    query: query.trim(),
+                    ...(sortParam ? { sort: sortParam } : {}),
+                  });
+                  toast.success(`Saved view "${saveViewName.trim()}"`);
+                  setSaveViewName("");
+                  setSaveViewOpen(false);
+                }}
+              >
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="temporal-save-view-name" className="text-xs">
+                    Name this search
+                  </Label>
+                  <Input
+                    id="temporal-save-view-name"
+                    value={saveViewName}
+                    onChange={(e) => setSaveViewName(e.target.value)}
+                    placeholder="For example: Failed payouts"
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <p className="text-2xs text-muted-foreground">
+                  The view goes in the sidebar of this browser. To share it,
+                  copy the link of this page.
+                </p>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={
+                    !saveViewName.trim() ||
+                    savedViews.length >= MAX_TEMPORAL_SAVED_VIEWS
+                  }
+                >
+                  {savedViews.length >= MAX_TEMPORAL_SAVED_VIEWS
+                    ? `Limit of ${MAX_TEMPORAL_SAVED_VIEWS} views reached`
+                    : "Save View"}
+                </Button>
+              </form>
+            </PopoverContent>
+          </Popover>
+        ) : null}
       </StudioHeader>
 
-      {/* Status Filter Pills Strip */}
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-border bg-secondary/40 px-3 py-1.5">
-        {STATUS_FILTERS.map((item) => {
-          const count =
-            item.status === "All"
-              ? totalCount
-              : (countsByStatus[item.status] ?? 0);
-          const isActive = activeStatusFilter === item.status;
+      <TemporalStatusFilterBar
+        counts={namespaceCounts ?? (query.trim() === "" ? data : undefined)}
+        isLoadingRows={isPlaceholderData}
+        isPlainTextSearch={isPlainTextSearch}
+        matchCount={hasCounts ? totalCount : undefined}
+        onApply={applyQuery}
+        onClearRecent={clearRecentFilters}
+        query={query}
+        recentFilters={recentFilters}
+      />
 
-          if (item.status !== "All" && count === 0 && !isActive) {
-            return null;
-          }
-
-          return (
-            <button
-              key={item.status}
-              type="button"
-              onClick={() => {
-                const nextQuery =
-                  item.status === "All"
-                    ? ""
-                    : `ExecutionStatus = "${item.status}"`;
-                setDraftQuery(nextQuery);
-                onQueryChange(nextQuery);
-              }}
-              data-testid={`temporal-status-pill-${item.status}`}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium tabular-nums transition-colors",
-                isActive
-                  ? "border-primary bg-background text-foreground shadow-2xs"
-                  : "border-border bg-card text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {item.status !== "All" ? (
-                <WorkflowStatusIcon
-                  status={item.status}
-                  className="size-3 shrink-0"
-                />
-              ) : null}
-              <span>{item.label}</span>
-              <span className="font-mono text-[10.5px] opacity-80">
-                {count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Main Workflows Grid */}
       <div className="min-h-0 flex-1 overflow-auto">
         {isLoading ? (
-          <div className="space-y-2 p-4">
+          <div className="flex flex-col gap-2 p-4">
             {Array.from({ length: 6 }).map((_, idx) => (
               <Skeleton key={idx} className="h-9 w-full" />
             ))}
           </div>
         ) : isError ? (
-          <div className="flex flex-col items-center justify-center gap-2 p-8 text-xs text-muted-foreground">
-            <p className="font-medium text-destructive">
-              {error instanceof Error
-                ? error.message
-                : "Failed to load workflows"}
+          <div
+            className="flex flex-col items-center justify-center gap-3 p-10 text-center text-sm text-muted-foreground"
+            data-testid="temporal-grid-error"
+          >
+            <p className="font-medium text-foreground">
+              {query && !isPlainTextSearch
+                ? "The server could not read this filter"
+                : "Could not load the workflows"}
             </p>
-            <Button variant="outline" size="sm" onClick={() => void refetch()}>
-              Retry
-            </Button>
+            <p className="max-w-xl font-mono text-xs text-destructive">
+              {error instanceof Error ? error.message : "Unknown error"}
+            </p>
+            {query && !isPlainTextSearch ? (
+              <p className="max-w-xl text-xs">
+                A filter compares attributes, joined with AND or OR. For
+                example:{" "}
+                <code className="font-mono text-foreground">
+                  WorkflowType = &quot;orderFulfillment&quot; AND
+                  ExecutionStatus = &quot;Failed&quot;
+                </code>
+              </p>
+            ) : null}
+            <div className="flex gap-2">
+              {query ? (
+                <Button size="sm" onClick={() => applyQuery("")}>
+                  Clear Filter
+                </Button>
+              ) : null}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void refetch()}
+              >
+                Retry
+              </Button>
+            </div>
           </div>
         ) : executions.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 p-10 text-xs text-muted-foreground">
+          <div className="flex flex-col items-center justify-center gap-3 p-10 text-sm text-muted-foreground">
             <p>
               No workflows found in namespace{" "}
               <code className="font-mono text-foreground">{namespace}</code>
-              {query ? ` matching ${query}` : ""}.
+              {isPlainTextSearch
+                ? ` with a workflow ID, type or run ID starting with ${query.trim()}`
+                : query
+                  ? ` matching ${query}`
+                  : ""}
+              .
             </p>
             <div className="flex gap-2">
               {query ? (
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    setDraftQuery("");
-                    onQueryChange("");
-                  }}
+                  onClick={() => applyQuery("")}
                 >
                   Clear Filter
                 </Button>
               ) : null}
               <Button size="sm" onClick={() => onOpenStart(null)}>
-                <Plus className="mr-1 size-3.5" />
+                <Plus />
                 Start Workflow
               </Button>
             </div>
           </div>
         ) : (
-          <Table className="text-xs">
-            <TableHeader className="sticky top-0 z-10 bg-secondary/95 backdrop-blur-xs">
-              <TableRow className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground hover:bg-transparent">
-                <TableHead className="h-8 w-9 px-3">
+          <Table
+            aria-busy={isPlaceholderData}
+            // These rows belong to the previous search until the new ones arrive.
+            className={cn(
+              "table-fixed text-xs transition-opacity",
+              isPlaceholderData && "opacity-50",
+            )}
+            // Fixed widths, so dragging one column edge moves no other column.
+            style={{ minWidth: "100%", width: tableWidth }}
+          >
+            <colgroup>
+              <col style={{ width: 40 }} />
+              <col style={{ width: 32 }} />
+              {/* One column has no width, so it takes the space left over on a wide grid. */}
+              {columns.map((column) => (
+                <col
+                  key={column.id}
+                  style={
+                    column.id === flexColumnId
+                      ? undefined
+                      : { width: widthOf(column) }
+                  }
+                />
+              ))}
+            </colgroup>
+            <TableHeader className="sticky top-0 z-10 bg-background/95">
+              <TableRow className="border-border/70 bg-muted/20 hover:bg-muted/20">
+                <TableHead className="h-9 pr-2 pl-4">
                   <Checkbox
                     checked={allSelected}
                     onCheckedChange={toggleSelectAll}
                     aria-label="Select all workflows"
                   />
                 </TableHead>
-                <TableHead className="h-8 w-7 px-0" />
-                <TableHead className="h-8 px-2">Status</TableHead>
-                <TableHead className="h-8 px-2">Workflow</TableHead>
-                <TableHead className="h-8 px-2">Task Queue</TableHead>
-                <TableHead className="h-8 px-2">Started</TableHead>
-                <TableHead className="h-8 px-2 text-right">Duration</TableHead>
-                <TableHead className="h-8 px-3 text-right">Events</TableHead>
+                <TableHead className="h-9 px-0" />
+                {columns.map((column) => (
+                  <ColumnHead
+                    key={column.id}
+                    column={column}
+                    onResize={(width) => setColumnWidth(column.id, width)}
+                    onSort={toggleSort}
+                    sort={sort}
+                    width={widthOf(column)}
+                  />
+                ))}
               </TableRow>
             </TableHeader>
             <TableBody>
               {executions.map((exec, index) => {
                 const key = rowKey(exec);
-                const isSelected = selectedKeys.has(key);
-                const isExpanded = expandedKey === key;
-                const isFocused = focusedIndex === index;
 
                 return (
                   <WorkflowGridRow
                     key={key}
+                    columns={columns}
                     execution={exec}
-                    isExpanded={isExpanded}
-                    isFocused={isFocused}
-                    isSelected={isSelected}
+                    isExpanded={expandedKey === key}
+                    isFocused={focusedIndex === index}
+                    isSelected={selectedKeys.has(key)}
                     namespace={namespace}
                     onClone={(preset) => onOpenStart(preset)}
                     onFocus={() => setFocusedIndex(index)}
                     onOpen={() => onOpenExecution(exec.workflowId, exec.runId)}
+                    onOpenRun={(runId) =>
+                      onOpenExecution(exec.workflowId, runId)
+                    }
                     onToggleExpand={() =>
                       setExpandedKey((prev) => (prev === key ? null : key))
                     }
@@ -517,129 +758,230 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
         )}
       </div>
 
-      {/* Multi-Select Bulk Action Bar */}
       {selectedExecutions.length > 0 ? (
         <div
-          className="flex flex-wrap items-center justify-between gap-2 border-t border-primary/50 bg-secondary px-4 py-2 text-xs"
+          className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-muted/40 px-4 py-2 text-xs"
           data-testid="temporal-bulk-bar"
         >
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-foreground">
-              {selectedExecutions.length} selected
+            <span className="font-medium text-foreground">
+              {allMatchingSelected
+                ? `All ${runningTotal.toLocaleString("en-US")} running matches selected`
+                : `${selectedExecutions.length} selected`}
             </span>
-            <button
-              type="button"
-              onClick={() => setSelectedKeys(new Set())}
-              className="text-muted-foreground hover:text-foreground"
+            {allSelected &&
+            !allMatchingSelected &&
+            totalCount > executions.length ? (
+              <Button
+                variant="link"
+                size="xs"
+                className="h-auto p-0"
+                onClick={() => setAllMatchingSelected(true)}
+                data-testid="temporal-select-all-matching"
+              >
+                Select all {runningTotal.toLocaleString("en-US")} running
+                workflows that match
+              </Button>
+            ) : null}
+            <Button
+              variant="ghost"
+              size="xs"
+              className="text-muted-foreground"
+              onClick={() => {
+                setSelectedKeys(new Set());
+                setAllMatchingSelected(false);
+              }}
             >
               Clear
-            </button>
+            </Button>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="sm"
-              className="h-7 text-xs"
-              disabled={bulkAction.isPending}
+              disabled={isBulkPending}
               onClick={() => setBulkSignalOpen(true)}
             >
-              <Send className="mr-1 size-3" />
-              Bulk Signal
+              <Send />
+              Signal
             </Button>
             <Button
               variant="outline"
               size="sm"
-              className="h-7 text-xs"
-              disabled={bulkAction.isPending}
-              onClick={() => void runBulkAction("cancel")}
+              disabled={isBulkPending}
+              onClick={() => setBulkCancelConfirmOpen(true)}
             >
-              <XCircle className="mr-1 size-3" />
-              Bulk Cancel
+              <XCircle />
+              Request Cancel
             </Button>
             <Button
               variant="destructive"
               size="sm"
-              className="h-7 text-xs"
-              disabled={bulkAction.isPending}
+              disabled={isBulkPending}
               onClick={() => setBulkTerminateConfirmOpen(true)}
             >
-              <StopCircle className="mr-1 size-3" />
-              Bulk Terminate
+              <StopCircle />
+              Terminate
             </Button>
           </div>
         </div>
       ) : null}
 
-      {/* Footer Status Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-card px-4 py-1.5 text-[11px] text-muted-foreground">
+      {data?.sortSkippedReason ? (
+        <p
+          className="border-t border-border bg-amber-500/10 px-4 py-1.5 text-2xs text-foreground"
+          data-testid="temporal-sort-skipped"
+        >
+          {data.sortSkippedReason}
+        </p>
+      ) : null}
+
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-border bg-card px-4 py-1.5 text-2xs text-muted-foreground">
         <div className="flex items-center gap-2">
-          <span>
-            Showing{" "}
-            <strong className="text-foreground">{executions.length}</strong> of{" "}
-            <strong className="text-foreground">{totalCount}</strong> executions
+          <span data-testid="temporal-row-range">
+            {executions.length === 0 ? (
+              "No rows"
+            ) : (
+              <>
+                Rows{" "}
+                <span className="font-medium tabular-nums text-foreground">
+                  {firstRowNumber.toLocaleString("en-US")}–
+                  {(firstRowNumber + executions.length - 1).toLocaleString(
+                    "en-US",
+                  )}
+                </span>{" "}
+                of{" "}
+                <span className="font-medium tabular-nums text-foreground">
+                  {totalCount.toLocaleString("en-US")}
+                </span>
+              </>
+            )}
           </span>
+          <Button
+            variant="outline"
+            size="xs"
+            className="w-6 px-0"
+            aria-label="Previous page"
+            disabled={pageTokens.length === 0}
+            onClick={goToPreviousPage}
+          >
+            <ChevronLeft />
+          </Button>
+          <Button
+            variant="outline"
+            size="xs"
+            className="w-6 px-0"
+            aria-label="Next page"
+            disabled={!hasNextPage}
+            onClick={goToNextPage}
+          >
+            <ChevronRight />
+          </Button>
+          <Select
+            value={String(pageSize)}
+            onValueChange={(next) => setPageSize(Number(next))}
+          >
+            <SelectTrigger
+              aria-label="Rows per page"
+              className="h-6 w-auto gap-1 px-2 text-2xs"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PAGE_SIZES.map((size) => (
+                <SelectItem key={size} className="text-xs" value={String(size)}>
+                  {size} per page
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="xs"
+                className="h-6"
+                data-testid="temporal-columns"
+              >
+                <Columns3 />
+                Columns
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              className="max-h-80 w-60 overflow-y-auto"
+            >
+              {availableColumns.map((column) => (
+                <DropdownMenuCheckboxItem
+                  key={column.id}
+                  checked={shownColumnIds.includes(column.id)}
+                  className="text-xs"
+                  // Keep the menu open, so several columns can be changed at once.
+                  onSelect={(event) => event.preventDefault()}
+                  onCheckedChange={() => toggleColumn(column.id)}
+                >
+                  {column.label}
+                </DropdownMenuCheckboxItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-xs" onSelect={resetColumns}>
+                Reset Columns and Widths
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           {capabilities ? (
-            <span className="hidden font-mono sm:inline">
-              · {capabilities.serverKind} ({capabilities.persistenceStore} ·{" "}
-              {capabilities.shardCount}{" "}
-              {capabilities.shardCount === 1 ? "shard" : "shards"})
+            <span className="hidden font-mono @7xl:inline">
+              {capabilities.serverKind} ({capabilities.persistenceStore} ·{" "}
+              {pluralize(capabilities.shardCount, "shard")})
             </span>
           ) : null}
         </div>
-        <span className="hidden font-mono text-[10.5px] md:inline">
-          j/k nav · Space select · Enter inspect · / search
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="hidden font-mono @5xl:inline">
+            j/k move · Space select · Enter inspect · / search
+          </span>
+          <TemporalTimeFormatControl className="h-6" />
+        </div>
       </div>
 
-      {/* Bulk Signal Dialog */}
       <Dialog open={bulkSignalOpen} onOpenChange={setBulkSignalOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-base">
-              Bulk Signal ({selectedExecutions.length} workflows)
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              Send the same signal to all selected workflow executions in
-              namespace <code className="font-mono">{namespace}</code>.
+            <DialogTitle>Signal {pluralize(bulkCount, "workflow")}</DialogTitle>
+            <DialogDescription>
+              Send the same signal to {bulkSummary} in namespace{" "}
+              <code className="font-mono">{namespace}</code>.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="bulk-sig-name" className="text-xs">
-                Signal Name
-              </Label>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="bulk-sig-name">Signal Name</Label>
               <Input
                 id="bulk-sig-name"
                 value={bulkSignalName}
                 onChange={(e) => setBulkSignalName(e.target.value)}
-                className="h-8 font-mono text-xs"
+                placeholder="Signal name"
+                className="font-mono"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="bulk-sig-args" className="text-xs">
-                Signal Arguments (JSON)
-              </Label>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="bulk-sig-args">Arguments (JSON)</Label>
               <Textarea
                 id="bulk-sig-args"
                 value={bulkSignalArgs}
                 onChange={(e) => setBulkSignalArgs(e.target.value)}
                 rows={3}
-                className="font-mono text-xs"
+                className="font-mono text-sm"
                 spellCheck={false}
               />
             </div>
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setBulkSignalOpen(false)}
-            >
+            <Button variant="outline" onClick={() => setBulkSignalOpen(false)}>
               Cancel
             </Button>
             <Button
-              size="sm"
-              disabled={!bulkSignalName.trim() || bulkAction.isPending}
+              disabled={!bulkSignalName.trim() || isBulkPending}
               onClick={() => {
                 const parsed = parseJsonArgsText(bulkSignalArgs);
                 if (parsed.error) {
@@ -652,42 +994,112 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
                 });
               }}
             >
-              Send Signal to {selectedExecutions.length} Runs
+              Send Signal
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <TemporalConfirmDialog
-        confirmLabel={`Terminate ${selectedExecutions.length} workflow${selectedExecutions.length === 1 ? "" : "s"}`}
+        confirmLabel="Request Cancel"
+        description={`This asks ${bulkSummary} to cancel. Each workflow can run its cleanup logic before it stops.`}
+        isPending={isBulkPending}
+        onConfirm={() => runBulkAction("cancel")}
+        onOpenChange={setBulkCancelConfirmOpen}
+        open={bulkCancelConfirmOpen}
+        title="Request cancellation?"
+        variant="default"
+      />
+
+      <TemporalConfirmDialog
+        confirmLabel={`Terminate ${pluralize(bulkCount, "workflow")}`}
         defaultReason="Bulk terminated via Prisma Studio"
-        description={`This immediately stops ${selectedExecutions.length} selected workflow execution${selectedExecutions.length === 1 ? "" : "s"} without running cleanup handlers.`}
-        isPending={bulkAction.isPending}
-        onConfirm={async (reason) => {
-          const res = await bulkAction.mutateAsync({
-            action: "terminate",
-            items: selectedExecutions.map((e) => ({
-              runId: e.runId,
-              workflowId: e.workflowId,
-            })),
-            reason: reason || "Bulk terminated via Prisma Studio",
-          });
-          toast.success(
-            `Bulk terminate: ${res.succeeded} succeeded${res.failed > 0 ? `, ${res.failed} failed` : ""}`,
-          );
-          setSelectedKeys(new Set());
-        }}
+        description={`This stops ${bulkSummary} immediately, without running cleanup logic.`}
+        isPending={isBulkPending}
+        onConfirm={(reason) => runBulkAction("terminate", { reason })}
         onOpenChange={setBulkTerminateConfirmOpen}
         open={bulkTerminateConfirmOpen}
-        reasonLabel="Termination Reason"
+        reasonLabel="Termination reason"
         showReasonInput
         title="Terminate selected workflows?"
       />
+
+      <Dialog
+        open={bulkJob.job !== undefined}
+        onOpenChange={(open) => {
+          // A running job keeps going when the dialog closes; only a finished one is dismissed.
+          if (!open && bulkJob.job?.state !== "running") {
+            bulkJob.reset();
+          }
+        }}
+      >
+        {bulkJob.job ? (
+          <DialogContent
+            className="sm:max-w-md"
+            data-testid="temporal-bulk-job"
+          >
+            <DialogHeader>
+              <DialogTitle>
+                {bulkJob.job.state === "running"
+                  ? `Bulk ${bulkJob.job.action} in progress`
+                  : bulkJob.job.state === "aborted"
+                    ? `Bulk ${bulkJob.job.action} stopped`
+                    : `Bulk ${bulkJob.job.action} finished`}
+              </DialogTitle>
+              <DialogDescription>
+                {bulkJob.job.done.toLocaleString("en-US")} of{" "}
+                {pluralize(bulkJob.job.total, "workflow")} done
+                {bulkJob.job.failed > 0
+                  ? `, ${bulkJob.job.failed.toLocaleString("en-US")} failed`
+                  : ""}
+                .
+              </DialogDescription>
+            </DialogHeader>
+            <div
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={bulkJob.job.total}
+              aria-valuenow={bulkJob.job.done}
+              className="h-2 overflow-hidden rounded-full bg-muted"
+            >
+              <div
+                className="h-full bg-prism-cyan-500 transition-[width]"
+                style={{
+                  width: `${bulkJob.job.total > 0 ? (bulkJob.job.done / bulkJob.job.total) * 100 : 100}%`,
+                }}
+              />
+            </div>
+            {bulkJob.job.errors.length > 0 ? (
+              <div className="flex max-h-40 flex-col overflow-auto rounded-md border border-destructive/30 bg-destructive/10 p-2 font-mono text-2xs text-foreground">
+                {bulkJob.job.errors.map((item) => (
+                  <span key={item.workflowId}>
+                    {item.workflowId}: {item.error}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            <DialogFooter>
+              {bulkJob.job.state === "running" ? (
+                <Button
+                  variant="outline"
+                  disabled={bulkJob.abort.isPending}
+                  onClick={() => bulkJob.abort.mutate()}
+                >
+                  Stop
+                </Button>
+              ) : (
+                <Button onClick={() => bulkJob.reset()}>Close</Button>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        ) : null}
+      </Dialog>
     </div>
   );
 }
 
 function WorkflowGridRow(props: {
+  columns: WorkflowColumn[];
   execution: TemporalWorkflowExecution;
   isExpanded: boolean;
   isFocused: boolean;
@@ -696,10 +1108,12 @@ function WorkflowGridRow(props: {
   onClone: (preset: TemporalStartPreset) => void;
   onFocus: () => void;
   onOpen: () => void;
+  onOpenRun: (runId: string) => void;
   onToggleExpand: () => void;
   onToggleSelect: () => void;
 }) {
   const {
+    columns,
     execution,
     namespace,
     isExpanded,
@@ -708,33 +1122,29 @@ function WorkflowGridRow(props: {
     onToggleSelect,
     onToggleExpand,
     onOpen,
+    onOpenRun,
     onClone,
     onFocus,
   } = props;
-
-  const { hasDatabase, streamsUrl } = useStudio();
-  const { setSearchParam, setStreamParam, setViewParam } = useNavigation();
-  const { data: detail, isLoading: isDetailLoading } =
-    useTemporalWorkflowDetail({
-      enabled: isExpanded,
-      followMode: "paused",
-      namespace,
-      runId: execution.runId,
-      workflowId: execution.workflowId,
-    });
 
   return (
     <>
       <TableRow
         onClick={onFocus}
+        data-state={isSelected ? "selected" : undefined}
         className={cn(
-          "transition-colors hover:bg-secondary/50",
-          isSelected && "bg-primary/5",
-          isFocused && "bg-secondary/40",
+          "border-border/60 hover:bg-muted/30 data-[state=selected]:bg-muted/50",
+          isFocused && "bg-muted/30",
         )}
         data-testid={`temporal-wf-row-${execution.workflowId}`}
       >
-        <TableCell className="px-3 py-2">
+        <TableCell
+          className={cn(
+            "py-2 pr-2 pl-4",
+            // Marks the keyboard-focused row without relying on the faint row tint.
+            isFocused && "shadow-[inset_2px_0_0_0_var(--foreground)]",
+          )}
+        >
           <Checkbox
             checked={isSelected}
             onCheckedChange={onToggleSelect}
@@ -742,187 +1152,134 @@ function WorkflowGridRow(props: {
           />
         </TableCell>
         <TableCell className="px-0 py-2">
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="xs"
+            className="w-6 px-0 text-muted-foreground"
             onClick={(e) => {
               e.stopPropagation();
               onToggleExpand();
             }}
-            aria-label={`Expand ${execution.workflowId}`}
+            aria-expanded={isExpanded}
+            aria-label={`${isExpanded ? "Collapse" : "Expand"} ${execution.workflowId}`}
             data-testid={`temporal-expand-${execution.workflowId}`}
-            className="flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            {isExpanded ? (
-              <ChevronDown className="size-3.5" />
-            ) : (
-              <ChevronRight className="size-3.5" />
+            {isExpanded ? <ChevronDown /> : <ChevronRight />}
+          </Button>
+        </TableCell>
+        {columns.map((column) => (
+          <TableCell
+            key={column.id}
+            className={cn(
+              "truncate px-2 py-2 last:pr-4",
+              column.align === "right" && "text-right",
+              column.cellClassName,
             )}
-          </button>
-        </TableCell>
-        <TableCell className="px-2 py-2">
-          <WorkflowStatusBadge
-            status={execution.status}
-            className="text-[10.5px]"
-          />
-        </TableCell>
-        <TableCell className="px-2 py-2">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpen();
-            }}
-            className="group flex items-baseline gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <span className="font-semibold text-foreground group-hover:underline">
-              {execution.workflowType}
-            </span>
-            <span className="font-mono text-[11px] text-muted-foreground">
-              {execution.workflowId}
-            </span>
-          </button>
-        </TableCell>
-        <TableCell className="px-2 py-2 font-mono text-[11px] text-muted-foreground">
-          {execution.taskQueue}
-        </TableCell>
-        <TableCell
-          className="px-2 py-2 text-[11px] text-muted-foreground"
-          title={execution.startTime}
-        >
-          {formatRelativeTime(execution.startTime)}
-        </TableCell>
-        <TableCell className="px-2 py-2 text-right font-mono text-[11px] tabular-nums text-foreground">
-          {formatDuration(execution.durationMs)}
-        </TableCell>
-        <TableCell className="px-3 py-2 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
-          {execution.historyLength}
-        </TableCell>
+            {column.render(execution, { onOpen })}
+          </TableCell>
+        ))}
       </TableRow>
 
       {isExpanded ? (
         <TableRow
-          className="bg-secondary/30 hover:bg-secondary/30"
+          className="border-border/60 bg-muted/20 hover:bg-muted/20"
           data-testid={`temporal-expanded-${execution.workflowId}`}
         >
-          <TableCell colSpan={8} className="px-6 py-3">
-            {isDetailLoading || !detail ? (
-              <div className="grid grid-cols-2 gap-3">
-                <Skeleton className="h-16 w-full" />
-                <Skeleton className="h-16 w-full" />
-              </div>
-            ) : (
-              <div className="space-y-2.5">
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <div className="rounded-md border border-border bg-card p-2.5">
-                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      Input Payload
-                      {Object.keys(detail.execution.memo).length > 0
-                        ? ` · Memo: ${Object.entries(detail.execution.memo)
-                            .map(([k, v]) => `${k}=${String(v)}`)
-                            .join(", ")}`
-                        : ""}
-                    </div>
-                    <pre className="max-h-28 overflow-auto font-mono text-[11px] text-foreground">
-                      {safeJsonPretty(detail.input)}
-                    </pre>
-                  </div>
-
-                  <div className="rounded-md border border-border bg-card p-2.5">
-                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      {detail.failure
-                        ? "Failure"
-                        : detail.execution.pendingActivities?.some(
-                              (a) => a.lastFailure,
-                            )
-                          ? "Retrying Pending Activity"
-                          : "Result / Latest State"}
-                    </div>
-                    {detail.failure ? (
-                      <pre className="max-h-28 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-destructive">
-                        {detail.failure.type ? `${detail.failure.type}: ` : ""}
-                        {detail.failure.message}
-                      </pre>
-                    ) : detail.execution.pendingActivities?.length ? (
-                      <pre className="max-h-28 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-amber-700 dark:text-amber-300">
-                        {detail.execution.pendingActivities
-                          .map(
-                            (a) =>
-                              `${a.activityType} (attempt ${a.attempt}${a.maximumAttempts > 0 ? `/${a.maximumAttempts}` : ""})${a.lastFailure ? `: ${a.lastFailure.message}` : ""}`,
-                          )
-                          .join("\n")}
-                      </pre>
-                    ) : (
-                      <pre className="max-h-28 overflow-auto font-mono text-[11px] text-foreground">
-                        {detail.result !== undefined
-                          ? safeJsonPretty(detail.result)
-                          : `${detail.spans.length} spans · ${detail.execution.status}`}
-                      </pre>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button size="sm" className="h-7 text-xs" onClick={onOpen}>
-                    <ExternalLink className="mr-1 size-3" />
-                    Open Execution Debugger
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => {
-                      const args =
-                        detail.input === undefined
-                          ? []
-                          : Array.isArray(detail.input)
-                            ? detail.input
-                            : [detail.input];
-                      onClone({
-                        args,
-                        clonedFromWorkflowId: execution.workflowId,
-                        taskQueue: execution.taskQueue,
-                        workflowType: execution.workflowType,
-                      });
-                    }}
-                  >
-                    <Play className="mr-1 size-3" />
-                    Clone &amp; Re-run
-                  </Button>
-                  {typeof streamsUrl === "string" ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs text-muted-foreground"
-                      onClick={() => {
-                        void setStreamParam("app-events");
-                        void setSearchParam(execution.workflowId);
-                        void setViewParam("stream");
-                      }}
-                    >
-                      <Waves className="mr-1 size-3" />
-                      Search Streams
-                    </Button>
-                  ) : null}
-                  {hasDatabase ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs text-muted-foreground"
-                      onClick={() => {
-                        void setSearchParam(execution.workflowId);
-                        void setViewParam("table");
-                      }}
-                    >
-                      <Database className="mr-1 size-3" />
-                      Search Tables
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-            )}
+          <TableCell colSpan={columns.length + 2} className="p-0">
+            {/* As wide as the visible grid, not the table, so no part of it scrolls out of view. */}
+            <div className="sticky left-0 w-[100cqw] max-w-full px-4 pt-3 pb-4 whitespace-normal">
+              <TemporalRunPreview
+                execution={execution}
+                namespace={namespace}
+                onClone={onClone}
+                onOpen={onOpen}
+                onOpenRun={onOpenRun}
+              />
+            </div>
           </TableCell>
         </TableRow>
       ) : null}
     </>
+  );
+}
+
+function ColumnHead(props: {
+  column: WorkflowColumn;
+  onResize: (width: number) => void;
+  onSort: (field: TemporalWorkflowSortField) => void;
+  sort: TemporalWorkflowSort | undefined;
+  width: number;
+}) {
+  const { column, onResize, onSort, sort, width } = props;
+  const direction =
+    column.sortField && sort?.field === column.sortField
+      ? sort.direction
+      : null;
+  const startResize = (event: React.PointerEvent<HTMLSpanElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const handle = event.currentTarget;
+
+    handle.setPointerCapture(event.pointerId);
+
+    // The column that takes the leftover space is wider than its stored width.
+    const startWidth =
+      handle.parentElement?.getBoundingClientRect().width ?? width;
+    const onMove = (move: PointerEvent) =>
+      onResize(startWidth + move.clientX - startX);
+    const onUp = () => {
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+    };
+
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+  };
+
+  return (
+    <TableHead
+      aria-sort={
+        direction === "asc"
+          ? "ascending"
+          : direction === "desc"
+            ? "descending"
+            : "none"
+      }
+      className={cn(
+        temporalTableHeadClass,
+        "relative last:pr-4",
+        column.align === "right" && "text-right",
+      )}
+    >
+      {column.sortField ? (
+        <button
+          type="button"
+          onClick={() => onSort(column.sortField!)}
+          className={cn(
+            "inline-flex h-6 max-w-full items-center gap-1 rounded-sm uppercase hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            direction && "text-foreground",
+          )}
+          data-testid={`temporal-sort-${column.sortField}`}
+        >
+          <span className="truncate">{column.label}</span>
+          {direction === "asc" ? (
+            <ArrowUp aria-hidden className="size-3 shrink-0" />
+          ) : direction === "desc" ? (
+            <ArrowDown aria-hidden className="size-3 shrink-0" />
+          ) : null}
+        </button>
+      ) : (
+        <span className="block truncate">{column.label}</span>
+      )}
+      <span
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={`Resize column ${column.label}`}
+        className="absolute inset-y-1.5 right-0 w-1.5 cursor-col-resize touch-none border-r border-border/70 hover:border-foreground"
+        onPointerDown={startResize}
+        data-testid={`temporal-resize-${column.id}`}
+      />
+    </TableHead>
   );
 }

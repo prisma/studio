@@ -1,20 +1,16 @@
 import {
-  Activity,
+  AlertTriangle,
   ArrowRightLeft,
   Check,
+  Gauge,
   RefreshCw,
-  ShieldAlert,
-  ShieldCheck,
-  Trash2,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import type { TemporalFollowMode } from "@/data/temporal";
-import { Badge } from "@/ui/components/ui/badge";
+import type { TemporalClusterShard, TemporalFollowMode } from "@/data/temporal";
 import { Button } from "@/ui/components/ui/button";
 import { Input } from "@/ui/components/ui/input";
-import { Label } from "@/ui/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -47,11 +43,79 @@ import {
 import { cn } from "@/ui/lib/utils";
 
 import { StudioHeader } from "../../StudioHeader";
-import { formatBytes, formatDuration } from "./temporal-utils";
+import {
+  describeClusterHealth,
+  describeHealthTag,
+  formatHealthReason,
+} from "./temporal-cluster-health";
+import { formatBytes, formatDuration, pluralize } from "./temporal-utils";
 import {
   TemporalConfirmDialog,
+  TemporalField,
   TemporalFollowControl,
+  temporalIconScale,
+  TemporalStatusBadge,
+  temporalTableHeadClass,
 } from "./TemporalPrimitives";
+
+const LOAD_WINDOWS = ["10s", "60s", "5m", "1h"];
+
+function capitalize(text: string): string {
+  return text.length > 0 ? `${text[0]!.toUpperCase()}${text.slice(1)}` : text;
+}
+
+/**
+ * Whether the shard serves, and how loaded it is. A state other than `ok`
+ * comes with what it means and with the measurements the server gives for it.
+ */
+function ShardState(props: {
+  serverTags: string[];
+  shard: TemporalClusterShard;
+}) {
+  const { serverTags, shard } = props;
+  const health = describeClusterHealth(shard.health);
+  const isServing = shard.lifecycle === "serving";
+
+  return (
+    <div
+      className="flex max-w-80 min-w-44 flex-col gap-1.5"
+      data-testid={`temporal-shard-state-${shard.id}`}
+    >
+      <div className="flex flex-wrap items-center gap-1.5">
+        <TemporalStatusBadge
+          icon={isServing ? Check : AlertTriangle}
+          tone={isServing ? "neutral" : "warning"}
+        >
+          {capitalize(shard.lifecycle)}
+        </TemporalStatusBadge>
+        {shard.health === "ok" ? null : (
+          <TemporalStatusBadge
+            icon={health.tone === "info" ? Gauge : AlertTriangle}
+            tone={health.tone}
+          >
+            {health.label}
+          </TemporalStatusBadge>
+        )}
+      </div>
+      {shard.health === "ok" ? null : (
+        <p className="text-2xs leading-snug text-muted-foreground">
+          {health.meaning}
+          {serverTags.map((tag) => ` ${describeHealthTag(tag)}`).join("")}
+          {shard.healthReasons.length > 0 ? (
+            <>
+              {" "}
+              Measured:{" "}
+              <span className="font-mono text-foreground">
+                {shard.healthReasons.map(formatHealthReason).join(", ")}
+              </span>
+              .
+            </>
+          ) : null}
+        </p>
+      )}
+    </div>
+  );
+}
 
 interface TemporalClusterViewProps {
   followMode: TemporalFollowMode;
@@ -100,25 +164,31 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
     }
   };
 
+  const traceCount = tracesData?.traces.length ?? 0;
+  const isSingleNode = data?.info.placementVersion === 1;
+
   return (
     <div
-      className="flex h-full min-h-0 flex-col bg-background"
+      className={cn(
+        "flex h-full min-h-0 flex-col bg-background",
+        temporalIconScale,
+      )}
       data-testid="temporal-cluster-view"
     >
       <StudioHeader
         title="Cluster & Shards"
         endContent={
-          <div className="flex items-center gap-1.5">
+          <>
             <Select value={windowParam} onValueChange={setWindowParam}>
               <SelectTrigger
                 aria-label="Load metrics window"
-                className="h-7 w-20 font-mono text-xs"
+                className="h-8 w-20 font-mono text-xs"
               >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {["10s", "60s", "1m", "5m", "1h"].map((w) => (
-                  <SelectItem key={w} value={w} className="font-mono text-xs">
+                {LOAD_WINDOWS.map((w) => (
+                  <SelectItem key={w} value={w} className="font-mono">
                     {w}
                   </SelectItem>
                 ))}
@@ -131,7 +201,7 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
             <Button
               variant="outline"
               size="sm"
-              className="h-7 px-2 text-xs"
+              className="w-8 px-0"
               aria-label="Refresh cluster diagnostics"
               onClick={() => {
                 void refetch();
@@ -139,133 +209,153 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
               }}
             >
               <RefreshCw
-                className={cn(
-                  "size-3.5",
-                  isFetching && "motion-safe:animate-spin",
-                )}
+                className={cn(isFetching && "motion-safe:animate-spin")}
               />
             </Button>
-          </div>
+          </>
         }
       />
 
       {isLoading ? (
-        <div className="space-y-3 p-4">
+        <div className="flex flex-col gap-3 p-4">
           <Skeleton className="h-12 w-full" />
           <Skeleton className="h-40 w-full" />
           <Skeleton className="h-32 w-full" />
         </div>
       ) : isError || !data ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 p-10 text-xs text-muted-foreground">
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-sm text-muted-foreground">
           <p className="font-medium text-destructive">
             {error instanceof Error
               ? error.message
-              : "slate-temporal-next Admin API is unavailable"}
+              : "The slate-temporal-next Admin API is unavailable"}
           </p>
           <Button variant="outline" size="sm" onClick={() => void refetch()}>
             Retry
           </Button>
         </div>
       ) : (
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 text-xs">
-          {/* Server Identity & Readiness Bar */}
+        <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-4 text-xs *:shrink-0">
           <section className="rounded-lg border border-border bg-card">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    "gap-1 font-medium text-[11px] capitalize",
-                    data.readyz.ready
-                      ? "border-prism-cyan-500/40 bg-prism-cyan-500/10 text-prism-cyan-700 dark:text-prism-cyan-300"
-                      : "border-destructive/50 bg-destructive/10 text-destructive",
-                  )}
+            <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-border px-4 py-3">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <TemporalStatusBadge
+                  icon={data.readyz.ready ? Check : AlertTriangle}
+                  tone={data.readyz.ready ? "info" : "danger"}
                 >
-                  <Check className="size-3" />
-                  {data.readyz.phase}
-                </Badge>
-                <span className="font-mono font-semibold text-foreground">
+                  {capitalize(data.readyz.phase)}
+                </TemporalStatusBadge>
+                <span className="font-mono text-sm font-medium text-foreground">
                   slate-temporal-next v{data.info.version}
                 </span>
-                <span className="font-mono text-[11px] text-muted-foreground">
+                <span className="font-mono text-2xs text-muted-foreground">
                   rev {data.info.revision} · Temporal{" "}
                   {data.info.temporalApiRelease} · SlateDB{" "}
                   {data.info.slatedbRev}
                 </span>
               </div>
-              <div className="flex flex-wrap items-center gap-3 font-mono text-[11px] text-muted-foreground">
-                <span>store: {data.info.storeKind}</span>
-                <span>placement: v{data.info.placementVersion}</span>
-                <span>
-                  RSS:{" "}
-                  <strong className="text-foreground">
-                    {data.memory.rssBytes
+              <dl className="flex flex-wrap items-center gap-x-5 gap-y-1 text-muted-foreground">
+                <ServerFact label="Store" value={data.info.storeKind} />
+                <ServerFact
+                  label="Placement"
+                  value={`v${data.info.placementVersion}`}
+                />
+                <ServerFact
+                  label="RSS"
+                  value={
+                    data.memory.rssBytes
                       ? formatBytes(data.memory.rssBytes)
-                      : "—"}
-                  </strong>
-                </span>
-                <span>
-                  headroom ({windowParam}):{" "}
-                  <strong className="text-foreground">
-                    {data.headroom.overall10s != null
+                      : "—"
+                  }
+                />
+                <ServerFact
+                  label="Health"
+                  value={describeClusterHealth(data.health.state).label}
+                />
+                <ServerFact
+                  label="Headroom (10s)"
+                  value={
+                    data.headroom.overall10s != null
                       ? `${Math.round(data.headroom.overall10s * 100)}%`
-                      : "—"}
-                  </strong>
-                </span>
-              </div>
+                      : "—"
+                  }
+                />
+              </dl>
             </div>
 
-            <div className="divide-y divide-border px-4">
+            <dl className="[&>*+*]:border-t [&>*+*]:border-border/60">
               {Object.entries(data.readyz.subsystems).map(([name, status]) => (
                 <div
                   key={name}
-                  className="flex items-baseline justify-between gap-4 py-1.5 text-[11px]"
+                  className="grid grid-cols-[minmax(0,160px)_minmax(0,1fr)] items-baseline gap-4 px-4 py-2"
                 >
-                  <span className="shrink-0 font-mono font-medium text-foreground">
+                  <dt className="truncate font-mono font-medium text-foreground">
                     {name}
-                  </span>
-                  <span className="truncate font-mono text-muted-foreground">
+                  </dt>
+                  <dd className="break-words font-mono text-muted-foreground">
                     {status}
-                  </span>
+                  </dd>
                 </div>
               ))}
-            </div>
+            </dl>
           </section>
 
-          {/* Shards & SlateDB Storage Grid */}
-          <section className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h2 className="font-sans text-xs font-semibold text-foreground">
-                Shards &amp; SlateDB Storage ({data.shards.length})
+          <section className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+              <h2 className="font-sans text-sm font-semibold text-foreground">
+                Shards{" "}
+                <span className="font-normal text-muted-foreground">
+                  ({data.shards.length})
+                </span>
               </h2>
-              <span className="font-mono text-[11px] text-muted-foreground">
-                Active storage: {formatBytes(data.storageActiveBytes)} · Matcher
-                oldest ready:{" "}
-                {formatDuration(data.workerHint.matcherOldestReadyMs)}
-              </span>
+              <dl className="flex flex-wrap items-center gap-x-5 gap-y-1 text-muted-foreground">
+                <ServerFact
+                  label="Active storage"
+                  value={formatBytes(data.storageActiveBytes)}
+                />
+                <ServerFact
+                  label="Oldest ready task"
+                  value={formatDuration(data.workerHint.matcherOldestReadyMs)}
+                />
+              </dl>
             </div>
 
-            <div className="overflow-hidden rounded-lg border border-border">
+            <div className="overflow-hidden rounded-lg border border-border bg-card">
               <Table className="text-xs">
-                <TableHeader className="bg-secondary/70">
-                  <TableRow className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground hover:bg-transparent">
-                    <TableHead className="h-8 px-3">Shard</TableHead>
-                    <TableHead className="h-8 px-2">State</TableHead>
-                    <TableHead className="h-8 px-2">Admission</TableHead>
-                    <TableHead className="h-8 px-2 text-right">
+                <TableHeader>
+                  <TableRow className="border-border/70 bg-muted/20 hover:bg-muted/20">
+                    <TableHead className={cn(temporalTableHeadClass, "pl-4")}>
+                      Shard
+                    </TableHead>
+                    <TableHead className={temporalTableHeadClass}>
+                      State
+                    </TableHead>
+                    <TableHead className={temporalTableHeadClass}>
+                      Admission
+                    </TableHead>
+                    <TableHead
+                      className={cn(temporalTableHeadClass, "text-right")}
+                    >
                       Durable Seq
                     </TableHead>
-                    <TableHead className="h-8 px-2 text-right">
+                    <TableHead
+                      className={cn(temporalTableHeadClass, "text-right")}
+                    >
                       Progress Lag
                     </TableHead>
-                    <TableHead className="h-8 px-2 text-right">
+                    <TableHead
+                      className={cn(temporalTableHeadClass, "text-right")}
+                    >
                       L0 / Compaction
                     </TableHead>
-                    <TableHead className="h-8 px-2 text-right">
+                    <TableHead
+                      className={cn(temporalTableHeadClass, "text-right")}
+                    >
                       Unflushed
                     </TableHead>
-                    <TableHead className="h-8 px-3 text-right">
-                      Operations
+                    <TableHead
+                      className={cn(temporalTableHeadClass, "pr-4 text-right")}
+                    >
+                      Actions
                     </TableHead>
                   </TableRow>
                 </TableHeader>
@@ -273,53 +363,61 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
                   {data.shards.map((shard) => (
                     <TableRow
                       key={shard.id}
+                      className="border-border/60 hover:bg-muted/30"
                       data-testid={`temporal-shard-row-${shard.id}`}
                     >
-                      <TableCell className="px-3 py-2 font-mono font-semibold text-foreground">
-                        shard/{shard.id}
-                        <span className="ml-1.5 font-normal text-muted-foreground">
+                      <TableCell className="whitespace-nowrap py-2.5 pr-2 pl-4 font-mono">
+                        <span className="font-medium text-foreground">
+                          shard/{shard.id}
+                        </span>{" "}
+                        <span className="text-muted-foreground">
                           gen {shard.generation}
                         </span>
                       </TableCell>
-                      <TableCell className="px-2 py-2">
-                        <Badge
-                          variant="outline"
-                          className="text-[10.5px] capitalize"
-                        >
-                          {shard.lifecycle} · {shard.health}
-                        </Badge>
+                      <TableCell className="px-2 py-2.5 whitespace-normal">
+                        <ShardState
+                          serverTags={data.health.tags}
+                          shard={shard}
+                        />
                       </TableCell>
-                      <TableCell className="px-2 py-2 font-mono text-[11px]">
-                        <span className="text-muted-foreground">ext:</span>{" "}
-                        <AdmissionModeTag mode={shard.admissionMode.existing} />{" "}
-                        <span className="text-muted-foreground">new:</span>{" "}
-                        <AdmissionModeTag mode={shard.admissionMode.new} />{" "}
-                        <span className="text-muted-foreground">batch:</span>{" "}
-                        <AdmissionModeTag mode={shard.admissionMode.batch} />
+                      <TableCell className="px-2 py-2.5">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono">
+                          <AdmissionMode
+                            label="existing"
+                            mode={shard.admissionMode.existing}
+                          />
+                          <AdmissionMode
+                            label="new"
+                            mode={shard.admissionMode.new}
+                          />
+                          <AdmissionMode
+                            label="batch"
+                            mode={shard.admissionMode.batch}
+                          />
+                        </div>
                       </TableCell>
-                      <TableCell className="px-2 py-2 text-right font-mono tabular-nums">
+                      <TableCell className="px-2 py-2.5 text-right font-mono tabular-nums">
                         {shard.durableSeq}
                       </TableCell>
-                      <TableCell className="px-2 py-2 text-right font-mono tabular-nums text-muted-foreground">
+                      <TableCell className="whitespace-nowrap px-2 py-2.5 text-right font-mono tabular-nums text-muted-foreground">
                         {shard.progressDelayMs.toFixed(2)}ms
                       </TableCell>
-                      <TableCell className="px-2 py-2 text-right font-mono tabular-nums text-muted-foreground">
+                      <TableCell className="whitespace-nowrap px-2 py-2.5 text-right font-mono tabular-nums text-muted-foreground">
                         {shard.l0Ssts} L0 · {shard.compactionState}
                       </TableCell>
-                      <TableCell className="px-2 py-2 text-right font-mono tabular-nums text-muted-foreground">
+                      <TableCell className="whitespace-nowrap px-2 py-2.5 text-right font-mono tabular-nums text-muted-foreground">
                         {formatBytes(shard.unflushedBytes)}
                       </TableCell>
-                      <TableCell className="px-3 py-2 text-right">
+                      <TableCell className="py-2.5 pr-4 pl-2 text-right">
                         <Button
                           variant="outline"
-                          size="sm"
-                          className="h-6 px-2 text-[11px]"
+                          size="xs"
                           onClick={() => {
                             setHandoffError(null);
                             setHandoffShardId(shard.id);
                           }}
                         >
-                          <ArrowRightLeft className="mr-1 size-3" />
+                          <ArrowRightLeft />
                           Handoff
                         </Button>
                       </TableCell>
@@ -330,78 +428,71 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
             </div>
           </section>
 
-          {/* Admission Control + Sampled Traces side-by-side on wide screens */}
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            {/* Admission Control */}
-            <section className="rounded-lg border border-border bg-card p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <div className="flex items-center gap-1.5 font-semibold text-foreground">
-                  <ShieldAlert className="size-4 text-muted-foreground" />
-                  <span>Admission Control Overrides</span>
-                </div>
-                <span className="font-mono text-[10.5px] text-muted-foreground">
-                  PUT / DELETE /v1/admission
-                </span>
+            <section className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4">
+              <div className="flex flex-col gap-1">
+                <h2 className="flex h-8 items-center font-sans text-sm font-semibold text-foreground">
+                  Admission Control
+                </h2>
+                <p className="text-muted-foreground">
+                  Limit or close one traffic class on this server for a fixed
+                  time.
+                </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-                <div className="space-y-1">
-                  <Label className="text-[11px]">Traffic Class</Label>
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <TemporalField htmlFor="adm-class" label="Traffic Class">
                   <Select
                     value={admClass}
                     onValueChange={(v) =>
                       setAdmClass(v as "new" | "existing" | "batch" | "wait")
                     }
                   >
-                    <SelectTrigger className="h-8 font-mono text-xs">
+                    <SelectTrigger
+                      id="adm-class"
+                      className="h-8 font-mono text-xs"
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="new" className="font-mono text-xs">
-                        new
-                      </SelectItem>
-                      <SelectItem
-                        value="existing"
-                        className="font-mono text-xs"
-                      >
-                        existing
-                      </SelectItem>
-                      <SelectItem value="batch" className="font-mono text-xs">
-                        batch
-                      </SelectItem>
-                      <SelectItem value="wait" className="font-mono text-xs">
-                        wait
-                      </SelectItem>
+                      {["new", "existing", "batch", "wait"].map((value) => (
+                        <SelectItem
+                          key={value}
+                          value={value}
+                          className="font-mono"
+                        >
+                          {value}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
-                </div>
+                </TemporalField>
 
-                <div className="space-y-1">
-                  <Label className="text-[11px]">Mode</Label>
+                <TemporalField htmlFor="adm-mode" label="Mode">
                   <Select
                     value={admMode}
                     onValueChange={(v) =>
                       setAdmMode(v === "closed" ? "closed" : "limit")
                     }
                   >
-                    <SelectTrigger className="h-8 font-mono text-xs">
+                    <SelectTrigger
+                      id="adm-mode"
+                      className="h-8 font-mono text-xs"
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="limit" className="font-mono text-xs">
+                      <SelectItem value="limit" className="font-mono">
                         limit
                       </SelectItem>
-                      <SelectItem value="closed" className="font-mono text-xs">
+                      <SelectItem value="closed" className="font-mono">
                         closed
                       </SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
+                </TemporalField>
 
-                <div className="space-y-1">
-                  <Label htmlFor="adm-rate" className="text-[11px]">
-                    Rate / s
-                  </Label>
+                <TemporalField htmlFor="adm-rate" label="Rate / s">
                   <Input
                     id="adm-rate"
                     type="number"
@@ -410,12 +501,9 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
                     onChange={(e) => setAdmRate(e.target.value)}
                     className="h-8 font-mono text-xs"
                   />
-                </div>
+                </TemporalField>
 
-                <div className="space-y-1">
-                  <Label htmlFor="adm-ttl" className="text-[11px]">
-                    TTL (s, max 3600)
-                  </Label>
+                <TemporalField htmlFor="adm-ttl" label="TTL (s, max 3600)">
                   <Input
                     id="adm-ttl"
                     type="number"
@@ -423,14 +511,13 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
                     onChange={(e) => setAdmTtl(e.target.value)}
                     className="h-8 font-mono text-xs"
                   />
-                </div>
+                </TemporalField>
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   size="sm"
                   variant={admMode === "closed" ? "destructive" : "default"}
-                  className="h-7 text-xs"
                   disabled={setAdmission.isPending}
                   onClick={() => {
                     if (admMode === "closed") {
@@ -446,7 +533,6 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-7 text-xs"
                   disabled={liftAdmission.isPending}
                   onClick={() =>
                     void liftAdmission
@@ -460,55 +546,55 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
                   }
                   data-testid="temporal-admission-lift-btn"
                 >
-                  <ShieldCheck className="mr-1 size-3" />
                   Lift Hold on {admClass}
                 </Button>
               </div>
             </section>
 
-            {/* Sampled Run Traces */}
-            <section className="rounded-lg border border-border bg-card p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <div className="flex items-center gap-1.5 font-semibold text-foreground">
-                  <Activity className="size-4 text-muted-foreground" />
-                  <span>
-                    Sampled Run Traces ({tracesData?.traces.length ?? 0} /{" "}
-                    {tracesData?.capacity ?? 4096})
-                  </span>
+            <section className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4">
+              <div className="flex flex-col gap-1">
+                <div className="flex h-8 items-center justify-between gap-3">
+                  <h2 className="font-sans text-sm font-semibold text-foreground">
+                    Sampled Run Traces{" "}
+                    <span className="font-normal text-muted-foreground">
+                      ({traceCount} of {tracesData?.capacity ?? 4096})
+                    </span>
+                  </h2>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={drainTraces.isPending || traceCount === 0}
+                    title="Read every trace and remove it from the server's buffer"
+                    onClick={() =>
+                      void drainTraces
+                        .mutateAsync()
+                        .then((res) =>
+                          toast.success(
+                            `Drained ${pluralize(res.traces.length, "trace")}`,
+                          ),
+                        )
+                        .catch((e) =>
+                          toast.error(
+                            e instanceof Error ? e.message : String(e),
+                          ),
+                        )
+                    }
+                  >
+                    Drain Traces
+                  </Button>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs"
-                  disabled={
-                    drainTraces.isPending ||
-                    (tracesData?.traces.length ?? 0) === 0
-                  }
-                  onClick={() =>
-                    void drainTraces
-                      .mutateAsync()
-                      .then((res) =>
-                        toast.success(`Drained ${res.traces.length} traces`),
-                      )
-                      .catch((e) =>
-                        toast.error(e instanceof Error ? e.message : String(e)),
-                      )
-                  }
-                >
-                  <Trash2 className="mr-1 size-3" />
-                  Drain Ring
-                </Button>
+                <p className="text-muted-foreground">
+                  Write and effect latency for sampled commits.
+                </p>
               </div>
 
-              {!tracesData || tracesData.traces.length === 0 ? (
-                <p className="py-4 text-[11px] text-muted-foreground">
-                  Trace ring buffer is empty (read with{" "}
-                  <code className="font-mono">drain=false</code>). Enable trace
-                  sampling on the server to inspect per-commit SlateDB write and
-                  effect latency here.
+              {!tracesData || traceCount === 0 ? (
+                <p className="text-muted-foreground">
+                  No sampled traces. Turn on trace sampling on the server to see
+                  them here.
                 </p>
               ) : (
-                <div className="max-h-48 divide-y divide-border overflow-y-auto rounded border border-border">
+                <div className="max-h-48 overflow-y-auto rounded-md border border-border [&>*+*]:border-t [&>*+*]:border-border/60">
                   {tracesData.traces.slice(0, 20).map((trace, idx) => {
                     const wfId =
                       typeof trace.workflow_id === "string"
@@ -517,19 +603,20 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
                     return (
                       <div
                         key={idx}
-                        className="flex items-center justify-between gap-2 px-2.5 py-1.5 font-mono text-[11px]"
+                        className="flex items-center justify-between gap-3 px-3 py-1.5 font-mono"
                       >
                         <span className="truncate text-foreground">
                           {wfId ?? JSON.stringify(trace).slice(0, 80)}
                         </span>
                         {wfId ? (
-                          <button
-                            type="button"
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            className="shrink-0 font-sans"
                             onClick={() => onOpenExecution(wfId)}
-                            className="shrink-0 text-prism-cyan-600 hover:underline dark:text-prism-cyan-400"
                           >
                             Inspect
-                          </button>
+                          </Button>
                         ) : null}
                       </div>
                     );
@@ -541,42 +628,51 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
         </div>
       )}
 
-      {/* Shard Handoff Sheet */}
       <Sheet
         open={handoffShardId !== null}
         onOpenChange={(o) => !o && setHandoffShardId(null)}
       >
-        <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-md">
+        <SheetContent
+          className={cn(
+            "flex w-full flex-col gap-0 p-0 sm:max-w-lg",
+            temporalIconScale,
+          )}
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            document.getElementById("handoff-target")?.focus();
+          }}
+        >
           <SheetHeader className="border-b border-border px-5 py-4">
-            <SheetTitle className="font-mono text-sm">
-              Handoff shard/{handoffShardId}
+            <SheetTitle className="text-base">
+              Hand Off <span className="font-mono">shard/{handoffShardId}</span>
             </SheetTitle>
             <SheetDescription className="text-xs">
-              Move shard ownership to another server in a placement-v2 cell
-              (bumps generation by +1 and drains in-flight commits).
+              Move this shard to another server in the cell. The shard
+              generation increases by one and in-flight commits drain first.
             </SheetDescription>
           </SheetHeader>
-          <div className="space-y-3 px-5 py-4 text-xs">
-            {data?.info.placementVersion === 1 ? (
-              <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-amber-800 dark:text-amber-300">
-                This server is running in single-node placement-v1 mode. Shard
-                handoff requires a multi-node placement-v2 cell.
+          <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-5 py-5 text-xs *:shrink-0">
+            {isSingleNode ? (
+              <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-foreground">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-700 dark:text-amber-300" />
+                <p>
+                  This server runs as a single node (placement v1). Shard
+                  handoff needs a multi-node placement v2 cell.
+                </p>
               </div>
             ) : null}
-            <div className="space-y-1">
-              <Label htmlFor="handoff-target" className="text-xs">
-                Target Server ID
-              </Label>
+            <TemporalField htmlFor="handoff-target" label="Target Server ID">
               <Input
                 id="handoff-target"
                 value={handoffTarget}
+                disabled={isSingleNode}
                 onChange={(e) => setHandoffTarget(e.target.value)}
-                placeholder="e.g. cell-node-2"
+                placeholder="Server ID"
                 className="h-8 font-mono text-xs"
               />
-            </div>
+            </TemporalField>
             {handoffError ? (
-              <div className="rounded border border-destructive/40 bg-destructive/10 p-2 font-mono text-[11px] text-destructive">
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 font-mono text-foreground">
                 {handoffError}
               </div>
             ) : null}
@@ -592,6 +688,7 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
             <Button
               size="sm"
               disabled={
+                isSingleNode ||
                 handoffShard.isPending ||
                 handoffShardId === null ||
                 !handoffTarget.trim()
@@ -617,39 +714,47 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
                   });
               }}
             >
-              Execute Handoff
+              Hand Off Shard
             </Button>
           </SheetFooter>
         </SheetContent>
       </Sheet>
 
       <TemporalConfirmDialog
-        confirmLabel={`Close "${admClass}" traffic`}
-        description={`Closing admission class "${admClass}" for ${admTtl}s rejects incoming requests in that class until the TTL expires or you lift the hold.`}
+        confirmLabel={`Close "${admClass}" Traffic`}
+        description={`This rejects incoming "${admClass}" requests for ${admTtl} seconds, or until you lift the hold.`}
         isPending={setAdmission.isPending}
         onConfirm={applyAdmissionHold}
         onOpenChange={setConfirmCloseOpen}
         open={confirmCloseOpen}
-        title="Close admission traffic class?"
+        title="Close this traffic class?"
       />
     </div>
   );
 }
 
-function AdmissionModeTag(props: { mode: string }) {
-  const { mode } = props;
+function ServerFact(props: { label: string; value: string }) {
   return (
-    <span
-      className={cn(
-        "font-semibold",
-        mode === "open"
-          ? "text-foreground"
-          : mode === "closed"
-            ? "text-destructive"
-            : "text-amber-700 dark:text-amber-300",
+    <div className="flex items-baseline gap-1.5">
+      <dt>{props.label}</dt>
+      <dd className="font-mono text-foreground">{props.value}</dd>
+    </div>
+  );
+}
+
+function AdmissionMode(props: { label: string; mode: string }) {
+  const { label, mode } = props;
+
+  return (
+    <span className="flex items-center gap-1.5 whitespace-nowrap">
+      <span className="text-muted-foreground">{label}</span>
+      {mode === "open" ? (
+        <span className="text-foreground">open</span>
+      ) : (
+        <TemporalStatusBadge tone={mode === "closed" ? "danger" : "warning"}>
+          {mode}
+        </TemporalStatusBadge>
       )}
-    >
-      {mode}
     </span>
   );
 }

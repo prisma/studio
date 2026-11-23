@@ -39,36 +39,33 @@ type QueryKey =
       string,
     ]
   | ["streams", string]
-  | ["temporal", "capabilities", string | undefined]
-  | ["temporal", "namespaces", string | undefined]
-  | ["temporal", "workflows", string | undefined, string]
-  | ["temporal", "workflows", string | undefined, string, string, number]
+  // Every Temporal key starts with the BFF's URL, then the namespace where
+  // one applies, then whatever narrows the request.
   | [
       "temporal",
-      "workflow-detail",
+      (
+        | "attention"
+        | "bulk-job"
+        | "capabilities"
+        | "cluster-overview"
+        | "cluster-traces"
+        | "facets"
+        | "namespaces"
+        | "schedule-detail"
+        | "schedules"
+        | "task-queues"
+        | "type-inputs"
+        | "type-map"
+        | "workers"
+        | "workflow-detail"
+        | "workflow-metadata"
+        | "workflow-runs"
+        | "workflow-stack"
+        | "workflows"
+      ),
       string | undefined,
-      string,
-      string | undefined,
+      ...Array<number | string | undefined>,
     ]
-  | [
-      "temporal",
-      "workflow-detail",
-      string | undefined,
-      string,
-      string | undefined,
-      string | undefined,
-    ]
-  | ["temporal", "schedules", string | undefined, string]
-  | [
-      "temporal",
-      "schedule-detail",
-      string | undefined,
-      string,
-      string | undefined,
-    ]
-  | ["temporal", "task-queues", string | undefined, string]
-  | ["temporal", "cluster-overview", string | undefined, string]
-  | ["temporal", "cluster-traces", string | undefined]
   | [
       "streams",
       string,

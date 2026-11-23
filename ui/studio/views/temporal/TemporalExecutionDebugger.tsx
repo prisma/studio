@@ -1,16 +1,19 @@
 import {
   AlertTriangle,
   ArrowLeft,
+  ArrowRight,
   ChevronDown,
   ChevronRight,
-  Copy,
   Database,
   Download,
+  History,
+  Link2,
+  ListFilter,
   MoreHorizontal,
+  Pause,
   Play,
   RefreshCw,
   RotateCcw,
-  Send,
   StopCircle,
   Terminal,
   Waves,
@@ -19,24 +22,35 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import type { TemporalFollowMode, TemporalGroupedSpan } from "@/data/temporal";
+import type {
+  TemporalActivityOperation,
+  TemporalExecutionDetail,
+  TemporalFollowMode,
+  TemporalGroupedSpan,
+  TemporalTypeMapResponse,
+} from "@/data/temporal";
+import { timerProgress } from "@/data/temporal/type-map";
 import { Badge } from "@/ui/components/ui/badge";
 import { Button } from "@/ui/components/ui/button";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/components/ui/dropdown-menu";
 import { Input } from "@/ui/components/ui/input";
-import { Label } from "@/ui/components/ui/label";
 import { Skeleton } from "@/ui/components/ui/skeleton";
-import { Textarea } from "@/ui/components/ui/textarea";
 import { useNavigation } from "@/ui/hooks/use-navigation";
 import {
   useTemporalActions,
+  useTemporalCapabilities,
+  useTemporalTypeMap,
   useTemporalWorkflowDetail,
+  useTemporalWorkflowMetadata,
+  useTemporalWorkflows,
+  useTemporalWorkflowStack,
 } from "@/ui/hooks/use-temporal";
 import { cn } from "@/ui/lib/utils";
 
@@ -45,20 +59,42 @@ import { StudioHeader } from "../../StudioHeader";
 import {
   formatBytes,
   formatDuration,
-  formatRelativeTime,
-  parseJsonArgsText,
+  formatFailureMessage,
+  formatTimeLeft,
   safeJsonPretty,
-  spanBarClasses,
 } from "./temporal-utils";
+import { TemporalFailurePanel } from "./TemporalFailurePanel";
+import { TemporalInteractPanel } from "./TemporalInteractPanel";
 import {
+  TEMPORAL_SPAN_STATUS,
   TemporalConfirmDialog,
   TemporalFollowControl,
+  temporalIconScale,
+  TemporalSectionLabel,
+  TemporalSegmentedControl,
+  TemporalStatusBadge,
+  TemporalTime,
+  useNow,
   WorkflowStatusBadge,
 } from "./TemporalPrimitives";
+import { relatedRunCount, TemporalRelatedPanel } from "./TemporalRelatedPanel";
+import {
+  quoteFilterValue,
+  TemporalRunBreadcrumb,
+} from "./TemporalRunBreadcrumb";
+import { TemporalRunDiagram, TemporalTimerDetail } from "./TemporalRunDiagram";
 import type { TemporalStartPreset } from "./TemporalStartSheet";
+import { TemporalTimeline } from "./TemporalTimeline";
+
+type InspectorTab = "interact" | "pending" | "related" | "stack" | "meta";
 
 interface TemporalExecutionDebuggerProps {
   followMode: TemporalFollowMode;
+  /**
+   * A run read from a history file. The page then shows that file and offers
+   * no action, because the run may not exist on this server.
+   */
+  imported?: TemporalExecutionDetail;
   namespace: string;
   onBack: () => void;
   onClone: (preset: TemporalStartPreset) => void;
@@ -72,6 +108,7 @@ export function TemporalExecutionDebugger(
   props: TemporalExecutionDebuggerProps,
 ) {
   const {
+    imported,
     namespace,
     workflowId,
     runId,
@@ -82,91 +119,164 @@ export function TemporalExecutionDebugger(
     onOpenExecution,
   } = props;
 
-  const { data, isLoading, isError, error, refetch, isFetching } =
-    useTemporalWorkflowDetail({
-      followMode,
-      namespace,
-      runId,
-      workflowId,
-    });
+  const fetched = useTemporalWorkflowDetail({
+    enabled: !imported,
+    followMode,
+    namespace,
+    runId,
+    workflowId,
+  });
+  // While another run loads, the query still holds the run shown before. That
+  // run must not appear under this one's ID.
+  const fetchedIsThisRun =
+    fetched.data?.execution.workflowId === workflowId &&
+    (!runId || fetched.data.execution.runId === runId);
+  const data = imported ?? (fetchedIsThisRun ? fetched.data : undefined);
+  const { error, isError, isFetching, refetch } = fetched;
+  const isLoading =
+    !imported && (fetched.isLoading || (!data && fetched.isFetching));
+  const { data: capabilities } = useTemporalCapabilities();
+  // Every run of this Workflow ID, newest first: the path in the header and
+  // the Related tab both show them. A server finds them by ID without a scan.
+  const runsQuery = useTemporalWorkflows({
+    enabled: !imported,
+    followMode: followMode === "paused" ? "paused" : "live",
+    includeCounts: false,
+    namespace,
+    pageSize: 100,
+    query: `WorkflowId = ${quoteFilterValue(workflowId)}`,
+    sort: { direction: "desc", field: "StartTime" },
+  });
+  const runsOfId = imported ? undefined : runsQuery.data?.executions;
+  const runCount = runsQuery.data?.sorted?.rowCount;
+  const { temporalEventParam, setTemporalEventParam } = useNavigation();
 
   const { hasDatabase, streamsUrl } = useStudio();
-  const { setSearchParam, setStreamParam, setViewParam } = useNavigation();
+  const { createUrl, schemaParam, tableParam } = useNavigation();
   const {
-    queryWorkflow,
-    resetStickyTaskQueue,
-    signalWorkflow,
-    updateWorkflow,
+    activityOperation,
     cancelWorkflow,
+    resetStickyTaskQueue,
+    resetWorkflow,
+    setWorkflowPaused,
     terminateWorkflow,
   } = useTemporalActions(namespace);
+  // The Interact tab asks for the same data, so this costs no second request.
+  const metadata = useTemporalWorkflowMetadata({
+    enabled: Boolean(data) && !imported,
+    namespace,
+    runId: data?.execution.runId,
+    workflowId,
+  });
 
-  const [historyTab, setHistoryTab] = useState<"grouped" | "raw">("grouped");
+  const [historyTab, setHistoryTab] = useState<"diagram" | "grouped" | "raw">(
+    "grouped",
+  );
+  const [diagramNodeId, setDiagramNodeId] = useState<string | null>(null);
+  const [diagramSpanId, setDiagramSpanId] = useState<string | null>(null);
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
+  // The diagram of the type is read only when something on screen shows it:
+  // the Diagram tab, or the open row of a Timer.
+  const needsTypeMap =
+    !imported &&
+    (historyTab === "diagram" ||
+      data?.spans.some(
+        (span) => span.id === selectedSpanId && span.kind === "timer",
+      ) === true);
+  const typeMap = useTemporalTypeMap({
+    followMode,
+    namespace,
+    workflowType: needsTypeMap ? (data?.execution.workflowType ?? null) : null,
+  });
   const [rawFilter, setRawFilter] = useState("");
-  const [expandedRawId, setExpandedRawId] = useState<number | null>(null);
+  const [hiddenEventTypes, setHiddenEventTypes] = useState<string[]>([]);
+  // The open event is in the URL, so the page's link points at it.
+  const expandedRawId = temporalEventParam ? Number(temporalEventParam) : null;
+  const setExpandedRawId = (eventId: number | null) =>
+    void setTemporalEventParam(eventId === null ? null : String(eventId));
   const [terminateConfirmOpen, setTerminateConfirmOpen] = useState(false);
+  const [resetEventId, setResetEventId] = useState<number | null>(null);
 
-  // Right inspector state
-  const [inspectorTab, setInspectorTab] = useState<
-    "interact" | "pending" | "meta"
-  >("interact");
-  const [interactKind, setInteractKind] = useState<
-    "query" | "signal" | "update"
-  >("query");
-  const [interactName, setInteractName] = useState("getState");
-  const [interactArgs, setInteractArgs] = useState("[]");
-  const [interactOutput, setInteractOutput] = useState<{
-    durationMs?: number;
-    error?: string;
-    label: string;
-    value?: unknown;
-  } | null>(null);
+  const [chosenTab, setInspectorTab] = useState<InspectorTab | null>(null);
 
   const execution = data?.execution;
   const spans = useMemo(() => data?.spans ?? [], [data?.spans]);
   const rawEvents = useMemo(() => data?.rawEvents ?? [], [data?.rawEvents]);
   const totalDurationMs = data?.totalDurationMs ?? 1;
 
-  // Match default query/signal name to the inspected WorkflowType
-  useEffect(() => {
-    if (!execution?.workflowType) return;
-    if (interactKind === "query") {
-      setInteractName(
-        execution.workflowType === "MoneyTransfer"
-          ? "transferStatus"
-          : execution.workflowType === "ChargeOrder"
-            ? "orderStatus"
-            : "getState",
-      );
-    } else if (interactKind === "signal") {
-      setInteractName(
-        execution.workflowType === "MoneyTransfer"
-          ? "approveDeposit"
-          : execution.workflowType === "SubscriptionRenewal"
-            ? "renewNow"
-            : "cancelOrder",
-      );
-    }
-  }, [execution?.workflowType, interactKind]);
-
-  const retryingActivity = useMemo(
-    () =>
-      execution?.pendingActivities?.find((pa) => pa.lastFailure != null) ??
-      null,
-    [execution?.pendingActivities],
+  const isRunning = execution?.status === "Running";
+  const isPaused = execution?.status === "Paused";
+  const canAct = !imported;
+  const eventTypes = useMemo(
+    () => Array.from(new Set(rawEvents.map((evt) => evt.eventType))).sort(),
+    [rawEvents],
   );
+  // A reset continues from a completed Workflow Task.
+  const resetPoints = useMemo(
+    () =>
+      rawEvents
+        .filter((evt) => evt.eventType === "WorkflowTaskCompleted")
+        .map((evt) => evt.eventId),
+    [rawEvents],
+  );
+  const canReset =
+    canAct && capabilities?.supportsReset === true && resetPoints.length > 0;
+
+  useEffect(() => {
+    if (expandedRawId === null || rawEvents.length === 0) {
+      return;
+    }
+
+    // A link to one event opens the raw list at that event.
+    setHistoryTab("raw");
+    requestAnimationFrame(() => {
+      document
+        .querySelector(`[data-temporal-event="${expandedRawId}"]`)
+        ?.scrollIntoView({ block: "nearest" });
+    });
+    // Only when the page opens on an event, or the events first arrive.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawEvents.length > 0]);
+
+  const runActivityOperation = (
+    activityId: string,
+    operation: TemporalActivityOperation,
+  ) =>
+    void activityOperation
+      .mutateAsync({
+        activityId,
+        operation,
+        runId: execution?.runId,
+        workflowId,
+      })
+      .then(() => toast.success(`Activity ${activityId}: ${operation} done`))
+      .catch((e) => toast.error(e instanceof Error ? e.message : String(e)));
+  const pendingActivities = execution?.pendingActivities ?? [];
+  const retryingActivity =
+    pendingActivities.find((pa) => pa.lastFailure != null) ?? null;
+  const nextAttemptTime =
+    retryingActivity?.nextAttemptScheduleTime &&
+    Date.parse(retryingActivity.nextAttemptScheduleTime) > Date.now()
+      ? retryingActivity.nextAttemptScheduleTime
+      : undefined;
+  const failedSpan =
+    isRunning && !retryingActivity
+      ? (spans.filter((span) => span.status === "failed").at(-1) ?? null)
+      : null;
 
   const filteredRawEvents = useMemo(() => {
     const q = rawFilter.trim().toLowerCase();
-    if (!q) return rawEvents;
-    return rawEvents.filter(
+    const shown = rawEvents.filter(
+      (evt) => !hiddenEventTypes.includes(evt.eventType),
+    );
+    if (!q) return shown;
+    return shown.filter(
       (evt) =>
         evt.eventType.toLowerCase().includes(q) ||
         String(evt.eventId).includes(q) ||
         JSON.stringify(evt.attributes).toLowerCase().includes(q),
     );
-  }, [rawEvents, rawFilter]);
+  }, [hiddenEventTypes, rawEvents, rawFilter]);
 
   const handleDownloadReplayJson = () => {
     if (!data) return;
@@ -208,131 +318,149 @@ export function TemporalExecutionDebugger(
     });
   };
 
-  const handleRunInteraction = async () => {
-    const parsed = parseJsonArgsText(interactArgs);
-    if (parsed.error) {
-      setInteractOutput({ error: parsed.error, label: "Invalid JSON" });
-      return;
-    }
-    const name = interactName.trim();
-    if (!name) {
-      setInteractOutput({ error: "Enter a name first", label: "Validation" });
-      return;
-    }
-
-    try {
-      if (interactKind === "query") {
-        const res = await queryWorkflow.mutateAsync({
-          args: parsed.args,
-          queryType: name,
-          runId: execution?.runId,
-          workflowId,
-        });
-        setInteractOutput({
-          durationMs: res.durationMs,
-          label: `Query "${name}"`,
-          value: res.rejected
-            ? { rejected: true, status: res.rejectedStatus }
-            : res.result,
-        });
-      } else if (interactKind === "signal") {
-        await signalWorkflow.mutateAsync({
-          args: parsed.args,
-          runId: execution?.runId,
-          signalName: name,
-          workflowId,
-        });
-        setInteractOutput({
-          label: `Signal "${name}" delivered`,
-          value: { ok: true, signal: name },
-        });
-        toast.success(`Sent signal "${name}" to ${workflowId}`);
-      } else {
-        const res = await updateWorkflow.mutateAsync({
-          args: parsed.args,
-          runId: execution?.runId,
-          updateName: name,
-          workflowId,
-        });
-        setInteractOutput({
-          durationMs: res.durationMs,
-          error: res.failure?.message,
-          label: `Update "${name}" (${res.outcome})`,
-          value: res.result,
-        });
-      }
-    } catch (err) {
-      setInteractOutput({
-        error: err instanceof Error ? err.message : String(err),
-        label: `${interactKind} failed`,
-      });
-    }
-  };
-
-  const isRunning = execution?.status === "Running";
+  // A closed run has no pending Activity and no call stack, and its result is what people open it for.
+  const isClosed = Boolean(execution) && !isRunning && !isPaused;
+  const inspectorTabs: Array<{ id: InspectorTab; label: string }> = [
+    { id: "interact", label: "Interact" },
+    ...(isClosed
+      ? []
+      : [
+          {
+            id: "pending" as const,
+            label: `Pending ${pendingActivities.length}`,
+          },
+        ]),
+    {
+      id: "related",
+      label: execution
+        ? `Related ${relatedRunCount({ execution, runs: runsOfId, spans })}`
+        : "Related",
+    },
+    ...(isClosed ? [] : [{ id: "stack" as const, label: "Stack" }]),
+    { id: "meta", label: isClosed ? "Input & Result" : "Input" },
+  ];
+  const inspectorTab: InspectorTab =
+    chosenTab && !imported && inspectorTabs.some((tab) => tab.id === chosenTab)
+      ? chosenTab
+      : isClosed || imported
+        ? "meta"
+        : "interact";
+  const eventDetails = useMemo(() => describeRawEvents(rawEvents), [rawEvents]);
 
   return (
     <div
-      className="flex h-full min-h-0 flex-col bg-background"
+      className={cn(
+        "@container flex h-full min-h-0 flex-col bg-background",
+        temporalIconScale,
+      )}
       data-testid="temporal-execution-debugger"
     >
       <StudioHeader
         endContent={
-          <div className="flex items-center gap-1.5">
-            <TemporalFollowControl
-              value={followMode}
-              onChange={onFollowModeChange}
-            />
+          <>
+            {imported ? (
+              <Badge variant="secondary" className="font-normal">
+                From a history file
+              </Badge>
+            ) : (
+              <TemporalFollowControl
+                value={followMode}
+                onChange={onFollowModeChange}
+              />
+            )}
             <Button
               variant="outline"
               size="sm"
-              className="h-7 px-2 text-xs"
+              className={cn("w-8 px-0", imported && "hidden")}
               onClick={() => void refetch()}
               aria-label="Refresh execution"
             >
               <RefreshCw
-                className={cn(
-                  "size-3.5",
-                  isFetching && "motion-safe:animate-spin",
-                )}
+                className={cn(isFetching && "motion-safe:animate-spin")}
               />
             </Button>
             <Button
               variant="outline"
               size="sm"
-              className="h-7 px-2.5 text-xs"
               onClick={handleClone}
               disabled={!execution}
               data-testid="temporal-clone-btn"
             >
-              <Play className="mr-1 size-3" />
-              Clone &amp; Re-run
+              <Play />
+              <span className="@max-4xl:sr-only">Clone &amp; Re-run</span>
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 px-2 text-xs"
+                  className="w-8 px-0"
                   aria-label="Workflow actions"
                   data-testid="temporal-debugger-actions"
                 >
-                  <MoreHorizontal className="size-3.5" />
+                  <MoreHorizontal />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuContent
+                align="end"
+                className="w-60 [&_[role=menuitem]]:text-xs"
+              >
                 <DropdownMenuItem
                   disabled={!data}
                   onClick={handleDownloadReplayJson}
                 >
-                  <Download className="mr-2 size-3.5" />
+                  <Download />
                   Download Replay JSON
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => void handleCopyCli()}>
-                  <Terminal className="mr-2 size-3.5" />
+                  <Terminal />
                   Copy temporal CLI
                 </DropdownMenuItem>
-                {execution ? (
+                {canReset ? (
+                  <>
+                    <DropdownMenuItem
+                      onClick={() => setResetEventId(resetPoints.at(-1)!)}
+                    >
+                      <History />
+                      Reset to Last Workflow Task
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setResetEventId(resetPoints[0]!)}
+                    >
+                      <History />
+                      Reset to First Workflow Task
+                    </DropdownMenuItem>
+                  </>
+                ) : null}
+                {canAct &&
+                capabilities?.supportsWorkflowPause &&
+                execution &&
+                (isRunning || isPaused) ? (
+                  <DropdownMenuItem
+                    onClick={() =>
+                      void setWorkflowPaused
+                        .mutateAsync({
+                          paused: !isPaused,
+                          runId: execution.runId,
+                          workflowId,
+                        })
+                        .then(() =>
+                          toast.success(
+                            `${isPaused ? "Resumed" : "Paused"} ${workflowId}`,
+                          ),
+                        )
+                        .catch((e) =>
+                          toast.error(
+                            e instanceof Error ? e.message : String(e),
+                          ),
+                        )
+                    }
+                  >
+                    {isPaused ? <Play /> : <Pause />}
+                    {isPaused ? "Resume Workflow" : "Pause Workflow"}
+                  </DropdownMenuItem>
+                ) : null}
+                {canAct && execution ? (
                   <DropdownMenuItem
                     onClick={() =>
                       void resetStickyTaskQueue
@@ -347,11 +475,11 @@ export function TemporalExecutionDebugger(
                         )
                     }
                   >
-                    <RotateCcw className="mr-2 size-3.5" />
+                    <RotateCcw />
                     Reset Sticky Queue
                   </DropdownMenuItem>
                 ) : null}
-                {isRunning && execution ? (
+                {canAct && (isRunning || isPaused) && execution ? (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
@@ -368,59 +496,54 @@ export function TemporalExecutionDebugger(
                           )
                       }
                     >
-                      <XCircle className="mr-2 size-3.5" />
+                      <XCircle />
                       Request Cancel
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       className="text-destructive focus:text-destructive"
                       onClick={() => setTerminateConfirmOpen(true)}
                     >
-                      <StopCircle className="mr-2 size-3.5" />
+                      <StopCircle />
                       Terminate Workflow
                     </DropdownMenuItem>
                   </>
                 ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
+          </>
         }
       >
-        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+        <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 shrink-0 px-2 text-xs text-muted-foreground"
+            className="shrink-0 px-2 text-muted-foreground"
             onClick={onBack}
             data-testid="temporal-back-to-grid"
           >
-            <ArrowLeft className="mr-1 size-3.5" />
-            Workflows
+            <ArrowLeft />
+            <span className="@max-4xl:sr-only">Workflows</span>
           </Button>
           {execution ? (
             <>
+              {/* A narrow page has no room for the path in the header; the row under it shows it. */}
+              <ChevronRight
+                aria-hidden
+                className="size-3 shrink-0 text-muted-foreground/70 @max-4xl:hidden"
+              />
+              <TemporalRunBreadcrumb
+                className="@max-4xl:hidden"
+                execution={execution}
+                isImported={Boolean(imported)}
+                namespace={namespace}
+                onOpenRun={(runId) => onOpenExecution(workflowId, runId)}
+                runCount={runCount}
+                runs={runsOfId}
+              />
               <WorkflowStatusBadge
                 status={execution.status}
                 className="shrink-0"
               />
-              <span className="truncate text-sm font-semibold text-foreground">
-                {execution.workflowType}
-              </span>
-              <span className="truncate font-mono text-xs text-muted-foreground">
-                {execution.workflowId}
-              </span>
-              <button
-                type="button"
-                aria-label={`Copy run ID ${execution.runId}`}
-                className="hidden shrink-0 items-center gap-1 rounded border border-border bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground hover:text-foreground xl:inline-flex"
-                onClick={() => {
-                  void navigator.clipboard.writeText(execution.runId);
-                  toast.success("Copied Run ID");
-                }}
-                title={`Run ID: ${execution.runId}`}
-              >
-                run {execution.runId.slice(0, 8)}
-                <Copy className="size-2.5" />
-              </button>
             </>
           ) : (
             <span className="truncate font-mono text-xs text-muted-foreground">
@@ -431,13 +554,13 @@ export function TemporalExecutionDebugger(
       </StudioHeader>
 
       {isLoading ? (
-        <div className="space-y-3 p-4">
+        <div className="flex flex-col gap-3 p-4">
           <Skeleton className="h-12 w-full" />
           <Skeleton className="h-32 w-full" />
           <Skeleton className="h-48 w-full" />
         </div>
       ) : isError || !data || !execution ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-sm text-muted-foreground">
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-sm text-muted-foreground">
           <p className="font-medium text-destructive">
             {error instanceof Error
               ? error.message
@@ -449,34 +572,100 @@ export function TemporalExecutionDebugger(
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
-          {/* Metadata summary + Lineage strip */}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/40 px-4 py-1.5 text-[11px] text-muted-foreground">
-            <div className="flex flex-wrap items-center gap-3">
-              <span>
-                Queue:{" "}
-                <strong className="font-mono text-foreground">
-                  {execution.taskQueue}
-                </strong>
-              </span>
-              <span>
-                Duration:{" "}
-                <strong className="font-mono text-foreground">
-                  {formatDuration(execution.durationMs)}
-                </strong>
-              </span>
-              <span>
-                History:{" "}
-                <strong className="font-mono text-foreground">
-                  {execution.historyLength} events
-                </strong>{" "}
-                ({formatBytes(execution.historySizeBytes)})
-              </span>
-              <span>Started {formatRelativeTime(execution.startTime)}</span>
+          <div
+            className="border-b border-border px-4 py-1.5 @4xl:hidden"
+            data-testid="temporal-debugger-identity"
+          >
+            <TemporalRunBreadcrumb
+              className="flex-wrap"
+              execution={execution}
+              isImported={Boolean(imported)}
+              namespace={namespace}
+              onOpenRun={(runId) => onOpenExecution(workflowId, runId)}
+              runCount={runCount}
+              runs={runsOfId}
+            />
+          </div>
+
+          {data.summary || metadata.data?.currentDetails ? (
+            <div
+              className="flex flex-col gap-0.5 border-b border-border px-4 py-2 text-xs"
+              data-testid="temporal-debugger-summary"
+            >
+              {data.summary ? (
+                <p className="font-medium text-foreground">{data.summary}</p>
+              ) : null}
+              {metadata.data?.currentDetails ? (
+                <p className="whitespace-pre-wrap text-muted-foreground">
+                  {metadata.data.currentDetails}
+                </p>
+              ) : null}
             </div>
-            <div className="flex flex-wrap items-center gap-1.5">
+          ) : null}
+
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
+            <dl className="flex flex-wrap items-center gap-x-5 gap-y-1">
+              <MetadataItem label="Namespace" value={namespace} />
+              <MetadataItem label="Queue" value={execution.taskQueue} />
+              <MetadataItem
+                label="Duration"
+                value={formatDuration(execution.durationMs)}
+              />
+              <MetadataItem
+                label="History"
+                value={`${execution.historyLength} events · ${formatBytes(execution.historySizeBytes)}`}
+              />
+              <MetadataItem
+                label="Started"
+                value={<TemporalTime iso={execution.startTime} />}
+              />
+              {data.codec && data.codec.decoded > 0 ? (
+                <MetadataItem
+                  label="Codec"
+                  value={`${data.codec.decoded} payloads decoded`}
+                />
+              ) : null}
+              {execution.closeTime ? (
+                <MetadataItem
+                  label="Closed"
+                  value={<TemporalTime iso={execution.closeTime} />}
+                />
+              ) : null}
+            </dl>
+            <div className="flex flex-wrap items-center gap-1">
+              {data.chain.previousRunId ? (
+                <Button
+                  variant="outline"
+                  size="xs"
+                  title={`This run continues run ${data.chain.previousRunId}`}
+                  onClick={() =>
+                    onOpenExecution(workflowId, data.chain.previousRunId)
+                  }
+                  data-testid="temporal-previous-run"
+                >
+                  <ArrowLeft />
+                  Previous Run
+                </Button>
+              ) : null}
+              {data.chain.nextRunId ? (
+                <Button
+                  variant="outline"
+                  size="xs"
+                  title={`Run ${data.chain.nextRunId} continues this run`}
+                  onClick={() =>
+                    onOpenExecution(workflowId, data.chain.nextRunId)
+                  }
+                  data-testid="temporal-next-run"
+                >
+                  Next Run
+                  <ArrowRight />
+                </Button>
+              ) : null}
               {execution.parentWorkflowId ? (
-                <button
-                  type="button"
+                <Button
+                  variant="outline"
+                  size="xs"
+                  className="font-mono font-normal"
                   onClick={() => {
                     if (execution.parentWorkflowId) {
                       onOpenExecution(
@@ -485,70 +674,82 @@ export function TemporalExecutionDebugger(
                       );
                     }
                   }}
-                  className="rounded border border-border bg-card px-2 py-0.5 font-mono text-[10.5px] text-prism-cyan-600 hover:underline dark:text-prism-cyan-400"
                 >
-                  Parent: {execution.parentWorkflowId} ↗
-                </button>
+                  Parent: {execution.parentWorkflowId}
+                </Button>
               ) : null}
               {typeof streamsUrl === "string" ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    void setStreamParam("app-events");
-                    void setSearchParam(execution.workflowId);
-                    void setViewParam("stream");
-                  }}
-                  className="inline-flex items-center gap-1 rounded border border-border bg-card px-2 py-0.5 text-[10.5px] text-muted-foreground hover:text-foreground"
+                <Button
+                  asChild
+                  variant="ghost"
+                  size="xs"
+                  className="text-muted-foreground"
                 >
-                  <Waves className="size-3" />
-                  Streams
-                </button>
+                  <a
+                    href={createUrl({
+                      searchParam: execution.workflowId,
+                      streamParam: "app-events",
+                      viewParam: "stream",
+                    })}
+                  >
+                    <Waves />
+                    Search Streams
+                  </a>
+                </Button>
               ) : null}
               {hasDatabase ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    void setSearchParam(execution.workflowId);
-                    void setViewParam("table");
-                  }}
-                  className="inline-flex items-center gap-1 rounded border border-border bg-card px-2 py-0.5 text-[10.5px] text-muted-foreground hover:text-foreground"
+                <Button
+                  asChild
+                  variant="ghost"
+                  size="xs"
+                  className="text-muted-foreground"
                 >
-                  <Database className="size-3" />
-                  Tables
-                </button>
+                  <a
+                    href={createUrl({
+                      schemaParam,
+                      searchParam: execution.workflowId,
+                      tableParam,
+                      viewParam: "table",
+                    })}
+                  >
+                    <Database />
+                    Search Tables
+                  </a>
+                </Button>
               ) : null}
             </div>
           </div>
 
-          {/* Conditional Diagnostic Callout Strip */}
+          {data.codec && (data.codec.encoded > 0 || data.codec.error) ? (
+            <p
+              className="border-b border-border bg-amber-500/10 px-4 py-1.5 text-2xs text-foreground"
+              data-testid="temporal-codec-notice"
+            >
+              {data.codec.error
+                ? `The Codec Server could not decode this run's payloads: ${data.codec.error}.`
+                : `${data.codec.encoded} payloads of this run are encoded. Set a Codec Server for Studio's Temporal connection to read them.`}
+            </p>
+          ) : null}
+
           {data.failure ? (
             <div
-              className="flex flex-wrap items-center justify-between gap-2 border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-xs"
+              className="flex items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-4 py-2.5 text-xs"
               data-testid="temporal-failure-callout"
             >
-              <div className="flex min-w-0 items-center gap-2">
-                <AlertTriangle className="size-4 shrink-0 text-destructive" />
-                <span className="truncate font-medium text-destructive">
-                  {data.failure.type ? `${data.failure.type}: ` : ""}
-                  {data.failure.message}
-                </span>
-              </div>
-              <Button size="sm" className="h-7 text-xs" onClick={handleClone}>
-                <Play className="mr-1 size-3" />
-                Clone &amp; Re-run with Edits
-              </Button>
+              <AlertTriangle className="size-3.5 shrink-0 text-destructive" />
+              <span className="truncate font-medium text-foreground">
+                {formatFailureMessage(data.failure)}
+              </span>
             </div>
           ) : retryingActivity ? (
             <div
-              className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs"
+              className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs"
               data-testid="temporal-retry-callout"
             >
               <div className="flex min-w-0 items-center gap-2">
-                <AlertTriangle className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                <span className="truncate">
-                  <strong className="text-amber-700 dark:text-amber-300">
-                    Retrying Activity:
-                  </strong>{" "}
+                <AlertTriangle className="size-3.5 shrink-0 text-amber-700 dark:text-amber-300" />
+                <span className="truncate text-foreground">
+                  <span className="font-medium">Retrying activity</span>{" "}
                   <code className="font-mono">
                     {retryingActivity.activityType}
                   </code>{" "}
@@ -556,204 +757,307 @@ export function TemporalExecutionDebugger(
                   {retryingActivity.maximumAttempts > 0
                     ? `/${retryingActivity.maximumAttempts}`
                     : ""}
+                  {nextAttemptTime ? (
+                    <>
+                      , next <TemporalTime iso={nextAttemptTime} />
+                    </>
+                  ) : null}
                   ): {retryingActivity.lastFailure?.message}
                 </span>
               </div>
-              <div className="flex items-center gap-1.5">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => setInspectorTab("pending")}
-                >
+              <div className="flex items-center gap-2">
+                {(metadata.data?.signals.length ?? 0) > 0 ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setInspectorTab("interact")}
+                  >
+                    Send Signal
+                  </Button>
+                ) : null}
+                <Button size="sm" onClick={() => setInspectorTab("pending")}>
                   Inspect Pending
-                </Button>
-                <Button
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => {
-                    setInspectorTab("interact");
-                    setInteractKind("signal");
-                    setInteractName("approveDeposit");
-                  }}
-                >
-                  Send Signal to Unblock
                 </Button>
               </div>
             </div>
+          ) : failedSpan ? (
+            <div
+              className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-xs"
+              data-testid="temporal-failed-activity-callout"
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <AlertTriangle className="size-3.5 shrink-0 text-destructive" />
+                <span className="truncate text-foreground">
+                  <span className="font-medium">Activity failed</span>{" "}
+                  <code className="font-mono">{failedSpan.label}</code>
+                  {failedSpan.error ? `: ${failedSpan.error.message}` : ""}
+                </span>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setHistoryTab("grouped");
+                  setSelectedSpanId(failedSpan.id);
+                }}
+              >
+                Inspect Span
+              </Button>
+            </div>
           ) : null}
 
-          {/* Split Body: Left Timeline+Spans, Right Live Inspector */}
-          <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[1fr_320px]">
-            {/* Left Main Debugger Pane */}
-            <div className="flex min-h-0 flex-col border-b border-border lg:border-r lg:border-b-0">
-              {/* Synchronized Compact Gantt Timeline */}
+          {/* On a narrow page the panels stack and the page scrolls as one. */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto @4xl:grid @4xl:grid-cols-[minmax(0,1fr)_340px] @4xl:overflow-visible">
+            <div className="flex min-h-0 min-w-0 flex-col @max-4xl:shrink-0">
               {spans.length > 0 ? (
-                <div
-                  className="border-b border-border bg-secondary/30 px-4 py-3"
-                  data-testid="temporal-gantt-timeline"
-                >
-                  <div className="mb-1.5 flex items-center justify-between font-mono text-[10px] text-muted-foreground">
-                    <span>0ms</span>
-                    <span>{formatDuration(totalDurationMs * 0.25)}</span>
-                    <span>{formatDuration(totalDurationMs * 0.5)}</span>
-                    <span>{formatDuration(totalDurationMs * 0.75)}</span>
-                    <span>{formatDuration(totalDurationMs)}</span>
-                  </div>
-                  <div className="max-h-36 space-y-1.5 overflow-y-auto">
-                    {spans.map((span) => {
-                      const leftPct = Math.min(
-                        96,
-                        (span.startOffsetMs / totalDurationMs) * 100,
-                      );
-                      const widthPct = Math.max(
-                        1.8,
-                        Math.min(
-                          100 - leftPct,
-                          (span.durationMs / totalDurationMs) * 100,
-                        ),
-                      );
-                      const isSelected = selectedSpanId === span.id;
-
-                      return (
-                        <button
-                          key={span.id}
-                          type="button"
-                          onClick={() => {
-                            setHistoryTab("grouped");
-                            setSelectedSpanId(isSelected ? null : span.id);
-                          }}
-                          className={cn(
-                            "grid w-full grid-cols-[132px_1fr_54px] items-center gap-2 rounded px-1 py-0.5 text-left text-[11px] transition-colors hover:bg-secondary",
-                            isSelected && "bg-secondary ring-1 ring-primary/40",
-                          )}
-                        >
-                          <span className="truncate font-mono text-foreground">
-                            {span.label}
-                            {span.attempt && span.attempt > 1
-                              ? ` ×${span.attempt}`
-                              : ""}
-                          </span>
-                          <div className="relative h-3 overflow-hidden rounded bg-muted">
-                            <div
-                              className={cn(
-                                "absolute top-0.5 bottom-0.5 rounded-xs",
-                                spanBarClasses(span.kind, span.status),
-                              )}
-                              style={{
-                                left: `${leftPct}%`,
-                                width: `${widthPct}%`,
-                              }}
-                            />
-                          </div>
-                          <span className="text-right font-mono text-[10px] text-muted-foreground">
-                            {span.status === "retrying"
-                              ? "retry"
-                              : formatDuration(span.durationMs)}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+                <TemporalTimeline
+                  highlightedSpanId={
+                    historyTab === "diagram" ? diagramSpanId : null
+                  }
+                  namespace={namespace}
+                  onOpenExecution={onOpenExecution}
+                  onSelectSpan={(spanId) => {
+                    setHistoryTab("grouped");
+                    setSelectedSpanId(spanId);
+                  }}
+                  selectedSpanId={selectedSpanId}
+                  spans={spans}
+                  startTime={execution.startTime}
+                  totalDurationMs={totalDurationMs}
+                />
               ) : null}
 
-              {/* Grouped / Raw History Header */}
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-card px-4 py-2">
-                <div className="flex items-center gap-2">
-                  <div className="inline-flex rounded-md border border-border bg-secondary p-0.5 text-xs">
-                    <button
-                      type="button"
-                      onClick={() => setHistoryTab("grouped")}
-                      className={cn(
-                        "rounded px-2.5 py-0.5 font-medium transition-colors",
-                        historyTab === "grouped"
-                          ? "bg-background text-foreground shadow-2xs"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      Grouped Spans ({spans.length})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setHistoryTab("raw")}
-                      className={cn(
-                        "rounded px-2.5 py-0.5 font-medium transition-colors",
-                        historyTab === "raw"
-                          ? "bg-background text-foreground shadow-2xs"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      Raw Events ({rawEvents.length})
-                    </button>
-                  </div>
-                </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-2">
+                <TemporalSegmentedControl
+                  ariaLabel="History view"
+                  onChange={setHistoryTab}
+                  options={[
+                    {
+                      label: `Grouped Spans (${spans.length})`,
+                      value: "grouped",
+                    },
+                    {
+                      label: `Raw Events (${rawEvents.length})`,
+                      value: "raw",
+                    },
+                    // A run from a history file has no type on the server to draw.
+                    ...(imported
+                      ? []
+                      : [
+                          {
+                            label: "Diagram",
+                            title:
+                              "The steps of this Workflow Type, with this run marked",
+                            value: "diagram" as const,
+                          },
+                        ]),
+                  ]}
+                  value={historyTab}
+                />
                 {historyTab === "raw" ? (
-                  <Input
-                    value={rawFilter}
-                    onChange={(e) => setRawFilter(e.target.value)}
-                    placeholder="Filter raw events..."
-                    className="h-7 w-52 text-xs"
-                  />
+                  <div className="flex items-center gap-2">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          data-testid="temporal-event-type-filter"
+                        >
+                          <ListFilter />
+                          Event Types
+                          {hiddenEventTypes.length > 0
+                            ? ` (${eventTypes.length - hiddenEventTypes.length}/${eventTypes.length})`
+                            : ""}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="end"
+                        className="max-h-80 w-[22rem] overflow-y-auto [&_[role=menuitem]]:text-xs"
+                      >
+                        <DropdownMenuItem
+                          onSelect={(event) => {
+                            event.preventDefault();
+                            setHiddenEventTypes(
+                              hiddenEventTypes.length > 0 ? [] : eventTypes,
+                            );
+                          }}
+                        >
+                          {hiddenEventTypes.length > 0
+                            ? "Show All"
+                            : "Hide All"}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        {eventTypes.map((type) => (
+                          <DropdownMenuCheckboxItem
+                            key={type}
+                            checked={!hiddenEventTypes.includes(type)}
+                            className="font-mono text-xs"
+                            // Keep the menu open, so several types can be changed at once.
+                            onSelect={(event) => event.preventDefault()}
+                            onCheckedChange={(checked) =>
+                              setHiddenEventTypes((hidden) =>
+                                checked
+                                  ? hidden.filter((item) => item !== type)
+                                  : [...hidden, type],
+                              )
+                            }
+                          >
+                            {type}
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <Input
+                      aria-label="Filter raw events"
+                      value={rawFilter}
+                      onChange={(e) => setRawFilter(e.target.value)}
+                      placeholder="Filter raw events"
+                      className="h-8 w-56 text-xs"
+                    />
+                  </div>
                 ) : null}
               </div>
 
-              {/* Spans or Raw Events Scroll Area */}
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                {historyTab === "grouped" ? (
+              {data.historyTruncated ? (
+                <p className="border-b border-border bg-amber-500/10 px-4 py-1.5 text-2xs text-foreground">
+                  This run has {execution.historyLength.toLocaleString("en-US")}{" "}
+                  events. Studio shows the first{" "}
+                  {rawEvents.length.toLocaleString("en-US")}.
+                </p>
+              ) : null}
+
+              <div className="min-h-0 flex-1 overflow-y-auto @max-4xl:max-h-[28rem] @max-4xl:flex-none">
+                {historyTab === "diagram" ? (
+                  <TemporalRunDiagram
+                    detail={data}
+                    isError={typeMap.isError}
+                    map={typeMap.data}
+                    onActiveSpanChange={setDiagramSpanId}
+                    onOpenSpan={(spanId) => {
+                      setSelectedSpanId(spanId);
+                      setHistoryTab("grouped");
+                    }}
+                    onRetry={() => void typeMap.refetch()}
+                    onSelect={setDiagramNodeId}
+                    selectedId={diagramNodeId}
+                    typeUrl={createUrl({
+                      temporalNsParam: namespace,
+                      temporalSectionParam: "types",
+                      temporalTypeParam: execution.workflowType,
+                      viewParam: "temporal",
+                    })}
+                  />
+                ) : historyTab === "grouped" ? (
                   spans.length === 0 ? (
-                    <div className="p-6 text-center text-xs text-muted-foreground">
+                    <p className="p-10 text-center text-xs text-muted-foreground">
                       No activity, timer, signal, or child spans recorded yet.
                       Switch to Raw Events to inspect lifecycle events.
-                    </div>
+                    </p>
                   ) : (
-                    <div className="divide-y divide-border">
+                    <div className="[&>*+*]:border-t [&>*+*]:border-border/60">
                       {spans.map((span) => (
                         <GroupedSpanRow
                           key={span.id}
                           isExpanded={selectedSpanId === span.id}
+                          onShowInDiagram={
+                            imported
+                              ? undefined
+                              : (nodeId) => {
+                                  setDiagramNodeId(nodeId);
+                                  setHistoryTab("diagram");
+                                }
+                          }
                           onToggle={() =>
                             setSelectedSpanId((prev) =>
                               prev === span.id ? null : span.id,
                             )
                           }
                           span={span}
+                          typeMap={imported ? null : typeMap.data}
                         />
                       ))}
                     </div>
                   )
+                ) : filteredRawEvents.length === 0 ? (
+                  <p className="p-10 text-center text-xs text-muted-foreground">
+                    No events match this filter.
+                  </p>
                 ) : (
-                  <div className="divide-y divide-border">
+                  <div className="[&>*+*]:border-t [&>*+*]:border-border/60">
                     {filteredRawEvents.map((evt) => {
                       const isExpanded = expandedRawId === evt.eventId;
                       return (
-                        <div key={evt.eventId} className="text-xs">
+                        <div
+                          key={evt.eventId}
+                          className="text-xs"
+                          data-temporal-event={evt.eventId}
+                        >
                           <button
                             type="button"
+                            aria-expanded={isExpanded}
                             onClick={() =>
                               setExpandedRawId(isExpanded ? null : evt.eventId)
                             }
-                            className="flex w-full items-center gap-3 px-4 py-1.5 text-left hover:bg-secondary/50"
+                            className="grid w-full grid-cols-[16px_48px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-left hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                           >
                             {isExpanded ? (
-                              <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                              <ChevronDown className="size-3.5 text-muted-foreground" />
                             ) : (
-                              <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+                              <ChevronRight className="size-3.5 text-muted-foreground" />
                             )}
-                            <span className="w-8 font-mono text-muted-foreground">
+                            <span className="font-mono text-2xs text-muted-foreground">
                               #{evt.eventId}
                             </span>
-                            <span className="flex-1 truncate font-mono font-medium text-foreground">
-                              {evt.eventType}
+                            <span className="flex min-w-0 items-baseline gap-2">
+                              <span className="shrink-0 font-mono font-medium text-foreground">
+                                {evt.eventType}
+                              </span>
+                              {eventDetails.get(evt.eventId) ? (
+                                <span className="truncate font-mono text-2xs text-muted-foreground">
+                                  {eventDetails.get(evt.eventId)}
+                                </span>
+                              ) : null}
                             </span>
-                            <span className="font-mono text-[11px] text-muted-foreground">
+                            <span className="font-mono text-2xs tabular-nums text-muted-foreground">
                               +{formatDuration(evt.offsetMs)}
                             </span>
                           </button>
                           {isExpanded ? (
-                            <pre className="overflow-x-auto border-t border-border bg-secondary/40 px-10 py-2 font-mono text-[11px] text-foreground">
-                              {safeJsonPretty(evt.attributes)}
-                            </pre>
+                            <div className="border-t border-border/60 bg-muted/20 py-3 pr-4 pl-11">
+                              <div className="mb-2 flex flex-wrap items-center gap-2 text-2xs text-muted-foreground">
+                                <TemporalTime iso={evt.eventTime} />
+                                <Button
+                                  variant="ghost"
+                                  size="xs"
+                                  className="text-muted-foreground"
+                                  onClick={() => {
+                                    void navigator.clipboard.writeText(
+                                      window.location.href,
+                                    );
+                                    toast.success(
+                                      `Copied a link to event ${evt.eventId}`,
+                                    );
+                                  }}
+                                >
+                                  <Link2 />
+                                  Copy Link
+                                </Button>
+                                {canReset &&
+                                evt.eventType === "WorkflowTaskCompleted" ? (
+                                  <Button
+                                    variant="outline"
+                                    size="xs"
+                                    onClick={() => setResetEventId(evt.eventId)}
+                                  >
+                                    <History />
+                                    Reset to Here
+                                  </Button>
+                                ) : null}
+                              </div>
+                              <pre className="max-h-80 overflow-auto font-mono text-xs text-foreground">
+                                {safeJsonPretty(evt.attributes)}
+                              </pre>
+                            </div>
                           ) : null}
                         </div>
                       );
@@ -763,245 +1067,199 @@ export function TemporalExecutionDebugger(
               </div>
             </div>
 
-            {/* Right Inspector Sheet: Interact / Pending / Meta */}
-            <aside className="flex min-h-0 flex-col border-t border-border bg-card lg:border-t-0">
+            <aside className="flex min-h-0 min-w-0 flex-col border-t border-border bg-card @max-4xl:min-h-80 @max-4xl:shrink-0 @4xl:border-t-0 @4xl:border-l">
               <div
                 role="tablist"
-                aria-label="Execution inspector tabs"
-                className="grid grid-cols-3 border-b border-border bg-secondary/40 text-xs"
+                aria-label="Execution inspector"
+                className="flex border-b border-border text-xs"
               >
-                {(
-                  [
-                    { id: "interact", label: "Interact" },
-                    {
-                      id: "pending",
-                      label: `Pending (${execution.pendingActivities?.length ?? 0})`,
-                    },
-                    { id: "meta", label: "Meta" },
-                  ] as const
-                ).map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={inspectorTab === t.id}
-                    onClick={() => setInspectorTab(t.id)}
-                    className={cn(
-                      "border-b-2 py-2 text-center font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                      inspectorTab === t.id
-                        ? "border-primary bg-card text-foreground"
-                        : "border-transparent text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {t.label}
-                  </button>
-                ))}
+                {inspectorTabs.map((tab, index) => {
+                  const isActive = inspectorTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      role="tab"
+                      id={`temporal-inspector-tab-${tab.id}`}
+                      aria-controls="temporal-inspector-panel"
+                      aria-selected={isActive}
+                      tabIndex={isActive ? 0 : -1}
+                      onClick={() => setInspectorTab(tab.id)}
+                      onKeyDown={(e) => {
+                        if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") {
+                          return;
+                        }
+                        e.preventDefault();
+                        const step = e.key === "ArrowRight" ? 1 : -1;
+                        const next =
+                          inspectorTabs[
+                            (index + step + inspectorTabs.length) %
+                              inspectorTabs.length
+                          ]!;
+                        setInspectorTab(next.id);
+                        document
+                          .getElementById(`temporal-inspector-tab-${next.id}`)
+                          ?.focus();
+                      }}
+                      className={cn(
+                        "-mb-px h-10 flex-1 whitespace-nowrap border-b-2 px-1 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                        isActive
+                          ? "border-foreground font-medium text-foreground"
+                          : "border-transparent text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
-                {inspectorTab === "interact" ? (
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-3 rounded-md border border-border bg-secondary p-0.5 text-xs">
-                      {(["query", "signal", "update"] as const).map((k) => (
-                        <button
-                          key={k}
-                          type="button"
-                          onClick={() => {
-                            setInteractKind(k);
-                            setInteractOutput(null);
-                            if (k === "query") {
-                              setInteractName(
-                                execution.workflowType === "MoneyTransfer"
-                                  ? "transferStatus"
-                                  : "getState",
-                              );
-                            } else if (k === "signal") {
-                              setInteractName(
-                                execution.workflowType === "MoneyTransfer"
-                                  ? "approveDeposit"
-                                  : "renewNow",
-                              );
-                            } else {
-                              setInteractName("setLimit");
-                            }
-                          }}
-                          className={cn(
-                            "rounded py-1 capitalize font-medium transition-colors",
-                            interactKind === k
-                              ? "bg-background text-foreground shadow-2xs"
-                              : "text-muted-foreground hover:text-foreground",
-                          )}
-                        >
-                          {k}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label
-                        htmlFor="temporal-interact-name"
-                        className="text-[11px] uppercase tracking-wide text-muted-foreground"
-                      >
-                        {interactKind} Name
-                      </Label>
-                      <Input
-                        id="temporal-interact-name"
-                        value={interactName}
-                        onChange={(e) => setInteractName(e.target.value)}
-                        className="h-8 font-mono text-xs"
-                        placeholder={
-                          interactKind === "query"
-                            ? "transferStatus"
-                            : interactKind === "signal"
-                              ? "approveDeposit"
-                              : "setLimit"
-                        }
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label
-                        htmlFor="temporal-interact-args"
-                        className="text-[11px] uppercase tracking-wide text-muted-foreground"
-                      >
-                        Arguments (JSON)
-                      </Label>
-                      <Textarea
-                        id="temporal-interact-args"
-                        value={interactArgs}
-                        onChange={(e) => setInteractArgs(e.target.value)}
-                        rows={3}
-                        className="font-mono text-xs"
-                        spellCheck={false}
-                      />
-                    </div>
-
-                    <Button
-                      size="sm"
-                      className="w-full"
-                      disabled={
-                        queryWorkflow.isPending ||
-                        signalWorkflow.isPending ||
-                        updateWorkflow.isPending
-                      }
-                      onClick={() => void handleRunInteraction()}
-                      data-testid="temporal-interact-submit"
-                    >
-                      <Send className="mr-1.5 size-3.5" />
-                      {interactKind === "query"
-                        ? "Run Live Query"
-                        : interactKind === "signal"
-                          ? "Send Signal"
-                          : "Execute Update"}
-                    </Button>
-
-                    {interactOutput ? (
-                      <div
-                        className="space-y-1 rounded-md border border-border bg-secondary/40 p-2.5"
-                        data-testid="temporal-interact-output"
-                      >
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="font-medium text-foreground">
-                            {interactOutput.label}
-                          </span>
-                          {interactOutput.durationMs != null ? (
-                            <span className="font-mono text-muted-foreground">
-                              {interactOutput.durationMs}ms
-                            </span>
-                          ) : null}
-                        </div>
-                        {interactOutput.error ? (
-                          <pre className="whitespace-pre-wrap font-mono text-[11px] text-destructive">
-                            {interactOutput.error}
-                          </pre>
-                        ) : (
-                          <pre className="max-h-56 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-emerald-700 dark:text-emerald-400">
-                            {safeJsonPretty(interactOutput.value)}
-                          </pre>
-                        )}
-                      </div>
-                    ) : null}
-                  </div>
+              <div
+                role="tabpanel"
+                id="temporal-inspector-panel"
+                aria-labelledby={`temporal-inspector-tab-${inspectorTab}`}
+                className="min-h-0 flex-1 overflow-y-auto p-4"
+              >
+                {imported && inspectorTab !== "meta" ? (
+                  <p className="text-xs text-muted-foreground">
+                    This run comes from a history file. Queries, Signals and
+                    related runs need the server it ran on. The Input &amp;
+                    Result tab shows what the file holds.
+                  </p>
+                ) : inspectorTab === "interact" ? (
+                  <TemporalInteractPanel
+                    isRunning={isRunning}
+                    namespace={namespace}
+                    runId={execution.runId}
+                    spans={spans}
+                    workflowId={workflowId}
+                  />
                 ) : inspectorTab === "pending" ? (
-                  <div className="space-y-3 text-xs">
-                    {!execution.pendingActivities ||
-                    execution.pendingActivities.length === 0 ? (
-                      <p className="text-muted-foreground">
-                        No pending activities.
-                      </p>
-                    ) : (
-                      execution.pendingActivities.map((pa) => (
+                  pendingActivities.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      No pending activities.
+                    </p>
+                  ) : (
+                    <div className="flex flex-col gap-3 text-xs">
+                      {pendingActivities.map((pa) => (
                         <div
                           key={pa.activityId}
-                          className="space-y-1.5 rounded-md border border-border bg-secondary/40 p-2.5"
+                          className="flex flex-col gap-2 rounded-md border border-border p-3"
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <strong className="font-mono">
+                            <span className="truncate font-mono font-medium text-foreground">
                               {pa.activityType}
-                            </strong>
-                            <Badge variant="outline" className="text-[10px]">
+                            </span>
+                            <Badge variant="outline">
                               Attempt {pa.attempt}
                               {pa.maximumAttempts > 0
                                 ? `/${pa.maximumAttempts}`
                                 : ""}
                             </Badge>
                           </div>
-                          <div className="text-[11px] text-muted-foreground">
-                            ID:{" "}
-                            <span className="font-mono">{pa.activityId}</span> ·{" "}
-                            State: {pa.state}
+                          <div className="text-2xs text-muted-foreground">
+                            ID{" "}
+                            <span className="font-mono text-foreground">
+                              {pa.activityId}
+                            </span>{" "}
+                            · State{" "}
+                            <span className="text-foreground">
+                              {pa.paused ? "Paused" : pa.state}
+                            </span>
+                            {pa.taskQueue ? (
+                              <>
+                                {" "}
+                                · Queue{" "}
+                                <span className="font-mono text-foreground">
+                                  {pa.taskQueue}
+                                </span>
+                              </>
+                            ) : null}
                           </div>
+                          {canAct &&
+                          capabilities?.supportsActivityOperations ? (
+                            <div className="flex flex-wrap gap-1.5">
+                              <Button
+                                variant="outline"
+                                size="xs"
+                                disabled={activityOperation.isPending}
+                                onClick={() =>
+                                  runActivityOperation(
+                                    pa.activityId,
+                                    pa.paused ? "unpause" : "pause",
+                                  )
+                                }
+                              >
+                                {pa.paused ? <Play /> : <Pause />}
+                                {pa.paused ? "Unpause" : "Pause"}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="xs"
+                                disabled={activityOperation.isPending}
+                                title="Start the attempts from one and run the Activity now"
+                                onClick={() =>
+                                  runActivityOperation(pa.activityId, "reset")
+                                }
+                              >
+                                <RotateCcw />
+                                Reset
+                              </Button>
+                            </div>
+                          ) : null}
                           {pa.lastFailure ? (
-                            <div className="rounded border border-destructive/40 bg-destructive/10 p-1.5 font-mono text-[10.5px] text-destructive">
+                            <div className="rounded-sm border border-destructive/30 bg-destructive/10 p-2 font-mono text-2xs text-foreground">
                               {pa.lastFailure.message}
                             </div>
                           ) : null}
                         </div>
-                      ))
-                    )}
-                  </div>
-                ) : (
-                  <div className="space-y-3 text-xs">
-                    <div>
-                      <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        Workflow Input
-                      </div>
-                      <pre className="max-h-40 overflow-auto rounded border border-border bg-secondary/40 p-2 font-mono text-[11px]">
-                        {safeJsonPretty(data.input)}
-                      </pre>
+                      ))}
                     </div>
+                  )
+                ) : inspectorTab === "related" ? (
+                  <TemporalRelatedPanel
+                    execution={execution}
+                    isLoadingRuns={runsQuery.isLoading}
+                    onOpenExecution={onOpenExecution}
+                    runCount={runCount}
+                    runs={runsOfId}
+                    spans={spans}
+                    workflowIdUrl={createUrl({
+                      searchParam: `WorkflowId = ${quoteFilterValue(workflowId)}`,
+                      temporalNsParam: namespace,
+                      temporalSectionParam: "workflows",
+                      viewParam: "temporal",
+                    })}
+                  />
+                ) : inspectorTab === "stack" ? (
+                  <StackPanel
+                    namespace={namespace}
+                    runId={execution.runId}
+                    workflowId={workflowId}
+                  />
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    {data.details ? (
+                      <MetaBlock label="Details">{data.details}</MetaBlock>
+                    ) : null}
+                    <MetaBlock label="Workflow Input">
+                      {safeJsonPretty(data.input)}
+                    </MetaBlock>
                     {data.result !== undefined ? (
-                      <div>
-                        <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
-                          Workflow Result
-                        </div>
-                        <pre className="max-h-40 overflow-auto rounded border border-border bg-secondary/40 p-2 font-mono text-[11px] text-emerald-700 dark:text-emerald-400">
-                          {safeJsonPretty(data.result)}
-                        </pre>
-                      </div>
+                      <MetaBlock label="Workflow Result">
+                        {safeJsonPretty(data.result)}
+                      </MetaBlock>
                     ) : null}
                     {data.failure ? (
-                      <div>
-                        <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wide text-destructive">
-                          Failure &amp; Stack Trace
-                        </div>
-                        <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded border border-destructive/40 bg-destructive/10 p-2 font-mono text-[11px] text-destructive">
-                          {data.failure.message}
-                          {data.failure.stackTrace
-                            ? `\n\n${data.failure.stackTrace}`
-                            : ""}
-                        </pre>
+                      <div className="flex min-w-0 flex-col gap-1.5">
+                        <TemporalSectionLabel>Failure</TemporalSectionLabel>
+                        <TemporalFailurePanel failure={data.failure} />
                       </div>
                     ) : null}
                     {Object.keys(execution.memo).length > 0 ? (
-                      <div>
-                        <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
-                          Memo
-                        </div>
-                        <pre className="overflow-auto rounded border border-border bg-secondary/40 p-2 font-mono text-[11px]">
-                          {safeJsonPretty(execution.memo)}
-                        </pre>
-                      </div>
+                      <MetaBlock label="Memo">
+                        {safeJsonPretty(execution.memo)}
+                      </MetaBlock>
                     ) : null}
                   </div>
                 )}
@@ -1012,9 +1270,9 @@ export function TemporalExecutionDebugger(
       )}
 
       <TemporalConfirmDialog
-        confirmLabel="Terminate workflow"
+        confirmLabel="Terminate Workflow"
         defaultReason="Terminated via Prisma Studio"
-        description={`Terminate ${workflowId}? The execution stops immediately without running cleanup logic.`}
+        description={`This stops ${workflowId} immediately, without running cleanup logic.`}
         isPending={terminateWorkflow.isPending}
         onConfirm={async (reason) => {
           if (!execution) return;
@@ -1027,33 +1285,209 @@ export function TemporalExecutionDebugger(
         }}
         onOpenChange={setTerminateConfirmOpen}
         open={terminateConfirmOpen}
-        reasonLabel="Termination Reason"
+        reasonLabel="Termination reason"
         showReasonInput
         title="Terminate workflow execution?"
       />
+
+      <TemporalConfirmDialog
+        confirmLabel="Reset Workflow"
+        defaultReason="Reset via Prisma Studio"
+        description={`This starts a new run of ${workflowId} from the history up to event ${resetEventId ?? ""}, and terminates this run if it is still open. Activities after that event run again.`}
+        isPending={resetWorkflow.isPending}
+        onConfirm={async (reason) => {
+          if (!execution || resetEventId === null) return;
+
+          try {
+            const result = await resetWorkflow.mutateAsync({
+              eventId: resetEventId,
+              reason,
+              runId: execution.runId,
+              workflowId,
+            });
+            toast.success(`Reset ${workflowId}. Opened the new run.`);
+            onOpenExecution(workflowId, result.runId);
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : String(e));
+          }
+        }}
+        onOpenChange={(open) => {
+          if (!open) setResetEventId(null);
+        }}
+        open={resetEventId !== null}
+        reasonLabel="Reset reason"
+        showReasonInput
+        title="Reset workflow execution?"
+        variant="default"
+      />
+    </div>
+  );
+}
+
+/**
+ * One short fact per raw event that tells it apart from others of its type:
+ * the Activity, Workflow, Signal or Timer it belongs to, or the failure message.
+ */
+function describeRawEvents(
+  events: TemporalExecutionDetail["rawEvents"],
+): Map<number, string> {
+  const names = new Map<number, string>();
+  const details = new Map<number, string>();
+  const text = (value: unknown) =>
+    typeof value === "string" && value ? value : undefined;
+  const nameOf = (value: unknown) =>
+    value && typeof value === "object"
+      ? text((value as { name?: unknown }).name)
+      : undefined;
+
+  for (const event of events) {
+    const attributes = event.attributes ?? {};
+    const ownName =
+      nameOf(attributes.activityType) ??
+      nameOf(attributes.workflowType) ??
+      text(attributes.signalName) ??
+      text(attributes.markerName) ??
+      (text(attributes.timerId)
+        ? `Timer ${String(attributes.timerId)}`
+        : undefined);
+    const name =
+      ownName ??
+      [
+        attributes.scheduledEventId,
+        attributes.initiatedEventId,
+        attributes.startedEventId,
+      ]
+        .map((id) => (typeof id === "number" ? names.get(id) : undefined))
+        .find(Boolean);
+    const failure = attributes.failure as { message?: unknown } | undefined;
+    const detail = [name, text(failure?.message)].filter(Boolean).join(" · ");
+
+    if (name) {
+      names.set(event.eventId, name);
+    }
+
+    if (detail) {
+      details.set(event.eventId, detail);
+    }
+  }
+
+  return details;
+}
+
+function MetadataItem(props: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline gap-1.5">
+      <dt>{props.label}</dt>
+      <dd className="font-mono text-foreground">{props.value}</dd>
+    </div>
+  );
+}
+
+function StackPanel(props: {
+  namespace: string;
+  runId: string;
+  workflowId: string;
+}) {
+  const stack = useTemporalWorkflowStack(props);
+  const stackError =
+    stack.error instanceof Error
+      ? stack.error.message
+      : String(stack.error ?? "");
+
+  return (
+    <div className="flex flex-col gap-3 text-xs" data-testid="temporal-stack">
+      <div className="flex items-center justify-between gap-2">
+        <TemporalSectionLabel>Call Stack</TemporalSectionLabel>
+        <Button
+          variant="outline"
+          size="xs"
+          disabled={stack.isFetching}
+          onClick={() => void stack.refetch()}
+        >
+          <RefreshCw
+            className={cn(stack.isFetching && "motion-safe:animate-spin")}
+          />
+          Refresh
+        </Button>
+      </div>
+      {stack.isLoading ? (
+        <Skeleton className="h-24 w-full" />
+      ) : stack.isError ? (
+        /not enabled/i.test(stackError) ? (
+          <p className="text-muted-foreground">
+            The Worker that answered does not record call stacks. The TypeScript
+            SDK records them on Node.js only, so a Worker on Bun cannot answer
+            this.
+          </p>
+        ) : (
+          <p className="text-muted-foreground">
+            No Worker answered the call stack Query:{" "}
+            <span className="text-foreground">{stackError}</span>
+          </p>
+        )
+      ) : stack.data ? (
+        <pre className="overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3 font-mono text-xs text-foreground">
+          {stack.data}
+        </pre>
+      ) : (
+        <p className="text-muted-foreground">
+          The Workflow is not waiting on anything.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function MetaBlock(props: {
+  children: React.ReactNode;
+  label: string;
+  tone?: "danger";
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <TemporalSectionLabel>{props.label}</TemporalSectionLabel>
+      <pre
+        className={cn(
+          "max-h-44 overflow-auto whitespace-pre-wrap rounded-md border p-3 font-mono text-xs text-foreground",
+          props.tone === "danger"
+            ? "border-destructive/30 bg-destructive/10"
+            : "border-border bg-muted/30",
+        )}
+      >
+        {props.children}
+      </pre>
     </div>
   );
 }
 
 function GroupedSpanRow(props: {
   isExpanded: boolean;
+  onShowInDiagram?: (nodeId: string) => void;
   onToggle: () => void;
   span: TemporalGroupedSpan;
+  typeMap?: TemporalTypeMapResponse | null;
 }) {
-  const { span, isExpanded, onToggle } = props;
+  const { span, isExpanded, onShowInDiagram, onToggle, typeMap } = props;
+  const isTimer = span.kind === "timer";
+  const isOpenTimer = isTimer && span.status === "running";
+  // An open Timer counts down, so its row reads the time again every second.
+  const now = useNow(1_000, isOpenTimer);
+  const timer = isTimer ? timerProgress(span, now) : null;
   const eventRange =
     span.closedEventId && span.closedEventId !== span.startedEventId
       ? `#${span.startedEventId}–${span.closedEventId}`
       : `#${span.startedEventId}`;
+  const status = TEMPORAL_SPAN_STATUS[span.status];
 
   return (
     <div className="text-xs">
       <button
         type="button"
+        aria-expanded={isExpanded}
         onClick={onToggle}
         className={cn(
-          "grid w-full grid-cols-[18px_58px_1fr_76px_64px] items-center gap-2 px-4 py-2 text-left transition-colors hover:bg-secondary/50",
-          isExpanded && "bg-secondary/70",
+          "grid w-full grid-cols-[16px_64px_minmax(0,1fr)_104px_84px] items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+          isExpanded && "bg-muted/40",
         )}
       >
         {isExpanded ? (
@@ -1061,66 +1495,75 @@ function GroupedSpanRow(props: {
         ) : (
           <ChevronRight className="size-3.5 text-muted-foreground" />
         )}
-        <span className="font-mono text-[11px] text-muted-foreground">
+        <span className="font-mono text-2xs text-muted-foreground">
           {eventRange}
         </span>
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="font-mono font-medium text-foreground">
+        <span className="flex min-w-0 items-baseline gap-2">
+          <span className="shrink-0 font-mono font-medium text-foreground">
             {span.label}
           </span>
-          {span.summary ? (
-            <span className="truncate text-[11px] text-muted-foreground">
+          {span.userSummary ? (
+            <span className="shrink-0 text-foreground">{span.userSummary}</span>
+          ) : null}
+          {isOpenTimer && timer ? (
+            <span className="truncate font-mono text-2xs text-muted-foreground">
+              {timer.leftMs > 0
+                ? `fires in ${formatTimeLeft(timer.leftMs)}`
+                : "due now"}
+            </span>
+          ) : span.summary ? (
+            <span
+              className="truncate font-mono text-2xs text-muted-foreground"
+              title={span.summary}
+            >
               {span.summary}
             </span>
           ) : null}
-        </div>
-        <div>
-          <Badge
-            variant="outline"
-            className={cn(
-              "text-[10px] capitalize",
-              span.status === "completed" || span.status === "fired"
-                ? "border-emerald-500/40 text-emerald-700 dark:text-emerald-400"
-                : span.status === "failed"
-                  ? "border-destructive/50 text-destructive"
-                  : span.status === "retrying" || span.status === "timed-out"
-                    ? "border-amber-500/50 text-amber-700 dark:text-amber-400"
-                    : "border-sky-500/40 text-sky-600 dark:text-sky-400",
-            )}
-          >
-            {span.status}
-          </Badge>
-        </div>
-        <span className="text-right font-mono text-[11px] text-muted-foreground">
-          {formatDuration(span.durationMs)}
+        </span>
+        <TemporalStatusBadge
+          className="justify-self-start"
+          icon={status.icon}
+          tone={status.tone}
+        >
+          {status.label}
+        </TemporalStatusBadge>
+        <span className="text-right font-mono tabular-nums text-muted-foreground">
+          {isOpenTimer && timer
+            ? `${formatTimeLeft(timer.leftMs)} left`
+            : formatDuration(span.durationMs)}
         </span>
       </button>
 
-      {isExpanded ? (
-        <div className="grid grid-cols-1 gap-3 border-t border-border bg-secondary/30 px-10 py-3 md:grid-cols-2">
-          <div>
-            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Input{" "}
+      {isExpanded && isTimer ? (
+        <TemporalTimerDetail
+          map={typeMap}
+          onShowInDiagram={onShowInDiagram}
+          span={span}
+        />
+      ) : isExpanded ? (
+        <div className="grid grid-cols-1 gap-4 border-t border-border/60 bg-muted/20 py-3 pr-4 pl-11 md:grid-cols-2">
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <TemporalSectionLabel>
+              Input
               {span.queueWaitMs != null
-                ? `· queue wait ${formatDuration(span.queueWaitMs)}`
+                ? ` · queue wait ${formatDuration(span.queueWaitMs)}`
                 : ""}
-            </div>
-            <pre className="max-h-40 overflow-auto rounded border border-border bg-card p-2 font-mono text-[11px]">
+            </TemporalSectionLabel>
+            <pre className="max-h-40 overflow-auto rounded-md border border-border bg-card p-3 font-mono text-xs text-foreground">
               {safeJsonPretty(span.input)}
             </pre>
           </div>
-          <div>
-            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <TemporalSectionLabel>
               {span.error ? "Failure" : "Output"}
-            </div>
+            </TemporalSectionLabel>
             {span.error ? (
-              <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded border border-destructive/40 bg-destructive/10 p-2 font-mono text-[11px] text-destructive">
-                {span.error.type ? `${span.error.type}: ` : ""}
-                {span.error.message}
-                {span.error.stackTrace ? `\n\n${span.error.stackTrace}` : ""}
-              </pre>
+              <TemporalFailurePanel
+                attempt={span.kind === "activity" ? span.attempt : undefined}
+                failure={span.error}
+              />
             ) : (
-              <pre className="max-h-40 overflow-auto rounded border border-border bg-card p-2 font-mono text-[11px]">
+              <pre className="max-h-40 overflow-auto rounded-md border border-border bg-card p-3 font-mono text-xs text-foreground">
                 {safeJsonPretty(span.output)}
               </pre>
             )}

@@ -1,12 +1,17 @@
 import { useMemo, useState } from "react";
 
-import type { TemporalFollowMode, TemporalSection } from "@/data/temporal";
+import type {
+  TemporalExecutionDetail,
+  TemporalFollowMode,
+  TemporalSection,
+} from "@/data/temporal";
 import { useNavigation } from "@/ui/hooks/use-navigation";
 import {
   useTemporalCapabilities,
-  useTemporalWorkflows,
+  useTemporalFacets,
 } from "@/ui/hooks/use-temporal";
 
+import { TemporalAttentionView } from "./TemporalAttentionView";
 import { TemporalClusterView } from "./TemporalClusterView";
 import { TemporalExecutionDebugger } from "./TemporalExecutionDebugger";
 import { TemporalSchedulesView } from "./TemporalSchedulesView";
@@ -15,6 +20,8 @@ import {
   TemporalStartSheet,
 } from "./TemporalStartSheet";
 import { TemporalTaskQueuesView } from "./TemporalTaskQueuesView";
+import { TemporalTypesView } from "./TemporalTypesView";
+import { TemporalWorkersView } from "./TemporalWorkersView";
 import { TemporalWorkflowsGrid } from "./TemporalWorkflowsGrid";
 
 function normalizeFollowMode(
@@ -27,7 +34,14 @@ function normalizeFollowMode(
 }
 
 function normalizeSection(raw: string | null | undefined): TemporalSection {
-  if (raw === "schedules" || raw === "queues" || raw === "cluster") {
+  if (
+    raw === "attention" ||
+    raw === "schedules" ||
+    raw === "queues" ||
+    raw === "types" ||
+    raw === "workers" ||
+    raw === "cluster"
+  ) {
     return raw;
   }
   return "workflows";
@@ -61,56 +75,58 @@ export function TemporalView() {
   const visibilityQuery = searchParam ?? "";
 
   const [startSheetOpen, setStartSheetOpen] = useState(false);
+  // A run read from a history file. It is not on the server, so it is not in the URL.
+  const [importedDetail, setImportedDetail] =
+    useState<TemporalExecutionDetail | null>(null);
   const [startPreset, setStartPreset] = useState<TemporalStartPreset | null>(
     null,
   );
 
-  // Pull known workflow types & task queues for Start/Clone and Schedule forms
-  const { data: listData } = useTemporalWorkflows({
-    followMode: "paused",
-    namespace,
-    query: "",
-  });
-
-  const knownWorkflowTypes = useMemo(() => {
-    const set = new Set<string>([
-      "ChargeOrder",
-      "MoneyTransfer",
-      "SubscriptionRenewal",
-    ]);
-    for (const exec of listData?.executions ?? []) {
-      set.add(exec.workflowType);
-    }
-    return Array.from(set);
-  }, [listData?.executions]);
-
-  const knownTaskQueues = useMemo(() => {
-    const set = new Set<string>(["billing", "default"]);
-    for (const exec of listData?.executions ?? []) {
-      set.add(exec.taskQueue);
-    }
-    return Array.from(set);
-  }, [listData?.executions]);
+  // The Workflow Types and Task Queues in use, as suggestions in the forms.
+  const { data: facets } = useTemporalFacets(namespace);
+  const knownWorkflowTypes = useMemo(
+    () => (facets?.workflowTypes ?? []).map((type) => type.name),
+    [facets?.workflowTypes],
+  );
+  const knownTaskQueues = useMemo(
+    () => (facets?.taskQueues ?? []).map((queue) => queue.name),
+    [facets?.taskQueues],
+  );
 
   const openStartSheet = (preset?: TemporalStartPreset | null) => {
     setStartPreset(preset ?? null);
     setStartSheetOpen(true);
   };
 
+  // Opening and closing a run each add a browser history entry, so the
+  // browser's Back button returns to the screen the user came from.
   const openExecution = (workflowId: string, runId?: string) => {
-    void setTemporalSectionParam("workflows");
-    void setTemporalWfParam(workflowId);
-    void setTemporalRunParam(runId ?? null);
+    setImportedDetail(null);
+    void setTemporalSectionParam("workflows", { history: "push" });
+    void setTemporalWfParam(workflowId, { history: "push" });
+    void setTemporalRunParam(runId ?? null, { history: "push" });
   };
 
   const closeExecution = () => {
-    void setTemporalWfParam(null);
-    void setTemporalRunParam(null);
+    void setTemporalWfParam(null, { history: "push" });
+    void setTemporalRunParam(null, { history: "push" });
   };
 
   return (
     <>
-      {temporalWfParam ? (
+      {importedDetail ? (
+        <TemporalExecutionDebugger
+          followMode="paused"
+          imported={importedDetail}
+          namespace={namespace}
+          onBack={() => setImportedDetail(null)}
+          onClone={openStartSheet}
+          onFollowModeChange={() => undefined}
+          onOpenExecution={openExecution}
+          runId={importedDetail.execution.runId}
+          workflowId={importedDetail.execution.workflowId}
+        />
+      ) : temporalWfParam ? (
         <TemporalExecutionDebugger
           followMode={followMode}
           namespace={namespace}
@@ -130,12 +146,32 @@ export function TemporalView() {
           onFollowModeChange={(m) => void setTemporalFollowParam(m)}
           onOpenExecution={openExecution}
         />
+      ) : section === "attention" ? (
+        <TemporalAttentionView
+          followMode={followMode}
+          namespace={namespace}
+          onFollowModeChange={(m) => void setTemporalFollowParam(m)}
+          onOpenExecution={openExecution}
+        />
       ) : section === "queues" ? (
         <TemporalTaskQueuesView
           followMode={followMode}
           namespace={namespace}
           onFollowModeChange={(m) => void setTemporalFollowParam(m)}
           onOpenExecution={openExecution}
+        />
+      ) : section === "types" ? (
+        <TemporalTypesView
+          followMode={followMode}
+          namespace={namespace}
+          onFollowModeChange={(m) => void setTemporalFollowParam(m)}
+          onOpenExecution={openExecution}
+        />
+      ) : section === "workers" ? (
+        <TemporalWorkersView
+          followMode={followMode}
+          namespace={namespace}
+          onFollowModeChange={(m) => void setTemporalFollowParam(m)}
         />
       ) : section === "cluster" ? (
         <TemporalClusterView
@@ -148,6 +184,7 @@ export function TemporalView() {
           followMode={followMode}
           namespace={namespace}
           onFollowModeChange={(m) => void setTemporalFollowParam(m)}
+          onImportHistory={setImportedDetail}
           onOpenExecution={openExecution}
           onOpenStart={openStartSheet}
           onQueryChange={(q) => void setSearchParam(q)}
@@ -156,8 +193,7 @@ export function TemporalView() {
       )}
 
       <TemporalStartSheet
-        knownTaskQueues={knownTaskQueues}
-        knownWorkflowTypes={knownWorkflowTypes}
+        facets={facets}
         namespace={namespace}
         onOpenChange={setStartSheetOpen}
         onStarted={(wfId, runId) => {

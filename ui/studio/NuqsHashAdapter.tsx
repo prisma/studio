@@ -27,15 +27,24 @@ function debounce<T extends (...args: any[]) => void>(fn: T, delay: number) {
 }
 
 /**
- * Hook that Nuqs will call to read & write URL state.
+ * The raw URL hash (without the leading `#`) as Nuqs currently sees it.
  */
-function useHashAdapter() {
+export function useStoredRawHash() {
   const rawHash =
     typeof window !== "undefined" ? window.location.hash.slice(1) : "";
   const [storedRawHash, setStoredRawHash] = useUiState<string>(
     HASH_STATE_KEY,
     rawHash,
   );
+
+  return { rawHash, setStoredRawHash, storedRawHash };
+}
+
+/**
+ * Hook that Nuqs will call to read & write URL state.
+ */
+function useHashAdapter() {
+  const { rawHash, setStoredRawHash, storedRawHash } = useStoredRawHash();
 
   const updateHashState = (nextRawHash: string) => {
     setStoredRawHash(nextRawHash);

@@ -1,10 +1,15 @@
 import { Slot } from "@radix-ui/react-slot";
 import {
   Activity,
+  Bookmark,
   CalendarClock,
+  CircleAlert,
   Code2,
+  Cpu,
+  Database,
   History,
   Layers,
+  type LucideIcon,
   Network,
   RefreshCw,
   ScrollText,
@@ -12,9 +17,18 @@ import {
   Server,
   Table2,
   Waves,
+  Waypoints,
   Workflow,
+  X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import PrismaWordmark from "../../assets/prisma-wordmark.svg";
 import PrismaWordmarkWhite from "../../assets/prisma-wordmark-white.svg";
@@ -34,6 +48,7 @@ import { useNavigation } from "../hooks/use-navigation";
 import { useNavigationTableList } from "../hooks/use-navigation-table-list";
 import { useStreams } from "../hooks/use-streams";
 import {
+  useTemporalAttention,
   useTemporalCapabilities,
   useTemporalNamespaces,
   useTemporalWorkflows,
@@ -49,13 +64,45 @@ import {
 } from "./context";
 import { IntrospectionStatusNotice } from "./IntrospectionStatusNotice";
 import {
+  getStudioServiceForView,
+  SERVICE_LOCATIONS_UI_STATE_KEY,
   STREAM_SEARCH_UI_STATE_KEY,
   type StreamSearchUiState,
+  type StudioService,
+  type StudioServiceLocations,
   TABLE_GRID_FOCUS_REQUEST_UI_STATE_KEY,
   TABLE_SEARCH_UI_STATE_KEY,
   type TableGridFocusRequestUiState,
   type TableSearchUiState,
 } from "./navigation-ui-state";
+import {
+  TEMPORAL_BUILT_IN_VIEWS,
+  useTemporalSavedViews,
+} from "./views/temporal/temporal-saved-views";
+import { WorkflowStatusIcon } from "./views/temporal/TemporalPrimitives";
+
+const NO_SERVICE_LOCATIONS: StudioServiceLocations = {};
+const DATABASE_SERVICE_LABELS = {
+  mysql: "MySQL",
+  postgresql: "Postgres",
+  sqlite: "SQLite",
+};
+const RECENT_RUN_COUNT = 20;
+const RECENT_RUN_PAGE_SIZE = 100;
+const RECENT_RUN_WINDOW_MS = 5 * 60_000;
+// Thin scrollbar that only appears on hover, so it never sits against the page edge.
+const hoverScrollbarClasses =
+  "[scrollbar-width:thin] [scrollbar-color:transparent_transparent] hover:[scrollbar-color:var(--border)_transparent]";
+const zoneHeadingClasses =
+  "font-mono text-2xs font-normal uppercase tracking-loose text-muted-foreground";
+
+interface ServiceLink {
+  attention: string | null;
+  href: string;
+  icon: LucideIcon;
+  id: StudioService;
+  label: string;
+}
 
 type NavigationProps = {
   className?: string;
@@ -65,6 +112,7 @@ export function Navigation({ className }: NavigationProps) {
   const { metadata, createUrl, streamParam, viewParam, schemaParam } =
     useNavigation();
   const {
+    adapter,
     hasDatabase,
     hasQueryInsights,
     isDarkMode,
@@ -72,6 +120,11 @@ export function Navigation({ className }: NavigationProps) {
     setNavigationWidth,
     temporalUrl,
   } = useStudio();
+  const [serviceLocations] = useUiState<StudioServiceLocations>(
+    SERVICE_LOCATIONS_UI_STATE_KEY,
+    NO_SERVICE_LOCATIONS,
+  );
+  const temporalNavigation = useTemporalNavigation();
   const { isFetching, activeTable } = metadata;
   const { errorState, hasResolvedIntrospection, isRefetching, refetch } =
     useIntrospection();
@@ -514,10 +567,79 @@ export function Navigation({ className }: NavigationProps) {
     [clampNavigationWidth, navigationWidth, setNavigationWidth],
   );
 
+  const databaseLabel =
+    DATABASE_SERVICE_LABELS[adapter.capabilities?.sqlDialect ?? "postgresql"];
+  const failedWorkflowCount =
+    temporalNavigation.workflowList?.countsByStatus.Failed ?? 0;
+  const services: ServiceLink[] = [];
+
+  if (hasDatabase) {
+    services.push({
+      attention: null,
+      href:
+        serviceLocations.database ??
+        createUrl({ schemaParam, viewParam: "table" }),
+      icon: Database,
+      id: "database",
+      label: databaseLabel,
+    });
+  }
+
+  if (hasStreamsServer) {
+    services.push({
+      attention: null,
+      href:
+        serviceLocations.streams ??
+        createUrl({
+          ...(streams[0] ? { streamParam: streams[0].name } : {}),
+          viewParam: "stream",
+        }),
+      icon: Waves,
+      id: "streams",
+      label: "Streams",
+    });
+  }
+
+  if (typeof temporalUrl === "string") {
+    services.push({
+      attention:
+        failedWorkflowCount > 0
+          ? `${failedWorkflowCount} failed ${failedWorkflowCount === 1 ? "workflow" : "workflows"}`
+          : null,
+      href:
+        serviceLocations.temporal ??
+        createUrl({
+          temporalNsParam: temporalNavigation.activeNamespace,
+          temporalSectionParam: "workflows",
+          viewParam: "temporal",
+        }),
+      icon: Workflow,
+      id: "temporal",
+      label: "Temporal",
+    });
+  }
+
+  const viewService = getStudioServiceForView(viewParam);
+  const openService = services.some((service) => service.id === viewService)
+    ? viewService
+    : services[0]?.id;
+  const revealTableId =
+    viewParam === "table" &&
+    activeTableId != null &&
+    tables.some((table) => table.id === activeTableId)
+      ? activeTableId
+      : null;
+  const revealStreamName =
+    streamParam != null &&
+    filteredStreams.some((stream) => stream.name === streamParam)
+      ? streamParam
+      : null;
+
+  // The whole sidebar scrolls only when the window is too short for the fixed
+  // parts plus a minimum list height. Normally just the object list scrolls.
   const sideBarClasses = cn(
     "relative flex shrink-0 flex-col overflow-y-auto min-h-full h-0 text-card-foreground",
-    // Thin scrollbar that only appears on hover, so it never sits against the page edge.
-    "[scrollbar-width:thin] [scrollbar-color:transparent_transparent] hover:[scrollbar-color:var(--border)_transparent]",
+    hoverScrollbarClasses,
     className,
   );
   // Views read as product chrome (sans + icon); tables are data identifiers (mono).
@@ -540,7 +662,7 @@ export function Navigation({ className }: NavigationProps) {
         - baseline 52.7k = 15.7px -> 16.5px text on a 20px line box lands at 15.6px
         - word space ~0.3em = 5px, weight 500 in the same ink as "Prisma"
       */}
-      <div className="flex min-w-0 items-start gap-[5px] px-4 pt-4 pb-1">
+      <div className="flex min-w-0 shrink-0 items-start gap-[5px] px-4 pt-4 pb-1">
         <img
           src={isDarkMode ? PrismaWordmarkWhite : PrismaWordmark}
           alt="Prisma"
@@ -552,11 +674,19 @@ export function Navigation({ className }: NavigationProps) {
         </span>
       </div>
 
-      {hasDatabase ? (
+      {services.length > 1 && openService ? (
+        <ServiceSwitcher
+          openService={openService}
+          services={services}
+          width={resolvedNavigationWidth}
+        />
+      ) : null}
+
+      {openService === "database" ? (
         <>
           <Navigation.SchemaSelector />
 
-          <Navigation.Block label="Studio">
+          <Navigation.Block label={`${databaseLabel} views`}>
             <Navigation.Item
               asChild
               isActive={viewParam === "schema"}
@@ -653,6 +783,7 @@ export function Navigation({ className }: NavigationProps) {
             onRefresh={() => void refetch()}
             onSearchKeyDown={handleTableSearchKeyDown}
             refreshAriaLabel="Refresh tables"
+            revealItemKey={revealTableId}
             searchAriaLabel="Search tables"
             searchPlaceholder="Search tables..."
             searchInputRef={searchInputRef}
@@ -719,6 +850,7 @@ export function Navigation({ className }: NavigationProps) {
                             : isCurrentTable
                         }
                         className={tableItemClasses}
+                        data-item-key={table.id}
                         onMouseEnter={() => {
                           if (!tableSearchUiState.isOpen) {
                             return;
@@ -770,7 +902,7 @@ export function Navigation({ className }: NavigationProps) {
         </>
       ) : null}
 
-      {hasStreamsServer && (
+      {openService === "streams" && (
         <Navigation.SearchableBlock
           blockKey="streams"
           icon={Waves}
@@ -780,6 +912,7 @@ export function Navigation({ className }: NavigationProps) {
           onRefresh={() => void refetchStreams()}
           onSearchKeyDown={handleStreamSearchKeyDown}
           refreshAriaLabel="Refresh streams"
+          revealItemKey={revealStreamName}
           searchAriaLabel="Search streams"
           searchInputRef={streamSearchInputRef}
           searchPlaceholder="Search streams..."
@@ -803,6 +936,7 @@ export function Navigation({ className }: NavigationProps) {
                 key={stream.name}
                 asChild
                 className={tableItemClasses}
+                data-item-key={stream.name}
                 data-search-highlighted={
                   streamSearchUiState.isOpen && index === highlightedStreamIndex
                     ? "true"
@@ -857,8 +991,11 @@ export function Navigation({ className }: NavigationProps) {
         </Navigation.SearchableBlock>
       )}
 
-      {typeof temporalUrl === "string" ? (
-        <Navigation.TemporalSection itemClassName={navigationItemClasses} />
+      {openService === "temporal" ? (
+        <Navigation.TemporalSection
+          itemClassName={navigationItemClasses}
+          runItemClassName={tableItemClasses}
+        />
       ) : null}
 
       {/* Wide invisible grab area; only a hairline at the page edge shows on hover or drag. */}
@@ -889,7 +1026,7 @@ function CommandMenuHint() {
   const commandPalette = useCommandPalette();
 
   return (
-    <div className="sticky bottom-0 mt-auto bg-canvas px-2 pt-2 pb-3">
+    <div className="sticky bottom-0 mt-auto shrink-0 bg-canvas px-2 pt-2 pb-3">
       <Button
         aria-label="Open command menu"
         className="h-auto w-full justify-between px-2.5 py-1.5 font-normal text-muted-foreground hover:bg-sidebar-active/50 hover:text-foreground focus-visible:bg-sidebar-active/50 focus-visible:text-foreground"
@@ -906,29 +1043,122 @@ function CommandMenuHint() {
   );
 }
 
+/**
+ * Shows one link per connected data service. Each link carries the last
+ * location of its service, so switching away and back returns there.
+ */
+function ServiceSwitcher(props: {
+  openService: StudioService;
+  services: ServiceLink[];
+  width: number;
+}) {
+  const { openService, services, width } = props;
+  const switcherRef = useRef<HTMLElement | null>(null);
+  const labelsKey = services.map((service) => service.label).join("|");
+
+  // Picks the widest form that fits: icon and label, label only, then icons
+  // with a label on the open service.
+  useLayoutEffect(() => {
+    const fitSwitcher = () => {
+      const switcher = switcherRef.current;
+
+      if (!switcher) {
+        return;
+      }
+
+      for (const mode of ["full", "text", "compact"]) {
+        switcher.dataset.mode = mode;
+
+        if (switcher.scrollWidth <= switcher.clientWidth) {
+          break;
+        }
+      }
+    };
+
+    fitSwitcher();
+
+    // Label widths change when the web font replaces the fallback font.
+    if ("fonts" in document) {
+      void document.fonts.ready.then(fitSwitcher);
+    }
+  }, [labelsKey, openService, width]);
+
+  return (
+    <nav
+      aria-label="Data services"
+      className="group/switcher mx-2 mt-3 flex shrink-0 gap-0.5 overflow-hidden rounded-lg border border-border bg-foreground/5 p-0.5"
+      data-testid="navigation-service-switcher"
+      ref={switcherRef}
+    >
+      {services.map((service) => {
+        const isOpen = service.id === openService;
+        const Icon = service.icon;
+
+        return (
+          <a
+            key={service.id}
+            aria-current={isOpen ? "page" : undefined}
+            className={cn(
+              "relative flex h-7 flex-[1_0_auto] items-center justify-center gap-1.5 rounded-md px-2 font-sans text-xs whitespace-nowrap text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+              isOpen
+                ? "bg-background font-medium text-foreground shadow-xs ring-1 ring-border group-data-[mode=compact]/switcher:min-w-0 group-data-[mode=compact]/switcher:shrink"
+                : "group-data-[mode=compact]/switcher:w-8 group-data-[mode=compact]/switcher:flex-none group-data-[mode=compact]/switcher:px-0",
+            )}
+            data-testid={`navigation-service-${service.id}`}
+            href={service.href}
+            title={
+              service.attention
+                ? `${service.label}: ${service.attention}`
+                : service.label
+            }
+          >
+            <Icon
+              aria-hidden
+              className="size-3.5 shrink-0 group-data-[mode=text]/switcher:hidden"
+            />
+            <span
+              className={cn(
+                "truncate",
+                !isOpen && "group-data-[mode=compact]/switcher:sr-only",
+              )}
+            >
+              {service.label}
+            </span>
+            {service.attention && !isOpen ? (
+              <span className="absolute top-1 right-1 size-1.5 rounded-full bg-destructive">
+                <span className="sr-only">{service.attention}</span>
+              </span>
+            ) : null}
+          </a>
+        );
+      })}
+    </nav>
+  );
+}
+
 const Block = ({
   className,
   label,
   children,
-  icon: _icon,
   ...props
-}: React.HTMLAttributes<HTMLDivElement> & {
-  icon?: React.ComponentType<{
-    className?: string;
-    size?: number;
-  }>;
+}: React.HTMLAttributes<HTMLElement> & {
   label: string;
 }) => {
   return (
-    <div className={className} {...props}>
-      <div className="flex items-center gap-1.5 pt-4 pb-1 px-4 sticky top-0 z-10 bg-canvas">
-        <h2 className="font-mono text-2xs font-normal uppercase tracking-loose text-muted-foreground">
-          {label}
-        </h2>
-      </div>
-      <nav aria-label={label} className="flex flex-col gap-px pb-2 px-2 pt-1">
-        {children}
-      </nav>
+    <nav
+      aria-label={label}
+      className={cn("flex shrink-0 flex-col gap-px px-2 pt-1 pb-2", className)}
+      {...props}
+    >
+      {children}
+    </nav>
+  );
+};
+
+const ZoneHeading = ({ children }: { children: React.ReactNode }) => {
+  return (
+    <div className="flex shrink-0 items-center px-4 pt-4 pb-1">
+      <h2 className={zoneHeadingClasses}>{children}</h2>
     </div>
   );
 };
@@ -944,6 +1174,7 @@ const SearchableBlock = ({
   onRefresh,
   onSearchKeyDown,
   refreshAriaLabel,
+  revealItemKey,
   searchAriaLabel,
   searchInputRef,
   searchPlaceholder,
@@ -963,6 +1194,8 @@ const SearchableBlock = ({
   onRefresh: () => void;
   onSearchKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   refreshAriaLabel: string;
+  /** `data-item-key` of the open item, or null when the list does not hold it. */
+  revealItemKey: string | null;
   searchAriaLabel: string;
   searchTerm: string;
   searchInputRef: React.RefObject<HTMLInputElement | null>;
@@ -970,23 +1203,67 @@ const SearchableBlock = ({
   setSearchTerm: (value: string) => void;
   title: string;
 }) => {
+  const listRef = useRef<HTMLElement | null>(null);
+
+  // Scrolls only this list, so a link from another service shows its target
+  // without moving the rest of the sidebar.
+  useEffect(() => {
+    const list = listRef.current;
+
+    if (!list || revealItemKey == null) {
+      return;
+    }
+
+    const revealItem = () => {
+      const item = Array.from(list.children).find(
+        (child) => child.getAttribute("data-item-key") === revealItemKey,
+      );
+
+      if (!item) {
+        return;
+      }
+
+      const listBox = list.getBoundingClientRect();
+      const itemBox = item.getBoundingClientRect();
+
+      if (itemBox.top < listBox.top) {
+        list.scrollTop -= listBox.top - itemBox.top;
+      } else if (itemBox.bottom > listBox.bottom) {
+        list.scrollTop += itemBox.bottom - listBox.bottom;
+      }
+    };
+
+    revealItem();
+
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    // The list gets shorter when parts above it load later, which can hide the item again.
+    const listResizeObserver = new ResizeObserver(revealItem);
+    listResizeObserver.observe(list);
+
+    return () => listResizeObserver.disconnect();
+  }, [revealItemKey]);
+
   return (
     <div
-      className={cn("group/navigation-search relative", className)}
+      className={cn(
+        "group/navigation-search relative flex min-h-24 flex-1 basis-0 flex-col",
+        className,
+      )}
       data-search-open={isSearchOpen ? "true" : "false"}
       data-testid={`navigation-search-block-${blockKey}`}
       {...props}
     >
-      <div className="relative flex items-center gap-1 pt-4 pb-1 px-4 sticky top-0 z-10 bg-canvas min-h-10">
+      <div className="relative flex min-h-10 shrink-0 items-center gap-1 px-4 pt-4 pb-1">
         <div
           className={cn(
             "flex items-center gap-1 transition-opacity duration-200",
             isSearchOpen && "opacity-0 pointer-events-none",
           )}
         >
-          <h2 className="font-mono text-2xs font-normal uppercase tracking-loose text-muted-foreground">
-            {title}
-          </h2>
+          <h2 className={zoneHeadingClasses}>{title}</h2>
         </div>
 
         <div
@@ -1049,7 +1326,14 @@ const SearchableBlock = ({
           />
         </div>
       </div>
-      <nav aria-label={title} className="flex flex-col gap-px pb-2 px-2 pt-1">
+      <nav
+        aria-label={title}
+        className={cn(
+          "flex min-h-0 flex-1 flex-col gap-px overflow-y-auto px-2 pt-1 pb-2",
+          hoverScrollbarClasses,
+        )}
+        ref={listRef}
+      >
         {children}
       </nav>
     </div>
@@ -1078,7 +1362,7 @@ const Item = ({
       data-size={size}
       data-active={isActive}
       className={cn(
-        "py-1.5 px-2 text-sm font-medium rounded-md flex gap-2 items-center border border-transparent bg-transparent",
+        "flex shrink-0 items-center gap-2 rounded-md border border-transparent bg-transparent px-2 py-1.5 text-sm font-medium",
         className,
       )}
       {...props}
@@ -1105,7 +1389,7 @@ const SchemaSelector = () => {
   const isInitialIntrospectionLoad = isFetching && !hasResolvedIntrospection;
 
   return (
-    <div className="flex items-center gap-1 pt-4 pb-2 px-4">
+    <div className="flex shrink-0 items-center gap-1 px-2 pt-3 pb-1">
       <Select
         value={schemaParam}
         onValueChange={(schemaParam) => {
@@ -1136,63 +1420,142 @@ const SchemaSelector = () => {
   );
 };
 
-const TemporalSection = (props: { itemClassName: string }) => {
-  const { itemClassName } = props;
-  const {
-    createUrl,
-    setTemporalNsParam,
-    setTemporalRunParam,
-    setTemporalSectionParam,
-    setTemporalWfParam,
-    setViewParam,
-    temporalNsParam,
-    temporalSectionParam,
-    viewParam,
-  } = useNavigation();
+/**
+ * Temporal data the sidebar needs outside the Temporal section too: the
+ * service switcher links to the namespace and marks failed workflows.
+ */
+function useTemporalNavigation() {
+  const { temporalFollowParam, temporalNsParam, viewParam } = useNavigation();
   const { data: capabilities } = useTemporalCapabilities();
   const { data: namespaces = [] } = useTemporalNamespaces();
-
   const activeNamespace = temporalNsParam ?? namespaces[0]?.name ?? "default";
+  const followMode =
+    viewParam === "temporal" && temporalFollowParam === "paused"
+      ? "paused"
+      : "live";
+  const [recentSince, setRecentSince] = useState(getRecentRunsStart);
+
+  useEffect(() => {
+    const timer = setInterval(
+      () => setRecentSince(getRecentRunsStart()),
+      60_000,
+    );
+
+    return () => clearInterval(timer);
+  }, []);
+
+  // Status counts for the whole namespace. The same request as the unfiltered
+  // Workflows list, so the two share one response.
+  const { data: workflowList } = useTemporalWorkflows({
+    followMode,
+    namespace: activeNamespace,
+    query: "",
+  });
+  // Not every Temporal server lists the newest runs first, so recent runs are
+  // asked for by start time and put in order here.
+  const { data: recentList } = useTemporalWorkflows({
+    followMode,
+    includeCounts: false,
+    namespace: activeNamespace,
+    pageSize: RECENT_RUN_PAGE_SIZE,
+    query: `StartTime > "${recentSince}"`,
+  });
+  const recentRuns = useMemo(
+    () =>
+      recentList
+        ? [...recentList.executions]
+            .sort((a, b) => b.startTime.localeCompare(a.startTime))
+            .slice(0, RECENT_RUN_COUNT)
+        : undefined,
+    [recentList],
+  );
+
+  return {
+    activeNamespace,
+    capabilities,
+    namespaces,
+    recentRuns,
+    workflowList,
+  };
+}
+
+/** The start of the recent-runs window, on a whole minute so its query stays the same for a minute. */
+function getRecentRunsStart(): string {
+  const minute = Math.floor(Date.now() / 60_000) * 60_000;
+
+  return new Date(minute - RECENT_RUN_WINDOW_MS).toISOString();
+}
+
+const TemporalSection = (props: {
+  itemClassName: string;
+  runItemClassName: string;
+}) => {
+  const { itemClassName, runItemClassName } = props;
+  const {
+    createUrl,
+    searchParam,
+    setTemporalNsParam,
+    setTemporalRunParam,
+    setTemporalWfParam,
+    setViewParam,
+    temporalFollowParam,
+    temporalSectionParam,
+    temporalWfParam,
+    viewParam,
+  } = useNavigation();
+  const {
+    activeNamespace,
+    capabilities,
+    namespaces,
+    workflowList,
+    ...temporal
+  } = useTemporalNavigation();
+
+  const isTemporalOpen = viewParam === "temporal";
   const activeSection =
+    temporalSectionParam === "attention" ||
     temporalSectionParam === "schedules" ||
     temporalSectionParam === "queues" ||
+    temporalSectionParam === "types" ||
+    temporalSectionParam === "workers" ||
     temporalSectionParam === "cluster"
       ? temporalSectionParam
       : "workflows";
-  const { data: workflowList } = useTemporalWorkflows({
-    followMode: viewParam === "temporal" ? "paused" : "live",
+  const { removeView, views: userViews } = useTemporalSavedViews();
+  const savedViews = [...TEMPORAL_BUILT_IN_VIEWS, ...userViews];
+  // The check describes every running run, so only the open service asks for it.
+  const { data: attention } = useTemporalAttention({
+    enabled: isTemporalOpen,
+    followMode: temporalFollowParam === "paused" ? "paused" : "live",
     namespace: activeNamespace,
-    pageSize: 1,
-    query: "",
   });
-
+  const attentionCount =
+    attention?.items.filter((item) => item.kind !== "failed").length ?? 0;
   const failedCount = workflowList?.countsByStatus.Failed ?? 0;
   const runningCount = workflowList?.countsByStatus.Running ?? 0;
+  const recentRuns = temporal.recentRuns ?? [];
   const namespaceOptions =
     namespaces.length > 0
       ? namespaces.map((namespace) => namespace.name)
       : [activeNamespace];
-
-  const openSection = (
-    section: "workflows" | "schedules" | "queues" | "cluster",
-  ) => {
-    void setTemporalNsParam(activeNamespace);
-    void setTemporalSectionParam(section);
-    void setTemporalWfParam(null);
-    void setTemporalRunParam(null);
-    void setViewParam("temporal");
+  const isRecentRunOpen =
+    isTemporalOpen &&
+    recentRuns.some((run) => run.workflowId === temporalWfParam);
+  const openSavedViewQuery =
+    isTemporalOpen && activeSection === "workflows" && !temporalWfParam
+      ? savedViews.find((view) => view.query === (searchParam ?? "").trim())
+          ?.query
+      : undefined;
+  // Every link is a full URL, so it also works from another service.
+  const temporalUrlBase = {
+    ...(temporalFollowParam ? { temporalFollowParam } : {}),
+    temporalNsParam: activeNamespace,
+    viewParam: "temporal",
   };
 
   return (
-    <Navigation.Block
-      data-testid="navigation-temporal-block"
-      label={
-        capabilities?.serverKind === "slate-temporal-next"
-          ? "Temporal · Next"
-          : "Temporal"
-      }
-    >
-      <div className="px-2 pb-1.5">
+    <>
+      <div className="flex shrink-0 items-center gap-1 px-2 pt-3 pb-1">
         <Select
           value={activeNamespace}
           onValueChange={(nextNamespace) => {
@@ -1204,16 +1567,17 @@ const TemporalSection = (props: { itemClassName: string }) => {
         >
           <SelectTrigger
             aria-label="Temporal namespace"
-            className="h-7 font-mono text-xs"
+            className="text-xs"
             data-testid="navigation-temporal-namespace"
+            label="Namespace"
           >
-            <SelectValue placeholder="Namespace" />
+            <SelectValue placeholder="Select namespace" />
           </SelectTrigger>
           <SelectContent>
             {namespaceOptions.map((namespaceName) => (
               <SelectItem
                 key={namespaceName}
-                className="font-mono text-xs"
+                className="text-xs"
                 value={namespaceName}
               >
                 {namespaceName}
@@ -1223,159 +1587,260 @@ const TemporalSection = (props: { itemClassName: string }) => {
         </Select>
       </div>
 
-      <Navigation.Item
-        asChild
-        className={itemClassName}
-        isActive={viewParam === "temporal" && activeSection === "workflows"}
+      <Navigation.Block
+        data-testid="navigation-temporal-block"
+        label="Temporal views"
       >
-        <a
-          className="w-full justify-between"
-          data-testid="navigation-temporal-workflows"
-          href={createUrl({
-            temporalNsParam: activeNamespace,
-            temporalSectionParam: "workflows",
-            viewParam: "temporal",
-          })}
-          onClick={(event) => {
-            if (
-              event.button !== 0 ||
-              event.altKey ||
-              event.ctrlKey ||
-              event.metaKey ||
-              event.shiftKey
-            ) {
-              return;
-            }
-
-            event.preventDefault();
-            openSection("workflows");
-          }}
-        >
-          <span className="flex min-w-0 items-center gap-2">
-            <Workflow aria-hidden />
-            <span className="truncate">Workflows</span>
-          </span>
-          <span className="flex shrink-0 items-center gap-1 tabular-nums">
-            {runningCount > 0 ? (
-              <span
-                className="rounded-full bg-prism-cyan-500/15 px-1.5 py-0.5 font-mono text-[10px] font-medium text-prism-cyan-700 dark:text-prism-cyan-300"
-                title={`${runningCount} running`}
-              >
-                {runningCount}
-              </span>
-            ) : null}
-            {failedCount > 0 ? (
-              <span
-                className="rounded-full bg-destructive/15 px-1.5 py-0.5 font-mono text-[10px] font-medium text-destructive"
-                title={`${failedCount} failed`}
-              >
-                {failedCount}
-              </span>
-            ) : null}
-          </span>
-        </a>
-      </Navigation.Item>
-
-      {capabilities?.supportsSchedules !== false ? (
         <Navigation.Item
           asChild
           className={itemClassName}
-          isActive={viewParam === "temporal" && activeSection === "schedules"}
+          isActive={
+            isTemporalOpen &&
+            activeSection === "workflows" &&
+            openSavedViewQuery === undefined &&
+            !isRecentRunOpen
+          }
         >
           <a
-            className="w-full"
-            data-testid="navigation-temporal-schedules"
+            className="w-full justify-between"
+            data-testid="navigation-temporal-workflows"
             href={createUrl({
-              temporalNsParam: activeNamespace,
-              temporalSectionParam: "schedules",
-              viewParam: "temporal",
+              ...temporalUrlBase,
+              temporalSectionParam: "workflows",
             })}
-            onClick={(event) => {
-              if (
-                event.button !== 0 ||
-                event.altKey ||
-                event.ctrlKey ||
-                event.metaKey ||
-                event.shiftKey
-              ) {
-                return;
-              }
-              event.preventDefault();
-              openSection("schedules");
-            }}
           >
-            <CalendarClock aria-hidden />
-            Schedules
+            <span className="flex min-w-0 items-center gap-2">
+              <Workflow aria-hidden />
+              <span className="truncate">Workflows</span>
+            </span>
+            <span className="flex shrink-0 items-center gap-0.5 tabular-nums">
+              {runningCount > 0 ? (
+                <span
+                  className="min-w-5 rounded-full bg-prism-cyan/20 px-[3px] py-0.5 text-center font-mono text-2xs font-medium text-foreground"
+                  title={`${runningCount} running`}
+                >
+                  {runningCount}
+                </span>
+              ) : null}
+              {failedCount > 0 ? (
+                <span
+                  className="min-w-5 rounded-full bg-destructive/15 px-[3px] py-0.5 text-center font-mono text-2xs font-medium text-foreground"
+                  title={`${failedCount} failed`}
+                >
+                  {failedCount}
+                </span>
+              ) : null}
+            </span>
           </a>
         </Navigation.Item>
-      ) : null}
 
-      <Navigation.Item
-        asChild
-        className={itemClassName}
-        isActive={viewParam === "temporal" && activeSection === "queues"}
-      >
-        <a
-          className="w-full"
-          data-testid="navigation-temporal-queues"
-          href={createUrl({
-            temporalNsParam: activeNamespace,
-            temporalSectionParam: "queues",
-            viewParam: "temporal",
-          })}
-          onClick={(event) => {
-            if (
-              event.button !== 0 ||
-              event.altKey ||
-              event.ctrlKey ||
-              event.metaKey ||
-              event.shiftKey
-            ) {
-              return;
-            }
-            event.preventDefault();
-            openSection("queues");
-          }}
-        >
-          <Layers aria-hidden />
-          Task Queues
-        </a>
-      </Navigation.Item>
-
-      {capabilities?.supportsAdminApi ? (
         <Navigation.Item
           asChild
           className={itemClassName}
-          isActive={viewParam === "temporal" && activeSection === "cluster"}
+          isActive={isTemporalOpen && activeSection === "attention"}
+        >
+          <a
+            className="w-full justify-between"
+            data-testid="navigation-temporal-attention"
+            href={createUrl({
+              ...temporalUrlBase,
+              temporalSectionParam: "attention",
+            })}
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <CircleAlert aria-hidden />
+              <span className="truncate">Attention</span>
+            </span>
+            {attentionCount > 0 ? (
+              <span
+                className="shrink-0 rounded-full bg-amber-500/20 px-1.5 py-0.5 font-mono text-2xs font-medium tabular-nums text-foreground"
+                title={`${attentionCount} running workflows need attention`}
+              >
+                {attentionCount}
+              </span>
+            ) : null}
+          </a>
+        </Navigation.Item>
+
+        {capabilities?.supportsSchedules !== false ? (
+          <Navigation.Item
+            asChild
+            className={itemClassName}
+            isActive={isTemporalOpen && activeSection === "schedules"}
+          >
+            <a
+              className="w-full"
+              data-testid="navigation-temporal-schedules"
+              href={createUrl({
+                ...temporalUrlBase,
+                temporalSectionParam: "schedules",
+              })}
+            >
+              <CalendarClock aria-hidden />
+              Schedules
+            </a>
+          </Navigation.Item>
+        ) : null}
+
+        <Navigation.Item
+          asChild
+          className={itemClassName}
+          isActive={isTemporalOpen && activeSection === "types"}
         >
           <a
             className="w-full"
-            data-testid="navigation-temporal-cluster"
+            data-testid="navigation-temporal-types"
             href={createUrl({
-              temporalNsParam: activeNamespace,
-              temporalSectionParam: "cluster",
-              viewParam: "temporal",
+              ...temporalUrlBase,
+              temporalSectionParam: "types",
             })}
-            onClick={(event) => {
-              if (
-                event.button !== 0 ||
-                event.altKey ||
-                event.ctrlKey ||
-                event.metaKey ||
-                event.shiftKey
-              ) {
-                return;
-              }
-              event.preventDefault();
-              openSection("cluster");
-            }}
           >
-            <Server aria-hidden />
-            Cluster &amp; Shards
+            <Waypoints aria-hidden />
+            Workflow Types
           </a>
         </Navigation.Item>
-      ) : null}
-    </Navigation.Block>
+
+        <Navigation.Item
+          asChild
+          className={itemClassName}
+          isActive={isTemporalOpen && activeSection === "queues"}
+        >
+          <a
+            className="w-full"
+            data-testid="navigation-temporal-queues"
+            href={createUrl({
+              ...temporalUrlBase,
+              temporalSectionParam: "queues",
+            })}
+          >
+            <Layers aria-hidden />
+            Task Queues
+          </a>
+        </Navigation.Item>
+
+        {/* Only a server that reports pollers has Workers to list. */}
+        {capabilities?.supportsDescribeTaskQueue ? (
+          <Navigation.Item
+            asChild
+            className={itemClassName}
+            isActive={isTemporalOpen && activeSection === "workers"}
+          >
+            <a
+              className="w-full"
+              data-testid="navigation-temporal-workers"
+              href={createUrl({
+                ...temporalUrlBase,
+                temporalSectionParam: "workers",
+              })}
+            >
+              <Cpu aria-hidden />
+              Workers
+            </a>
+          </Navigation.Item>
+        ) : null}
+
+        {capabilities?.supportsAdminApi ? (
+          <Navigation.Item
+            asChild
+            className={itemClassName}
+            isActive={isTemporalOpen && activeSection === "cluster"}
+          >
+            <a
+              className="w-full"
+              data-testid="navigation-temporal-cluster"
+              href={createUrl({
+                ...temporalUrlBase,
+                temporalSectionParam: "cluster",
+              })}
+            >
+              <Server aria-hidden />
+              Cluster &amp; Shards
+            </a>
+          </Navigation.Item>
+        ) : null}
+      </Navigation.Block>
+
+      <ZoneHeading>Saved Views</ZoneHeading>
+      <Navigation.Block label="Saved views">
+        {savedViews.map((view) => (
+          <Navigation.Item
+            key={view.id}
+            asChild
+            className={cn(itemClassName, "group/view")}
+            isActive={openSavedViewQuery === view.query}
+          >
+            <div className="flex w-full items-center">
+              <a
+                className="flex min-w-0 flex-1 items-center gap-2"
+                href={createUrl({
+                  ...temporalUrlBase,
+                  searchParam: view.query,
+                  ...(view.sort ? { sortParam: view.sort } : {}),
+                  temporalSectionParam: "workflows",
+                })}
+                title={view.query}
+              >
+                <Bookmark aria-hidden />
+                <span className="truncate">{view.name}</span>
+              </a>
+              {view.id.startsWith("built-in:") ? null : (
+                <button
+                  type="button"
+                  aria-label={`Delete saved view ${view.name}`}
+                  className="hidden size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover/view:flex"
+                  onClick={() => removeView(view.id)}
+                >
+                  <X aria-hidden className="size-3" />
+                </button>
+              )}
+            </div>
+          </Navigation.Item>
+        ))}
+      </Navigation.Block>
+
+      <ZoneHeading>Recent Runs</ZoneHeading>
+      <nav
+        aria-label="Recent runs"
+        className={cn(
+          // Positioned, so the screen-reader-only status text scrolls with its row.
+          "relative flex min-h-24 flex-1 basis-0 flex-col gap-px overflow-y-auto px-2 pt-1 pb-2",
+          hoverScrollbarClasses,
+        )}
+        data-testid="navigation-temporal-recent-runs"
+      >
+        {recentRuns.length > 0 ? (
+          recentRuns.map((run) => (
+            <Navigation.Item
+              key={`${run.workflowId}:${run.runId}`}
+              asChild
+              className={runItemClassName}
+              isActive={isTemporalOpen && temporalWfParam === run.workflowId}
+            >
+              <a
+                className="w-full"
+                href={createUrl({
+                  ...temporalUrlBase,
+                  temporalRunParam: run.runId,
+                  temporalSectionParam: "workflows",
+                  temporalWfParam: run.workflowId,
+                })}
+                title={`${run.workflowType} · ${run.status}`}
+              >
+                <WorkflowStatusIcon status={run.status} />
+                <span className="truncate">{run.workflowId}</span>
+                <span className="sr-only">{run.status}</span>
+              </a>
+            </Navigation.Item>
+          ))
+        ) : (
+          <Navigation.Item>
+            {temporal.recentRuns
+              ? "No runs started in the last 5 minutes"
+              : "Loading runs..."}
+          </Navigation.Item>
+        )}
+      </nav>
+    </>
   );
 };
 

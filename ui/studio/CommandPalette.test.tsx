@@ -37,6 +37,11 @@ const setThemeModeMock = vi.fn();
 let isNavigationOpen = true;
 let isDarkMode = false;
 let themeMode: "dark" | "light" | "system" = "system";
+let temporalUrl: string | undefined;
+const temporalMocks = {
+  schedules: vi.fn<(args: unknown) => { data?: unknown }>(() => ({})),
+  workflows: vi.fn<(args: unknown) => { data?: unknown }>(() => ({})),
+};
 const uiStateStore = new Map<string, unknown>();
 const uiStateListeners = new Map<string, Set<() => void>>();
 /* eslint-disable @typescript-eslint/unbound-method */
@@ -106,6 +111,13 @@ vi.mock("../hooks/use-streams", () => ({
   }),
 }));
 
+vi.mock("../hooks/use-temporal", () => ({
+  useTemporalCapabilities: () => ({}),
+  useTemporalNamespaces: () => ({}),
+  useTemporalSchedules: (args: unknown) => temporalMocks.schedules(args),
+  useTemporalWorkflows: (args: unknown) => temporalMocks.workflows(args),
+}));
+
 vi.mock("../hooks/use-ui-state", async () => {
   const React = await vi.importActual<typeof import("react")>("react");
 
@@ -154,9 +166,11 @@ vi.mock("../hooks/use-ui-state", async () => {
 
 vi.mock("./context", () => ({
   useStudio: () => ({
+    adapter: { capabilities: { sqlDialect: "postgresql" } },
     hasDatabase: true,
     hasQueryInsights: false,
     isDarkMode,
+    temporalUrl,
     isNavigationOpen,
     setThemeMode: setThemeModeMock,
     themeMode,
@@ -297,6 +311,9 @@ describe("Studio command palette", () => {
     isNavigationOpen = true;
     isDarkMode = false;
     themeMode = "system";
+    temporalUrl = undefined;
+    temporalMocks.schedules.mockImplementation(() => ({}));
+    temporalMocks.workflows.mockImplementation(() => ({}));
     setThemeModeMock.mockReset();
     toggleNavigationMock.mockReset();
     uiStateStore.clear();
@@ -368,6 +385,98 @@ describe("Studio command palette", () => {
       root.unmount();
     });
     container.remove();
+  });
+
+  it("finds workflows and schedules by ID and opens them", () => {
+    vi.useFakeTimers();
+    temporalUrl = "/api/temporal";
+    temporalMocks.workflows.mockImplementation((args) =>
+      (args as { enabled: boolean }).enabled
+        ? {
+            data: {
+              executions: [
+                {
+                  runId: "run-1",
+                  status: "Running",
+                  workflowId: "order-8488",
+                  workflowType: "orderFulfillment",
+                },
+              ],
+            },
+          }
+        : {},
+    );
+    temporalMocks.schedules.mockImplementation((args) =>
+      (args as { enabled: boolean }).enabled
+        ? {
+            data: {
+              schedules: [
+                {
+                  cadenceSummary: "Every 5m",
+                  scheduleId: "order-digest",
+                  workflowType: "salesDigest",
+                },
+                {
+                  cadenceSummary: "Every 1h",
+                  scheduleId: "restock-ams",
+                  workflowType: "inventoryRestock",
+                },
+              ],
+            },
+          }
+        : {},
+    );
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <StudioCommandPaletteProvider>{null}</StudioCommandPaletteProvider>,
+      );
+    });
+    act(() => {
+      keyDown("k", { metaKey: true });
+    });
+
+    const input = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Search commands"]',
+    )!;
+
+    act(() => {
+      inputText(input, "order");
+    });
+    // The palette asks the server only after typing has paused.
+    expect(document.body.textContent).not.toContain("order-8488");
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+
+    expect(temporalMocks.workflows).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        query:
+          'WorkflowId STARTS_WITH "order" OR WorkflowType STARTS_WITH "order" OR RunId STARTS_WITH "order"',
+      }),
+    );
+    expect(document.body.textContent).toContain(
+      "order-8488 · orderFulfillment · Running",
+    );
+    expect(document.body.textContent).toContain("order-digest · Every 5m");
+    expect(document.body.textContent).not.toContain("restock-ams");
+
+    act(() => {
+      getCommandItemByText("order-digest")?.click();
+    });
+
+    expect(window.location.hash).toBe(
+      "#temporalNsParam=default&temporalScheduleParam=order-digest&temporalSectionParam=schedules&viewParam=temporal",
+    );
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+    vi.useRealTimers();
   });
 
   it("renders the popup inside the Studio scope and keeps it centered", () => {

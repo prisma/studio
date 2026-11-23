@@ -9,14 +9,24 @@ import {
 import { Adapter, AdapterIntrospectResult } from "@/data";
 
 import { useStudio } from "../studio/context";
+import {
+  getStudioServiceForView,
+  recordStudioServiceLocation,
+  SERVICE_LOCATIONS_UI_STATE_KEY,
+  type StudioServiceLocations,
+} from "../studio/navigation-ui-state";
+import { useStoredRawHash } from "../studio/NuqsHashAdapter";
 import { defaultFilter } from "./filter-utils";
 import { useQueryState } from "./nuqs";
 import { useIntrospection } from "./use-introspection";
+import { useUiState } from "./use-ui-state";
 export type * from "./nuqs";
 
 // this type is necessary because nuqs causes issues with our type bundling
 type NuqsSetNullableValue<T> = (
   value: T | null | ((prev: T | null) => T | null),
+  /** `push` adds a browser history entry, so Back returns to the URL before the change. */
+  options?: { history?: "push" | "replace" },
 ) => Promise<URLSearchParams>;
 
 type ParamName = Exclude<
@@ -93,6 +103,8 @@ function getDefaultParams(args: {
     view,
   };
 }
+
+const NO_SERVICE_LOCATIONS: StudioServiceLocations = {};
 
 function buildNavigationTableNames(introspection: AdapterIntrospectResult) {
   const rows: Array<{
@@ -217,12 +229,18 @@ function useNavigationInternal() {
   const [tableParam, setTableParam] = useQueryState("table", {
     defaultValue: defaults.table,
   });
+  const [temporalEventParam, setTemporalEventParam] =
+    useQueryState("temporalEvent");
   const [temporalFollowParam, setTemporalFollowParam] =
     useQueryState("temporalFollow");
   const [temporalNsParam, setTemporalNsParam] = useQueryState("temporalNs");
   const [temporalRunParam, setTemporalRunParam] = useQueryState("temporalRun");
+  const [temporalScheduleParam, setTemporalScheduleParam] =
+    useQueryState("temporalSchedule");
   const [temporalSectionParam, setTemporalSectionParam] =
     useQueryState("temporalSection");
+  const [temporalTypeParam, setTemporalTypeParam] =
+    useQueryState("temporalType");
   const [temporalWfParam, setTemporalWfParam] = useQueryState("temporalWf");
   const [viewParam, setViewParam] = useQueryState("view", {
     defaultValue: defaults.view,
@@ -258,6 +276,35 @@ function useNavigationInternal() {
               ? defaults.view
               : viewParam;
 
+  const { storedRawHash } = useStoredRawHash();
+  const [serviceLocations, setServiceLocations] =
+    useUiState<StudioServiceLocations>(
+      SERVICE_LOCATIONS_UI_STATE_KEY,
+      NO_SERVICE_LOCATIONS,
+    );
+  const activeService = getStudioServiceForView(resolvedViewParam);
+  const hashService = getStudioServiceForView(
+    new URLSearchParams(storedRawHash).get("view") ?? defaults.view,
+  );
+
+  useEffect(() => {
+    const nextServiceLocations = recordStudioServiceLocation(serviceLocations, {
+      activeService,
+      hashService,
+      rawHash: storedRawHash,
+    });
+
+    if (nextServiceLocations !== serviceLocations) {
+      setServiceLocations(nextServiceLocations);
+    }
+  }, [
+    activeService,
+    hashService,
+    serviceLocations,
+    setServiceLocations,
+    storedRawHash,
+  ]);
+
   const metadata = useMemo(
     () => ({
       activeSchema,
@@ -287,10 +334,13 @@ function useNavigationInternal() {
     streamRoutingKeyParam,
     streamParam,
     tableParam,
+    temporalEventParam,
     temporalFollowParam,
     temporalNsParam,
     temporalRunParam,
+    temporalScheduleParam,
     temporalSectionParam,
+    temporalTypeParam,
     temporalWfParam,
     viewParam: resolvedViewParam,
     setFilterParam: setFilterParam as NuqsSetNullableValue<string>,
@@ -313,12 +363,17 @@ function useNavigationInternal() {
       setStreamRoutingKeyParam as NuqsSetNullableValue<string>,
     setStreamParam: setStreamParam as NuqsSetNullableValue<string>,
     setTableParam: setTableParam as NuqsSetNullableValue<string>,
+    setTemporalEventParam:
+      setTemporalEventParam as NuqsSetNullableValue<string>,
     setTemporalFollowParam:
       setTemporalFollowParam as NuqsSetNullableValue<string>,
     setTemporalNsParam: setTemporalNsParam as NuqsSetNullableValue<string>,
     setTemporalRunParam: setTemporalRunParam as NuqsSetNullableValue<string>,
+    setTemporalScheduleParam:
+      setTemporalScheduleParam as NuqsSetNullableValue<string>,
     setTemporalSectionParam:
       setTemporalSectionParam as NuqsSetNullableValue<string>,
+    setTemporalTypeParam: setTemporalTypeParam as NuqsSetNullableValue<string>,
     setTemporalWfParam: setTemporalWfParam as NuqsSetNullableValue<string>,
     setViewParam: setViewParam as NuqsSetNullableValue<string>,
   };

@@ -1,15 +1,19 @@
 import {
+  AlertTriangle,
   ArrowRightCircle,
   Ban,
   Check,
   CircleDot,
+  CirclePause,
   Clock,
+  type LucideIcon,
   XCircle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type {
   TemporalFollowMode,
+  TemporalSpanStatus,
   TemporalWorkflowStatus,
 } from "@/data/temporal";
 import {
@@ -22,48 +26,158 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/ui/components/ui/alert-dialog";
-import { Badge } from "@/ui/components/ui/badge";
+import { Badge, type BadgeProps } from "@/ui/components/ui/badge";
 import { Input } from "@/ui/components/ui/input";
 import { Label } from "@/ui/components/ui/label";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/components/ui/toggle-group";
+import { useUiState } from "@/ui/hooks/use-ui-state";
 import { cn } from "@/ui/lib/utils";
 
-import { statusBadgeClasses } from "./temporal-utils";
+import {
+  formatAbsoluteTime,
+  formatRelativeTime,
+  formatTime,
+  type TemporalTimeFormat,
+} from "./temporal-utils";
+
+/**
+ * Button icons at 14px with a finer stroke, the scale `StudioHeader` sets for
+ * header controls. Portalled sheets and dialogs need it on their own content.
+ */
+export const temporalIconScale =
+  "[&_button_svg]:size-3.5 [&_button_svg]:stroke-[1.75]";
+
+/** Column-header type shared with the Queries table. */
+export const temporalTableHeadClass =
+  "h-9 whitespace-nowrap px-2 font-mono text-2xs font-medium uppercase tracking-loose";
+
+export type TemporalTone = "danger" | "info" | "muted" | "neutral" | "warning";
+
+const TONE_BADGE: Record<
+  TemporalTone,
+  { className?: string; iconClassName: string; variant: BadgeProps["variant"] }
+> = {
+  danger: {
+    className: "text-foreground",
+    iconClassName: "text-destructive",
+    variant: "destructive",
+  },
+  info: {
+    iconClassName: "text-prism-cyan-700 dark:text-prism-cyan-300",
+    variant: "info",
+  },
+  muted: { iconClassName: "text-muted-foreground", variant: "secondary" },
+  neutral: {
+    iconClassName: "text-prism-cyan-600 dark:text-prism-cyan-400",
+    variant: "outline",
+  },
+  warning: {
+    iconClassName: "text-amber-700 dark:text-amber-300",
+    variant: "warning",
+  },
+};
+
+/**
+ * Status badge whose label stays ink-coloured; the fill and icon carry the
+ * status, so the label keeps its contrast on every tint.
+ */
+export function TemporalStatusBadge(props: {
+  children: React.ReactNode;
+  className?: string;
+  icon?: LucideIcon;
+  tone: TemporalTone;
+}) {
+  const { children, className, icon: Icon, tone } = props;
+  const style = TONE_BADGE[tone];
+
+  return (
+    <Badge variant={style.variant} className={cn(style.className, className)}>
+      {Icon ? (
+        <Icon
+          aria-hidden
+          className={cn("size-3 shrink-0", style.iconClassName)}
+        />
+      ) : null}
+      {children}
+    </Badge>
+  );
+}
+
+/** How a span's status is named and coloured on every Temporal screen. */
+export const TEMPORAL_SPAN_STATUS: Record<
+  TemporalSpanStatus,
+  { icon: LucideIcon; label: string; tone: TemporalTone }
+> = {
+  canceled: { icon: XCircle, label: "Canceled", tone: "muted" },
+  completed: { icon: Check, label: "Completed", tone: "neutral" },
+  failed: { icon: XCircle, label: "Failed", tone: "danger" },
+  fired: { icon: Check, label: "Fired", tone: "neutral" },
+  retrying: { icon: AlertTriangle, label: "Retrying", tone: "warning" },
+  running: { icon: CircleDot, label: "Running", tone: "info" },
+  "timed-out": { icon: Clock, label: "Timed Out", tone: "warning" },
+};
+
+const WORKFLOW_STATUS: Record<
+  TemporalWorkflowStatus,
+  { icon: LucideIcon; label: string; tone: TemporalTone }
+> = {
+  Canceled: { icon: Ban, label: "Canceled", tone: "muted" },
+  Completed: { icon: Check, label: "Completed", tone: "neutral" },
+  ContinuedAsNew: {
+    icon: ArrowRightCircle,
+    label: "Continued as New",
+    tone: "neutral",
+  },
+  Failed: { icon: XCircle, label: "Failed", tone: "danger" },
+  Paused: { icon: CirclePause, label: "Paused", tone: "warning" },
+  Running: { icon: CircleDot, label: "Running", tone: "info" },
+  Terminated: { icon: Ban, label: "Terminated", tone: "muted" },
+  TimedOut: { icon: Clock, label: "Timed Out", tone: "warning" },
+  Unspecified: { icon: Ban, label: "Unspecified", tone: "muted" },
+};
+
+/** A status as the screens name it: "Timed Out" for `TimedOut`. */
+export function workflowStatusLabel(status: TemporalWorkflowStatus): string {
+  return WORKFLOW_STATUS[status].label;
+}
 
 export function WorkflowStatusIcon(props: {
   className?: string;
   status: TemporalWorkflowStatus;
 }) {
   const { className, status } = props;
-  switch (status) {
-    case "Running":
-      return (
-        <CircleDot
-          aria-hidden
-          className={cn("size-3 motion-safe:animate-pulse", className)}
-        />
-      );
-    case "Completed":
-      return (
-        <Check
-          aria-hidden
-          className={cn(
-            "size-3 text-prism-cyan-600 dark:text-prism-cyan-400",
-            className,
-          )}
-        />
-      );
-    case "Failed":
-      return <XCircle aria-hidden className={cn("size-3", className)} />;
-    case "TimedOut":
-      return <Clock aria-hidden className={cn("size-3", className)} />;
-    case "ContinuedAsNew":
-      return (
-        <ArrowRightCircle aria-hidden className={cn("size-3", className)} />
-      );
-    default:
-      return <Ban aria-hidden className={cn("size-3", className)} />;
-  }
+  const { icon: Icon, tone } = WORKFLOW_STATUS[status];
+
+  return (
+    <Icon
+      aria-hidden
+      className={cn(
+        "size-3 shrink-0",
+        TONE_BADGE[tone].iconClassName,
+        className,
+      )}
+    />
+  );
+}
+
+export function TemporalSpanStatusIcon(props: {
+  className?: string;
+  status: TemporalSpanStatus;
+}) {
+  const { className, status } = props;
+  const { icon: Icon, label, tone } = TEMPORAL_SPAN_STATUS[status];
+
+  return (
+    <Icon
+      aria-label={label}
+      role="img"
+      className={cn(
+        "size-3 shrink-0",
+        TONE_BADGE[tone].iconClassName,
+        className,
+      )}
+    />
+  );
 }
 
 export function WorkflowStatusBadge(props: {
@@ -71,49 +185,209 @@ export function WorkflowStatusBadge(props: {
   status: TemporalWorkflowStatus;
 }) {
   const { className, status } = props;
+  const { icon, label, tone } = WORKFLOW_STATUS[status];
+
   return (
-    <Badge
-      variant="outline"
+    <TemporalStatusBadge className={className} icon={icon} tone={tone}>
+      {label}
+    </TemporalStatusBadge>
+  );
+}
+
+/** Uppercase mono label above a block of content, as the navigation uses for its group labels. */
+export function TemporalSectionLabel(props: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
       className={cn(
-        "gap-1 font-medium text-[11px]",
-        statusBadgeClasses(status),
-        className,
+        "font-mono text-2xs uppercase tracking-loose text-muted-foreground",
+        props.className,
       )}
     >
-      <WorkflowStatusIcon status={status} />
-      <span>{status}</span>
+      {props.children}
+    </div>
+  );
+}
+
+/** Shows which Temporal namespace a screen reads from and acts on. */
+export function TemporalNamespaceBadge(props: { namespace: string }) {
+  return (
+    <Badge
+      variant="secondary"
+      className="shrink-0 font-mono font-normal"
+      title={`Temporal namespace: ${props.namespace}`}
+    >
+      {props.namespace}
     </Badge>
   );
 }
 
+/** Label row plus control, with a fixed label height so side-by-side fields line up. */
+export function TemporalField(props: {
+  action?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+  htmlFor: string;
+  label: string;
+}) {
+  const { action, children, className, htmlFor, label } = props;
+
+  return (
+    <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
+      <div className="flex h-5 items-center justify-between gap-2">
+        <Label htmlFor={htmlFor} className="text-xs">
+          {label}
+        </Label>
+        {action}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** Single-choice segmented control built on the ShadCN `ToggleGroup`. */
+export function TemporalSegmentedControl<T extends string>(props: {
+  ariaLabel: string;
+  className?: string;
+  onChange: (value: T) => void;
+  options: ReadonlyArray<{ label: string; title?: string; value: T }>;
+  value: T;
+}) {
+  const { ariaLabel, className, onChange, options, value } = props;
+
+  return (
+    <ToggleGroup
+      aria-label={ariaLabel}
+      className={cn(
+        "h-8 shrink-0 gap-0.5 rounded-md border border-border bg-secondary p-0.5",
+        className,
+      )}
+      type="single"
+      value={value}
+      onValueChange={(next) => {
+        const match = options.find((option) => option.value === next);
+
+        if (match) {
+          onChange(match.value);
+        }
+      }}
+    >
+      {options.map((option) => (
+        <ToggleGroupItem
+          key={option.value}
+          value={option.value}
+          title={option.title}
+          className="h-full min-w-0 flex-1 whitespace-nowrap rounded-sm px-2.5 text-xs font-normal data-[state=on]:font-medium"
+        >
+          {option.label}
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
+  );
+}
+
+export const TEMPORAL_TIME_FORMAT_UI_STATE_KEY = "temporal:time-format";
+
+const TIME_FORMAT_OPTIONS = [
+  { label: "Relative", title: "For example: 5m ago", value: "relative" },
+  { label: "Local", title: "Your browser's time zone", value: "local" },
+  { label: "UTC", title: "Coordinated Universal Time", value: "utc" },
+] as const;
+
+/** How every Temporal screen writes a point in time. The browser remembers the choice. */
+export function useTemporalTimeFormat() {
+  return useUiState<TemporalTimeFormat>(
+    TEMPORAL_TIME_FORMAT_UI_STATE_KEY,
+    "relative",
+    { persistent: true },
+  );
+}
+
+/**
+ * The current time, read again every `intervalMs` while `isActive`. For text
+ * that counts down, such as the time a Timer has left.
+ */
+export function useNow(intervalMs: number, isActive: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!isActive) {
+      return;
+    }
+
+    setNow(Date.now());
+
+    const timer = setInterval(() => setNow(Date.now()), intervalMs);
+
+    return () => clearInterval(timer);
+  }, [intervalMs, isActive]);
+
+  return now;
+}
+
+/** A point in time in the chosen format. The tooltip always holds all three. */
+export function TemporalTime(props: { className?: string; iso?: string }) {
+  const { className, iso } = props;
+  const [format] = useTemporalTimeFormat();
+
+  if (!iso) {
+    return <span className={className}>—</span>;
+  }
+
+  return (
+    <time
+      className={className}
+      dateTime={iso}
+      title={`${formatAbsoluteTime(iso, "local")} local\n${formatAbsoluteTime(iso, "utc")}\n${formatRelativeTime(iso)}`}
+    >
+      {formatTime(iso, format)}
+    </time>
+  );
+}
+
+export function TemporalTimeFormatControl(props: { className?: string }) {
+  const [format, setFormat] = useTemporalTimeFormat();
+
+  return (
+    <TemporalSegmentedControl
+      ariaLabel="Time format"
+      className={props.className}
+      onChange={setFormat}
+      options={TIME_FORMAT_OPTIONS}
+      value={format}
+    />
+  );
+}
+
+const FOLLOW_OPTIONS = [
+  {
+    label: "Paused",
+    title: "Refresh only when you press Refresh",
+    value: "paused",
+  },
+  {
+    label: "Live",
+    title: "Refresh automatically every few seconds",
+    value: "live",
+  },
+] as const;
+
+/** `tail` refreshes on the same interval as `live`, so the control shows both as Live. */
 export function TemporalFollowControl(props: {
   onChange: (mode: TemporalFollowMode) => void;
   value: TemporalFollowMode;
 }) {
   const { onChange, value } = props;
+
   return (
-    <ToggleGroup
-      aria-label="Live refresh mode"
-      className="gap-0.5 rounded-md border border-border bg-secondary p-0.5"
-      type="single"
-      value={value}
-      onValueChange={(next) => {
-        if (next === "paused" || next === "live" || next === "tail") {
-          onChange(next);
-        }
-      }}
-    >
-      {(["paused", "live", "tail"] as const).map((mode) => (
-        <ToggleGroupItem
-          key={mode}
-          value={mode}
-          size="sm"
-          className="h-6 border-0 bg-transparent px-2 text-[11px] font-normal capitalize text-muted-foreground shadow-none hover:bg-background/70 hover:text-foreground data-[state=on]:bg-background data-[state=on]:font-medium data-[state=on]:text-foreground data-[state=on]:shadow-2xs"
-        >
-          {mode}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
+    <TemporalSegmentedControl
+      ariaLabel="Automatic refresh"
+      onChange={onChange}
+      options={FOLLOW_OPTIONS}
+      value={value === "paused" ? "paused" : "live"}
+    />
   );
 }
 
@@ -162,16 +436,13 @@ export function TemporalConfirmDialog(props: {
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         {showReasonInput ? (
-          <div className="space-y-1.5 py-1">
-            <Label htmlFor="temporal-confirm-reason" className="text-xs">
-              {reasonLabel}
-            </Label>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="temporal-confirm-reason">{reasonLabel}</Label>
             <Input
               id="temporal-confirm-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder={reasonPlaceholder}
-              className="h-8 text-xs"
             />
           </div>
         ) : null}
@@ -179,10 +450,7 @@ export function TemporalConfirmDialog(props: {
           <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
           <AlertDialogAction
             disabled={isPending}
-            className={cn(
-              variant === "destructive" &&
-                "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-            )}
+            variant={variant}
             onClick={(e) => {
               e.preventDefault();
               void Promise.resolve(onConfirm(reason.trim())).then(() => {
