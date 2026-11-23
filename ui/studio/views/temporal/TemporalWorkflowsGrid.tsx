@@ -208,12 +208,29 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
   const visibilityQuery = toVisibilityQuery(query);
   const isPlainTextSearch = visibilityQuery !== query.trim();
   // A server that lists by Workflow Id shows the newest runs first instead.
+  const isNativeNewestFirst = capabilities?.nativeListOrder === "newest-first";
+  const parsedSort = parseWorkflowSort(sortParam);
   const sort =
-    parseWorkflowSort(sortParam) ??
+    parsedSort ??
     (capabilities?.nativeListOrder === "workflow-id"
       ? ({ direction: "desc", field: "StartTime" } as const)
       : undefined);
-  const sortKey = sort ? `${sort.field}:${sort.direction}` : "";
+  // Skip in-memory sorting when the server already lists newest-first natively.
+  const requestSort =
+    isNativeNewestFirst &&
+    sort?.field === "StartTime" &&
+    sort.direction === "desc"
+      ? undefined
+      : sort;
+  // Show the Started ↓ indicator when the server natively returns newest-first.
+  const displaySort =
+    sort ??
+    (isNativeNewestFirst
+      ? ({ direction: "desc", field: "StartTime" } as const)
+      : undefined);
+  const sortKey = requestSort
+    ? `${requestSort.field}:${requestSort.direction}`
+    : "";
 
   useEffect(() => {
     setPageTokens([]);
@@ -223,6 +240,12 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
   }, [namespace, pageSize, sortKey, visibilityQuery]);
 
   const toggleSort = (field: TemporalWorkflowSortField) => {
+    // On native newest-first servers, Started is already descending by default.
+    if (isNativeNewestFirst && field === "StartTime" && !parsedSort) {
+      void setSortParam("StartTime:asc");
+      return;
+    }
+
     // First click sorts descending, the second ascending, the third clears the sort.
     if (sort?.field !== field || !sortParam) {
       void setSortParam(`${field}:desc`);
@@ -248,7 +271,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
     pageSize,
     pageToken: pageTokens.at(-1),
     query: visibilityQuery,
-    sort,
+    sort: requestSort,
   });
 
   const { data: namespaceCounts } = useTemporalWorkflowCounts({
@@ -722,7 +745,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
                     column={column}
                     onResize={(width) => setColumnWidth(column.id, width)}
                     onSort={toggleSort}
-                    sort={sort}
+                    sort={displaySort}
                     width={widthOf(column)}
                   />
                 ))}
@@ -829,12 +852,22 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
       ) : null}
 
       {data?.sortSkippedReason ? (
-        <p
-          className="border-t border-border bg-amber-500/10 px-4 py-1.5 text-2xs text-foreground"
+        <div
+          className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-amber-500/10 px-4 py-1.5 text-2xs text-foreground"
           data-testid="temporal-sort-skipped"
         >
-          {data.sortSkippedReason}
-        </p>
+          <span>{data.sortSkippedReason}</span>
+          {sortParam ? (
+            <Button
+              variant="outline"
+              size="xs"
+              className="h-5 px-2 text-2xs"
+              onClick={() => void setSortParam(null)}
+            >
+              Reset sort
+            </Button>
+          ) : null}
+        </div>
       ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-border bg-card px-4 py-1.5 text-2xs text-muted-foreground">

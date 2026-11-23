@@ -1549,11 +1549,21 @@ export class TemporalGrpcBffClient {
       ? `${query.trim()} GROUP BY ExecutionStatus`
       : "GROUP BY ExecutionStatus";
     const sortedOffset = args.nextPageToken?.match(SORTED_OFFSET_TOKEN);
-    const matching = sort ? await this.matchingRuns(namespace, query) : null;
+    const caps = this.#capabilitiesCache;
+    // Servers with newest-first native visibility already answer StartTime desc without copying.
+    const effectiveSort =
+      caps?.nativeListOrder === "newest-first" &&
+      sort?.field === "StartTime" &&
+      sort.direction === "desc"
+        ? undefined
+        : sort;
+    const matching = effectiveSort
+      ? await this.matchingRuns(namespace, query)
+      : null;
 
-    if (sort && matching?.value) {
+    if (effectiveSort && matching?.value) {
       const offset = sortedOffset ? Number(sortedOffset[1]) : 0;
-      const sortedRuns = sortWorkflowRuns(matching.value, sort);
+      const sortedRuns = sortWorkflowRuns(matching.value, effectiveSort);
       const countsByStatus: Partial<Record<TemporalWorkflowStatus, number>> =
         {};
 
@@ -1663,9 +1673,12 @@ export class TemporalGrpcBffClient {
       ...(pageToken
         ? { nextPageToken: Buffer.from(pageToken).toString("base64") }
         : {}),
-      ...(sort
+      ...(effectiveSort
         ? {
-            sortSkippedReason: `More than ${MAX_SORTED_RUNS.toLocaleString("en-US")} workflows match, so they are listed in the server's order. Add a filter to sort them.`,
+            sortSkippedReason:
+              caps?.nativeListOrder === "newest-first"
+                ? `More than ${MAX_SORTED_RUNS.toLocaleString("en-US")} workflows match, so they are listed newest first. Add a filter to sort by another column.`
+                : `More than ${MAX_SORTED_RUNS.toLocaleString("en-US")} workflows match, so they are listed in the server's order. Add a filter to sort them.`,
           }
         : {}),
       totalCount,

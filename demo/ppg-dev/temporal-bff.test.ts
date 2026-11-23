@@ -1195,4 +1195,81 @@ describe("TemporalGrpcBffClient.getCapabilities", () => {
       fetchSpy.mockRestore();
     }
   });
+
+  it("serves StartTime desc natively without copying 10k runs on newest-first servers", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((input) => {
+        const url = String(input);
+        if (url.endsWith("/readyz")) {
+          return Promise.resolve(new Response("ok", { status: 200 }));
+        }
+        if (url.endsWith("/metrics")) {
+          return Promise.resolve(
+            new Response("stn_visibility_feed_entries_total 1\n", {
+              status: 200,
+            }),
+          );
+        }
+        return Promise.resolve(new Response("not found", { status: 404 }));
+      });
+
+    try {
+      const client = new TemporalGrpcBffClient({
+        address: "127.0.0.1:1",
+        adminUrl: "http://127.0.0.1:27243",
+      });
+      const listCalls: number[] = [];
+      vi.spyOn(client, "unary").mockImplementation(((
+        method: string,
+        _req: unknown,
+        _res: unknown,
+        request: { pageSize?: number },
+      ) => {
+        if (method === "GetClusterInfo") {
+          return Promise.resolve({
+            clusterName: "active",
+            historyShardCount: 1,
+            persistenceStore: "slatedb",
+            serverVersion: "0.1.0",
+          });
+        }
+        if (method === "GetSystemInfo") {
+          return Promise.resolve({
+            capabilities: { countGroupByExecutionStatus: true },
+            serverVersion: "0.1.0",
+          });
+        }
+        if (method === "ListWorkflowExecutions") {
+          listCalls.push(request.pageSize ?? 0);
+          return Promise.resolve({
+            executions: [
+              {
+                execution: { runId: "r-new", workflowId: "wf-new" },
+                status: 1,
+              },
+            ],
+          });
+        }
+        if (method === "CountWorkflowExecutions") {
+          return Promise.resolve({ count: 25_000, groups: [] });
+        }
+        return Promise.resolve({});
+      }) as never);
+
+      await client.getCapabilities();
+      const res = await client.listWorkflows({
+        namespace: "default",
+        pageSize: 50,
+        sort: { direction: "desc", field: "StartTime" },
+      });
+
+      expect(listCalls).toEqual([50]);
+      expect(res.sortSkippedReason).toBeUndefined();
+      expect(res.totalCount).toBe(25_000);
+      client.close();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
 });
