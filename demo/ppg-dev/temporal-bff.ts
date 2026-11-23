@@ -59,6 +59,7 @@ import type {
 } from "../../data/temporal/types";
 import {
   callCodec,
+  type CodecDecodeResult,
   decodePayloadsInPlace,
   type RawTemporalPayload,
   type TemporalCodecConfig,
@@ -423,6 +424,17 @@ async function forEachConcurrently<T>(
   );
 }
 
+interface CachedRunHistory {
+  codec: CodecDecodeResult;
+  historyLength: number;
+  historyTailIncluded: boolean;
+  historyTruncated: boolean;
+  rawEvents: Record<string, unknown>[];
+  rawHistoryJson: { events: unknown[] };
+}
+
+const HISTORY_CACHE_MAX_KEPT = 32;
+
 export class TemporalGrpcBffClient {
   #client: grpc.Client;
   #config: TemporalBffConfig;
@@ -434,6 +446,7 @@ export class TemporalGrpcBffClient {
   #remembered = new Map<string, RememberedEntry>();
   /** The filters that matched too many runs to copy, and when the BFF found that. */
   #tooManyRuns = new Map<string, Remembered<null>>();
+  #historyCache = new Map<string, CachedRunHistory>();
   #bulkJobs = new Map<string, TemporalBulkJob & { abort: boolean }>();
 
   constructor(config: TemporalBffConfig) {
@@ -1576,6 +1589,52 @@ export class TemporalGrpcBffClient {
     );
     const describedRunId =
       describeRes.workflowExecutionInfo?.execution?.runId || runId;
+    const describedHistoryLength = toNumber(
+      describeRes.workflowExecutionInfo?.historyLength,
+    );
+    const cacheKey = describedRunId
+      ? `${namespace}\n${workflowId}\n${describedRunId}`
+      : null;
+    const cached = cacheKey ? this.#historyCache.get(cacheKey) : undefined;
+
+    if (
+      cacheKey &&
+      cached &&
+      describedHistoryLength > 0 &&
+      cached.historyLength === describedHistoryLength
+    ) {
+      this.#historyCache.delete(cacheKey);
+      this.#historyCache.set(cacheKey, cached);
+
+      const describeCodec = await decodePayloadsInPlace(
+        this.#config.codec,
+        namespace,
+        describeRes,
+      );
+      const execution = normalizeExecutionInfo(
+        namespace,
+        describeRes.workflowExecutionInfo,
+        {
+          pendingActivities: describeRes.pendingActivities,
+          pendingChildren: describeRes.pendingChildren,
+        },
+      );
+      const codec: CodecDecodeResult = {
+        decoded: cached.codec.decoded + describeCodec.decoded,
+        encoded: cached.codec.encoded + describeCodec.encoded,
+        ...((describeCodec.error ?? cached.codec.error)
+          ? { error: describeCodec.error ?? cached.codec.error }
+          : {}),
+      };
+
+      return {
+        ...buildExecutionDetail({ execution, rawEvents: cached.rawEvents }),
+        rawHistoryJson: cached.rawHistoryJson,
+        ...(codec.decoded > 0 || codec.encoded > 0 ? { codec } : {}),
+        ...(cached.historyTailIncluded ? { historyTailIncluded: true } : {}),
+        ...(cached.historyTruncated ? { historyTruncated: true } : {}),
+      };
+    }
 
     // Fetch up to 2,000 history events across pages (safe for browser payload size)
     const rawEvents: Record<string, unknown>[] = [];
@@ -1693,6 +1752,25 @@ export class TemporalGrpcBffClient {
         pendingChildren: describeRes.pendingChildren,
       },
     );
+
+    if (cacheKey && describedHistoryLength > 0 && !codec.error) {
+      this.#historyCache.delete(cacheKey);
+      this.#historyCache.set(cacheKey, {
+        codec,
+        historyLength: describedHistoryLength,
+        historyTailIncluded,
+        historyTruncated: Boolean(nextPageToken),
+        rawEvents,
+        rawHistoryJson,
+      });
+
+      for (const oldKey of this.#historyCache.keys()) {
+        if (this.#historyCache.size <= HISTORY_CACHE_MAX_KEPT) {
+          break;
+        }
+        this.#historyCache.delete(oldKey);
+      }
+    }
 
     return {
       ...buildExecutionDetail({ execution, rawEvents }),

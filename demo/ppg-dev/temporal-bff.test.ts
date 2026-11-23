@@ -978,4 +978,63 @@ describe("TemporalGrpcBffClient.getWorkflowDetail truncated history tail", () =>
     expect(detail.rawEvents.at(-1)?.eventId).toBe(2500);
     client.close();
   });
+
+  it("reuses cached history during live polling while historyLength is unchanged", async () => {
+    const client = new TemporalGrpcBffClient({ address: "127.0.0.1:1" });
+    let historyLength = 3;
+    let historyCalls = 0;
+
+    vi.spyOn(client, "unary").mockImplementation(((method: string) => {
+      if (method === "DescribeWorkflowExecution") {
+        return Promise.resolve({
+          workflowExecutionInfo: {
+            execution: { runId: "run-live", workflowId: "wf-live" },
+            historyLength,
+            status: 1,
+            type: { name: "Order" },
+          },
+        });
+      }
+
+      if (method === "GetWorkflowExecutionHistory") {
+        historyCalls++;
+        return Promise.resolve({
+          history: {
+            events: [
+              {
+                eventId: 1,
+                eventType: 1,
+                workflowExecutionStartedEventAttributes: {
+                  workflowType: { name: "Order" },
+                },
+              },
+            ],
+          },
+        });
+      }
+
+      return Promise.resolve({});
+    }) as never);
+
+    await client.getWorkflowDetail({
+      namespace: "default",
+      runId: "run-live",
+      workflowId: "wf-live",
+    });
+    await client.getWorkflowDetail({
+      namespace: "default",
+      runId: "run-live",
+      workflowId: "wf-live",
+    });
+    expect(historyCalls).toBe(1);
+
+    historyLength = 5;
+    await client.getWorkflowDetail({
+      namespace: "default",
+      runId: "run-live",
+      workflowId: "wf-live",
+    });
+    expect(historyCalls).toBe(2);
+    client.close();
+  });
 });
