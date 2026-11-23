@@ -862,17 +862,19 @@ export function TemporalExecutionDebugger(
                 />
               ) : null}
 
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-2.5">
                 <TemporalSegmentedControl
                   ariaLabel="History view"
                   onChange={setHistoryTab}
                   options={[
                     {
-                      label: `Grouped Spans (${spans.length})`,
+                      count: spans.length,
+                      label: "Grouped Spans",
                       value: "grouped",
                     },
                     {
-                      label: `Raw Events (${rawEvents.length})`,
+                      count: rawEvents.length,
+                      label: "Raw Events",
                       value: "raw",
                     },
                     // A run from a history file has no type on the server to draw.

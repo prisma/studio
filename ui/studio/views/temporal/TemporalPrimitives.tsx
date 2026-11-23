@@ -252,7 +252,12 @@ export function TemporalSegmentedControl<T extends string>(props: {
   ariaLabel: string;
   className?: string;
   onChange: (value: T) => void;
-  options: ReadonlyArray<{ label: string; title?: string; value: T }>;
+  options: ReadonlyArray<{
+    count?: number;
+    label: string;
+    title?: string;
+    value: T;
+  }>;
   value: T;
 }) {
   const { ariaLabel, className, onChange, options, value } = props;
@@ -261,7 +266,7 @@ export function TemporalSegmentedControl<T extends string>(props: {
     <ToggleGroup
       aria-label={ariaLabel}
       className={cn(
-        "h-8 shrink-0 gap-0.5 rounded-md border border-border bg-secondary p-0.5",
+        "inline-flex h-8 w-fit max-w-full shrink-0 items-center gap-1 overflow-x-auto rounded-md border border-border bg-secondary/70 p-0.5",
         className,
       )}
       type="single"
@@ -279,9 +284,14 @@ export function TemporalSegmentedControl<T extends string>(props: {
           key={option.value}
           value={option.value}
           title={option.title}
-          className="h-full min-w-0 flex-1 whitespace-nowrap rounded-sm px-2.5 text-xs font-normal data-[state=on]:font-medium"
+          className="h-full flex-auto shrink-0 gap-1.5 whitespace-nowrap rounded-sm px-3 text-xs font-normal data-[state=on]:bg-background data-[state=on]:font-medium data-[state=on]:text-foreground data-[state=on]:shadow-xs data-[state=on]:ring-1 data-[state=on]:ring-border/80"
         >
-          {option.label}
+          <span>{option.label}</span>
+          {option.count !== undefined ? (
+            <span className="font-mono text-2xs tabular-nums text-muted-foreground">
+              {option.count.toLocaleString("en-US")}
+            </span>
+          ) : null}
         </ToggleGroupItem>
       ))}
     </ToggleGroup>
