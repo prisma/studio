@@ -14,37 +14,231 @@ The BFF probes `GetSystemInfo` and `GetClusterInfo` once to build a `TemporalCap
 
 - `serverKind`: `"slate-temporal-next"` when cluster metadata identifies `slate-temporal-next` / `slatedb`, `"temporal"` for standard Temporal servers, or `"unknown"`.
 - Capability flags (`supportsCountGroupBy`, `supportsUpdate`, `supportsSchedules`, `supportsBatchJobs`, `supportsAdmin`) let the UI adapt cleanly without server-specific branching in every view.
+- `nativeListOrder` says in which order a list without a sort comes: `workflow-id` on `slate-temporal-next`, `newest-first` on a standard server.
+- `codec` says whether the BFF has a Codec Server (see "Codec Server").
 
 ## HTTP BFF Surface (`demo/ppg-dev/temporal-bff.ts`)
 
-| Endpoint | Temporal RPC |
-| --- | --- |
-| `GET /v1/capabilities` | `GetSystemInfo` + `GetClusterInfo` |
-| `GET /v1/namespaces` | `ListNamespaces` |
-| `GET /v1/namespaces/:ns/workflows` | `ListWorkflowExecutions` + `CountWorkflowExecutions` (`GROUP BY ExecutionStatus`) |
-| `POST /v1/namespaces/:ns/workflows` | `StartWorkflowExecution` / `SignalWithStartWorkflowExecution` |
-| `GET /v1/namespaces/:ns/workflows/:wfId` | `DescribeWorkflowExecution` + `GetWorkflowExecutionHistory` |
-| `POST /v1/namespaces/:ns/workflows/:wfId/query` | `QueryWorkflow` |
-| `POST /v1/namespaces/:ns/workflows/:wfId/signal` | `SignalWorkflowExecution` |
-| `POST /v1/namespaces/:ns/workflows/:wfId/update` | `UpdateWorkflowExecution` |
-| `POST /v1/namespaces/:ns/workflows/:wfId/cancel` | `RequestCancelWorkflowExecution` |
-| `POST /v1/namespaces/:ns/workflows/:wfId/terminate` | `TerminateWorkflowExecution` |
-| `POST /v1/namespaces/:ns/workflows/:wfId/reset-sticky` | `ResetStickyTaskQueue` |
-| `POST /v1/namespaces/:ns/workflows/bulk` | Fan-out `Signal`, `Cancel`, or `Terminate` across selected executions |
-| `GET / POST /v1/namespaces/:ns/schedules` | `ListSchedules` + `DescribeSchedule` / `CreateSchedule` |
-| `GET / DELETE /v1/namespaces/:ns/schedules/:id` | `DescribeSchedule` + `ListScheduleMatchingTimes` / `DeleteSchedule` |
-| `POST /v1/namespaces/:ns/schedules/:id/{patch,matching-times}` | `PatchSchedule` (pause/unpause/trigger/backfill) / `ListScheduleMatchingTimes` |
-| `POST /v1/namespaces/:ns/schedules/bulk` | Bulk pause, resume, trigger, or delete schedules |
-| `GET /v1/namespaces/:ns/task-queues` | `DescribeTaskQueue` with transparent synthesized fallback on `slate-temporal-next` |
-| `GET /v1/cluster/overview` | `slate-temporal-next` `/readyz`, `/v1/info`, `/v1/storage`, `/v1/load`, `/v1/cell`, `/v1/placement` |
-| `GET /v1/cluster/traces` | `slate-temporal-next` `/v1/traces?drain=false|true` |
-| `PUT / DELETE /v1/cluster/admission` | `slate-temporal-next` admission control override & lift |
-| `POST /v1/cluster/shards/:id/handoff` | `slate-temporal-next` live shard handoff |
+| Endpoint                                                                               | Temporal RPC                                                                                                                                                                                             |
+| -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /v1/capabilities`                                                                 | `GetSystemInfo` + `GetClusterInfo`                                                                                                                                                                       |
+| `GET /v1/namespaces`                                                                   | `ListNamespaces`                                                                                                                                                                                         |
+| `GET /v1/namespaces/:ns/workflows`                                                     | `ListWorkflowExecutions` + `CountWorkflowExecutions` (`GROUP BY ExecutionStatus`); `counts=0` skips the count, `list=0` skips the rows, `sort` and `dir` sort the rows, `nextPageToken` continues a list |
+| `GET /v1/namespaces/:ns/facets`                                                        | The Workflow Types and Task Queues in use, from every run of the namespace                                                                                                                               |
+| `GET /v1/namespaces/:ns/attention`                                                     | `DescribeWorkflowExecution` of every running run: retrying Activities, tasks without a Worker, slow runs, recent failures                                                                                |
+| `POST /v1/namespaces/:ns/workflows`                                                    | `StartWorkflowExecution` / `SignalWithStartWorkflowExecution`                                                                                                                                            |
+| `GET /v1/namespaces/:ns/workflows/:wfId`                                               | `DescribeWorkflowExecution` + `GetWorkflowExecutionHistory`                                                                                                                                              |
+| `POST /v1/namespaces/:ns/workflows/:wfId/query`                                        | `QueryWorkflow`                                                                                                                                                                                          |
+| `POST /v1/namespaces/:ns/workflows/:wfId/signal`                                       | `SignalWorkflowExecution`                                                                                                                                                                                |
+| `POST /v1/namespaces/:ns/workflows/:wfId/update`                                       | `UpdateWorkflowExecution`                                                                                                                                                                                |
+| `POST /v1/namespaces/:ns/workflows/:wfId/cancel`                                       | `RequestCancelWorkflowExecution`                                                                                                                                                                         |
+| `POST /v1/namespaces/:ns/workflows/:wfId/terminate`                                    | `TerminateWorkflowExecution`                                                                                                                                                                             |
+| `POST /v1/namespaces/:ns/workflows/:wfId/reset-sticky`                                 | `ResetStickyTaskQueue`                                                                                                                                                                                   |
+| `POST /v1/namespaces/:ns/workflows/:wfId/reset`                                        | `ResetWorkflowExecution` to a completed Workflow Task                                                                                                                                                    |
+| `POST /v1/namespaces/:ns/workflows/:wfId/activity`                                     | `PauseActivity`, `UnpauseActivity` or `ResetActivity` for one pending Activity                                                                                                                           |
+| `POST /v1/namespaces/:ns/workflows/:wfId/{pause,unpause}`                              | `PauseWorkflowExecution` / `UnpauseWorkflowExecution`                                                                                                                                                    |
+| `POST /v1/namespaces/:ns/workflows/bulk`                                               | Fan-out `Signal`, `Cancel`, or `Terminate` across selected executions                                                                                                                                    |
+| `POST /v1/namespaces/:ns/bulk-jobs`, `GET` / `DELETE /v1/namespaces/:ns/bulk-jobs/:id` | Start a bulk action in the background, read its progress, stop it                                                                                                                                        |
+| `GET /v1/namespaces/:ns/workers`                                                       | Task Queue pollers grouped by identity, `ListWorkerDeployments`, `OperatorService.ListNexusEndpoints`                                                                                                    |
+| `GET / POST /v1/namespaces/:ns/schedules`                                              | `ListSchedules` + `DescribeSchedule` / `CreateSchedule`                                                                                                                                                  |
+| `GET / PUT / DELETE /v1/namespaces/:ns/schedules/:id`                                  | `DescribeSchedule` + `ListScheduleMatchingTimes` / `DescribeSchedule` + `UpdateSchedule` / `DeleteSchedule`                                                                                              |
+| `POST /v1/namespaces/:ns/schedules/:id/{patch,matching-times}`                         | `PatchSchedule` (pause/unpause/trigger/backfill) / `ListScheduleMatchingTimes`                                                                                                                           |
+| `POST /v1/namespaces/:ns/schedules/bulk`                                               | Bulk pause, resume, trigger, or delete schedules                                                                                                                                                         |
+| `GET /v1/namespaces/:ns/task-queues`                                                   | Counts from every run, Activity queues from Workflow histories, `DescribeTaskQueue` pollers where the server has them                                                                                    |
+| `GET /v1/namespaces/:ns/workflow-types/:type/map`                                      | The diagram of a Workflow Type, from the histories of a sample of its runs                                                                                                                               |
+| `GET /v1/namespaces/:ns/workflow-types/:type/inputs`                                   | The arguments of the ten newest runs of a Workflow Type, for the form that starts a run                                                                                                                  |
+| `GET /v1/cluster/overview`                                                             | `slate-temporal-next` `/readyz`, `/v1/info`, `/v1/storage`, `/v1/load`, `/v1/cell`, `/v1/placement`                                                                                                      |
+| `GET /v1/cluster/traces`                                                               | `slate-temporal-next` `/v1/traces?drain=false                                                                                                                                                            | true` |
+| `PUT / DELETE /v1/cluster/admission`                                                   | `slate-temporal-next` admission control override & lift                                                                                                                                                  |
+| `POST /v1/cluster/shards/:id/handoff`                                                  | `slate-temporal-next` live shard handoff                                                                                                                                                                 |
+
+## Listing and Counting at Scale
+
+Not every server answers list and count calls from an index. `slate-temporal-next` scans the namespace: a list page examines at most 10,000 runs and may come back short with a token, rows come in Workflow Id order (`ORDER BY` is refused), a count takes time in proportion to the namespace, and a project's fifth concurrent list or count call is refused with `RESOURCE_EXHAUSTED`. The BFF and the UI therefore follow these rules:
+
+- **Follow short pages.** `listWorkflows` asks for the next page until it has `pageSize` rows, the server has no more, or it has followed five pages.
+- **Rows and counts are separate requests.** `GET /v1/namespaces/:ns/workflows` takes `counts=0` (rows only) and `list=0` (counts only). `useTemporalWorkflows` sends both and merges them, refreshing rows every 2.5 seconds and counts every 10 seconds, so a slow count never delays the rows. A caller that does not show counts passes `includeCounts: false`.
+- **Queue lists and counts apart.** The BFF allows two list calls and one count call in flight, so the rows of a new search never wait for a running count.
+- **Show a refusal at once.** `shouldRetryTemporalRequest` does not retry a 4xx answer such as an invalid filter; it retries server failures, 429 and network failures twice.
+- **Mark rows of the previous search.** While a new search loads, the grid dims the old rows and sets `aria-busy`. Counts never carry over from the previous filter.
+- **Do not rely on list order.** Anything that must be newest first asks for a `StartTime` window and sorts the rows itself, or asks the BFF to sort.
+
+## Sorting, Paging and the BFF's Copy of the Runs
+
+No server sorts a list by every column, and `slate-temporal-next` sorts by none. So the BFF sorts. `matchingRuns(namespace, filter)` reads every run that matches a filter in pages of 1,000, up to 10,000 runs, and `#remember` keeps the result:
+
+- A caller gets the copy the BFF holds at once. A copy older than four seconds (or three times what reading it took) is read again in the background, so only the first caller waits for the server. The BFF keeps the 16 keys used most recently.
+- `listWorkflows` with a `sort` sorts that copy and returns one page of it. Its page token is `offset:<n>`. The status counts and the total come from the same copy, so a sorted list costs no count call.
+- When more than 10,000 runs match, the BFF does not sort. It returns the rows in the server's order with `sortSkippedReason`, and the grid shows that text.
+- Without a `sort` the BFF passes the server's own page token through, so a list in the server's order pages without any copy.
+
+The grid keeps the sort in the `sort` URL key (`StartTime:desc`) and the page tokens in component state. Its default is no sort on a server that lists newest first, and `StartTime` descending on a server that lists by Workflow Id. The same copy feeds three more answers: `getFacets` (Workflow Types and Task Queues for form suggestions), `getAttention` and `listTaskQueues`.
+
+## Needs Attention
+
+No Visibility filter finds a retrying Activity or a task that no Worker picks up. `getAttention` therefore calls `DescribeWorkflowExecution` for every running run (12 at a time, the 1,500 oldest at most) and keeps the answer for 15 seconds. It reports five kinds:
+
+- `workflow-task-failing`: the pending Workflow Task is on attempt 2 or more. The Workflow code throws or is not deterministic.
+- `no-worker`: a Workflow Task or a first-attempt Activity has been scheduled for more than 30 seconds.
+- `activity-retrying`: a pending Activity is on attempt 2 or more, with its last failure, the time of its last attempt (`since`) and of its next one. A standard Temporal server reports the next attempt as the pending Activity's `scheduledTime` while it waits, so a scheduled time in the future counts as the next attempt, not the last.
+- `long-running`: the run has lasted three times longer than 95% of the closed runs of its Workflow Type (at least 20 closed runs).
+- `failed`: the run failed or timed out in the last hour.
+
+The sidebar asks for it only while the Temporal service is open.
+
+## Task Queues
+
+`listTaskQueues` counts running, failed and total runs per queue from the BFF's copy of every run. A queue that only runs Activities has no run of its own, so `#activityRouting` reads the history of two runs per Workflow Type (the one with the longest history and the newest completed one) and maps each Activity Type to its Task Queue. Retrying and pending Activities come from the attention check. Pollers come from `DescribeTaskQueue`, for the Workflow and the Activity queue type; `pollersSupported` is false on a server that does not implement it, and a queue there is `stalled` when the attention check found a task without a Worker.
+
+In a namespace too large to copy (`complete: false`), the queues are counted from the copy of the running runs, the one the attention check already holds, so `activeWorkflowCount` stays exact and costs no extra read. `failedWorkflowCount` and `totalWorkflowCount` are then `null`: a count from the first page of all runs would be a count of whichever runs the server lists first. The screen shows a dash for them, and the list under a queue is the newest of the counted runs with a link to exactly those runs in Workflows. `runningComplete` is false when even the running runs are more than the BFF copies. The schedule list is remembered for 10 seconds, so a poll of this screen makes no call to the server while the copies are fresh.
+
+`matchingRuns` remembers for five minutes that a filter matched too many runs to copy. Without that, every refresh of the copy read 10,000 runs to find out again.
+
+## Workflow Type Diagrams (`data/temporal/type-map.ts`, `TemporalTypesView.tsx`)
+
+Temporal stores no definition of a Workflow, so `getTypeMap` (`GET /v1/namespaces/:ns/workflow-types/:type/map`) draws a type from the histories of a sample of its runs. `pickTypeMapSample` takes the 40 newest runs and makes sure every status the type has is among them at least three times, so a rare failure path is drawn too. The BFF reads at most 1,000 events per run and no payloads, and remembers the diagram for a minute.
+
+`buildTypeMap` makes one step of every Activity Type, Child Workflow Type, Signal and Update. Timers are told apart by the summary the code gave them or by the time they wait; a type with more than four distinct Timers gets one Timer step. Step B follows step A when A ended before B started and no other step ran wholly between them, in the order of the history's event IDs. Two steps that ran at the same time therefore both follow the step before them. A step that follows itself adds no arrow; the step's `spanCount` says how often it ran. An open run counts as waiting at its open steps, or at the last step it finished.
+
+`temporal-type-map-layout.ts` lays the diagram out with ELK (layered, top to bottom, orthogonal routes). `orderTypeMapNodes` orders the steps so that only an arrow that closes a real loop points back, because the layout draws every arrow against the node order as a loop. `TemporalTypeMapCanvas.tsx` draws the nodes with React Flow and the arrows along ELK's routes. The diagram opens at no less than 80% zoom: one too tall for that opens with its start at the top, and the wheel scrolls down it.
+
+The counts in a diagram are counts of the sampled runs. The line above the diagram says how many runs that is and which statuses they have.
+
+## Cluster Health (`temporal-cluster-health.ts`)
+
+The load report of `slate-temporal-next` gives the server and each shard one of six states, best first: `ok`, `busy`, `shedding`, `overworked`, `critical`, `fault` (its `docs/overload.md` §5.1). Only the states from `shedding` on refuse work. `getClusterOverview` passes on the report's reasons (`{ scope, shard, signal, value, unit }`) and tags; each shard gets the reasons of its own. `describeClusterHealth` gives every state a label, a sentence on what it means, and a tone: `busy` is `info`, not `warning`.
+
+## Codec Server
+
+An application can compress or encrypt its payloads with a payload codec, and then only a Codec Server can decode them. `TemporalBffConfig.codec` names one (`endpoint`, an optional `authorization` header value, `encodeOutgoing`); the demo server reads `STUDIO_TEMPORAL_CODEC_ENDPOINT`, `STUDIO_TEMPORAL_CODEC_AUTH` and `STUDIO_TEMPORAL_CODEC_ENCODE`.
+
+- `decodePayloadsInPlace` (`demo/ppg-dev/temporal-codec.ts`) finds every payload whose encoding is not one of the SDKs' standard encodings, at any depth, and replaces them through one `POST <endpoint>/decode`. The BFF runs it over a run's description and history, and over Query and Update results.
+- Arguments typed in Studio go through `POST <endpoint>/encode` first, unless `encodeOutgoing` is false.
+- The detail response carries `codec: { decoded, encoded, error? }`. A payload that stays encoded is shown as `{ "$encodedPayload": { encoding, sizeBytes } }`, and the Execution Debugger says how many there are or why the Codec Server failed.
+- The BFF calls the Codec Server, not the browser. The endpoint is part of the host's configuration, so a page cannot make the BFF call an address of its choice.
+- List rows are not decoded: the grid shows no payload, and decoding the memo of thousands of rows would cost a large codec call per refresh.
+
+## Workflows Search Field
+
+The field takes a List Filter or plain text. `toVisibilityQuery` (`temporal-utils.ts`) passes a filter through unchanged, and turns any other text, such as a pasted workflow ID or run ID, into `WorkflowId STARTS_WITH … OR WorkflowType STARTS_WITH … OR RunId STARTS_WITH …`. The URL keeps what the user typed; the translation happens where the grid calls `useTemporalWorkflows`. The Execution Debugger header has a copy button for the workflow ID and one for the run ID.
+
+## Bulk Jobs
+
+A bulk action runs as a job in the BFF process. `startBulkJob` takes the selected runs, or a List Filter: with a filter it acts on every running run of `matchingRuns` (so on 10,000 runs at most; above that it refuses and asks for a narrower filter). It works through the runs six at a time and returns at once. `getBulkJob` reports `total`, `done`, `failed` and the first 20 errors; `abortBulkJob` stops it after the calls in flight. The grid offers "Select all N running workflows that match" once every row of a page is selected, and shows the job in a dialog with a progress bar and a Stop button. A job is lost when the BFF restarts; the server-side `StartBatchOperation` is not used, because `slate-temporal-next` does not have it.
+
+## Grid Columns and the Filter Builder
+
+- `useWorkflowColumns` (`temporal-grid-columns.tsx`) holds which columns the grid shows, their order and their widths in persistent UI state (`temporal:grid-columns`). Besides the built-in columns, every memo field (`memo:<key>`) and Search Attribute (`attr:<key>`) found on the listed rows can be a column. The table has a fixed layout with one `<col>` per column, and each header has a `role="separator"` handle that resizes its column by dragging.
+- `TemporalFilterBuilder` builds a List Filter from rows of attribute, operator and value. `buildListFilter` and `parseListFilter` (`temporal-utils.ts`) write and read a plain AND of comparisons; the builder does not read a filter with OR or parentheses and says so. Workflow Types and Task Queues are suggested from `getFacets`, which also returns the custom Search Attributes (`OperatorService.ListSearchAttributes`).
+
+## Schedules
+
+The schedule form creates a schedule or edits one. `updateSchedule` reads the schedule, replaces its spec, policies, action and notes, keeps whether it is paused, and sends `UpdateSchedule` with the conflict token it read. The form has the time zone a cron expression is read in and the catch-up window. A standard server returns a cron string as a structured calendar, so `structuredCalendarToCron` writes it back as five cron fields for the summary and the form. The open schedule is the `temporalSchedule` URL key.
+
+## Workers
+
+`getWorkers` returns three lists, and null for a list the server does not offer. Workers are the pollers of every Task Queue grouped by identity, which needs no Worker heartbeats. Worker Deployments come from `ListWorkerDeployments` and Nexus Endpoints from `OperatorService.ListNexusEndpoints`. The sidebar shows Workers only when the server reports pollers (`supportsDescribeTaskQueue`).
+
+## Execution Debugger
+
+- **Handlers.** `useTemporalWorkflowMetadata` sends the SDK's built-in `__temporal_workflow_metadata` Query. The Worker answers with the Queries, Signals and Updates the Workflow handles, their descriptions, and the current details text. `TemporalInteractPanel` shows one row per handler: a Query runs in one click, a Signal or an Update asks for its arguments first. Names that start with two underscores are the SDK's own and are left out. Signal and Update names seen in the run's history are added. With no Worker the panel falls back to a name field.
+- **Call stack.** The Stack tab sends the `__stack_trace` Query and shows the text, or the Worker's reason for not answering. The TypeScript SDK records call stacks on Node.js only (it needs `v8.promiseHooks`), so a Worker on Bun answers "not enabled" and the tab says so.
+- **Inspector tabs.** A running run has Interact, Pending, Related, Stack and Input, and opens on Interact. A closed run has no pending Activity and no call stack, so it has Interact, Related and "Input & Result", and opens on the last one. A tab the user chose stays chosen while the next run has it.
+- **Path in the header (`TemporalRunBreadcrumb.tsx`).** The header reads as a path, and every part of it leads somewhere: Workflows, the Workflow Type (a link to the runs of that type, with an icon that opens the type's diagram), the Workflow ID (a link to every run of that ID), and the run. The run is a menu of the runs of the Workflow ID when there are several, with "2 of 3" counted from the oldest; with one run it is text that says "the only run". The page reads the runs with the filter `WorkflowId = "…"`, which a server answers by ID without a scan. A run from a history file is not on the server, so its path is text. Under 56rem the path moves to a row under the header.
+- **Run chain.** `buildExecutionDetail` returns `chain` (`previousRunId`, `nextRunId`, `firstRunId`) from `continuedExecutionRunId` and `newExecutionRunId`, and the metadata row links to both.
+- **Related tab (`TemporalRelatedPanel.tsx`).** Two groups. "Parent and Child Workflows" is a tree: the root, the parent, this run, and the Child Workflows it started, each indented under the Workflow that started it; this run is marked and is not a link. "Runs of This Workflow ID" lists the other runs. A group with nothing in it is one sentence, not an empty list. The tab's label counts the runs it leads to (`relatedRunCount`).
+- **Failures (`data/temporal/failure.ts`, `TemporalFailurePanel.tsx`).** `decodeFailure` keeps the application failure's type, `isNonRetryable` and `details`, the `timeoutType`, and the `retryState` (from the `ActivityTaskFailed` event for a step, from `activityFailureInfo` for a Workflow). `parseStackTrace` reads the frames the TypeScript, Python, Java and Go SDKs write and marks library code (`node_modules`, `@temporalio`, `site-packages`, `io.temporal.`, `go.temporal.io`). `failureOrigin` is the first frame of the root cause that is not library code. The panel shows the root cause's type and message, "Thrown in" with that frame, the reason the server did not retry (`describeRetryState`), how the failure was reported when it wraps a cause, and the details. The stack trace is closed at first. The Worker's source is not available to Studio, so the panel names the file and line and cannot show the code.
+- **Timers.** A Timer's span holds `timerMs`, the `startToFireTimeout` of its start event, and its label is that length (`Timer 5m 50s`, from `formatTimerLength`); a Timer's own ID is a sequence number and says nothing. The row of an open Timer reads the clock every second (`useNow`) and shows the time left in place of a duration. Its details (`TemporalTimerDetail`) show the length, the time it fires and a progress bar, not an empty input and output, and say what sampled runs of the type do before and after it (`typeMapNeighbours`).
+- **Diagram tab (`TemporalRunDiagram.tsx`).** The diagram of the run's Workflow Type with the run marked on it. `runPathOnTypeMap` draws the one run by the rules of the diagram (`buildTypeMap` with the diagram's `timersMerged`), so its steps and arrows have the diagram's IDs. The canvas shows a step the run took with an ink border and how often it took it, the step it is at with a cyan ring and a text ("This run is here · 3m 42s left"), and the other steps faint. Every step has three lines in this mode, so the layout does not change while the run moves on. The page reads the type's diagram only while this tab or a Timer's details are open.
+- **Next steps and stepping.** `runMomentOnTypeMap(run, map, position)` gives the run's state when its step number `position` started: later steps are left out, and a step that closed later counts as open. `null` is the end of the history. It also gives `next`: the steps that follow the current step in the diagram, and the steps that sampled runs started while the current step was open (`during`, as a Signal that arrives while a Timer runs). The canvas draws those with a dashed border and "Possible next · 1 of 6 runs", or "This run went here next" at an earlier step. The bar above the canvas moves `position` with buttons and a native range input; the range input is the one control here that is not a ShadCN component, because the repository has no ShadCN slider. `TemporalRunDiagram` reports the current step's span ID (`onActiveSpanChange`) so `TemporalTimeline` highlights that span in sync while the Diagram tab is open.
+- **Summary and details.** The start event's user metadata gives `summary` and `details`; an Activity's, Timer's or Child Workflow's summary is its span's `userSummary`.
+- **Timeline.** `TemporalTimeline` draws the spans on one time axis. `buildTimelineScale` (`data/temporal/timeline-scale.ts`) maps time to position, and with "Shorten idle time" a long stretch in which no span starts or ends takes a small fixed width. Two kinds of stretch are shortened: one in which the Workflow only waits (a Timer, or nothing at all) and that is at least 10 seconds and a quarter of the run's working time, and one with work in it that is three times longer than everything else (an Activity that has retried for hours). A stretch is kept when no other span lies outside it. A bar that crosses a shortened stretch is striped there. The panel is as tall as its rows, up to the height the user set, and says how many rows are below. Moving the pointer over the bars shows the time under it on the axis and a card with the span's start, duration, attempts and failure. The timeline zooms (buttons, or Ctrl or Cmd with the wheel), filters by span kind, resizes by its lower edge, draws the time before an Activity's last start as a thin line (queue wait, or earlier attempts), and shows a Child Workflow's spans inline when its row is expanded.
+- **Raw events.** Each row names what the event belongs to (the Activity, Child Workflow, Signal or Timer, found through `scheduledEventId`, `initiatedEventId` or `startedEventId`) and a failure message. The Event Types menu hides event types. The open event is the `temporalEvent` URL key, so the page's link opens the raw list at that event, and each open event has a Copy Link button.
+- **Reset.** On a server with `supportsReset`, a `WorkflowTaskCompleted` event has "Reset to Here", and the actions menu resets to the first or the last Workflow Task. A reset starts a new run from the history up to that event; the page opens the new run.
+- **Activity and Workflow pause.** With `supportsActivityOperations`, each pending Activity has Pause or Unpause and Reset (attempts start from one). With `supportsWorkflowPause`, the actions menu pauses and resumes the Workflow. Both flags are false on `slate-temporal-next`.
+- **History files.** "Download Replay JSON" writes the history as the server stores it, in proto3 JSON (`toProto3Json` turns protobuf.js timestamps and durations into `…Z` and `…s` strings, and a zero duration, which protobuf.js leaves as `{}`, into `0s`; the TypeScript SDK's `Worker.runReplayHistory` accepts the file), which SDK replayers and `temporal workflow replay` read. The grid's "Open a history file" reads such a file, or one from the Temporal CLI or UI, and `buildExecutionDetailFromHistory` builds the page from it in the browser; that page offers no action, because the run may not exist on this server.
+- **Narrow pages.** The page and the Workflows grid are container-query containers (`@container`), because Studio is embedded and its sidebar opens and closes: the width of the page decides the layout, not the width of the window. Under 56rem the Workflow Type and Workflow Id move to a row under the header, the panels stack, and the page scrolls as one. The grid's header drops the namespace badge, the Live control and the history file button as it narrows.
+
+## Times
+
+`TemporalTime` writes every point in time in the format the user chose with `TemporalTimeFormatControl`: relative, local or UTC. The choice is persistent UI state (`temporal:time-format`), and the tooltip always holds all three.
+
+## Saved Views
+
+`useTemporalSavedViews` keeps the user's Workflows searches in persistent UI state (`temporal:saved-views`, 20 at most). A view holds a name, the search text and the sort. The sidebar lists three built-in views (Running, Failed, Timed Out) and then the user's own. A view is shared by copying the page's link, because the URL holds the whole search.
+
+## Search Field Autocomplete (`TemporalSearchField.tsx`)
+
+- `suggestListFilter` (`temporal-filter-suggestions.ts`) is a pure function of the text, the cursor position and the facets. It returns attribute names where a comparison starts, values after an operator, and AND or OR after a complete comparison. Each suggestion holds the whole new text and the new cursor position.
+- Attribute names match by their start or by the start of a later word ("queue" finds `TaskQueue`). Values come from `getFacets` (Task Queues, Workflow Types), the fixed status list, and time presets. Other attributes get no value suggestions.
+- In a namespace too large for the BFF to copy, `getFacets` reads one page of all runs and one page of the running runs, and reports `complete: false`. The suggestions then show no counts, and a Task Queue or Workflow Type with no run in those two pages is missing.
+- The field is a `combobox` whose list is a `Popover` anchored to the form. The focus stays in the field. Tab takes the first or the chosen item. Enter takes an item only after the arrow keys chose one; otherwise it submits the text as typed.
+- The filter builder reads the same attribute list (`listFilterAttributes`).
+
+## Status Presets and Recent Filters (`TemporalStatusFilterBar.tsx`)
+
+- The preset counts come from `useTemporalWorkflowCounts`: the counts of the namespace with no filter. It uses the query key of the unfiltered list's counts, so the grid, the sidebar and the bar share one response. The counts of the current filter are not used for the presets, so the row does not change when a filter is applied.
+- `statusPresetOfQuery` decides which preset is selected: "All" for no search, a status for a filter on that status alone, and none for anything else.
+- A search that is not a preset is drawn as a selected item after the presets, with the number of matches once the count of that filter has loaded (`hasCounts`). The item is the trigger of a `DropdownMenu` with the recent filters.
+- `useTemporalRecentFilters` (`temporal-saved-views.ts`) keeps the last ten such searches in persistent UI state (`temporal:recent-filters`). The grid adds a search only after the server answered it, so a filter with a syntax error is not kept.
+- While the rows of a new filter load, the selected item shows a spinner in place of its icon.
+- Plain text in the search field is not a List Filter. Its item reads "starts with <text>", because the grid finds the runs whose workflow ID, type or run ID starts with it.
+
+## Start Workflow Form (`TemporalStartSheet.tsx`)
+
+Each opening of the sheet mounts a new form (`key` on the inner component), with its state taken from the preset. No effect resets the form, so a refresh of the facets while the sheet is open changes nothing the user typed.
+
+The form opens with no Workflow Type. Once the type is one that has runs, `useTemporalTypeInputs` asks `GET /v1/namespaces/:ns/workflow-types/:type/inputs` (`getTypeInputs`): the BFF reads the first history event of the ten newest runs it knows of the type, decodes all inputs with one codec request, and returns them with the Task Queue that most runs of the type are on. A name that is still being typed is not a known type and sends no request. The form then fills in, once per type:
+
+- the Task Queue, unless the user changed it;
+- the input of the newest completed run (else the newest running, else the newest), unless the user changed the input. A note under the editor names that run. An input that no codec decoded (`isEncoded`) is never used.
+
+The Workflow ID follows the type (`order-fulfillment-x7k2p`) until the user writes one.
+
+`data/temporal/input-suggestions.ts` holds the logic of the editor's completions. `inputContextAt` reads the JSON text up to the cursor, which need not be valid, and says whether a key or a value goes there and at which path; an argument is its position in the list, an item of any other array is `*`. `suggestInputCompletions` offers the keys that recent runs have in that object and this input lacks, or the distinct values they have at that path, the most common first. `compareInputWithSamples` names keys that all recent runs pass and the input lacks, and keys that none passes; the form shows them as notes, not as errors.
+
+`TemporalJsonEditor.tsx` is a CodeMirror editor with a small JSON tokenizer (no new dependency) and a completion source that calls `suggestInputCompletions`. Taking a key opens the values for it. Escape closes the list of suggestions before it closes the sheet: the sheet asks the editor through its `handle`.
+
+## Query Status (`TemporalQueryStatusButton.tsx`)
+
+The refresh button of the Workflows grid is a status while a query that the user asked for runs. The grid gives it a phase: `rows` while the rows of the current filter, sort or page are not here (`isLoading`, `isPlaceholderData`, or a click on refresh), then `count` while the first counts of the filter are on their way (`isCounting`). The elapsed time runs through both phases and starts again when the `queryKey` changes. A background poll is not a phase: it only spins the refresh icon, so the button does not change every 2.5 seconds in Live mode.
+
+The status is a `role="status"` element with the phase in words; the time is `aria-hidden`, because it changes ten times a second.
+
+## Run Preview in the Grid (`TemporalRunPreview.tsx`)
+
+- A row's fold-out loads the run's detail only while it is open. `summarizeRunSteps` (`data/temporal/run-steps.ts`) groups the spans into steps: one for each Activity type, Child Workflow type, Signal and Update, and one for all Timers. At most six steps show; steps that failed or are still open are kept first.
+- The steps share one time axis from `buildTimelineScale` with idle time shortened. A grey band marks the time that is not drawn to scale.
+- The third block depends on the run: the failure and the step that failed, the pending Activities with attempt and next attempt, the result, or for a running Workflow the open Timers and Child Workflows. A Timer's fire time comes from `startToFireTimeout` of its `TimerStarted` event.
+- The fold-out is `sticky left-0` and `100cqw` wide, the width of the grid's container, so it stays in view when the table is wider than the page and scrolls sideways.
 
 ## History Grouping (`data/temporal/history-grouping.ts`)
 
 Raw Temporal history events are paired into grouped execution spans (`activity`, `timer`, `child-workflow`, `signal`, `update`, `workflow`) while keeping the full raw event stream accessible via a view toggle. Pending retrying activities from `DescribeWorkflowExecution` are merged into the span list so live retry attempts, backoff timestamps, and last failures appear directly in both the Gantt timeline and the Diagnostic Callout strip.
 
+A Timer or an Activity that is still open when the run closes gets the status `canceled`, because the server drops both with the run. A Child Workflow keeps its status: with the Abandon policy it runs on.
+
+Raw event attributes are decoded before they leave the BFF: `decodeAttributePayloads` replaces every nested Temporal payload with its decoded value, so the Raw Events view shows JSON instead of one entry per byte.
+
+## UI Conventions (`ui/studio/views/temporal/`)
+
+- **Spacing.** Stack children with `flex flex-col gap-*` and separate rows with `[&>*+*]:border-t`. Do not use Tailwind's `space-x-*`, `space-y-*`, or `divide-*` utilities. Studio's stylesheet emits the scoped preflight reset a second time after the utilities, and that reset has the same specificity as these `:where()`-based utilities, so it cancels them.
+- **Shared primitives.** `TemporalPrimitives.tsx` holds the status badge, segmented control, form field, section label, namespace badge, confirmation dialog, table header class, and the icon scale applied to each view root and each sheet.
+- **Type scale.** Body text is `text-xs`. Labels and metadata are `text-2xs`. Do not use arbitrary pixel sizes.
+- **Tables.** Column headers and row borders match the Queries table (`temporalTableHeadClass`, `border-border/70` on the header row, `border-border/60` on body rows). The shared `TableRow` sets a border width but no colour, so every row must pass a border colour.
+- **Status.** Labels stay ink-coloured. The badge fill and icon carry the status.
+- **Refresh mode.** `tail` and `live` poll on the same interval, so `TemporalFollowControl` shows two options: Paused and Live.
+- **Confirmation.** Terminate, delete, bulk cancel, bulk trigger, backfill, and closing an admission class each ask for confirmation through `TemporalConfirmDialog`.
+
 ## URL State
 
-All Temporal navigation state lives in the URL hash via `useNavigation()` (`view=temporal`, `temporalNs`, `temporalSection`, `temporalWf`, `temporalRun`, `temporalFollow`). See [`Architecture/navigation-url-state.md`](navigation-url-state.md).
+All Temporal navigation state lives in the URL hash via `useNavigation()` (`view=temporal`, `temporalNs`, `temporalSection`, `temporalWf`, `temporalRun`, `temporalSchedule`, `temporalType`, `temporalEvent`, `temporalFollow`, and `search` and `sort` for the Workflows list). Opening or closing a run or a schedule writes the URL with `history: "push"`, so the browser's Back button returns to the screen before; every other change replaces the current entry. See [`Architecture/navigation-url-state.md`](navigation-url-state.md).
+
+## Sidebar
+
+Temporal is one of the sidebar's data services (see "Data Services" in [`Architecture/navigation-url-state.md`](navigation-url-state.md)). Its scope picker is the namespace, its views are Workflows, Attention, Schedules, Workflow Types, Task Queues, Workers (on servers that report pollers), and Cluster & Shards, and its object list holds the saved views (see "Saved Views") and the 20 newest workflow runs started in the last five minutes.
+
+- Every Temporal sidebar entry is a link built with `createUrl`. A saved view is the Workflows list with its visibility query in `search`; a recent run is `temporalWf` plus `temporalRun`.
+- The sidebar marks one entry as open: the recent run when its workflow is open, else the saved view whose query equals `search`, else the view.
+- The sidebar's workflow query polls while another service is open, because it feeds the failed-workflow dot on the service switcher. It stops polling only when the Temporal view is open and paused.
+- Links from a workflow to Streams and Tables are anchors with a full URL, never a series of `set*Param` calls.
