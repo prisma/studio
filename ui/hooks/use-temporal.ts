@@ -732,9 +732,10 @@ export function useTemporalSchedules(args: {
   enabled?: boolean;
   followMode: TemporalFollowMode;
   namespace: string;
+  pageToken?: string;
 }) {
   const { temporalUrl } = useStudio();
-  const { followMode, namespace } = args;
+  const { followMode, namespace, pageToken = "" } = args;
   const enabled =
     args.enabled !== false &&
     typeof temporalUrl === "string" &&
@@ -744,12 +745,16 @@ export function useTemporalSchedules(args: {
   return useQuery<TemporalListSchedulesResponse>({
     enabled,
     placeholderData: (prev) => prev,
-    queryFn: () =>
-      temporalFetch<TemporalListSchedulesResponse>(
+    queryFn: () => {
+      const qs = pageToken
+        ? `?nextPageToken=${encodeURIComponent(pageToken)}`
+        : "";
+      return temporalFetch<TemporalListSchedulesResponse>(
         temporalUrl!,
-        `/v1/namespaces/${encodeURIComponent(namespace)}/schedules`,
-      ),
-    queryKey: ["temporal", "schedules", temporalUrl, namespace],
+        `/v1/namespaces/${encodeURIComponent(namespace)}/schedules${qs}`,
+      );
+    },
+    queryKey: ["temporal", "schedules", temporalUrl, namespace, pageToken],
     refetchInterval: followMode === "paused" ? false : 5_000,
   });
 }

@@ -2229,23 +2229,28 @@ export class TemporalGrpcBffClient {
 
   async listSchedules(
     namespace: string,
+    options: { nextPageToken?: string; pageSize?: number } = {},
   ): Promise<TemporalListSchedulesResponse> {
     const res = await this.unary(
       "ListSchedules",
       ws.ListSchedulesRequest,
       ws.ListSchedulesResponse,
       {
-        maximumPageSize: 100,
+        maximumPageSize: options.pageSize ?? 100,
         namespace,
+        ...(options.nextPageToken
+          ? { nextPageToken: Buffer.from(options.nextPageToken, "base64") }
+          : {}),
       },
     );
 
-    const entries = res.schedules ?? [];
+    const entries = (res.schedules ?? []).filter((entry) =>
+      Boolean(entry.scheduleId),
+    );
     const summaries: TemporalScheduleSummary[] = [];
 
-    for (const entry of entries) {
-      const scheduleId = entry.scheduleId || "";
-      if (!scheduleId) continue;
+    await forEachConcurrently(entries, 8, async (entry) => {
+      const scheduleId = entry.scheduleId!;
 
       try {
         const desc = await this.unary(
@@ -2281,7 +2286,7 @@ export class TemporalGrpcBffClient {
           workflowType: info?.workflowType?.name || "Unknown",
         });
       }
-    }
+    });
 
     return {
       nextPageToken:
@@ -3733,7 +3738,19 @@ export async function handleTemporalBffRequest(
     if (nsSchedulesMatch) {
       const namespace = decodeURIComponent(nsSchedulesMatch[1]!);
       if (request.method === "GET") {
-        return Response.json(await client.listSchedules(namespace));
+        const nextPageToken =
+          url.searchParams.get("nextPageToken") ?? undefined;
+        const pageSizeParam = Number.parseInt(
+          url.searchParams.get("pageSize") ?? "",
+          10,
+        );
+        const pageSize =
+          Number.isFinite(pageSizeParam) && pageSizeParam > 0
+            ? Math.min(pageSizeParam, 200)
+            : undefined;
+        return Response.json(
+          await client.listSchedules(namespace, { nextPageToken, pageSize }),
+        );
       }
       if (request.method === "POST") {
         const body = (await request.json()) as TemporalCreateScheduleInput;

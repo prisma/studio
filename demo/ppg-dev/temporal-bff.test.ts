@@ -785,3 +785,68 @@ describe("structuredCalendarToCron", () => {
     expect(structuredCalendarToCron(undefined)).toBeUndefined();
   });
 });
+
+describe("TemporalGrpcBffClient.listSchedules", () => {
+  it("describes schedules concurrently and passes pagination tokens through", async () => {
+    const client = new TemporalGrpcBffClient({ address: "127.0.0.1:1" });
+    let inFlight = 0;
+    let peak = 0;
+    let seenToken: Uint8Array | undefined;
+
+    vi.spyOn(client, "unary").mockImplementation((async (
+      method: string,
+      _req: unknown,
+      _res: unknown,
+      request: { nextPageToken?: Uint8Array; scheduleId?: string },
+    ) => {
+      if (method === "ListSchedules") {
+        seenToken = request.nextPageToken;
+        return {
+          nextPageToken: Buffer.from("page-2"),
+          schedules: [
+            { scheduleId: "s1" },
+            { scheduleId: "s2" },
+            { scheduleId: "s3" },
+            { scheduleId: "s4" },
+          ],
+        };
+      }
+
+      if (method === "DescribeSchedule") {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        inFlight--;
+        return {
+          info: {},
+          schedule: {
+            action: {
+              startWorkflow: {
+                taskQueue: { name: "billing" },
+                workflowType: { name: "ChargeOrder" },
+              },
+            },
+          },
+        };
+      }
+
+      return {};
+    }) as never);
+
+    const res = await client.listSchedules("default", {
+      nextPageToken: Buffer.from("page-1").toString("base64"),
+      pageSize: 50,
+    });
+
+    expect(seenToken?.toString()).toBe("page-1");
+    expect(peak).toBeGreaterThan(1);
+    expect(res.schedules.map((s) => s.scheduleId)).toEqual([
+      "s1",
+      "s2",
+      "s3",
+      "s4",
+    ]);
+    expect(res.nextPageToken).toBe(Buffer.from("page-2").toString("base64"));
+    client.close();
+  });
+});

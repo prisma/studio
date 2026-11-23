@@ -1,6 +1,8 @@
 import {
   CalendarClock,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Pause,
   Pencil,
   Play,
@@ -148,8 +150,26 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
     onOpenExecution,
   } = props;
 
-  const { data, isLoading, isError, error, refetch, isFetching } =
-    useTemporalSchedules({ followMode, namespace });
+  const [pageTokens, setPageTokens] = useState<string[]>([]);
+
+  useEffect(() => {
+    setPageTokens([]);
+  }, [namespace]);
+
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isFetching,
+    isPlaceholderData,
+  } = useTemporalSchedules({
+    followMode,
+    namespace,
+    pageToken: pageTokens.at(-1),
+  });
+  const hasNextPage = Boolean(data?.nextPageToken) && !isPlaceholderData;
   const {
     bulkScheduleAction,
     createSchedule,
@@ -487,6 +507,45 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
           </Table>
         )}
       </div>
+
+      {pageTokens.length > 0 || hasNextPage ? (
+        <div
+          className="flex items-center justify-between gap-3 border-t border-border px-4 py-2 text-xs text-muted-foreground"
+          data-testid="temporal-schedules-pagination"
+        >
+          <span>Page {pageTokens.length + 1}</span>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="xs"
+              className="w-6 px-0"
+              aria-label="Previous page"
+              disabled={pageTokens.length === 0}
+              onClick={() => {
+                setPageTokens((tokens) => tokens.slice(0, -1));
+                setSelectedIds(new Set());
+              }}
+            >
+              <ChevronLeft />
+            </Button>
+            <Button
+              variant="outline"
+              size="xs"
+              className="w-6 px-0"
+              aria-label="Next page"
+              disabled={!hasNextPage}
+              onClick={() => {
+                if (data?.nextPageToken) {
+                  setPageTokens((tokens) => [...tokens, data.nextPageToken!]);
+                  setSelectedIds(new Set());
+                }
+              }}
+            >
+              <ChevronRight />
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       {selectedSchedules.length > 0 ? (
         <div
