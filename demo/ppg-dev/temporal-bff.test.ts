@@ -1,9 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  structuredCalendarToCron,
-  TemporalGrpcBffClient,
-} from "./temporal-bff";
+import { TemporalGrpcBffClient } from "./temporal-bff";
+import { structuredCalendarToCron } from "./temporal-bff-schedules";
 
 function execution(workflowId: string) {
   return {

@@ -28,7 +28,7 @@ import {
   addDemoStartupFailureHint,
   ensurePortAvailable,
 } from "./startup-diagnostics";
-import { handleTemporalBffRequest } from "./temporal-bff";
+import { handleTemporalBffRequest } from "./temporal-bff-router";
 import {
   type DemoTemporalRuntime,
   startDemoTemporalRuntime,
