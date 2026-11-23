@@ -83,6 +83,7 @@ import {
   quoteFilterValue,
   TemporalRunBreadcrumb,
 } from "./TemporalRunBreadcrumb";
+import { TemporalRunCompare } from "./TemporalRunCompare";
 import { TemporalRunDiagram, TemporalTimerDetail } from "./TemporalRunDiagram";
 import type { TemporalStartPreset } from "./TemporalStartSheet";
 import { TemporalTimeline } from "./TemporalTimeline";
@@ -176,9 +177,9 @@ export function TemporalExecutionDebugger(
     workflowId,
   });
 
-  const [historyTab, setHistoryTab] = useState<"diagram" | "grouped" | "raw">(
-    "grouped",
-  );
+  const [historyTab, setHistoryTab] = useState<
+    "compare" | "diagram" | "grouped" | "raw"
+  >("grouped");
   const [diagramNodeId, setDiagramNodeId] = useState<string | null>(null);
   const [diagramSpanIds, setDiagramSpanIds] = useState<string[]>([]);
   const [diagramFocus, setDiagramFocus] = useState<{
@@ -883,6 +884,18 @@ export function TemporalExecutionDebugger(
                             value: "diagram" as const,
                           },
                         ]),
+                    ...(!imported &&
+                    (execution.status === "Failed" ||
+                      execution.status === "TimedOut")
+                      ? [
+                          {
+                            label: "Compare",
+                            title:
+                              "Compare this failed run against a recent completed run",
+                            value: "compare" as const,
+                          },
+                        ]
+                      : []),
                   ]}
                   value={historyTab}
                 />
@@ -961,7 +974,13 @@ export function TemporalExecutionDebugger(
               ) : null}
 
               <div className="min-h-0 flex-1 overflow-y-auto @max-4xl:max-h-[28rem] @max-4xl:flex-none">
-                {historyTab === "diagram" ? (
+                {historyTab === "compare" && !imported ? (
+                  <TemporalRunCompare
+                    detail={data}
+                    namespace={namespace}
+                    onOpenExecution={onOpenExecution}
+                  />
+                ) : historyTab === "diagram" ? (
                   <TemporalRunDiagram
                     detail={data}
                     focusSpan={diagramFocus}
