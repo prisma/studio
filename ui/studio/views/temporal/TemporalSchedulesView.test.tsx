@@ -8,6 +8,21 @@ import { ScheduleFormSheet } from "./TemporalSchedulesView";
 
 vi.mock("@/ui/hooks/use-temporal", () => ({}));
 vi.mock("@/ui/hooks/use-navigation", () => ({ useNavigation: () => ({}) }));
+vi.mock("./TemporalJsonEditor", () => ({
+  TemporalJsonEditor: (props: {
+    ariaLabel: string;
+    id: string;
+    onChange: (value: string) => void;
+    value: string;
+  }) => (
+    <textarea
+      aria-label={props.ariaLabel}
+      id={props.id}
+      value={props.value}
+      onChange={(e) => props.onChange(e.target.value)}
+    />
+  ),
+}));
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }

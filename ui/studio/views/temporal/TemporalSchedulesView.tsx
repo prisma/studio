@@ -58,7 +58,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/components/ui/table";
-import { Textarea } from "@/ui/components/ui/textarea";
 import { useNavigation } from "@/ui/hooks/use-navigation";
 import {
   useTemporalScheduleActions,
@@ -76,6 +75,8 @@ import {
   safeJsonPretty,
   summarizeIds,
 } from "./temporal-utils";
+import { TemporalCombobox } from "./TemporalCombobox";
+import { TemporalJsonEditor } from "./TemporalJsonEditor";
 import {
   TemporalConfirmDialog,
   TemporalField,
@@ -1229,21 +1230,23 @@ export function ScheduleFormSheet(props: {
             </TemporalField>
             <div className="grid grid-cols-2 gap-4">
               <TemporalField htmlFor="sched-wf-type" label="Workflow Type">
-                <Input
+                <TemporalCombobox
                   id="sched-wf-type"
-                  required
+                  listLabel="Workflow Types"
+                  onChange={setWorkflowType}
+                  options={knownWorkflowTypes.map((value) => ({ value }))}
+                  placeholder="Choose or type"
                   value={workflowType}
-                  onChange={(e) => setWorkflowType(e.target.value)}
-                  className="h-8 font-mono text-xs"
                 />
               </TemporalField>
               <TemporalField htmlFor="sched-tq" label="Task Queue">
-                <Input
+                <TemporalCombobox
                   id="sched-tq"
-                  required
+                  listLabel="Task Queues"
+                  onChange={setTaskQueue}
+                  options={knownTaskQueues.map((value) => ({ value }))}
+                  placeholder="Choose or type"
                   value={taskQueue}
-                  onChange={(e) => setTaskQueue(e.target.value)}
-                  className="h-8 font-mono text-xs"
                 />
               </TemporalField>
             </div>
@@ -1358,13 +1361,14 @@ export function ScheduleFormSheet(props: {
               />
             </TemporalField>
             <TemporalField htmlFor="sched-args" label="Input Arguments (JSON)">
-              <Textarea
+              <TemporalJsonEditor
+                ariaLabel="Input Arguments (JSON)"
                 id="sched-args"
-                rows={4}
+                isInvalid={Boolean(parsedArgs.error)}
+                minHeight="96px"
+                onChange={setArgsText}
+                samples={[]}
                 value={argsText}
-                onChange={(e) => setArgsText(e.target.value)}
-                className="font-mono text-xs md:text-xs"
-                spellCheck={false}
               />
               {parsedArgs.error ? (
                 <p className="text-xs text-destructive">{parsedArgs.error}</p>
@@ -1383,7 +1387,13 @@ export function ScheduleFormSheet(props: {
             <Button
               type="submit"
               size="sm"
-              disabled={submitting || Boolean(parsedArgs.error)}
+              disabled={
+                submitting ||
+                !scheduleId.trim() ||
+                !workflowType.trim() ||
+                !taskQueue.trim() ||
+                Boolean(parsedArgs.error)
+              }
             >
               {editing ? "Save Changes" : "Create Schedule"}
             </Button>
