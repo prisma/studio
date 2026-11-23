@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CLUSTER_HEALTH_STATES,
   describeClusterHealth,
   describeHealthTag,
+  describeShardLifecycle,
   formatHealthReason,
+  SHARD_LIFECYCLE_STATES,
 } from "./temporal-cluster-health";
 
 describe("describeClusterHealth", () => {
@@ -48,5 +51,34 @@ describe("describeHealthTag", () => {
   it("says who is the limit when tasks wait for Workers", () => {
     expect(describeHealthTag("worker_shortage")).toContain("Workers");
     expect(describeHealthTag("new_tag")).toBe("new_tag");
+  });
+});
+
+describe("describeShardLifecycle", () => {
+  it("exposes all seven shard lifecycle states and all six health states", () => {
+    expect(SHARD_LIFECYCLE_STATES.map((s) => s.key)).toEqual([
+      "opening",
+      "recovering",
+      "serving",
+      "draining",
+      "released",
+      "retired",
+      "failed_open",
+    ]);
+    expect(CLUSTER_HEALTH_STATES.map((s) => s.key)).toEqual([
+      "ok",
+      "busy",
+      "shedding",
+      "overworked",
+      "critical",
+      "fault",
+    ]);
+  });
+
+  it("formats failed_open cleanly and falls back for unknown states", () => {
+    expect(describeShardLifecycle("failed_open").label).toBe("Failed Open");
+    expect(describeShardLifecycle("failed_open").tone).toBe("danger");
+    expect(describeShardLifecycle("serving").tone).toBe("neutral");
+    expect(describeShardLifecycle("custom_state").label).toBe("Custom_state");
   });
 });

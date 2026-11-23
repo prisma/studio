@@ -36,6 +36,12 @@ import {
   TableRow,
 } from "@/ui/components/ui/table";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/ui/components/ui/tooltip";
+import {
   useTemporalClusterActions,
   useTemporalClusterOverview,
   useTemporalClusterTraces,
@@ -44,9 +50,12 @@ import { cn } from "@/ui/lib/utils";
 
 import { StudioHeader } from "../../StudioHeader";
 import {
+  CLUSTER_HEALTH_STATES,
   describeClusterHealth,
   describeHealthTag,
+  describeShardLifecycle,
   formatHealthReason,
+  SHARD_LIFECYCLE_STATES,
 } from "./temporal-cluster-health";
 import { formatBytes, formatDuration, pluralize } from "./temporal-utils";
 import {
@@ -56,48 +65,147 @@ import {
   temporalIconScale,
   TemporalStatusBadge,
   temporalTableHeadClass,
+  type TemporalTone,
 } from "./TemporalPrimitives";
 import { TemporalSparkline, TemporalSparklineCard } from "./TemporalSparkline";
 
 const LOAD_WINDOWS = ["10s", "60s", "5m", "1h"];
 
+const TONE_DOT_CLASS: Record<TemporalTone, string> = {
+  danger: "bg-destructive",
+  info: "bg-prism-cyan-600 dark:bg-prism-cyan-400",
+  muted: "bg-muted-foreground/60",
+  neutral: "bg-prism-cyan-600 dark:bg-prism-cyan-400",
+  warning: "bg-amber-600 dark:bg-amber-400",
+};
+
 function capitalize(text: string): string {
   return text.length > 0 ? `${text[0]!.toUpperCase()}${text.slice(1)}` : text;
 }
 
+function ShardStateLegendList(props: {
+  currentKey: string;
+  heading: string;
+  items: ReadonlyArray<{
+    key: string;
+    label: string;
+    meaning: string;
+    tone: TemporalTone;
+  }>;
+}) {
+  const { currentKey, heading, items } = props;
+  const normalizedCurrent = currentKey.toLowerCase();
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="font-mono text-2xs font-medium uppercase tracking-loose text-muted-foreground">
+        {heading}
+      </div>
+      <ul className="flex flex-col gap-1">
+        {items.map((item) => {
+          const isCurrent = item.key === normalizedCurrent;
+
+          return (
+            <li
+              key={item.key}
+              className={cn(
+                "flex items-start gap-2 rounded-md px-2 py-1.5",
+                isCurrent && "bg-muted/70 ring-1 ring-border/80",
+              )}
+              data-current={isCurrent ? "true" : undefined}
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "mt-1 size-1.5 shrink-0 rounded-full",
+                  TONE_DOT_CLASS[item.tone],
+                )}
+              />
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-medium text-foreground">
+                    {item.label}
+                  </span>
+                  {isCurrent ? (
+                    <span className="rounded bg-foreground/10 px-1 py-0.5 font-mono text-[10px] leading-none text-foreground">
+                      Current
+                    </span>
+                  ) : null}
+                </div>
+                <p className="text-2xs leading-snug text-muted-foreground">
+                  {item.meaning}
+                </p>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 /**
- * Whether the shard serves, and how loaded it is. A state other than `ok`
- * comes with what it means and with the measurements the server gives for it.
+ * Whether the shard serves, and how loaded it is. Hovering reveals all possible
+ * lifecycle and health states with descriptions and highlights the current ones.
  */
 function ShardState(props: {
   serverTags: string[];
   shard: TemporalClusterShard;
 }) {
   const { serverTags, shard } = props;
+  const lifecycle = describeShardLifecycle(shard.lifecycle);
   const health = describeClusterHealth(shard.health);
-  const isServing = shard.lifecycle === "serving";
+  const isServing = lifecycle.key === "serving";
 
   return (
     <div
       className="flex max-w-80 min-w-44 flex-col gap-1.5"
       data-testid={`temporal-shard-state-${shard.id}`}
     >
-      <div className="flex flex-wrap items-center gap-1.5">
-        <TemporalStatusBadge
-          icon={isServing ? Check : AlertTriangle}
-          tone={isServing ? "neutral" : "warning"}
-        >
-          {capitalize(shard.lifecycle)}
-        </TemporalStatusBadge>
-        {shard.health === "ok" ? null : (
-          <TemporalStatusBadge
-            icon={health.tone === "info" ? Gauge : AlertTriangle}
-            tone={health.tone}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label={`Shard ${shard.id} state: ${lifecycle.label}, health ${health.label}. Hover or focus for all possible states.`}
+            className="inline-flex w-fit cursor-help flex-wrap items-center gap-1.5 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&_svg]:size-3"
+            data-testid={`temporal-shard-state-trigger-${shard.id}`}
           >
-            {health.label}
-          </TemporalStatusBadge>
-        )}
-      </div>
+            <TemporalStatusBadge
+              icon={isServing ? Check : AlertTriangle}
+              tone={lifecycle.tone}
+            >
+              {lifecycle.label}
+            </TemporalStatusBadge>
+            {shard.health === "ok" ? null : (
+              <TemporalStatusBadge
+                icon={health.tone === "info" ? Gauge : AlertTriangle}
+                tone={health.tone}
+              >
+                {health.label}
+              </TemporalStatusBadge>
+            )}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent
+          align="start"
+          side="bottom"
+          className="w-[min(36rem,calc(100vw-2rem))] p-3"
+          data-testid={`temporal-shard-state-popup-${shard.id}`}
+        >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <ShardStateLegendList
+              currentKey={lifecycle.key}
+              heading="Shard Lifecycle"
+              items={SHARD_LIFECYCLE_STATES}
+            />
+            <ShardStateLegendList
+              currentKey={health.key}
+              heading="Shard Health"
+              items={CLUSTER_HEALTH_STATES}
+            />
+          </div>
+        </TooltipContent>
+      </Tooltip>
       {shard.health === "ok" ? null : (
         <p className="text-2xs leading-snug text-muted-foreground">
           {health.meaning}
@@ -391,126 +499,133 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
             </div>
 
             <div className="overflow-hidden rounded-lg border border-border bg-card">
-              <Table className="text-xs">
-                <TableHeader>
-                  <TableRow className="border-border/70 bg-muted/20 hover:bg-muted/20">
-                    <TableHead className={cn(temporalTableHeadClass, "pl-4")}>
-                      Shard
-                    </TableHead>
-                    <TableHead className={temporalTableHeadClass}>
-                      State
-                    </TableHead>
-                    <TableHead className={temporalTableHeadClass}>
-                      Admission
-                    </TableHead>
-                    <TableHead
-                      className={cn(temporalTableHeadClass, "text-right")}
-                    >
-                      Durable Seq
-                    </TableHead>
-                    <TableHead
-                      className={cn(temporalTableHeadClass, "text-right")}
-                    >
-                      Progress Lag
-                    </TableHead>
-                    <TableHead
-                      className={cn(temporalTableHeadClass, "text-right")}
-                    >
-                      L0 / Compaction
-                    </TableHead>
-                    <TableHead
-                      className={cn(temporalTableHeadClass, "text-right")}
-                    >
-                      Unflushed
-                    </TableHead>
-                    <TableHead
-                      className={cn(temporalTableHeadClass, "pr-4 text-right")}
-                    >
-                      Actions
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.shards.map((shard) => (
-                    <TableRow
-                      key={shard.id}
-                      className="border-border/60 hover:bg-muted/30"
-                      data-testid={`temporal-shard-row-${shard.id}`}
-                    >
-                      <TableCell className="whitespace-nowrap py-2.5 pr-2 pl-4 font-mono">
-                        <span className="font-medium text-foreground">
-                          shard/{shard.id}
-                        </span>{" "}
-                        <span className="text-muted-foreground">
-                          gen {shard.generation}
-                        </span>
-                      </TableCell>
-                      <TableCell className="px-2 py-2.5 whitespace-normal">
-                        <ShardState
-                          serverTags={data.health.tags}
-                          shard={shard}
-                        />
-                      </TableCell>
-                      <TableCell className="px-2 py-2.5">
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono">
-                          <AdmissionMode
-                            label="existing"
-                            mode={shard.admissionMode.existing}
-                          />
-                          <AdmissionMode
-                            label="new"
-                            mode={shard.admissionMode.new}
-                          />
-                          <AdmissionMode
-                            label="batch"
-                            mode={shard.admissionMode.batch}
-                          />
-                        </div>
-                      </TableCell>
-                      <TableCell className="px-2 py-2.5 text-right font-mono tabular-nums">
-                        {shard.durableSeq}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap px-2 py-2.5 text-right font-mono tabular-nums text-muted-foreground">
-                        <div className="inline-flex items-center justify-end gap-2">
-                          {shard.progressDelayHistory &&
-                          shard.progressDelayHistory.length > 0 ? (
-                            <TemporalSparkline
-                              formatValue={(v) => `${v.toFixed(2)}ms`}
-                              height={18}
-                              label={`Shard ${shard.id} progress lag`}
-                              tone={
-                                shard.progressDelayMs > 250 ? "warning" : "info"
-                              }
-                              values={shard.progressDelayHistory}
-                              width={52}
-                            />
-                          ) : null}
-                          <span>{shard.progressDelayMs.toFixed(2)}ms</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap px-2 py-2.5 text-right font-mono tabular-nums text-muted-foreground">
-                        {shard.l0Ssts} L0 · {shard.compactionState}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap px-2 py-2.5 text-right font-mono tabular-nums text-muted-foreground">
-                        {formatBytes(shard.unflushedBytes)}
-                      </TableCell>
-                      <TableCell className="py-2.5 pr-4 pl-2 text-right">
-                        <Button
-                          variant="outline"
-                          size="xs"
-                          onClick={() => {
-                            setHandoffError(null);
-                            setHandoffShardId(shard.id);
-                          }}
-                        >
-                          <ArrowRightLeft />
-                          Handoff
-                        </Button>
-                      </TableCell>
+              <TooltipProvider delayDuration={150}>
+                <Table className="text-xs">
+                  <TableHeader>
+                    <TableRow className="border-border/70 bg-muted/20 hover:bg-muted/20">
+                      <TableHead className={cn(temporalTableHeadClass, "pl-4")}>
+                        Shard
+                      </TableHead>
+                      <TableHead className={temporalTableHeadClass}>
+                        State
+                      </TableHead>
+                      <TableHead className={temporalTableHeadClass}>
+                        Admission
+                      </TableHead>
+                      <TableHead
+                        className={cn(temporalTableHeadClass, "text-right")}
+                      >
+                        Durable Seq
+                      </TableHead>
+                      <TableHead
+                        className={cn(temporalTableHeadClass, "text-right")}
+                      >
+                        Progress Lag
+                      </TableHead>
+                      <TableHead
+                        className={cn(temporalTableHeadClass, "text-right")}
+                      >
+                        L0 / Compaction
+                      </TableHead>
+                      <TableHead
+                        className={cn(temporalTableHeadClass, "text-right")}
+                      >
+                        Unflushed
+                      </TableHead>
+                      <TableHead
+                        className={cn(
+                          temporalTableHeadClass,
+                          "pr-4 text-right",
+                        )}
+                      >
+                        Actions
+                      </TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {data.shards.map((shard) => (
+                      <TableRow
+                        key={shard.id}
+                        className="border-border/60 hover:bg-muted/30"
+                        data-testid={`temporal-shard-row-${shard.id}`}
+                      >
+                        <TableCell className="whitespace-nowrap py-2.5 pr-2 pl-4 font-mono">
+                          <span className="font-medium text-foreground">
+                            shard/{shard.id}
+                          </span>{" "}
+                          <span className="text-muted-foreground">
+                            gen {shard.generation}
+                          </span>
+                        </TableCell>
+                        <TableCell className="px-2 py-2.5 whitespace-normal">
+                          <ShardState
+                            serverTags={data.health.tags}
+                            shard={shard}
+                          />
+                        </TableCell>
+                        <TableCell className="px-2 py-2.5">
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono">
+                            <AdmissionMode
+                              label="existing"
+                              mode={shard.admissionMode.existing}
+                            />
+                            <AdmissionMode
+                              label="new"
+                              mode={shard.admissionMode.new}
+                            />
+                            <AdmissionMode
+                              label="batch"
+                              mode={shard.admissionMode.batch}
+                            />
+                          </div>
+                        </TableCell>
+                        <TableCell className="px-2 py-2.5 text-right font-mono tabular-nums">
+                          {shard.durableSeq}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2.5 text-right font-mono tabular-nums text-muted-foreground">
+                          <div className="inline-flex items-center justify-end gap-2">
+                            {shard.progressDelayHistory &&
+                            shard.progressDelayHistory.length > 0 ? (
+                              <TemporalSparkline
+                                formatValue={(v) => `${v.toFixed(2)}ms`}
+                                height={18}
+                                label={`Shard ${shard.id} progress lag`}
+                                tone={
+                                  shard.progressDelayMs > 250
+                                    ? "warning"
+                                    : "info"
+                                }
+                                values={shard.progressDelayHistory}
+                                width={52}
+                              />
+                            ) : null}
+                            <span>{shard.progressDelayMs.toFixed(2)}ms</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2.5 text-right font-mono tabular-nums text-muted-foreground">
+                          {shard.l0Ssts} L0 · {shard.compactionState}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap px-2 py-2.5 text-right font-mono tabular-nums text-muted-foreground">
+                          {formatBytes(shard.unflushedBytes)}
+                        </TableCell>
+                        <TableCell className="py-2.5 pr-4 pl-2 text-right">
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            onClick={() => {
+                              setHandoffError(null);
+                              setHandoffShardId(shard.id);
+                            }}
+                          >
+                            <ArrowRightLeft />
+                            Handoff
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TooltipProvider>
             </div>
           </section>
 

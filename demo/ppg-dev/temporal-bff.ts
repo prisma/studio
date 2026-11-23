@@ -3337,7 +3337,14 @@ export class TemporalGrpcBffClient {
         hot: Boolean(s.hot),
         id,
         l0Ssts: Number(st.l0_ssts ?? extraStorage?.l0_ssts ?? 0),
-        lifecycle: String(s.lifecycle ?? "serving"),
+        lifecycle:
+          typeof s.lifecycle === "string"
+            ? s.lifecycle
+            : s.lifecycle &&
+                typeof s.lifecycle === "object" &&
+                "failed_open" in s.lifecycle
+              ? "failed_open"
+              : "serving",
         of: Number(s.of ?? 1),
         placementVersion: Number(s.placement_version ?? 1),
         progressDelayMs: Number(progress.last ?? 0),
