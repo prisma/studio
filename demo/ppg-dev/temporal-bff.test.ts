@@ -1100,3 +1100,99 @@ describe("TemporalGrpcBffClient rolling sparkline history", () => {
     }
   });
 });
+
+describe("TemporalGrpcBffClient.getCapabilities", () => {
+  it("reports newest-first native list order for slate-temporal-next builds with the visibility feed", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((input) => {
+        const url = String(input);
+        if (url.endsWith("/readyz")) {
+          return Promise.resolve(new Response("ok", { status: 200 }));
+        }
+        if (url.endsWith("/metrics")) {
+          return Promise.resolve(
+            new Response(
+              "# HELP stn_visibility_feed_entries_total\nstn_visibility_feed_entries_total 12\n",
+              { status: 200 },
+            ),
+          );
+        }
+        return Promise.resolve(new Response("not found", { status: 404 }));
+      });
+
+    try {
+      const client = new TemporalGrpcBffClient({
+        address: "127.0.0.1:1",
+        adminToken: "tok",
+        adminUrl: "http://127.0.0.1:27243",
+      });
+      vi.spyOn(client, "unary").mockImplementation(((method: string) => {
+        if (method === "GetClusterInfo") {
+          return Promise.resolve({
+            clusterName: "active",
+            historyShardCount: 1,
+            persistenceStore: "slatedb",
+            serverVersion: "0.1.0",
+          });
+        }
+        return Promise.resolve({
+          capabilities: { countGroupByExecutionStatus: true },
+          serverVersion: "0.1.0",
+        });
+      }) as never);
+
+      const caps = await client.getCapabilities();
+      expect(caps.serverKind).toBe("slate-temporal-next");
+      expect(caps.supportsAdminApi).toBe(true);
+      expect(caps.nativeListOrder).toBe("newest-first");
+      client.close();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("keeps workflow-id native list order for older slate-temporal-next builds without the visibility feed", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((input) => {
+        const url = String(input);
+        if (url.endsWith("/readyz")) {
+          return Promise.resolve(new Response("ok", { status: 200 }));
+        }
+        if (url.endsWith("/metrics")) {
+          return Promise.resolve(
+            new Response("stn_visibility_calls_total 5\n", { status: 200 }),
+          );
+        }
+        return Promise.resolve(new Response("not found", { status: 404 }));
+      });
+
+    try {
+      const client = new TemporalGrpcBffClient({
+        address: "127.0.0.1:1",
+        adminUrl: "http://127.0.0.1:27243",
+      });
+      vi.spyOn(client, "unary").mockImplementation(((method: string) => {
+        if (method === "GetClusterInfo") {
+          return Promise.resolve({
+            clusterName: "active",
+            historyShardCount: 1,
+            persistenceStore: "slatedb",
+            serverVersion: "0.1.0",
+          });
+        }
+        return Promise.resolve({
+          capabilities: { countGroupByExecutionStatus: true },
+          serverVersion: "0.1.0",
+        });
+      }) as never);
+
+      const caps = await client.getCapabilities();
+      expect(caps.nativeListOrder).toBe("workflow-id");
+      client.close();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+});

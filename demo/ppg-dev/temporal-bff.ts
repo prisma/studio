@@ -663,14 +663,36 @@ export class TemporalGrpcBffClient {
     const isStn = persistenceStore.toLowerCase().includes("slatedb");
 
     let supportsAdminApi = false;
+    let stnHasVisibilityRecords = false;
     if (this.#config.adminUrl) {
+      const base = this.#config.adminUrl.replace(/\/+$/, "");
+      const headers: Record<string, string> = this.#config.adminToken
+        ? { authorization: `Bearer ${this.#config.adminToken}` }
+        : {};
       try {
-        const res = await fetch(`${this.#config.adminUrl}/readyz`, {
+        const res = await fetch(`${base}/readyz`, {
           signal: AbortSignal.timeout(1500),
         });
         supportsAdminApi = res.ok;
       } catch {
         supportsAdminApi = false;
+      }
+
+      if (isStn && supportsAdminApi) {
+        try {
+          const metricsRes = await fetch(`${base}/metrics`, {
+            headers,
+            signal: AbortSignal.timeout(1500),
+          });
+          if (metricsRes.ok) {
+            const metricsText = await metricsRes.text();
+            stnHasVisibilityRecords = metricsText.includes(
+              "stn_visibility_feed_",
+            );
+          }
+        } catch {
+          stnHasVisibilityRecords = false;
+        }
       }
     }
 
@@ -681,7 +703,8 @@ export class TemporalGrpcBffClient {
         ? { configured: true, endpoint: this.#config.codec.endpoint }
         : { configured: false },
       persistenceStore,
-      nativeListOrder: isStn ? "workflow-id" : "newest-first",
+      nativeListOrder:
+        isStn && !stnHasVisibilityRecords ? "workflow-id" : "newest-first",
       serverKind: isStn ? "slate-temporal-next" : "temporal",
       serverVersion:
         sysInfo?.serverVersion || clusterInfo?.serverVersion || "unknown",
@@ -697,7 +720,9 @@ export class TemporalGrpcBffClient {
       supportsSchedules: true,
       supportsWorkflowPause: !isStn,
     };
-    this.#capabilitiesCache = caps;
+    if (clusterInfo && (!this.#config.adminUrl || supportsAdminApi)) {
+      this.#capabilitiesCache = caps;
+    }
     return caps;
   }
 
