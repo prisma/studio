@@ -96,6 +96,26 @@ describe("buildTypeMap", () => {
     ]);
   });
 
+  it("gives a step the summary the Workflow code gave it most often", () => {
+    const charged = (id: string, userSummary?: string) =>
+      run(id, "Completed", [
+        step("chargePayment", 5, 7, userSummary ? { userSummary } : {}),
+      ]);
+    const map = buildTypeMap([
+      charged("order-1", "Charge the card on file"),
+      charged("order-2", "Charge the card on file"),
+      charged("order-3", "Charge a saved wallet"),
+      charged("order-4"),
+    ]);
+
+    expect(
+      map.nodes.find((node) => node.id === "activity:chargePayment")?.summary,
+    ).toBe("Charge the card on file");
+    expect(
+      map.nodes.find((node) => node.id === "end:Completed")?.summary,
+    ).toBeUndefined();
+  });
+
   it("counts on each arrow the runs that took it, and shows where a failed run left the others", () => {
     const completed = (id: string) =>
       run(id, "Completed", [

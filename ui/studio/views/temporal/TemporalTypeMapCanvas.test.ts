@@ -26,7 +26,7 @@ function node(
 }
 
 describe("describeTypeMapEdge", () => {
-  it("shows a share only where the source step has more than one way out", () => {
+  it("shows words only where they add to what the steps say, and keeps numbers for hover", () => {
     const start = node("start", "start", "Start", { runCount: 40 });
     const timer = node("timer:Timer", "timer", "Timer", { runCount: 40 });
     const charge = node("activity:charge", "activity", "charge", {
@@ -65,7 +65,7 @@ describe("describeTypeMapEdge", () => {
         to: charge,
         totalRuns: 40,
       }).label,
-    ).toBe("next · 38%");
+    ).toBe("next · after timer");
 
     expect(
       describeTypeMapEdge({
@@ -76,7 +76,7 @@ describe("describeTypeMapEdge", () => {
         to: timer,
         totalRuns: 40,
       }).label,
-    ).toBeNull();
+    ).toBe("↻ loop");
 
     expect(
       describeTypeMapEdge({
@@ -87,7 +87,7 @@ describe("describeTypeMapEdge", () => {
         to: cancel,
         totalRuns: 40,
       }).label,
-    ).toBe("8%");
+    ).toBe("on signal");
 
     expect(
       describeTypeMapEdge({
@@ -98,7 +98,7 @@ describe("describeTypeMapEdge", () => {
         to: completed,
         totalRuns: 40,
       }).label,
-    ).toBe("80%");
+    ).toBe("completed");
   });
 
   it("marks a loop, and gives the count of runs for an arrow of the selected step", () => {
@@ -115,8 +115,9 @@ describe("describeTypeMapEdge", () => {
       totalRuns: 40,
     });
 
-    expect(loop.label).toBe("↻ 100%");
-    expect(loop.detail).toBe("↻ 23 runs · 100%");
+    expect(loop.label).toBe("↻ loop");
+    expect(loop.hoverLabel).toBe("↻ loop · 100%");
+    expect(loop.detail).toBe("↻ loop · 23 runs · 100%");
     expect(
       describeTypeMapEdge({
         edgeRunCount: 1,
@@ -126,7 +127,7 @@ describe("describeTypeMapEdge", () => {
         to: invoice,
         totalRuns: 40,
       }).detail,
-    ).toBe("1 run");
+    ).toBe("after timer · 1 run");
   });
 
   it("labels run-only transitions added from the current run without showing zero", () => {
@@ -144,7 +145,7 @@ describe("describeTypeMapEdge", () => {
       totalRuns: 40,
     });
 
-    expect(edge.label).toBe("this run");
+    expect(edge.label).toBe("after timer · this run");
     expect(edge.tooltip).toContain("Only in this run");
   });
 
@@ -164,7 +165,8 @@ describe("describeTypeMapEdge", () => {
       totalRuns: 40,
     });
 
-    expect(edge.label).toBe("17%");
+    expect(edge.label).toBe("after timer");
+    expect(edge.hoverLabel).toBe("after timer · 17%");
     expect(edge.tooltip).toContain(
       "2 of the 12 sampled runs that reached Timer 30m (17%)",
     );
@@ -206,8 +208,47 @@ describe("describeTypeMapEdge", () => {
       totalRuns: 40,
     });
 
-    expect(edge.label).toBe("83%");
+    // The steps at both ends say what happens, so the arrow needs no words.
+    expect(edge.label).toBeNull();
+    expect(edge.hoverLabel).toBe("83%");
     expect(edge.detail).toBe("24 runs · 83%");
+  });
+
+  it("puts the summary the Workflow code gave a step on the main arrow into it", () => {
+    const validate = node("activity:validate", "activity", "validate", {
+      runCount: 40,
+    });
+    const charge = node("activity:charge", "activity", "charge", {
+      runCount: 30,
+      summary: "Charge the card on file",
+    });
+    const params = {
+      edgeRunCount: 30,
+      from: validate,
+      isLoop: false,
+      outgoingEdgeCount: 2,
+      to: charge,
+      totalRuns: 40,
+    };
+    const main = describeTypeMapEdge(params);
+
+    expect(main.label).toBe("Charge the card on file");
+    expect(main.hoverLabel).toBe("Charge the card on file · 75%");
+    expect(main.tooltip).toContain("Summary in the code");
+    // A second arrow into the same step does not repeat the text.
+    expect(
+      describeTypeMapEdge({ ...params, isMainIncoming: false }).label,
+    ).toBeNull();
+    expect(
+      describeTypeMapEdge({
+        ...params,
+        to: {
+          ...charge,
+          summary:
+            "Charge the card on file and wait for the bank to confirm the payment",
+        },
+      }).label,
+    ).toBe("Charge the card on file and wait fo…");
   });
 });
 

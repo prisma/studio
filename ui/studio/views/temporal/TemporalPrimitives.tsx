@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 
 import type {
   TemporalFollowMode,
+  TemporalSection,
   TemporalSpanStatus,
   TemporalWorkflowStatus,
 } from "@/data/temporal";
@@ -284,6 +285,19 @@ export function TemporalRefreshError(props: {
     </div>
   );
 }
+
+/** The name of each Temporal screen, as the left menu shows it. A recent run belongs to Executions. */
+export const TEMPORAL_SECTION_NAMES: Record<TemporalSection, string> = {
+  attention: "Attention",
+  cluster: "Cluster & Shards",
+  queues: "Task Queues",
+  recent: "Executions",
+  schedules: "Schedules",
+  types: "Workflow Types",
+  workers: "Workers",
+  workflow: "Workflow IDs",
+  workflows: "Executions",
+};
 
 /** Shows which Temporal namespace a screen reads from and acts on. */
 export function TemporalNamespaceBadge(props: { namespace: string }) {

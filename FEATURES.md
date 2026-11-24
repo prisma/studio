@@ -80,7 +80,7 @@ Cmd+Enter or Ctrl+Enter starts the run. A field the user changed is never filled
 
 ## Temporal Run Path
 
-The header of a run is a path with working parts: the Workflow Type opens the runs of that type, the Workflow ID opens every run of that ID, and the run opens a list of the runs of the ID to move to another one. It says "2 of 3" for a run of several and "the only run" otherwise.
+The header of a run is a path that matches the left menu: the screen the run was opened from, the Workflow ID, and the run. The screen goes back to it, the Workflow ID opens every run of that ID, and the run opens a list of the runs of the ID to move to another one. Opening a run never moves the mark in the left menu, so a run opened from Workflow IDs stays under Workflow IDs. The Workflow Type is shown beside the namespace, with a link to its executions and its diagram. It says "2 of 3" for a run of several and "the only run" otherwise.
 The Related tab shows the parent, this run and its Child Workflows as a tree, and the other runs of the Workflow ID as a list. Where there is nothing, it says so in a sentence.
 
 ## Temporal Workflow IDs
@@ -141,6 +141,7 @@ In a namespace with more runs than Studio copies, it counts the running runs onl
 ## Temporal Workflow Type Diagrams
 
 Workflow Types draws one diagram per Workflow Type: the Activities, Timers, Child Workflows, Signals and Updates that its runs take, top to bottom, with an arrow where one step followed another and the number of runs that went that way. Temporal stores no definition of a Workflow, so Studio draws the diagram from the histories of the 40 newest runs, with a few runs of every status.
+An arrow carries words, not a box: the summary the Workflow code gave the step it leads to (the SDK's `summary` option), or what kind of transition it is, such as "after timer" or "on signal". Pointing at any arrow shows on every arrow the share of runs that took it.
 Each step shows how many runs are at it now, in how many it failed or was retried, and its median duration. Selecting a step lists those runs; a run's Workflow Type name links to its diagram.
 
 ## Temporal Browser History

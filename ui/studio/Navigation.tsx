@@ -1529,6 +1529,18 @@ const TemporalSection = (props: {
   const { removeView, saveView, views: userViews } = useTemporalSavedViews();
 
   const isTemporalOpen = viewParam === "temporal";
+  const recentRuns = temporal.recentRuns ?? [];
+  // A run opened from Recent Runs marks its row there. Opened from any other
+  // screen it leaves that screen's entry marked, so opening a run never moves
+  // the mark. Without a run ID in the URL the page shows the newest run of the ID.
+  const openRecentRun =
+    isTemporalOpen && temporalSectionParam === "recent" && temporalWfParam
+      ? recentRuns.find(
+          (run) =>
+            run.workflowId === temporalWfParam &&
+            (!temporalRunParam || run.runId === temporalRunParam),
+        )
+      : undefined;
   // A link to a screen this server does not have opens Executions, as `TemporalView` does.
   const activeSection =
     temporalSectionParam === "attention" ||
@@ -1558,16 +1570,6 @@ const TemporalSection = (props: {
   ).size;
   const failedCount = workflowList?.countsByStatus.Failed ?? 0;
   const runningCount = workflowList?.countsByStatus.Running ?? 0;
-  const recentRuns = temporal.recentRuns ?? [];
-  // The run page that is open. Without a run ID in the URL it shows the newest run of the ID.
-  const openRecentRun =
-    isTemporalOpen && activeSection === "workflows" && temporalWfParam
-      ? recentRuns.find(
-          (run) =>
-            run.workflowId === temporalWfParam &&
-            (!temporalRunParam || run.runId === temporalRunParam),
-        )
-      : undefined;
   const namespaceOptions =
     namespaces.length > 0
       ? namespaces.map((namespace) => namespace.name)
@@ -1884,7 +1886,7 @@ const TemporalSection = (props: {
                 href={createUrl({
                   ...temporalUrlBase,
                   temporalRunParam: run.runId,
-                  temporalSectionParam: "workflows",
+                  temporalSectionParam: "recent",
                   temporalWfParam: run.workflowId,
                 })}
                 title={`${run.workflowType} · ${run.status}`}

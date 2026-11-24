@@ -42,8 +42,13 @@ vi.mock("./TemporalWorkflowsGrid", () => ({
 }));
 
 vi.mock("./TemporalExecutionDebugger", () => ({
-  TemporalExecutionDebugger: (props: { workflowId: string }) => (
-    <div data-testid="debugger">{props.workflowId}</div>
+  TemporalExecutionDebugger: (props: {
+    origin?: string;
+    workflowId: string;
+  }) => (
+    <div data-origin={props.origin} data-testid="debugger">
+      {props.workflowId}
+    </div>
   ),
 }));
 
@@ -103,6 +108,7 @@ describe("TemporalView", () => {
     act(() => root?.unmount());
     document.body.innerHTML = "";
     navigation.searchParam = "";
+    navigation.temporalRunParam = null;
     navigation.temporalSectionParam = null;
     navigation.temporalStatusParam = null;
     navigation.temporalWfParam = null;
@@ -132,10 +138,21 @@ describe("TemporalView", () => {
     expect(navigation.setTemporalRunParam).toHaveBeenCalledWith("run-1", {
       history: "push",
     });
-    expect(navigation.setTemporalSectionParam).toHaveBeenCalledWith(
-      "workflows",
-      { history: "push" },
-    );
+    // A run is one level below the screen it was opened from, so the section stays.
+    expect(navigation.setTemporalSectionParam).not.toHaveBeenCalled();
+  });
+
+  it("shows a run under the screen it was opened from", () => {
+    navigation.temporalSectionParam = "workflow" as never;
+    navigation.temporalWfParam = "sub-cus_4920";
+    navigation.temporalRunParam = "run-2";
+
+    const container = render();
+    const debuggerNode = container.querySelector('[data-testid="debugger"]')!;
+
+    expect(debuggerNode.textContent).toBe("sub-cus_4920");
+    expect(debuggerNode.getAttribute("data-origin")).toBe("workflow");
+    expect(container.querySelector('[data-testid="chain"]')).toBeNull();
   });
 
   it("renders the execution debugger when a Workflow ID is in the URL", () => {

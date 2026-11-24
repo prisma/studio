@@ -315,16 +315,21 @@ interface RoutedEdgeData {
 }
 
 export interface TypeMapEdgeAnnotation {
-  /** The fuller text for an arrow of the selected step: the count of runs and the share. */
+  /** The text for an arrow of the selected step: the words, the count of runs and the share. */
   detail: string;
+  /** The text while the pointer is on any arrow: the words and the share. */
+  hoverLabel: string;
   /**
-   * The short text on the arrow: the share of the source step's runs that
-   * went this way. Null where the source has one way out, because the steps'
-   * own counts already say it.
+   * The words on the arrow: the summary the Workflow code gave the step it
+   * leads to, or what kind of transition it is. Null for an arrow that needs
+   * no words, because the steps at its ends say it all.
    */
   label: string | null;
   tooltip: string;
 }
+
+/** A summary longer than this is cut on the arrow; the tooltip has all of it. */
+const MAX_EDGE_TEXT_LENGTH = 36;
 
 /**
  * Builds the visible edge annotation and hover title for a transition between
@@ -334,6 +339,11 @@ export function describeTypeMapEdge(params: {
   edgeRunCount: number;
   from?: TemporalTypeMapNode;
   isLoop: boolean;
+  /**
+   * False for an arrow that is not the one most runs took into its step. Only
+   * the main arrow carries the step's summary, so the text shows once.
+   */
+  isMainIncoming?: boolean;
   isNext?: boolean;
   isTaken?: boolean;
   isTakenNext?: boolean;
@@ -345,6 +355,7 @@ export function describeTypeMapEdge(params: {
     edgeRunCount,
     from,
     isLoop,
+    isMainIncoming = true,
     isNext,
     isTaken,
     isTakenNext,
@@ -359,22 +370,32 @@ export function describeTypeMapEdge(params: {
     sourceRuns > 0
       ? Math.min(100, Math.round((edgeRunCount / sourceRuns) * 100))
       : null;
-  // A share says something only where runs had a choice.
-  const share = outgoingEdgeCount > 1 && pct !== null ? `${pct}%` : null;
+  const share = pct === null ? null : `${pct}%`;
+  const hasChoice = outgoingEdgeCount > 1;
 
+  // What kind of transition the arrow is, in words. Null where the steps at its ends already say it.
+  let role: string | null = null;
   let roleDescription = "Transition";
 
   if (isLoop) {
+    role = "↻ loop";
     roleDescription = "Loops back to an earlier step";
   } else if (to?.kind === "signal") {
+    role = "on signal";
     roleDescription = "Triggered by a Signal";
   } else if (to?.kind === "update") {
+    role = "on update";
     roleDescription = "Triggered by an Update";
   } else if (to?.kind === "end") {
-    roleDescription = `Workflow closed as ${workflowStatusLabel(to.status ?? "Completed")}`;
+    const endLabel = workflowStatusLabel(to.status ?? "Completed");
+
+    // The status is on the node itself; the word helps only where it names one branch of several.
+    role = hasChoice ? endLabel.toLowerCase() : null;
+    roleDescription = `Workflow closed as ${endLabel}`;
   } else if (from?.kind === "start") {
     roleDescription = "First step of the workflow";
   } else if (from?.kind === "timer") {
+    role = "after timer";
     roleDescription = "Continues after the Timer";
   } else if (to?.kind === "timer") {
     roleDescription = "Starts a Timer";
@@ -382,22 +403,31 @@ export function describeTypeMapEdge(params: {
     roleDescription = "Starts a Child Workflow";
   }
 
+  // The developer's own words for the step win over ours.
+  const summary = !isLoop && isMainIncoming ? to?.summary : undefined;
+  const words = summary
+    ? summary.length > MAX_EDGE_TEXT_LENGTH
+      ? `${summary.slice(0, MAX_EDGE_TEXT_LENGTH - 1).trimEnd()}…`
+      : summary
+    : role;
   const isRunOnly = edgeRunCount === 0;
-  const loopMark = isLoop ? "↻ " : "";
-  const shortLabel = isRunOnly
-    ? "this run"
-    : share
-      ? `${loopMark}${share}`
-      : null;
-  const label = isTakenNext
-    ? shortLabel
-      ? `next · ${shortLabel}`
-      : "next"
-    : shortLabel;
-  const baseDetail = isRunOnly
-    ? "this run"
-    : `${loopMark}${countText} ${edgeRunCount === 1 ? "run" : "runs"}${share ? ` · ${share}` : ""}`;
-  const detail = isTakenNext ? `next · ${baseDetail}` : baseDetail;
+  const prefix = isTakenNext ? "next" : null;
+  const join = (...parts: Array<string | null>) =>
+    parts.filter((part) => part !== null).join(" · ");
+  const label = isRunOnly
+    ? join(prefix, words, "this run")
+    : join(prefix, words) || null;
+  const hoverLabel = isRunOnly
+    ? join(prefix, words, "this run")
+    : join(prefix, words, share);
+  const detail = isRunOnly
+    ? join(prefix, words, "this run")
+    : join(
+        prefix,
+        words,
+        `${countText} ${edgeRunCount === 1 ? "run" : "runs"}`,
+        hasChoice ? share : null,
+      );
 
   const fromName = from
     ? from.kind === "start"
@@ -425,10 +455,11 @@ export function describeTypeMapEdge(params: {
         ? `${countText} of ${totalRuns.toLocaleString("en-US")} sampled runs${shareText}`
         : `${countText} of the ${sourceRuns.toLocaleString("en-US")} sampled runs that reached ${fromName}${shareText}`,
     roleDescription,
+    ...(summary ? [`Summary in the code: ${summary}`] : []),
     ...(runNote ? [runNote] : []),
   ];
 
-  return { detail, label, tooltip: tooltipParts.join(" · ") };
+  return { detail, hoverLabel, label, tooltip: tooltipParts.join(" · ") };
 }
 
 /** The colour of the canvas: the page background under the dotted layer of `bg-muted/40`. */
@@ -596,11 +627,74 @@ export function TemporalTypeMapCanvas(props: {
   >(null);
   const container = useRef<HTMLDivElement>(null);
   const flow = useRef<ReactFlowInstance | null>(null);
+  // While the pointer is on any arrow, every arrow shows its share.
+  const [isArrowHovered, setIsArrowHovered] = useState(false);
+  const nodeById = useMemo(
+    () => new Map(map.nodes.map((node) => [node.id, node])),
+    [map.nodes],
+  );
+  const nodeOrder = useMemo(
+    () =>
+      new Map(orderTypeMapNodes(map).map((node, index) => [node.id, index])),
+    [map],
+  );
+  const outgoingCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    for (const edge of map.edges) {
+      counts.set(edge.from, (counts.get(edge.from) ?? 0) + 1);
+    }
+
+    return counts;
+  }, [map.edges]);
+  // The arrow most runs took into each step: the one that carries the step's summary.
+  const mainIncoming = useMemo(() => {
+    const main = new Map<string, { id: string; runCount: number }>();
+
+    for (const edge of map.edges) {
+      const current = main.get(edge.to);
+
+      if (!current || edge.runCount > current.runCount) {
+        main.set(edge.to, { id: edge.id, runCount: edge.runCount });
+      }
+    }
+
+    return new Set([...main.values()].map((edge) => edge.id));
+  }, [map.edges]);
+  const describeEdge = (
+    edge: TemporalTypeMap["edges"][number],
+    runState: { isNext?: boolean; isTaken?: boolean; isTakenNext?: boolean },
+  ) => {
+    const fromIndex = nodeOrder.get(edge.from);
+    const toIndex = nodeOrder.get(edge.to);
+
+    return describeTypeMapEdge({
+      edgeRunCount: edge.runCount,
+      from: nodeById.get(edge.from),
+      isLoop:
+        fromIndex !== undefined && toIndex !== undefined && toIndex < fromIndex,
+      isMainIncoming: mainIncoming.has(edge.id),
+      outgoingEdgeCount: outgoingCounts.get(edge.from) ?? 1,
+      to: nodeById.get(edge.to),
+      totalRuns: map.runCount,
+      ...runState,
+    });
+  };
 
   useEffect(() => {
     let isCurrent = true;
+    // The room each arrow's text needs, with its share and "next" beside it.
+    const labelWidths = Object.fromEntries(
+      map.edges.map((edge) => [
+        edge.id,
+        (describeEdge(edge, {}).label?.length ?? 0) * 6 + 52,
+      ]),
+    );
 
-    void layoutTypeMap(map, { allStepsTall: isRunDiagram }).then((result) => {
+    void layoutTypeMap(map, {
+      allStepsTall: isRunDiagram,
+      labelWidths,
+    }).then((result) => {
       if (isCurrent) {
         setLayout({ ...result, shape });
       }
@@ -667,24 +761,6 @@ export function TemporalTypeMapCanvas(props: {
   );
   // The arrows to the steps that can come next, drawn dashed.
   const nextEdges = useMemo(() => new Set(run?.path.nextEdgeIds ?? []), [run]);
-  const nodeById = useMemo(
-    () => new Map(map.nodes.map((node) => [node.id, node])),
-    [map.nodes],
-  );
-  const nodeOrder = useMemo(
-    () =>
-      new Map(orderTypeMapNodes(map).map((node, index) => [node.id, index])),
-    [map],
-  );
-  const outgoingCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-
-    for (const edge of map.edges) {
-      counts.set(edge.from, (counts.get(edge.from) ?? 0) + 1);
-    }
-
-    return counts;
-  }, [map.edges]);
   const edges = useMemo<Array<Edge<RoutedEdgeData>>>(
     () =>
       layout?.shape !== shape
@@ -707,33 +783,23 @@ export function TemporalTypeMapCanvas(props: {
             const color = isStrong
               ? "var(--foreground)"
               : "var(--muted-foreground)";
-            const fromIndex = nodeOrder.get(edge.from);
-            const toIndex = nodeOrder.get(edge.to);
-            const isLoop =
-              fromIndex !== undefined &&
-              toIndex !== undefined &&
-              toIndex < fromIndex;
-            const annotation = describeTypeMapEdge({
-              edgeRunCount: edge.runCount,
-              from: nodeById.get(edge.from),
-              isLoop,
+            const annotation = describeEdge(edge, {
               isNext,
               isTaken,
               isTakenNext,
-              outgoingEdgeCount: outgoingCounts.get(edge.from) ?? 1,
-              to: nodeById.get(edge.to),
-              totalRuns: map.runCount,
             });
             const markerSize = isStrong ? 38 : 34;
 
             return {
               data: {
-                // A faint arrow shows no text; an arrow of the selected step shows its count too.
+                // A faint arrow shows no text. An arrow of the selected step shows its count; a pointer on any arrow shows every share.
                 annotation: isFaint
                   ? null
                   : isOfSelected
                     ? annotation.detail
-                    : annotation.label,
+                    : isArrowHovered
+                      ? annotation.hoverLabel
+                      : annotation.label,
                 isHighlighted: isStrong || isNext,
                 ...layout.edges[edge.id],
                 points: layout.edges[edge.id]?.points ?? [],
@@ -765,8 +831,12 @@ export function TemporalTypeMapCanvas(props: {
               zIndex: isStrong ? 2 : isNext ? 1 : 0,
             };
           }),
+    // `describeEdge` reads only values listed here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
+      isArrowHovered,
       layout,
+      mainIncoming,
       map,
       nextEdges,
       nodeById,
@@ -885,6 +955,8 @@ export function TemporalTypeMapCanvas(props: {
         nodesConnectable={false}
         nodesDraggable={false}
         nodeTypes={nodeTypes}
+        onEdgeMouseEnter={() => setIsArrowHovered(true)}
+        onEdgeMouseLeave={() => setIsArrowHovered(false)}
         onInit={(instance) => {
           const view = container.current?.getBoundingClientRect();
 

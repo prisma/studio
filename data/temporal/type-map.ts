@@ -138,7 +138,12 @@ export function buildTypeMap(
     options.timersMerged ?? timerLabels.size > MAX_TIMER_STEPS;
   const nodes = new Map<
     string,
-    TemporalTypeMapNode & { durations: number[]; order: number }
+    TemporalTypeMapNode & {
+      durations: number[];
+      order: number;
+      /** How often each summary text was given to the step. */
+      summaries: Map<string, number>;
+    }
   >();
   const edges = new Map<string, TemporalTypeMapEdge>();
   const during = new Map<string, number>();
@@ -163,6 +168,7 @@ export function buildTypeMap(
         retriedRunCount: 0,
         runCount: 0,
         spanCount: 0,
+        summaries: new Map(),
         waitingRunCount: 0,
         waitingRuns: [],
       };
@@ -217,6 +223,13 @@ export function buildTypeMap(
 
       node.spanCount++;
       seen.add(step.id);
+
+      if (step.span.kind !== "timer" && step.span.userSummary) {
+        node.summaries.set(
+          step.span.userSummary,
+          (node.summaries.get(step.span.userSummary) ?? 0) + 1,
+        );
+      }
 
       if (step.span.closedEventId !== undefined) {
         node.durations.push(step.span.durationMs);
@@ -325,8 +338,15 @@ export function buildTypeMap(
     edges: [...edges.values()],
     nodes: [...nodes.values()]
       .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
-      .map(({ durations, order: _order, ...node }) => ({
+      .map(({ durations, order: _order, summaries, ...node }) => ({
         ...node,
+        ...(summaries.size > 0
+          ? {
+              summary: [...summaries].sort(
+                (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+              )[0]![0],
+            }
+          : {}),
         ...(durations.length > 0
           ? { medianDurationMs: median(durations) }
           : {}),

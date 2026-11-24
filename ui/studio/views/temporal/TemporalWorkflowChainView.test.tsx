@@ -160,11 +160,15 @@ describe("TemporalWorkflowChainView", () => {
     act(() => root.render(<Harness />));
   }
 
-  it("renders the Workflow Type > Workflow ID breadcrumb, chain summary, and numbered runs", () => {
+  it("renders the path under Workflow IDs, the type as a fact, the summary and numbered runs", () => {
     render();
 
     expect(
-      container.querySelector('[data-testid="temporal-chain-crumb-type"]')
+      container.querySelector('[data-testid="temporal-chain-crumb-list"]')
+        ?.textContent,
+    ).toBe("Workflow IDs");
+    expect(
+      container.querySelector('[data-testid="temporal-crumb-type"]')
         ?.textContent,
     ).toBe("subscriptionBilling");
     expect(container.textContent).toContain("sub-cus_4920");

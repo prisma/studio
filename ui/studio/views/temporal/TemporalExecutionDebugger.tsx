@@ -29,6 +29,7 @@ import type {
   TemporalFollowMode,
   TemporalGroupedSpan,
   TemporalPendingActivity,
+  TemporalSection,
   TemporalTypeMapResponse,
 } from "@/data/temporal";
 import { timerProgress, typeMapStepId } from "@/data/temporal/type-map";
@@ -77,6 +78,7 @@ import {
   temporalIconScale,
   TemporalLoadError,
   TemporalRefreshError,
+  TEMPORAL_SECTION_NAMES,
   TemporalSectionLabel,
   TemporalSegmentedControl,
   TemporalStatusBadge,
@@ -89,6 +91,7 @@ import {
   quoteFilterValue,
   TemporalCopyButton,
   TemporalRunBreadcrumb,
+  TemporalWorkflowTypeLink,
 } from "./TemporalRunBreadcrumb";
 import { TemporalRunCompare } from "./TemporalRunCompare";
 import { TemporalRunDiagram, TemporalTimerDetail } from "./TemporalRunDiagram";
@@ -110,6 +113,8 @@ interface TemporalExecutionDebuggerProps {
   onClone: (preset: TemporalStartPreset) => void;
   onFollowModeChange: (mode: TemporalFollowMode) => void;
   onOpenExecution: (workflowId: string, runId?: string) => void;
+  /** The screen the run was opened from. The left menu marks it, and the path starts with it. */
+  origin?: TemporalSection;
   runId?: string;
   workflowId: string;
 }
@@ -126,6 +131,7 @@ export function TemporalExecutionDebugger(
     onClone,
     onFollowModeChange,
     onOpenExecution,
+    origin = "workflows",
   } = props;
 
   const fetched = useTemporalWorkflowDetail({
@@ -173,6 +179,15 @@ export function TemporalExecutionDebugger(
 
   const { hasDatabase, streamsUrl } = useStudio();
   const { createUrl, schemaParam, streamParam, tableParam } = useNavigation();
+  const originCrumb = {
+    href: createUrl({
+      temporalNsParam: namespace,
+      // A recent run is one of the executions.
+      temporalSectionParam: origin === "recent" ? "workflows" : origin,
+      viewParam: "temporal",
+    }),
+    label: TEMPORAL_SECTION_NAMES[origin],
+  };
   const { streams } = useStreams();
   const targetStream =
     streamParam ??
@@ -648,6 +663,7 @@ export function TemporalExecutionDebugger(
                 isImported={Boolean(imported)}
                 namespace={namespace}
                 onOpenRun={(runId) => onOpenExecution(workflowId, runId)}
+                origin={originCrumb}
                 hasMoreRuns={hasMoreRuns}
                 runCount={runCount}
                 runs={runsOfId}
@@ -720,6 +736,7 @@ export function TemporalExecutionDebugger(
               isImported={Boolean(imported)}
               namespace={namespace}
               onOpenRun={(runId) => onOpenExecution(workflowId, runId)}
+              origin={originCrumb}
               hasMoreRuns={hasMoreRuns}
               runCount={runCount}
               runs={runsOfId}
@@ -748,6 +765,16 @@ export function TemporalExecutionDebugger(
 
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
             <dl className="flex flex-wrap items-center gap-x-5 gap-y-1">
+              <MetadataItem
+                label="Type"
+                value={
+                  <TemporalWorkflowTypeLink
+                    isImported={Boolean(imported)}
+                    namespace={namespace}
+                    workflowType={execution.workflowType}
+                  />
+                }
+              />
               <MetadataItem label="Namespace" value={namespace} />
               <MetadataItem label="Queue" value={execution.taskQueue} />
               <MetadataItem

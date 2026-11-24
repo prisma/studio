@@ -27,7 +27,7 @@ interface Box {
   y: number;
 }
 
-/** The room an arrow's text takes, for placing it: a short share such as "↻ 100%". */
+/** The room an arrow's text takes when the caller gives no width: a short share such as "↻ 100%". */
 const LABEL_BOX = { height: 18, width: 58 };
 
 function boxesOverlap(a: Box, b: Box): boolean {
@@ -39,10 +39,11 @@ function boxesOverlap(a: Box, b: Box): boolean {
   );
 }
 
-function labelBox(point: TypeMapPoint): Box {
+function labelBox(point: TypeMapPoint, width = LABEL_BOX.width): Box {
   return {
-    ...LABEL_BOX,
-    x: point.x - LABEL_BOX.width / 2,
+    height: LABEL_BOX.height,
+    width,
+    x: point.x - width / 2,
     y: point.y - LABEL_BOX.height / 2,
   };
 }
@@ -55,6 +56,7 @@ function labelBox(point: TypeMapPoint): Box {
 function labelPoint(
   points: TypeMapPoint[],
   taken: Box[],
+  width?: number,
 ): TypeMapPoint | undefined {
   const segments = points
     .slice(1)
@@ -65,7 +67,7 @@ function labelPoint(
     })
     .sort((a, b) => b.length - a.length);
   const candidates = segments.flatMap(({ from, to }) =>
-    [0.5, 0.3, 0.7].map((share) => ({
+    [0.5, 0.35, 0.65, 0.2, 0.8, 0.1, 0.9].map((share) => ({
       x: from.x + (to.x - from.x) * share,
       y: from.y + (to.y - from.y) * share,
     })),
@@ -73,7 +75,8 @@ function labelPoint(
 
   return (
     candidates.find(
-      (point) => !taken.some((box) => boxesOverlap(labelBox(point), box)),
+      (point) =>
+        !taken.some((box) => boxesOverlap(labelBox(point, width), box)),
     ) ?? candidates[0]
   );
 }
@@ -156,7 +159,11 @@ export function orderTypeMapNodes(
  */
 export async function layoutTypeMap(
   map: Pick<TemporalTypeMap, "edges" | "nodes">,
-  options: { allStepsTall?: boolean } = {},
+  options: {
+    allStepsTall?: boolean;
+    /** The width of each arrow's text, by arrow ID, so the texts are placed clear of each other. */
+    labelWidths?: Record<string, number>;
+  } = {},
 ): Promise<TypeMapLayout> {
   const nodes = orderTypeMapNodes(map);
   const indexOf = new Map(nodes.map((node, index) => [node.id, index]));
@@ -231,12 +238,13 @@ export async function layoutTypeMap(
   for (const route of [...routes].sort(
     (a, b) => (runCountOf.get(b.id) ?? 0) - (runCountOf.get(a.id) ?? 0),
   )) {
-    const point = labelPoint(route.points, taken);
+    const width = options.labelWidths?.[route.id];
+    const point = labelPoint(route.points, taken, width);
 
     labels.set(route.id, point);
 
     if (point) {
-      taken.push(labelBox(point));
+      taken.push(labelBox(point, width));
     }
   }
 

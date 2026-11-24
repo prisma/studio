@@ -90,10 +90,67 @@ function Separator() {
 }
 
 /**
- * Where a run is: its Workflow Type, its Workflow ID, and which run of that ID
- * it is. Each part leads somewhere:
+ * The Workflow Type of a run as a fact beside its other facts: the name opens
+ * the executions of that type, and the icon its diagram. The type is not part
+ * of the path, because no menu entry leads through it to a run.
+ */
+export function TemporalWorkflowTypeLink(props: {
+  isImported?: boolean;
+  namespace: string;
+  workflowType: string;
+}) {
+  const { isImported, namespace, workflowType } = props;
+  const { createUrl } = useNavigation();
+
+  if (isImported) {
+    return <span title={workflowType}>{workflowType}</span>;
+  }
+
+  return (
+    <span className="inline-flex items-center gap-0.5">
+      <a
+        className={linkClassName}
+        data-testid="temporal-crumb-type"
+        href={createUrl({
+          searchParam: `WorkflowType = ${quoteFilterValue(workflowType)}`,
+          temporalNsParam: namespace,
+          temporalSectionParam: "workflows",
+          viewParam: "temporal",
+        })}
+        title={`Workflow Type ${workflowType}: open its executions`}
+      >
+        {workflowType}
+      </a>
+      <Button
+        asChild
+        variant="ghost"
+        size="xs"
+        className="h-5 w-6 px-0 text-muted-foreground"
+      >
+        <a
+          aria-label={`Open the diagram of ${workflowType}`}
+          data-testid="temporal-type-link"
+          href={createUrl({
+            temporalNsParam: namespace,
+            temporalSectionParam: "types",
+            temporalTypeParam: workflowType,
+            viewParam: "temporal",
+          })}
+          title={`Open the diagram of ${workflowType}`}
+        >
+          <Waypoints />
+        </a>
+      </Button>
+    </span>
+  );
+}
+
+/**
+ * Where a run is, as a path that matches the left menu: the screen it was
+ * opened from, its Workflow ID, and which run of that ID it is. Each part
+ * leads somewhere:
  *
- * - the type opens the runs of that type, and the icon beside it its diagram;
+ * - the screen goes back to that screen;
  * - the Workflow ID opens every run of that ID;
  * - the run opens a list of the runs of the ID, to move to another one.
  *
@@ -107,6 +164,8 @@ export function TemporalRunBreadcrumb(props: {
   hasMoreRuns?: boolean;
   namespace: string;
   onOpenRun: (runId: string) => void;
+  /** The screen the run was opened from: the first part of the path. */
+  origin?: { href: string; label: string };
   /** How many runs the Workflow ID has, when the server counted them. */
   runCount?: number;
   /** The newest runs of this Workflow ID, newest first. Undefined while they load. */
@@ -119,18 +178,12 @@ export function TemporalRunBreadcrumb(props: {
     isImported,
     namespace,
     onOpenRun,
+    origin,
     runs,
   } = props;
   const { createUrl } = useNavigation();
   const [timeFormat] = useTemporalTimeFormat();
-  const { runId, workflowId, workflowType } = execution;
-  const workflowsUrl = (filter: string) =>
-    createUrl({
-      searchParam: filter,
-      temporalNsParam: namespace,
-      temporalSectionParam: "workflows",
-      viewParam: "temporal",
-    });
+  const { runId, workflowId } = execution;
   const chainUrl = createUrl({
     temporalNsParam: namespace,
     temporalSectionParam: "workflow",
@@ -151,50 +204,29 @@ export function TemporalRunBreadcrumb(props: {
 
   return (
     <nav
-      aria-label="Where this run is"
+      aria-label="Breadcrumb"
       className={cn("flex min-w-0 items-center gap-1.5", className)}
       data-testid="temporal-run-breadcrumb"
     >
-      <span className="flex min-w-0 shrink-0 items-center gap-0.5 font-sans text-sm font-semibold text-foreground">
-        {isImported ? (
-          <span title={workflowType}>{workflowType}</span>
-        ) : (
-          <>
-            <a
-              className={linkClassName}
-              data-testid="temporal-crumb-type"
-              href={workflowsUrl(
-                `WorkflowType = ${quoteFilterValue(workflowType)}`,
-              )}
-              title={`Workflow Type ${workflowType}: open its executions`}
-            >
-              {workflowType}
-            </a>
-            <Button
-              asChild
-              variant="ghost"
-              size="xs"
-              className="w-6 px-0 text-muted-foreground"
-            >
+      {origin ? (
+        <>
+          <span className="shrink-0 font-sans text-sm text-muted-foreground">
+            {isImported ? (
+              origin.label
+            ) : (
               <a
-                aria-label={`Open the diagram of ${workflowType}`}
-                data-testid="temporal-type-link"
-                href={createUrl({
-                  temporalNsParam: namespace,
-                  temporalSectionParam: "types",
-                  temporalTypeParam: workflowType,
-                  viewParam: "temporal",
-                })}
-                title={`Open the diagram of ${workflowType}`}
+                className={cn(linkClassName, "hover:text-foreground")}
+                data-testid="temporal-crumb-origin"
+                href={origin.href}
+                title={`Back to ${origin.label}`}
               >
-                <Waypoints />
+                {origin.label}
               </a>
-            </Button>
-          </>
-        )}
-      </span>
-
-      <Separator />
+            )}
+          </span>
+          <Separator />
+        </>
+      ) : null}
 
       <span className="flex min-w-0 items-center gap-0.5 font-mono text-xs text-foreground">
         {isImported ? (

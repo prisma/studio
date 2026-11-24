@@ -5,7 +5,6 @@ import {
   Copy,
   Plus,
   RefreshCw,
-  Waypoints,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -43,6 +42,7 @@ import {
   pluralize,
 } from "./temporal-utils";
 import {
+  TEMPORAL_SECTION_NAMES,
   TemporalFollowControl,
   temporalIconScale,
   TemporalLoadError,
@@ -53,7 +53,10 @@ import {
   WorkflowStatusIcon,
   workflowStatusLabel,
 } from "./TemporalPrimitives";
-import { quoteFilterValue } from "./TemporalRunBreadcrumb";
+import {
+  quoteFilterValue,
+  TemporalWorkflowTypeLink,
+} from "./TemporalRunBreadcrumb";
 import type { TemporalStartPreset } from "./TemporalStartSheet";
 
 const PAGE_SIZE = 100;
@@ -316,14 +319,11 @@ export function TemporalWorkflowChainView(
       viewParam: "temporal",
     });
 
-  const typeDiagramUrl = workflowType
-    ? createUrl({
-        temporalNsParam: namespace,
-        temporalSectionParam: "types",
-        temporalTypeParam: workflowType,
-        viewParam: "temporal",
-      })
-    : null;
+  const workflowIdsUrl = createUrl({
+    temporalNsParam: namespace,
+    temporalSectionParam: "workflow",
+    viewParam: "temporal",
+  });
 
   const openStartForChain = () =>
     onOpenStart({
@@ -352,7 +352,8 @@ export function TemporalWorkflowChainView(
     createUrl({
       temporalNsParam: namespace,
       temporalRunParam: runId,
-      temporalSectionParam: "workflows",
+      // A run opened from this page stays under Workflow IDs in the left menu.
+      temporalSectionParam: "workflow",
       temporalWfParam: workflowId,
       viewParam: "temporal",
     });
@@ -447,34 +448,14 @@ export function TemporalWorkflowChainView(
         }
       >
         <div className="flex min-w-0 flex-1 items-center gap-3 @max-3xl:hidden">
-          <ChainBreadcrumb
-            typeDiagramUrl={typeDiagramUrl}
-            typeExecutionsUrl={
-              workflowType
-                ? workflowsUrl(
-                    `WorkflowType = ${quoteFilterValue(workflowType)}`,
-                  )
-                : null
-            }
-            workflowId={workflowId}
-            workflowType={workflowType}
-          />
+          <ChainBreadcrumb listUrl={workflowIdsUrl} workflowId={workflowId} />
           {latestRunStatus}
         </div>
       </StudioHeader>
 
       {/* Under 48rem the path and the status have a row of their own, so the header keeps its actions. */}
       <div className="flex min-w-0 items-center gap-3 border-b border-border px-4 py-1.5 @3xl:hidden">
-        <ChainBreadcrumb
-          typeDiagramUrl={typeDiagramUrl}
-          typeExecutionsUrl={
-            workflowType
-              ? workflowsUrl(`WorkflowType = ${quoteFilterValue(workflowType)}`)
-              : null
-          }
-          workflowId={workflowId}
-          workflowType={workflowType}
-        />
+        <ChainBreadcrumb listUrl={workflowIdsUrl} workflowId={workflowId} />
         {latestRunStatus}
       </div>
 
@@ -487,6 +468,17 @@ export function TemporalWorkflowChainView(
           </div>
         ) : (
           <dl className="flex flex-wrap items-center gap-x-5 gap-y-1">
+            {workflowType ? (
+              <div className="flex items-baseline gap-1.5">
+                <dt>Type</dt>
+                <dd className="font-mono text-foreground">
+                  <TemporalWorkflowTypeLink
+                    namespace={namespace}
+                    workflowType={workflowType}
+                  />
+                </dd>
+              </div>
+            ) : null}
             <SummaryFact label="Namespace" value={namespace} />
             {taskQueue ? (
               <SummaryFact label="Task Queue" value={taskQueue} />
@@ -594,15 +586,7 @@ export function TemporalWorkflowChainView(
                 Start Execution
               </Button>
               <Button variant="outline" size="sm" asChild>
-                <a
-                  href={createUrl({
-                    temporalNsParam: namespace,
-                    temporalSectionParam: "workflow",
-                    viewParam: "temporal",
-                  })}
-                >
-                  Find a Workflow ID
-                </a>
+                <a href={workflowIdsUrl}>Find a Workflow ID</a>
               </Button>
             </div>
           </div>
@@ -752,13 +736,9 @@ export function TemporalWorkflowChainView(
   );
 }
 
-function ChainBreadcrumb(props: {
-  typeDiagramUrl: string | null;
-  typeExecutionsUrl: string | null;
-  workflowId: string;
-  workflowType?: string;
-}) {
-  const { typeDiagramUrl, typeExecutionsUrl, workflowId, workflowType } = props;
+/** The path of the page, as the left menu has it: Workflow IDs, then this Workflow ID. */
+function ChainBreadcrumb(props: { listUrl: string; workflowId: string }) {
+  const { listUrl, workflowId } = props;
 
   return (
     <nav
@@ -766,41 +746,21 @@ function ChainBreadcrumb(props: {
       className="flex min-w-0 items-center gap-1.5"
       data-testid="temporal-chain-breadcrumb"
     >
-      {workflowType && typeExecutionsUrl ? (
-        <>
-          <span className="flex min-w-0 shrink-0 items-center gap-0.5 font-sans text-sm text-muted-foreground">
-            <a
-              className={cn(linkClassName, "hover:text-foreground")}
-              data-testid="temporal-chain-crumb-type"
-              href={typeExecutionsUrl}
-              title={`Workflow Type ${workflowType}: open its executions`}
-            >
-              {workflowType}
-            </a>
-            {typeDiagramUrl ? (
-              <Button
-                asChild
-                variant="ghost"
-                size="xs"
-                className="w-6 px-0 text-muted-foreground"
-              >
-                <a
-                  aria-label={`Open the diagram of ${workflowType}`}
-                  href={typeDiagramUrl}
-                  title={`Open the diagram of ${workflowType}`}
-                >
-                  <Waypoints />
-                </a>
-              </Button>
-            ) : null}
-          </span>
-          <ChevronRight
-            aria-hidden
-            className="size-3 shrink-0 text-muted-foreground/70"
-          />
-        </>
-      ) : null}
-
+      <a
+        className={cn(
+          linkClassName,
+          "shrink-0 font-sans text-sm text-muted-foreground hover:text-foreground",
+        )}
+        data-testid="temporal-chain-crumb-list"
+        href={listUrl}
+        title="Back to Workflow IDs"
+      >
+        {TEMPORAL_SECTION_NAMES.workflow}
+      </a>
+      <ChevronRight
+        aria-hidden
+        className="size-3 shrink-0 text-muted-foreground/70"
+      />
       <span className="flex min-w-0 items-center gap-0.5">
         {/* The page is about this Workflow ID, so it is the heading. */}
         <h1

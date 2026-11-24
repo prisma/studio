@@ -337,10 +337,16 @@ export interface TemporalBulkActionResponse {
 
 export type TemporalFollowMode = "paused" | "live" | "tail";
 
+/**
+ * The Temporal screen a URL belongs to. A run page keeps the section it was
+ * opened from, so the left menu does not move when a run opens. `recent` is a
+ * run opened from the menu's Recent Runs.
+ */
 export type TemporalSection =
   | "attention"
   | "cluster"
   | "queues"
+  | "recent"
   | "schedules"
   | "types"
   | "workers"
@@ -615,6 +621,11 @@ export interface TemporalTypeMapNode {
   spanCount: number;
   /** The status a run closes with, for an `end` node. */
   status?: TemporalWorkflowStatus;
+  /**
+   * The text the Workflow code gave this Activity or Child Workflow most often
+   * (the SDK's `summary` option). A Timer's summary is its `label`.
+   */
+  summary?: string;
   /** Sampled open runs that are at this step now. */
   waitingRunCount: number;
   /** A few of those runs. */

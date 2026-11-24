@@ -43,6 +43,7 @@ function normalizeSection(raw: string | null | undefined): TemporalSection {
     raw === "attention" ||
     raw === "schedules" ||
     raw === "queues" ||
+    raw === "recent" ||
     raw === "types" ||
     raw === "workers" ||
     raw === "workflow" ||
@@ -111,12 +112,13 @@ export function TemporalView() {
   };
 
   // Opening a run adds a browser history entry, so the browser's Back button
-  // returns to whichever screen the user came from.
+  // returns to whichever screen the user came from. The section stays as it
+  // is: a run is one level below the screen it was opened from, so the left
+  // menu must not move.
   const openExecution = (workflowId: string, runId?: string) => {
     setImportedDetail(null);
     // An event number belongs to one run, so it does not carry over to the next.
     void setTemporalEventParam(null, { history: "push" });
-    void setTemporalSectionParam("workflows", { history: "push" });
     void setTemporalWfParam(workflowId, { history: "push" });
     void setTemporalRunParam(runId ?? null, { history: "push" });
   };
@@ -153,7 +155,7 @@ export function TemporalView() {
           runId={importedDetail.execution.runId}
           workflowId={importedDetail.execution.workflowId}
         />
-      ) : temporalWfParam && section === "workflow" ? (
+      ) : temporalWfParam && section === "workflow" && !temporalRunParam ? (
         <TemporalWorkflowChainView
           key={`${namespace}\n${temporalWfParam}`}
           followMode={followMode}
@@ -169,6 +171,17 @@ export function TemporalView() {
           statusFilter={chainStatusOfParam(temporalStatusParam)}
           workflowId={temporalWfParam}
         />
+      ) : temporalWfParam ? (
+        <TemporalExecutionDebugger
+          followMode={followMode}
+          namespace={namespace}
+          onClone={openStartSheet}
+          onFollowModeChange={(m) => void setTemporalFollowParam(m)}
+          onOpenExecution={openExecution}
+          origin={section}
+          runId={temporalRunParam ?? undefined}
+          workflowId={temporalWfParam}
+        />
       ) : section === "workflow" ? (
         <TemporalWorkflowIdsView
           followMode={followMode}
@@ -181,16 +194,6 @@ export function TemporalView() {
           onOpenWorkflowId={openWorkflowId}
           onSearchChange={(text) => void setSearchParam(text || null)}
           search={visibilityQuery}
-        />
-      ) : temporalWfParam ? (
-        <TemporalExecutionDebugger
-          followMode={followMode}
-          namespace={namespace}
-          onClone={openStartSheet}
-          onFollowModeChange={(m) => void setTemporalFollowParam(m)}
-          onOpenExecution={openExecution}
-          runId={temporalRunParam ?? undefined}
-          workflowId={temporalWfParam}
         />
       ) : section === "schedules" ? (
         <TemporalSchedulesView
