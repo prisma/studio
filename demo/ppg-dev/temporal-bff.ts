@@ -705,8 +705,11 @@ export class TemporalGrpcBffClient {
         ? { configured: true, endpoint: this.#config.codec.endpoint }
         : { configured: false },
       persistenceStore,
-      nativeListOrder:
-        isStn && !stnHasVisibilityRecords ? "workflow-id" : "newest-first",
+      nativeListOrder: !isStn
+        ? "open-first"
+        : stnHasVisibilityRecords
+          ? "newest-first"
+          : "workflow-id",
       serverKind: isStn ? "slate-temporal-next" : "temporal",
       serverVersion:
         sysInfo?.serverVersion || clusterInfo?.serverVersion || "unknown",
@@ -1689,7 +1692,9 @@ export class TemporalGrpcBffClient {
             sortSkippedReason:
               caps?.nativeListOrder === "newest-first"
                 ? `More than ${MAX_SORTED_RUNS.toLocaleString("en-US")} executions match, so they are listed newest first. Filter to ${MAX_SORTED_RUNS.toLocaleString("en-US")} or fewer to change the sort order.`
-                : `More than ${MAX_SORTED_RUNS.toLocaleString("en-US")} executions match, so they are listed in the server's order. Filter to ${MAX_SORTED_RUNS.toLocaleString("en-US")} or fewer to sort them.`,
+                : caps?.nativeListOrder === "open-first"
+                  ? `More than ${MAX_SORTED_RUNS.toLocaleString("en-US")} executions match, so they are listed in the server's order: running first, then the most recently closed. Filter to ${MAX_SORTED_RUNS.toLocaleString("en-US")} or fewer to sort them.`
+                  : `More than ${MAX_SORTED_RUNS.toLocaleString("en-US")} executions match, so they are listed in the server's order. Filter to ${MAX_SORTED_RUNS.toLocaleString("en-US")} or fewer to sort them.`,
           }
         : {}),
       totalCount,

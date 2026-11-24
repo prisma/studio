@@ -229,7 +229,9 @@ export function TemporalWorkflowIdsView(props: TemporalWorkflowIdsViewProps) {
     ? `whose ID starts with ${prefix}`
     : capabilities?.nativeListOrder === "newest-first"
       ? "started most recently"
-      : "that the server lists first";
+      : capabilities?.nativeListOrder === "open-first"
+        ? "that are running or closed most recently"
+        : "that the server lists first";
   const footerText = !hasAnswer
     ? ""
     : groups.length === 0

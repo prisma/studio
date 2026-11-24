@@ -14,7 +14,7 @@ The BFF probes `GetSystemInfo` and `GetClusterInfo` once to build a `TemporalCap
 
 - `serverKind`: `"slate-temporal-next"` when cluster metadata identifies `slate-temporal-next` / `slatedb`, `"temporal"` for standard Temporal servers, or `"unknown"`.
 - Capability flags (`supportsCountGroupBy`, `supportsUpdate`, `supportsSchedules`, `supportsBatchJobs`, `supportsAdmin`) let the UI adapt cleanly without server-specific branching in every view.
-- `nativeListOrder` says in which order a list without a sort comes: `workflow-id` on `slate-temporal-next`, `newest-first` on a standard server.
+- `nativeListOrder` says in which order a list without a sort comes: `workflow-id` on a `slate-temporal-next` without the visibility feed, `newest-first` (by start time) on one with it, and `open-first` on a standard server. `open-first` is the standard visibility order: running executions first, then closed ones by close time, newest first. It is not a sort by start time, so the UI shows no sort arrow for it, and a sort by start time is done by the BFF.
 - `codec` says whether the BFF has a Codec Server (see "Codec Server").
 
 ## HTTP BFF Surface (`demo/ppg-dev/temporal-bff.ts`)

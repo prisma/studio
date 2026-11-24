@@ -12,7 +12,12 @@ export interface TemporalCapabilities {
    * The order a list without a sort comes in. `slate-temporal-next` lists by
    * Workflow Id; a standard Temporal server lists open runs first, newest first.
    */
-  nativeListOrder: "newest-first" | "workflow-id";
+  /**
+   * The order of a list without a sort. `newest-first` is by start time.
+   * `open-first` is the standard visibility order: running executions first,
+   * then closed ones by close time, newest first.
+   */
+  nativeListOrder: "newest-first" | "open-first" | "workflow-id";
   shardCount: number;
   /** PauseActivity, UnpauseActivity and ResetActivity. */
   supportsActivityOperations: boolean;
