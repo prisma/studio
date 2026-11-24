@@ -358,6 +358,7 @@ Saving staged edits, discarding staged edits, and selected-row deletion all use 
 Introspection and data operations emit structured success/error events with SQL text, parameters, timestamps, and status.
 The Console view is a log with one row per operation (status, operation, a one-line SQL preview, time), so many operations can be scanned at once.
 Clicking a row opens the full SQL, parameters and a copy action; failed rows show their error in the row and start open with the adapter and full message. Error toasts link directly to Console for fast diagnostics.
+Long error messages scroll inside the toast, so its title, the Console action and the full message stay reachable on any screen height.
 
 ## Telemetry Opt-Out
 

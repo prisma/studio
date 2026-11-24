@@ -65,6 +65,7 @@ It MUST:
 
 - suppress toasts for `AbortError`
 - show toast for operation errors with Console navigation action
+- keep toast descriptions height-bounded and scrollable, without the toast swipe gesture intercepting the scroll (owned by `ui/components/ui/sonner.tsx`)
 - append success/error operation events to `operationEventsCollection`
 - cap operation history at 100 events (evict oldest first)
 - forward enriched events to external `emitEvent` callback
@@ -120,5 +121,6 @@ Changes to this subsystem MUST include tests for:
 - event enrichment (`eventId`, `timestamp`)
 - event cap/eviction behavior
 - toast suppression for `AbortError`
+- scrollable toast descriptions for long error messages
 - telemetry opt-out when `CHECKPOINT_DISABLE=1`
 - console rendering behavior for new event payload fields
