@@ -339,6 +339,7 @@ export type TemporalSection =
   | "schedules"
   | "types"
   | "workers"
+  | "workflow"
   | "workflows";
 
 /** One Worker process, as the Task Queues it polls report it. */

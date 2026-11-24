@@ -545,7 +545,7 @@ function TaskQueueRow(props: {
                       )}
                     >
                       Open all {listedCount.toLocaleString("en-US")} in
-                      Workflows
+                      Executions
                     </a>
                   </p>
                 ) : null}

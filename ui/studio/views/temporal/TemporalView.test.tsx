@@ -44,6 +44,12 @@ vi.mock("./TemporalExecutionDebugger", () => ({
   ),
 }));
 
+vi.mock("./TemporalWorkflowChainView", () => ({
+  TemporalWorkflowChainView: (props: { workflowId: string }) => (
+    <div data-testid="chain">{props.workflowId}</div>
+  ),
+}));
+
 vi.mock("./TemporalAttentionView", () => ({
   TemporalAttentionView: () => null,
 }));
@@ -67,6 +73,7 @@ describe("TemporalView", () => {
   afterEach(() => {
     act(() => root?.unmount());
     document.body.innerHTML = "";
+    navigation.temporalSectionParam = null;
     navigation.temporalWfParam = null;
     vi.clearAllMocks();
   });
@@ -108,5 +115,16 @@ describe("TemporalView", () => {
     expect(
       container.querySelector('[data-testid="debugger"]')?.textContent,
     ).toBe("order-7");
+  });
+
+  it("renders the workflow chain view when temporalSection is workflow", () => {
+    navigation.temporalSectionParam = "workflow" as never;
+    navigation.temporalWfParam = "sub-cus_4920";
+
+    const container = render();
+
+    expect(container.querySelector('[data-testid="chain"]')?.textContent).toBe(
+      "sub-cus_4920",
+    );
   });
 });

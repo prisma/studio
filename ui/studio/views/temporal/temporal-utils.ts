@@ -209,8 +209,8 @@ export function parseJsonArgsText(text: string): {
 
 /** Visibility queries the sidebar offers as one-click workflow lists. */
 export const TEMPORAL_SAVED_VIEWS = [
-  { label: "Failed Workflows", query: 'ExecutionStatus = "Failed"' },
-  { label: "Running Workflows", query: 'ExecutionStatus = "Running"' },
+  { label: "Failed Executions", query: 'ExecutionStatus = "Failed"' },
+  { label: "Running Executions", query: 'ExecutionStatus = "Running"' },
   { label: "Billing Queue", query: 'TaskQueue = "billing"' },
   { label: "ChargeOrder Runs", query: 'WorkflowType = "ChargeOrder"' },
 ];

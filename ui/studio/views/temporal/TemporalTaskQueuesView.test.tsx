@@ -125,7 +125,7 @@ describe("TemporalTaskQueuesView", () => {
     )!;
 
     expect(note.textContent).toContain("The newest 8 of 4,120 runs.");
-    expect(note.textContent).toContain("Open all 4,120 in Workflows");
+    expect(note.textContent).toContain("Open all 4,120 in Executions");
     expect(filterOf(note.querySelector("a"))).toBe('TaskQueue = "billing"');
     // The link stays in the namespace of the queue.
     expect(namespaceOf(note.querySelector("a"))).toBe("payments-eu");

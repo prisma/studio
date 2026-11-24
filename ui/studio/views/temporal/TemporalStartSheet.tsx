@@ -341,7 +341,7 @@ function StartForm(props: TemporalStartSheetProps) {
       onStarted(res.workflowId, res.runId);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to start workflow",
+        err instanceof Error ? err.message : "Failed to start execution",
       );
     }
   };

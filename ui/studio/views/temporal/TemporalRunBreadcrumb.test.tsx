@@ -83,17 +83,18 @@ describe("TemporalRunBreadcrumb", () => {
     return container;
   }
 
-  it("links the Workflow Type to its runs and the Workflow ID to every run of it", () => {
+  it("links the Workflow Type to its runs and the Workflow ID to its run chain", () => {
     const container = render();
 
     expect(
       filterOf(container.querySelector('[data-testid="temporal-crumb-type"]')),
     ).toBe('WorkflowType = "shipment"');
-    expect(
-      filterOf(
-        container.querySelector('[data-testid="temporal-crumb-workflow-id"]'),
-      ),
-    ).toBe('WorkflowId = "shipment-1a4a7395"');
+    const wfHref = container
+      .querySelector('[data-testid="temporal-crumb-workflow-id"]')!
+      .getAttribute("href")!;
+    const wfParams = new URLSearchParams(wfHref.slice(1));
+    expect(wfParams.get("temporalSectionParam")).toBe("workflow");
+    expect(wfParams.get("temporalWfParam")).toBe("shipment-1a4a7395");
   });
 
   it("says that a run is the only run of its Workflow ID, with nothing to open", () => {

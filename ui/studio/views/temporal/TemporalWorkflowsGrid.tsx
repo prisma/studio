@@ -385,7 +385,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
     () => executions.filter((e) => selectedKeys.has(rowKey(e))),
     [executions, selectedKeys],
   );
-  const selectedSummary = `${pluralize(selectedExecutions.length, "workflow")} (${summarizeIds(selectedExecutions.map((e) => e.workflowId))})`;
+  const selectedSummary = `${pluralize(selectedExecutions.length, "execution")} (${summarizeIds(selectedExecutions.map((e) => e.workflowId))})`;
 
   const applyQuery = (nextQuery: string) => {
     setDraftQuery(nextQuery);
@@ -435,7 +435,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
     ? runningTotal
     : selectedExecutions.length;
   const bulkSummary = allMatchingSelected
-    ? `${pluralize(runningTotal, "running workflow")} matching ${query.trim() ? "this search" : "in this namespace"}`
+    ? `${pluralize(runningTotal, "running execution")} matching ${query.trim() ? "this search" : "in this namespace"}`
     : selectedSummary;
 
   const runBulkAction = async (
@@ -809,7 +809,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
                 data-testid="temporal-select-all-matching"
               >
                 Select all {runningTotal.toLocaleString("en-US")} running
-                workflows that match
+                executions that match
               </Button>
             ) : null}
             <Button
@@ -986,7 +986,9 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
       <Dialog open={bulkSignalOpen} onOpenChange={setBulkSignalOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Signal {pluralize(bulkCount, "workflow")}</DialogTitle>
+            <DialogTitle>
+              Signal {pluralize(bulkCount, "execution")}
+            </DialogTitle>
             <DialogDescription>
               Send the same signal to {bulkSummary} in namespace{" "}
               <code className="font-mono">{namespace}</code>.
@@ -1041,7 +1043,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
 
       <TemporalConfirmDialog
         confirmLabel="Request Cancel"
-        description={`This asks ${bulkSummary} to cancel. Each workflow can run its cleanup logic before it stops.`}
+        description={`This asks ${bulkSummary} to cancel. Each execution can run its cleanup logic before it stops.`}
         isPending={isBulkPending}
         onConfirm={() => runBulkAction("cancel")}
         onOpenChange={setBulkCancelConfirmOpen}
@@ -1051,7 +1053,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
       />
 
       <TemporalConfirmDialog
-        confirmLabel={`Terminate ${pluralize(bulkCount, "workflow")}`}
+        confirmLabel={`Terminate ${pluralize(bulkCount, "execution")}`}
         defaultReason="Bulk terminated via Prisma Studio"
         description={`This stops ${bulkSummary} immediately, without running cleanup logic.`}
         isPending={isBulkPending}
@@ -1060,7 +1062,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
         open={bulkTerminateConfirmOpen}
         reasonLabel="Termination reason"
         showReasonInput
-        title="Terminate selected workflows?"
+        title="Terminate selected executions?"
       />
 
       <Dialog
@@ -1087,7 +1089,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
               </DialogTitle>
               <DialogDescription>
                 {bulkJob.job.done.toLocaleString("en-US")} of{" "}
-                {pluralize(bulkJob.job.total, "workflow")} done
+                {pluralize(bulkJob.job.total, "execution")} done
                 {bulkJob.job.failed > 0
                   ? `, ${bulkJob.job.failed.toLocaleString("en-US")} failed`
                   : ""}
@@ -1317,7 +1319,7 @@ function ColumnHead(props: {
           )}
           title={
             column.sortField && sortDisabled
-              ? "Filter to 10,000 or fewer workflows to change sort order"
+              ? "Filter to 10,000 or fewer executions to change sort order"
               : undefined
           }
         >

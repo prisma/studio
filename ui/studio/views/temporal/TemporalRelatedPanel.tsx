@@ -278,7 +278,7 @@ export function TemporalRelatedPanel(props: {
               className="text-2xs font-medium text-foreground underline underline-offset-2 hover:no-underline"
               href={workflowIdUrl}
             >
-              Open all {total.toLocaleString("en-US")} in Executions
+              View all {total.toLocaleString("en-US")} runs
             </a>
           </>
         )}

@@ -154,7 +154,7 @@ export function TemporalAttentionView(props: {
         .filter((item): item is TemporalAttentionItem => item !== undefined),
     [openRunsByKey, selectedKeys],
   );
-  const selectedSummary = `${pluralize(selectedRuns.length, "workflow")} (${summarizeIds(selectedRuns.map((item) => item.workflowId))})`;
+  const selectedSummary = `${pluralize(selectedRuns.length, "execution")} (${summarizeIds(selectedRuns.map((item) => item.workflowId))})`;
 
   const toggleSelect = (key: string) => {
     setSelectedKeys((prev) => {
@@ -249,7 +249,7 @@ export function TemporalAttentionView(props: {
               <span className="font-medium tabular-nums text-foreground">
                 {openProblems}
               </span>{" "}
-              of {pluralize(data.totalRunning, "running workflow")}{" "}
+              of {pluralize(data.totalRunning, "running execution")}{" "}
               {openProblems === 1 ? "needs" : "need"} attention
             </span>
             {data.checkedRunning < data.totalRunning ? (
@@ -265,7 +265,7 @@ export function TemporalAttentionView(props: {
             </span>
           </>
         ) : (
-          <span>Checking every running workflow</span>
+          <span>Checking every running execution</span>
         )}
       </div>
 
@@ -281,7 +281,7 @@ export function TemporalAttentionView(props: {
             <p className="font-medium text-destructive">
               {error instanceof Error
                 ? error.message
-                : "Could not check the running workflows"}
+                : "Could not check the running executions"}
             </p>
             <Button variant="outline" size="sm" onClick={() => void refetch()}>
               Retry
@@ -291,7 +291,7 @@ export function TemporalAttentionView(props: {
           <div className="flex flex-col items-center justify-center gap-2 p-10 text-sm text-muted-foreground">
             <CircleCheck className="size-6 opacity-60" />
             <p>
-              No running workflow in{" "}
+              No running execution in{" "}
               <code className="font-mono text-foreground">{namespace}</code>{" "}
               needs attention.
             </p>
@@ -428,7 +428,7 @@ export function TemporalAttentionView(props: {
 
       <TemporalConfirmDialog
         confirmLabel="Request Cancel"
-        description={`This asks ${selectedSummary} to cancel. Each workflow can run its cleanup logic before it stops.`}
+        description={`This asks ${selectedSummary} to cancel. Each execution can run its cleanup logic before it stops.`}
         isPending={bulkAction.isPending}
         onConfirm={() => runBulk("cancel")}
         onOpenChange={setBulkCancelOpen}
@@ -438,7 +438,7 @@ export function TemporalAttentionView(props: {
       />
 
       <TemporalConfirmDialog
-        confirmLabel={`Terminate ${pluralize(selectedRuns.length, "workflow")}`}
+        confirmLabel={`Terminate ${pluralize(selectedRuns.length, "execution")}`}
         defaultReason="Bulk terminated from Needs Attention"
         description={`This stops ${selectedSummary} immediately, without running cleanup logic.`}
         isPending={bulkAction.isPending}
@@ -447,7 +447,7 @@ export function TemporalAttentionView(props: {
         open={bulkTerminateOpen}
         reasonLabel="Termination reason"
         showReasonInput
-        title="Terminate selected workflows?"
+        title="Terminate selected executions?"
       />
 
       <TemporalConfirmDialog

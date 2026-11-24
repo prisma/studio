@@ -111,7 +111,12 @@ export function TemporalRunBreadcrumb(props: {
       temporalSectionParam: "workflows",
       viewParam: "temporal",
     });
-  const idFilter = `WorkflowId = ${quoteFilterValue(workflowId)}`;
+  const chainUrl = createUrl({
+    temporalNsParam: namespace,
+    temporalSectionParam: "workflow",
+    temporalWfParam: workflowId,
+    viewParam: "temporal",
+  });
   const total = Math.max(props.runCount ?? 0, runs?.length ?? 0);
   const position = runs ? runPosition(runs, runId, total) : null;
   const shortRunId = runId.slice(0, 8);
@@ -172,8 +177,8 @@ export function TemporalRunBreadcrumb(props: {
           <a
             className={cn(linkClassName, "truncate")}
             data-testid="temporal-crumb-workflow-id"
-            href={workflowsUrl(idFilter)}
-            title={`Workflow ID ${workflowId}: open all executions of this ID`}
+            href={chainUrl}
+            title={`Workflow ID ${workflowId}: view all runs of this ID`}
           >
             {workflowId}
           </a>
@@ -209,7 +214,7 @@ export function TemporalRunBreadcrumb(props: {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-80">
               <DropdownMenuLabel className="text-2xs font-normal text-muted-foreground">
-                Executions of {workflowId}, newest first
+                Runs of {workflowId}, newest first
               </DropdownMenuLabel>
               <div className="max-h-72 overflow-y-auto">
                 {runs.map((run) => (
@@ -246,8 +251,8 @@ export function TemporalRunBreadcrumb(props: {
               </div>
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild className="text-xs">
-                <a href={workflowsUrl(idFilter)}>
-                  Open all {total.toLocaleString("en-US")} in Executions
+                <a href={chainUrl}>
+                  View all {total.toLocaleString("en-US")} runs
                 </a>
               </DropdownMenuItem>
             </DropdownMenuContent>

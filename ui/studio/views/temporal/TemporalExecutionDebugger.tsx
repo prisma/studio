@@ -1238,9 +1238,9 @@ export function TemporalExecutionDebugger(
                     runs={runsOfId}
                     spans={spans}
                     workflowIdUrl={createUrl({
-                      searchParam: `WorkflowId = ${quoteFilterValue(workflowId)}`,
                       temporalNsParam: namespace,
-                      temporalSectionParam: "workflows",
+                      temporalSectionParam: "workflow",
+                      temporalWfParam: workflowId,
                       viewParam: "temporal",
                     })}
                   />

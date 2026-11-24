@@ -22,6 +22,7 @@ import {
 import { TemporalTaskQueuesView } from "./TemporalTaskQueuesView";
 import { TemporalTypesView } from "./TemporalTypesView";
 import { TemporalWorkersView } from "./TemporalWorkersView";
+import { TemporalWorkflowChainView } from "./TemporalWorkflowChainView";
 import { TemporalWorkflowsGrid } from "./TemporalWorkflowsGrid";
 
 function normalizeFollowMode(
@@ -40,6 +41,7 @@ function normalizeSection(raw: string | null | undefined): TemporalSection {
     raw === "queues" ||
     raw === "types" ||
     raw === "workers" ||
+    raw === "workflow" ||
     raw === "cluster"
   ) {
     return raw;
@@ -129,6 +131,15 @@ export function TemporalView() {
           onOpenExecution={openExecution}
           runId={importedDetail.execution.runId}
           workflowId={importedDetail.execution.workflowId}
+        />
+      ) : temporalWfParam && section === "workflow" ? (
+        <TemporalWorkflowChainView
+          followMode={followMode}
+          namespace={namespace}
+          onFollowModeChange={(m) => void setTemporalFollowParam(m)}
+          onOpenExecution={openExecution}
+          onOpenStart={openStartSheet}
+          workflowId={temporalWfParam}
         />
       ) : temporalWfParam ? (
         <TemporalExecutionDebugger

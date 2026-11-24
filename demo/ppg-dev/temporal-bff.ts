@@ -1688,8 +1688,8 @@ export class TemporalGrpcBffClient {
         ? {
             sortSkippedReason:
               caps?.nativeListOrder === "newest-first"
-                ? `More than ${MAX_SORTED_RUNS.toLocaleString("en-US")} workflows match, so they are listed newest first. Filter to ${MAX_SORTED_RUNS.toLocaleString("en-US")} or fewer to change the sort order.`
-                : `More than ${MAX_SORTED_RUNS.toLocaleString("en-US")} workflows match, so they are listed in the server's order. Filter to ${MAX_SORTED_RUNS.toLocaleString("en-US")} or fewer to sort them.`,
+                ? `More than ${MAX_SORTED_RUNS.toLocaleString("en-US")} executions match, so they are listed newest first. Filter to ${MAX_SORTED_RUNS.toLocaleString("en-US")} or fewer to change the sort order.`
+                : `More than ${MAX_SORTED_RUNS.toLocaleString("en-US")} executions match, so they are listed in the server's order. Filter to ${MAX_SORTED_RUNS.toLocaleString("en-US")} or fewer to sort them.`,
           }
         : {}),
       totalCount,
@@ -2363,7 +2363,7 @@ export class TemporalGrpcBffClient {
       if (!matching.value) {
         throw Object.assign(
           new Error(
-            `More than ${MAX_SORTED_RUNS.toLocaleString("en-US")} workflows match. Add a filter to act on fewer.`,
+            `More than ${MAX_SORTED_RUNS.toLocaleString("en-US")} executions match. Add a filter to act on fewer.`,
           ),
           { httpStatus: 412 },
         );

@@ -373,7 +373,7 @@ function SampleLine(props: {
           className="font-medium text-foreground underline underline-offset-2 hover:no-underline"
           href={workflowsUrl}
         >
-          Open the runs in Workflows
+          Open the runs in Executions
         </a>
       </span>
     </div>
@@ -450,7 +450,7 @@ function NodeDetail(props: {
             className="font-medium text-foreground underline underline-offset-2 hover:no-underline"
             href={statusUrl}
           >
-            Open every such run in Workflows
+            Open every such run in Executions
           </a>
         ) : null}
       </div>
