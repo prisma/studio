@@ -64,6 +64,60 @@ describe("layoutTypeMap", () => {
     expect(edges["start\ncharge"]!.points.length).toBeGreaterThanOrEqual(2);
     expect(edges["start\ncharge"]!.label).toBeDefined();
   });
+
+  it("places each arrow's text clear of the steps and of the other texts", async () => {
+    const map = {
+      edges: [
+        edge("start", "charge", 5),
+        edge("charge", "timer", 4),
+        edge("charge", "end:Failed", 1),
+        edge("timer", "charge", 3),
+        edge("timer", "end:Completed", 4),
+      ],
+      nodes: [
+        node("start", "start"),
+        node("charge", "activity"),
+        node("timer", "timer"),
+        node("end:Completed", "end"),
+        node("end:Failed", "end"),
+      ],
+    };
+    const { edges, nodes: positions } = await layoutTypeMap(map);
+    const labels = Object.values(edges).map((route) => route.label!);
+    const stepBoxes = map.nodes.map((step) => ({
+      ...typeMapNodeSize(step),
+      ...positions[step.id]!,
+    }));
+
+    for (const label of labels) {
+      for (const box of stepBoxes) {
+        const isInside =
+          label.x > box.x &&
+          label.x < box.x + box.width &&
+          label.y > box.y &&
+          label.y < box.y + box.height;
+
+        expect(isInside).toBe(false);
+      }
+    }
+
+    for (const [index, a] of labels.entries()) {
+      for (const b of labels.slice(index + 1)) {
+        expect(Math.abs(a.x - b.x) >= 58 || Math.abs(a.y - b.y) >= 18).toBe(
+          true,
+        );
+      }
+    }
+  });
+
+  it("gives the Continued as New status room for its name and its count", () => {
+    expect(
+      typeMapNodeSize({
+        ...node("end:ContinuedAsNew", "end"),
+        status: "ContinuedAsNew",
+      }).width,
+    ).toBeGreaterThan(typeMapNodeSize(node("end:Completed", "end")).width);
+  });
 });
 
 describe("orderTypeMapNodes", () => {

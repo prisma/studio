@@ -20,24 +20,62 @@ export interface TypeMapLayout {
   nodes: Record<string, TypeMapPoint>;
 }
 
-/** The middle of the longest straight part of a route: where the arrow's count is easiest to read. */
-function labelPoint(points: TypeMapPoint[]): TypeMapPoint | undefined {
-  let longest: { length: number; point: TypeMapPoint } | undefined;
+interface Box {
+  height: number;
+  width: number;
+  x: number;
+  y: number;
+}
 
-  for (let index = 1; index < points.length; index++) {
-    const from = points[index - 1]!;
-    const to = points[index]!;
-    const length = Math.hypot(to.x - from.x, to.y - from.y);
+/** The room an arrow's text takes, for placing it: a short share such as "↻ 100%". */
+const LABEL_BOX = { height: 18, width: 58 };
 
-    if (!longest || length > longest.length) {
-      longest = {
-        length,
-        point: { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 },
-      };
-    }
-  }
+function boxesOverlap(a: Box, b: Box): boolean {
+  return (
+    a.x < b.x + b.width &&
+    b.x < a.x + a.width &&
+    a.y < b.y + b.height &&
+    b.y < a.y + a.height
+  );
+}
 
-  return longest?.point;
+function labelBox(point: TypeMapPoint): Box {
+  return {
+    ...LABEL_BOX,
+    x: point.x - LABEL_BOX.width / 2,
+    y: point.y - LABEL_BOX.height / 2,
+  };
+}
+
+/**
+ * Where an arrow's text goes: on the longest straight part of its route that
+ * has room, clear of the steps and of the texts already placed. With no free
+ * place it goes to the middle of the longest part.
+ */
+function labelPoint(
+  points: TypeMapPoint[],
+  taken: Box[],
+): TypeMapPoint | undefined {
+  const segments = points
+    .slice(1)
+    .map((to, index) => {
+      const from = points[index]!;
+
+      return { from, length: Math.hypot(to.x - from.x, to.y - from.y), to };
+    })
+    .sort((a, b) => b.length - a.length);
+  const candidates = segments.flatMap(({ from, to }) =>
+    [0.5, 0.3, 0.7].map((share) => ({
+      x: from.x + (to.x - from.x) * share,
+      y: from.y + (to.y - from.y) * share,
+    })),
+  );
+
+  return (
+    candidates.find(
+      (point) => !taken.some((box) => boxesOverlap(labelBox(point), box)),
+    ) ?? candidates[0]
+  );
 }
 
 /** Whether a step has a line of marks: failed, retried, or runs that are at it now. */
@@ -60,7 +98,8 @@ export function typeMapNodeSize(
   }
 
   if (node.kind === "end") {
-    return { height: 34, width: 190 };
+    // "Continued as New" is the one status whose badge and run count need more room.
+    return { height: 34, width: node.status === "ContinuedAsNew" ? 240 : 190 };
   }
 
   return { height: hasThirdLine ? 82 : 56, width: 240 };
@@ -165,17 +204,48 @@ export async function layoutTypeMap(
     },
   });
 
+  const sizeOf = new Map(
+    nodes.map((node) => [
+      node.id,
+      typeMapNodeSize(node, options.allStepsTall ? true : undefined),
+    ]),
+  );
+  // The steps, then each text as it is placed, so the texts keep clear of both.
+  const taken: Box[] = (layout.children ?? []).map((child) => ({
+    ...sizeOf.get(child.id)!,
+    x: child.x ?? 0,
+    y: child.y ?? 0,
+  }));
+  const runCountOf = new Map(map.edges.map((edge) => [edge.id, edge.runCount]));
+  const routes = ((layout.edges ?? []) as ElkExtendedEdge[]).map((edge) => ({
+    id: edge.id,
+    points: (edge.sections ?? []).flatMap((section) => [
+      section.startPoint,
+      ...(section.bendPoints ?? []),
+      section.endPoint,
+    ]),
+  }));
+  const labels = new Map<string, TypeMapPoint | undefined>();
+
+  // The arrows most runs took choose their place first.
+  for (const route of [...routes].sort(
+    (a, b) => (runCountOf.get(b.id) ?? 0) - (runCountOf.get(a.id) ?? 0),
+  )) {
+    const point = labelPoint(route.points, taken);
+
+    labels.set(route.id, point);
+
+    if (point) {
+      taken.push(labelBox(point));
+    }
+  }
+
   return {
     edges: Object.fromEntries(
-      ((layout.edges ?? []) as ElkExtendedEdge[]).map((edge) => {
-        const points = (edge.sections ?? []).flatMap((section) => [
-          section.startPoint,
-          ...(section.bendPoints ?? []),
-          section.endPoint,
-        ]);
-
-        return [edge.id, { label: labelPoint(points), points }];
-      }),
+      routes.map((route) => [
+        route.id,
+        { label: labels.get(route.id), points: route.points },
+      ]),
     ),
     nodes: Object.fromEntries(
       (layout.children ?? []).map((child) => [

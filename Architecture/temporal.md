@@ -104,6 +104,8 @@ Temporal stores no definition of a Workflow, so `getTypeMap` (`GET /v1/namespace
 
 The counts in a diagram are counts of the sampled runs. The line above the diagram says how many runs that is and which statuses they have.
 
+**Text on the arrows.** An arrow carries text only where its source step has more than one way out: the share of that step's runs that went this way, as plain text with no box, so it cannot be taken for a step. A loop has a mark before its share. An arrow of the selected step also shows its count of runs, and an arrow that is faint shows no text. The layout places each text on a straight part of its arrow, clear of the steps and of the other texts. The full sentence is the arrow's tooltip.
+
 ## Cluster Health (`temporal-cluster-health.ts`)
 
 The load report of `slate-temporal-next` gives the server and each shard one of six states, best first: `ok`, `busy`, `shedding`, `overworked`, `critical`, `fault` (its `docs/overload.md` §5.1). Only the states from `shedding` on refuse work. `getClusterOverview` passes on the report's reasons (`{ scope, shard, signal, value, unit }`) and tags; each shard gets the reasons of its own. `describeClusterHealth` gives every state a label, a sentence on what it means, and a tone: `busy` is `info`, not `warning`.

@@ -170,7 +170,7 @@ const EndNode = memo(function EndNode(props: NodeProps<TypeMapNodeData>) {
     >
       <Handles source={false} />
       <WorkflowStatusBadge status={node.status ?? "Completed"} />
-      <span className="font-mono tabular-nums text-muted-foreground">
+      <span className="font-mono whitespace-nowrap tabular-nums text-muted-foreground">
         {node.runCount === 0 && run !== undefined
           ? "this run"
           : `${node.runCount.toLocaleString("en-US")} ${node.runCount === 1 ? "run" : "runs"}`}
@@ -306,7 +306,8 @@ const StepNode = memo(function StepNode(props: NodeProps<TypeMapNodeData>) {
 const nodeTypes: NodeTypes = { end: EndNode, start: StartNode, step: StepNode };
 
 interface RoutedEdgeData {
-  annotation: string;
+  /** The text on the arrow. Null for an arrow that needs none. */
+  annotation: string | null;
   isHighlighted: boolean;
   label?: TypeMapPoint;
   points: TypeMapPoint[];
@@ -314,7 +315,14 @@ interface RoutedEdgeData {
 }
 
 export interface TypeMapEdgeAnnotation {
-  label: string;
+  /** The fuller text for an arrow of the selected step: the count of runs and the share. */
+  detail: string;
+  /**
+   * The short text on the arrow: the share of the source step's runs that
+   * went this way. Null where the source has one way out, because the steps'
+   * own counts already say it.
+   */
+  label: string | null;
   tooltip: string;
 }
 
@@ -351,48 +359,45 @@ export function describeTypeMapEdge(params: {
     sourceRuns > 0
       ? Math.min(100, Math.round((edgeRunCount / sourceRuns) * 100))
       : null;
-  const showPct = outgoingEdgeCount > 1 && pct !== null && pct < 100;
-  const countWithShare = showPct ? `${countText} (${pct}%)` : countText;
+  // A share says something only where runs had a choice.
+  const share = outgoingEdgeCount > 1 && pct !== null ? `${pct}%` : null;
 
-  let role: string | null = null;
   let roleDescription = "Transition";
 
   if (isLoop) {
-    role = "↻ loop";
     roleDescription = "Loops back to an earlier step";
   } else if (to?.kind === "signal") {
-    role = "on signal";
     roleDescription = "Triggered by a Signal";
   } else if (to?.kind === "update") {
-    role = "on update";
     roleDescription = "Triggered by an Update";
   } else if (to?.kind === "end") {
-    const endLabel = workflowStatusLabel(to.status ?? "Completed");
-    role = endLabel.toLowerCase();
-    roleDescription = `Workflow closed as ${endLabel}`;
+    roleDescription = `Workflow closed as ${workflowStatusLabel(to.status ?? "Completed")}`;
   } else if (from?.kind === "start") {
-    role = "starts";
     roleDescription = "First step of the workflow";
   } else if (from?.kind === "timer") {
-    role = "after timer";
     roleDescription = "Continues after the Timer";
   } else if (to?.kind === "timer") {
-    role = "waits";
     roleDescription = "Starts a Timer";
   } else if (to?.kind === "child-workflow") {
-    role = "child";
     roleDescription = "Starts a Child Workflow";
   }
 
   const isRunOnly = edgeRunCount === 0;
-  const baseLabel = isRunOnly
-    ? role
-      ? `${role} · this run`
-      : "this run"
-    : role
-      ? `${role} · ${countWithShare}`
-      : `${countText} ${edgeRunCount === 1 ? "run" : "runs"}${showPct ? ` (${pct}%)` : ""}`;
-  const label = isTakenNext ? `next · ${baseLabel}` : baseLabel;
+  const loopMark = isLoop ? "↻ " : "";
+  const shortLabel = isRunOnly
+    ? "this run"
+    : share
+      ? `${loopMark}${share}`
+      : null;
+  const label = isTakenNext
+    ? shortLabel
+      ? `next · ${shortLabel}`
+      : "next"
+    : shortLabel;
+  const baseDetail = isRunOnly
+    ? "this run"
+    : `${loopMark}${countText} ${edgeRunCount === 1 ? "run" : "runs"}${share ? ` · ${share}` : ""}`;
+  const detail = isTakenNext ? `next · ${baseDetail}` : baseDetail;
 
   const fromName = from
     ? from.kind === "start"
@@ -423,8 +428,12 @@ export function describeTypeMapEdge(params: {
     ...(runNote ? [runNote] : []),
   ];
 
-  return { label, tooltip: tooltipParts.join(" · ") };
+  return { detail, label, tooltip: tooltipParts.join(" · ") };
 }
+
+/** The colour of the canvas: the page background under the dotted layer of `bg-muted/40`. */
+const EDGE_LABEL_HALO =
+  "color-mix(in oklab, var(--muted) 40%, var(--background))";
 
 /** An arrow along the route the layout found around the nodes, with its edge annotation. */
 const RoutedEdge = memo(function RoutedEdge(props: EdgeProps<RoutedEdgeData>) {
@@ -434,10 +443,6 @@ const RoutedEdge = memo(function RoutedEdge(props: EdgeProps<RoutedEdgeData>) {
     return null;
   }
 
-  const height = 18;
-  const width = Math.max(26, Math.ceil(data.annotation.length * 6.1) + 14);
-  const pillOpacity = style?.opacity ?? 1;
-
   return (
     <g>
       <title>{data.tooltip}</title>
@@ -446,36 +451,28 @@ const RoutedEdge = memo(function RoutedEdge(props: EdgeProps<RoutedEdgeData>) {
         path={roundedPath(data.points, 6)}
         style={style}
       />
-      {data.label ? (
-        <g data-testid="temporal-type-map-edge-label" opacity={pillOpacity}>
-          <rect
-            fill="var(--card)"
-            height={height}
-            rx={9}
-            stroke={data.isHighlighted ? "var(--foreground)" : "var(--border)"}
-            strokeOpacity={data.isHighlighted ? 0.45 : 0.9}
-            strokeWidth={data.isHighlighted ? 1 : 0.75}
-            width={width}
-            x={data.label.x - width / 2}
-            y={data.label.y - height / 2}
-          />
-          <text
-            dominantBaseline="central"
-            fill={
-              data.isHighlighted
-                ? "var(--foreground)"
-                : "var(--muted-foreground)"
-            }
-            fontFamily="var(--font-mono)"
-            fontSize={10}
-            fontWeight={data.isHighlighted ? 500 : 400}
-            textAnchor="middle"
-            x={data.label.x}
-            y={data.label.y}
-          >
-            {data.annotation}
-          </text>
-        </g>
+      {data.label && data.annotation ? (
+        // Plain text, so an annotation cannot be taken for a step. The stroke in the canvas colour keeps the arrow from striking through it.
+        <text
+          data-testid="temporal-type-map-edge-label"
+          dominantBaseline="central"
+          fill={
+            data.isHighlighted ? "var(--foreground)" : "var(--muted-foreground)"
+          }
+          fontFamily="var(--font-sans)"
+          fontSize={11}
+          fontWeight={data.isHighlighted ? 600 : 500}
+          paintOrder="stroke"
+          stroke={EDGE_LABEL_HALO}
+          strokeLinejoin="round"
+          strokeWidth={6}
+          style={{ fontVariantNumeric: "tabular-nums" }}
+          textAnchor="middle"
+          x={data.label.x}
+          y={data.label.y}
+        >
+          {data.annotation}
+        </text>
       ) : null}
     </g>
   );
@@ -731,7 +728,12 @@ export function TemporalTypeMapCanvas(props: {
 
             return {
               data: {
-                annotation: annotation.label,
+                // A faint arrow shows no text; an arrow of the selected step shows its count too.
+                annotation: isFaint
+                  ? null
+                  : isOfSelected
+                    ? annotation.detail
+                    : annotation.label,
                 isHighlighted: isStrong || isNext,
                 ...layout.edges[edge.id],
                 points: layout.edges[edge.id]?.points ?? [],

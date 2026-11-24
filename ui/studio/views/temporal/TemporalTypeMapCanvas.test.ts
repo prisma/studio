@@ -26,7 +26,7 @@ function node(
 }
 
 describe("describeTypeMapEdge", () => {
-  it("annotates start, after-timer, loop, signal, and end edges clearly", () => {
+  it("shows a share only where the source step has more than one way out", () => {
     const start = node("start", "start", "Start", { runCount: 40 });
     const timer = node("timer:Timer", "timer", "Timer", { runCount: 40 });
     const charge = node("activity:charge", "activity", "charge", {
@@ -52,7 +52,7 @@ describe("describeTypeMapEdge", () => {
         to: timer,
         totalRuns: 40,
       }).label,
-    ).toBe("starts · 40");
+    ).toBeNull();
 
     expect(
       describeTypeMapEdge({
@@ -65,7 +65,7 @@ describe("describeTypeMapEdge", () => {
         to: charge,
         totalRuns: 40,
       }).label,
-    ).toBe("next · after timer · 15 (38%)");
+    ).toBe("next · 38%");
 
     expect(
       describeTypeMapEdge({
@@ -76,7 +76,7 @@ describe("describeTypeMapEdge", () => {
         to: timer,
         totalRuns: 40,
       }).label,
-    ).toBe("↻ loop · 15");
+    ).toBeNull();
 
     expect(
       describeTypeMapEdge({
@@ -87,7 +87,7 @@ describe("describeTypeMapEdge", () => {
         to: cancel,
         totalRuns: 40,
       }).label,
-    ).toBe("on signal · 3 (8%)");
+    ).toBe("8%");
 
     expect(
       describeTypeMapEdge({
@@ -98,7 +98,35 @@ describe("describeTypeMapEdge", () => {
         to: completed,
         totalRuns: 40,
       }).label,
-    ).toBe("completed · 12 (80%)");
+    ).toBe("80%");
+  });
+
+  it("marks a loop, and gives the count of runs for an arrow of the selected step", () => {
+    const timer = node("timer:Timer", "timer", "Timer", { runCount: 40 });
+    const invoice = node("activity:invoice", "activity", "invoice", {
+      runCount: 23,
+    });
+    const loop = describeTypeMapEdge({
+      edgeRunCount: 23,
+      from: invoice,
+      isLoop: true,
+      outgoingEdgeCount: 3,
+      to: timer,
+      totalRuns: 40,
+    });
+
+    expect(loop.label).toBe("↻ 100%");
+    expect(loop.detail).toBe("↻ 23 runs · 100%");
+    expect(
+      describeTypeMapEdge({
+        edgeRunCount: 1,
+        from: timer,
+        isLoop: false,
+        outgoingEdgeCount: 1,
+        to: invoice,
+        totalRuns: 40,
+      }).detail,
+    ).toBe("1 run");
   });
 
   it("labels run-only transitions added from the current run without showing zero", () => {
@@ -116,7 +144,7 @@ describe("describeTypeMapEdge", () => {
       totalRuns: 40,
     });
 
-    expect(edge.label).toBe("after timer · this run");
+    expect(edge.label).toBe("this run");
     expect(edge.tooltip).toContain("Only in this run");
   });
 
@@ -136,7 +164,7 @@ describe("describeTypeMapEdge", () => {
       totalRuns: 40,
     });
 
-    expect(edge.label).toBe("after timer · 2 (17%)");
+    expect(edge.label).toBe("17%");
     expect(edge.tooltip).toContain(
       "2 of the 12 sampled runs that reached Timer 30m (17%)",
     );
@@ -159,7 +187,7 @@ describe("describeTypeMapEdge", () => {
     ).toContain("40 of 40 sampled runs");
   });
 
-  it("writes a share the same way with and without a role", () => {
+  it("writes the short text and the fuller text the same way for every kind of step", () => {
     const shipment = node(
       "child-workflow:Child: shipment",
       "child-workflow",
@@ -169,17 +197,17 @@ describe("describeTypeMapEdge", () => {
       },
     );
     const email = node("activity:sendOrderEmail", "activity", "sendOrderEmail");
+    const edge = describeTypeMapEdge({
+      edgeRunCount: 24,
+      from: shipment,
+      isLoop: false,
+      outgoingEdgeCount: 2,
+      to: email,
+      totalRuns: 40,
+    });
 
-    expect(
-      describeTypeMapEdge({
-        edgeRunCount: 24,
-        from: shipment,
-        isLoop: false,
-        outgoingEdgeCount: 2,
-        to: email,
-        totalRuns: 40,
-      }).label,
-    ).toBe("24 runs (83%)");
+    expect(edge.label).toBe("83%");
+    expect(edge.detail).toBe("24 runs · 83%");
   });
 });
 
