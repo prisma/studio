@@ -170,8 +170,9 @@ const EndNode = memo(function EndNode(props: NodeProps<TypeMapNodeData>) {
       <Handles source={false} />
       <WorkflowStatusBadge status={node.status ?? "Completed"} />
       <span className="font-mono tabular-nums text-muted-foreground">
-        {node.runCount.toLocaleString("en-US")}{" "}
-        {node.runCount === 1 ? "run" : "runs"}
+        {node.runCount === 0 && run !== undefined
+          ? "this run"
+          : `${node.runCount.toLocaleString("en-US")} ${node.runCount === 1 ? "run" : "runs"}`}
       </span>
     </div>
   );
@@ -210,10 +211,16 @@ const StepNode = memo(function StepNode(props: NodeProps<TypeMapNodeData>) {
         )}
       </div>
       <div className="truncate text-2xs text-muted-foreground">
-        {kind.name} · {node.runCount} of {totalRuns} runs
-        {node.spanCount > node.runCount
-          ? ` · ${node.spanCount.toLocaleString("en-US")} times`
-          : ""}
+        {node.runCount === 0 && run !== undefined ? (
+          `${kind.name} · Only in this run`
+        ) : (
+          <>
+            {kind.name} · {node.runCount} of {totalRuns} runs
+            {node.spanCount > node.runCount
+              ? ` · ${node.spanCount.toLocaleString("en-US")} times`
+              : ""}
+          </>
+        )}
       </div>
       {run !== undefined ? (
         <div className="flex items-center gap-1 truncate text-2xs font-medium text-foreground">
@@ -375,9 +382,14 @@ export function describeTypeMapEdge(params: {
     roleDescription = "Starts a Child Workflow";
   }
 
-  const baseLabel = role
-    ? `${role} · ${countWithShare}`
-    : `${countText} ${edgeRunCount === 1 ? "run" : "runs"}${showPct ? ` · ${pct}%` : ""}`;
+  const isRunOnly = edgeRunCount === 0;
+  const baseLabel = isRunOnly
+    ? role
+      ? `${role} · this run`
+      : "this run"
+    : role
+      ? `${role} · ${countWithShare}`
+      : `${countText} ${edgeRunCount === 1 ? "run" : "runs"}${showPct ? ` · ${pct}%` : ""}`;
   const label = isTakenNext ? `next · ${baseLabel}` : baseLabel;
 
   const fromName = from
@@ -399,7 +411,9 @@ export function describeTypeMapEdge(params: {
         : null;
   const tooltipParts = [
     `${fromName} → ${toName}`,
-    `${countText} of ${totalRuns.toLocaleString("en-US")} sampled runs${pct !== null ? ` (${pct}%)` : ""}`,
+    isRunOnly
+      ? `Only in this run (not in ${totalRuns.toLocaleString("en-US")} sampled runs)`
+      : `${countText} of ${totalRuns.toLocaleString("en-US")} sampled runs${pct !== null ? ` (${pct}%)` : ""}`,
     roleDescription,
     ...(runNote ? [runNote] : []),
   ];

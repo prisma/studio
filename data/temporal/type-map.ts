@@ -586,38 +586,161 @@ export function timerProgress(
   };
 }
 
+/**
+ * Ensures every step and transition that `run` actually took exists in `map`.
+ * Nodes and edges added solely from `run` carry `runCount: 0` so sampled counts
+ * stay accurate. Returns `map` unchanged when nothing is missing.
+ */
+export function mergeRunIntoTypeMap<T extends TemporalTypeMap>(
+  map: T,
+  run: RunForTypeMap,
+): T {
+  const own = buildTypeMap([run], { timersMerged: map.timersMerged });
+  const knownNodes = new Set(map.nodes.map((node) => node.id));
+  const knownEdges = new Set(map.edges.map((edge) => edge.id));
+  const missingNodes = own.nodes
+    .filter((node) => !knownNodes.has(node.id))
+    .map((node): TemporalTypeMapNode => {
+      const { medianDurationMs: _median, ...rest } = node;
+
+      return {
+        ...rest,
+        failedRunCount: 0,
+        failedRuns: [],
+        retriedRunCount: 0,
+        runCount: 0,
+        spanCount: 0,
+        waitingRunCount: 0,
+        waitingRuns: [],
+      };
+    });
+  const missingEdges = own.edges
+    .filter((edge) => !knownEdges.has(edge.id))
+    .map((edge): TemporalTypeMapEdge => ({ ...edge, runCount: 0 }));
+
+  if (missingNodes.length === 0 && missingEdges.length === 0) {
+    return map;
+  }
+
+  const missingSteps = missingNodes.filter((node) => node.kind !== "end");
+  const missingEnds = missingNodes.filter((node) => node.kind === "end");
+  const firstEndIndex = map.nodes.findIndex((node) => node.kind === "end");
+  const nodes =
+    firstEndIndex === -1
+      ? [...map.nodes, ...missingSteps, ...missingEnds]
+      : [
+          ...map.nodes.slice(0, firstEndIndex),
+          ...missingSteps,
+          ...map.nodes.slice(firstEndIndex),
+          ...missingEnds,
+        ];
+
+  return {
+    ...map,
+    edges: [...map.edges, ...missingEdges],
+    nodes,
+  };
+}
+
 /** A sample has at least this many runs of every status that the type has. */
 const MIN_RUNS_PER_STATUS = 3;
 
+function isOpenStatus(status: TemporalWorkflowExecution["status"]): boolean {
+  return status === "Running" || status === "Paused";
+}
+
+function activityTime(run: TemporalWorkflowExecution): string {
+  return run.closeTime ?? run.startTime;
+}
+
 /**
- * The runs to draw a Workflow Type from: the newest ones, so the diagram shows
- * the current code, and the newest few of every status that these lack, so it
- * also shows how a run fails or is canceled when that is rare.
+ * The runs to draw a Workflow Type from: recent runs of every status (ordered
+ * by close time when closed, else start time), progressed open runs so
+ * long-lived workflows show their later steps, and a balance of recent closed
+ * and open runs so newly started open runs cannot crowd out finished paths.
  */
 export function pickTypeMapSample(
   runs: TemporalWorkflowExecution[],
   limit: number,
 ): TemporalWorkflowExecution[] {
-  const newestFirst = [...runs].sort((a, b) =>
-    b.startTime.localeCompare(a.startTime),
-  );
-  const statuses = [...new Set(newestFirst.map((run) => run.status))];
-  const newest = newestFirst.slice(
-    0,
-    Math.max(0, limit - statuses.length * MIN_RUNS_PER_STATUS),
-  );
-  const sample = new Set(newest);
+  if (limit <= 0 || runs.length === 0) {
+    return [];
+  }
 
-  for (const status of statuses) {
-    const ofStatus = newestFirst.filter((run) => run.status === status);
+  const byActivity = [...runs].sort((a, b) => {
+    const timeDiff = activityTime(b).localeCompare(activityTime(a));
 
-    for (const run of ofStatus.slice(0, MIN_RUNS_PER_STATUS)) {
-      sample.add(run);
+    return timeDiff !== 0 ? timeDiff : b.startTime.localeCompare(a.startTime);
+  });
+  const statuses = [...new Set(byActivity.map((run) => run.status))];
+  const sample = new Set<TemporalWorkflowExecution>();
+
+  // Take at least one run per status before taking the second and third so
+  // small limits still represent every status.
+  for (
+    let slot = 0;
+    slot < MIN_RUNS_PER_STATUS && sample.size < limit;
+    slot++
+  ) {
+    for (const status of statuses) {
+      if (sample.size >= limit) {
+        break;
+      }
+
+      const candidate = byActivity.filter((run) => run.status === status)[slot];
+
+      if (candidate) {
+        sample.add(candidate);
+      }
     }
   }
 
-  // Places that no rare status needed go to the next newest runs.
-  for (const run of newestFirst) {
+  // Reserve up to a quarter of the sample for the furthest-progressed open
+  // runs so long-lived workflows draw steps beyond their initial Timer/wait.
+  const openByProgress = byActivity
+    .filter((run) => isOpenStatus(run.status))
+    .sort(
+      (a, b) =>
+        b.historyLength - a.historyLength ||
+        activityTime(b).localeCompare(activityTime(a)),
+    );
+  const progressedOpenQuota = Math.floor(limit / 4);
+  let progressedAdded = 0;
+
+  for (const run of openByProgress) {
+    if (sample.size >= limit || progressedAdded >= progressedOpenQuota) {
+      break;
+    }
+
+    if (!sample.has(run)) {
+      sample.add(run);
+      progressedAdded++;
+    }
+  }
+
+  // When both closed and open runs exist, give recent closed runs up to half
+  // the sample so finished paths are not drowned out by newborn open runs.
+  const closedByActivity = byActivity.filter(
+    (run) => !isOpenStatus(run.status),
+  );
+  const closedTarget = Math.floor(limit / 2);
+  let closedCount = [...sample].filter(
+    (run) => !isOpenStatus(run.status),
+  ).length;
+
+  for (const run of closedByActivity) {
+    if (sample.size >= limit || closedCount >= closedTarget) {
+      break;
+    }
+
+    if (!sample.has(run)) {
+      sample.add(run);
+      closedCount++;
+    }
+  }
+
+  // Fill remaining slots with the most recently active runs of any status.
+  for (const run of byActivity) {
     if (sample.size >= limit) {
       break;
     }
@@ -625,5 +748,5 @@ export function pickTypeMapSample(
     sample.add(run);
   }
 
-  return newestFirst.filter((run) => sample.has(run)).slice(0, limit);
+  return byActivity.filter((run) => sample.has(run)).slice(0, limit);
 }

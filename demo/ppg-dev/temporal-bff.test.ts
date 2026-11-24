@@ -563,6 +563,118 @@ describe("TemporalGrpcBffClient.getTypeMap", () => {
       map.edges.find((edge) => edge.to === "activity:chargePayment"),
     ).toMatchObject({ from: "activity:validateOrder", runCount: 2 });
   });
+
+  it("fetches closed runs alongside open runs in a large namespace so newest-first servers do not starve closed paths", async () => {
+    const client = new TemporalGrpcBffClient({ address: "127.0.0.1:1" });
+    const queries: string[] = [];
+
+    vi.spyOn(client, "matchingRuns").mockImplementation((_ns, query) =>
+      Promise.resolve({
+        ageMs: 0,
+        fetchMs: 0,
+        takenAt: 0,
+        value: query === "" ? null : [],
+      }),
+    );
+
+    vi.spyOn(client, "unary").mockImplementation(((
+      method: string,
+      _req: unknown,
+      _res: unknown,
+      request: { execution?: { workflowId?: string }; query?: string },
+    ) => {
+      if (method === "ListWorkflowExecutions") {
+        queries.push(request.query ?? "");
+
+        if ((request.query ?? "").includes("ExecutionStatus IN")) {
+          return Promise.resolve({
+            executions: [
+              {
+                ...execution("sub-closed"),
+                closeTime: { seconds: 200 },
+                historyLength: 20,
+                startTime: { seconds: 10 },
+                status: 2,
+                type: { name: "subscriptionBilling" },
+              },
+            ],
+          });
+        }
+
+        return Promise.resolve({
+          executions: [
+            {
+              ...execution("sub-open"),
+              historyLength: 2,
+              startTime: { seconds: 210 },
+              status: 1,
+              type: { name: "subscriptionBilling" },
+            },
+          ],
+        });
+      }
+
+      if (method === "GetWorkflowExecutionHistory") {
+        const isClosed = request.execution?.workflowId === "sub-closed";
+
+        return Promise.resolve({
+          history: {
+            events: isClosed
+              ? [
+                  {
+                    eventId: 5,
+                    eventType: 17,
+                    timerStartedEventAttributes: {
+                      startToFireTimeout: { seconds: 60 },
+                      timerId: "1",
+                    },
+                  },
+                  {
+                    eventId: 6,
+                    eventType: 18,
+                    timerFiredEventAttributes: { startedEventId: 5 },
+                  },
+                  {
+                    activityTaskScheduledEventAttributes: {
+                      activityType: { name: "chargeSubscription" },
+                    },
+                    eventId: 8,
+                    eventType: 10,
+                  },
+                  {
+                    activityTaskCompletedEventAttributes: {
+                      scheduledEventId: 8,
+                    },
+                    eventId: 10,
+                    eventType: 12,
+                  },
+                ]
+              : [
+                  {
+                    eventId: 5,
+                    eventType: 17,
+                    timerStartedEventAttributes: {
+                      startToFireTimeout: { seconds: 60 },
+                      timerId: "1",
+                    },
+                  },
+                ],
+          },
+        });
+      }
+
+      return Promise.reject(new Error(`unexpected ${method}`));
+    }) as never);
+
+    const map = await client.getTypeMap("default", "subscriptionBilling");
+
+    client.close();
+    expect(queries.some((q) => q.includes("ExecutionStatus IN"))).toBe(true);
+    expect(map.statusCounts).toEqual({ Completed: 1, Running: 1 });
+    expect(map.nodes.map((node) => node.id)).toContain(
+      "activity:chargeSubscription",
+    );
+  });
 });
 
 describe("TemporalGrpcBffClient.getTypeInputs", () => {

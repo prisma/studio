@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, SkipBack, SkipForward } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   TemporalExecutionDetail,
@@ -9,6 +9,7 @@ import type {
 } from "@/data/temporal";
 import {
   formatTimerLength,
+  mergeRunIntoTypeMap,
   runMomentOnTypeMap,
   runSteps,
   timerProgress,
@@ -88,26 +89,42 @@ export function TemporalRunDiagram(props: {
   const steps = useMemo(() => runSteps(detail), [detail]);
   // Null is the end of the history: where the run is now, or how it closed.
   const [chosenPosition, setChosenPosition] = useState<number | null>(null);
+  const lastAppliedFocusSeq = useRef<number | null>(null);
   const position =
     chosenPosition === null || chosenPosition >= steps.length
       ? null
       : chosenPosition;
 
   useEffect(() => {
-    if (!focusSpan) {
+    if (!focusSpan || focusSpan.seq === lastAppliedFocusSeq.current) {
       return;
     }
 
     const index = steps.findIndex((span) => span.id === focusSpan.id);
 
     if (index >= 0) {
+      lastAppliedFocusSeq.current = focusSpan.seq;
       setChosenPosition(index);
     }
   }, [focusSpan, steps]);
 
+  const displayMap = useMemo(
+    () => (map ? mergeRunIntoTypeMap(map, detail) : null),
+    [detail, map],
+  );
+  const addedStepCount = useMemo(
+    () =>
+      displayMap
+        ? displayMap.nodes.filter(
+            (node) => node.runCount === 0 && node.kind !== "start",
+          ).length
+        : 0,
+    [displayMap],
+  );
   const moment = useMemo(
-    () => (map ? runMomentOnTypeMap(detail, map, position) : null),
-    [detail, map, position],
+    () =>
+      displayMap ? runMomentOnTypeMap(detail, displayMap, position) : null,
+    [detail, displayMap, position],
   );
   const openSteps = useMemo(
     () =>
@@ -202,7 +219,7 @@ export function TemporalRunDiagram(props: {
     );
   }
 
-  if (!map || !moment) {
+  if (!displayMap || !moment) {
     return (
       <div className="flex flex-col items-center gap-4 p-8">
         <Skeleton className="h-8 w-20 rounded-full" />
@@ -224,12 +241,14 @@ export function TemporalRunDiagram(props: {
     >
       <p className="border-b border-border px-4 py-2 text-xs text-muted-foreground">
         The steps of{" "}
-        <span className="font-mono text-foreground">{map.workflowType}</span>,
-        drawn from {map.runCount} recent runs. Dark steps and arrows are the
-        ones this run took. A dashed step can come next; its number says how
-        many recent runs went there.
-        {moment.unknownStepCount > 0
-          ? ` ${moment.unknownStepCount} ${moment.unknownStepCount === 1 ? "step" : "steps"} of this run are not in the diagram, because none of those runs took them.`
+        <span className="font-mono text-foreground">
+          {displayMap.workflowType}
+        </span>
+        , drawn from {displayMap.runCount} recent runs. Dark steps and arrows
+        are the ones this run took. A dashed step can come next; its number says
+        how many recent runs went there.
+        {addedStepCount > 0
+          ? ` Includes ${pluralize(addedStepCount, "step")} from this run not seen in those ${displayMap.runCount} runs.`
           : ""}{" "}
         <a
           className="font-medium text-foreground underline underline-offset-2 hover:no-underline"
@@ -352,7 +371,7 @@ export function TemporalRunDiagram(props: {
 
       <div className="min-h-0 flex-1">
         <TemporalTypeMapCanvas
-          map={map}
+          map={displayMap}
           onSelect={onSelect}
           run={{ isPast: position !== null, notes, path: moment }}
           selectedId={selectedId}
@@ -361,9 +380,9 @@ export function TemporalRunDiagram(props: {
 
       {selectedId ? (
         <RunNodeDetail
-          map={map}
+          map={displayMap}
           moment={moment}
-          node={map.nodes.find((node) => node.id === selectedId) ?? null}
+          node={displayMap.nodes.find((node) => node.id === selectedId) ?? null}
           onJumpToStep={(index) => setChosenPosition(index)}
           onOpenSpan={onOpenSpan}
           steps={steps}
@@ -395,10 +414,16 @@ function RunNodeDetail(props: {
         data-testid="temporal-run-node-detail"
       >
         <span>
-          <span className="font-medium tabular-nums text-foreground">
-            {node.runCount} of {map.runCount}
-          </span>{" "}
-          sampled runs closed as{" "}
+          {node.runCount > 0 ? (
+            <>
+              <span className="font-medium tabular-nums text-foreground">
+                {node.runCount} of {map.runCount}
+              </span>{" "}
+              sampled runs closed as{" "}
+            </>
+          ) : (
+            "This run closed as "
+          )}
           <span className="font-medium text-foreground">
             {workflowStatusLabel(node.status ?? "Completed")}
           </span>

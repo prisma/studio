@@ -100,4 +100,23 @@ describe("describeTypeMapEdge", () => {
       }).label,
     ).toBe("completed · 12 (80%)");
   });
+
+  it("labels run-only transitions added from the current run without showing zero", () => {
+    const timer = node("timer:Timer", "timer", "Timer", { runCount: 40 });
+    const charge = node("activity:charge", "activity", "charge", {
+      runCount: 0,
+    });
+    const edge = describeTypeMapEdge({
+      edgeRunCount: 0,
+      from: timer,
+      isLoop: false,
+      isTaken: true,
+      outgoingEdgeCount: 1,
+      to: charge,
+      totalRuns: 40,
+    });
+
+    expect(edge.label).toBe("after timer · this run");
+    expect(edge.tooltip).toContain("Only in this run");
+  });
 });

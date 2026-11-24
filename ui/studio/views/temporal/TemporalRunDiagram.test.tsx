@@ -17,9 +17,11 @@ vi.mock("@/ui/hooks/use-ui-state", () => ({
 const canvasProps = vi.fn<(props: CanvasProps) => void>();
 
 interface CanvasProps {
+  map: TemporalTypeMapResponse;
   run: {
     isPast: boolean;
     path: {
+      edgeIds: string[];
       laterStepIds: string[];
       next: Record<string, { isTaken: boolean }>;
       steps: Record<string, { state: string }>;
@@ -382,5 +384,97 @@ describe("TemporalRunDiagram", () => {
         .click(),
     );
     expect(onOpenSpan).toHaveBeenCalledWith("activity-27");
+  });
+
+  it("adds steps from the current run that were missing from the sampled diagram and updates as new steps arrive", () => {
+    const charge: TemporalGroupedSpan = {
+      closedEventId: 40,
+      durationMs: 250,
+      eventIds: [38],
+      id: "activity-38",
+      kind: "activity",
+      label: "chargeSubscription",
+      startedEventId: 38,
+      startOffsetMs: 30_000,
+      status: "completed",
+      timestamp: STARTED,
+    };
+
+    render({
+      spans: [
+        activity(27, 29),
+        timer({ closedEventId: 34, durationMs: 30_000, status: "fired" }),
+        charge,
+      ],
+    });
+
+    const lastCall = canvasProps.mock.lastCall![0];
+    expect(lastCall.map.nodes.map((n) => n.id)).toContain(
+      "activity:chargeSubscription",
+    );
+    expect(lastCall.run.path.steps["activity:chargeSubscription"]!.state).toBe(
+      "now",
+    );
+    expect(lastCall.run.path.edgeIds).toContain(
+      "timer:Timer 30s\nactivity:chargeSubscription",
+    );
+    expect(container.textContent).toContain(
+      "Includes 1 step from this run not seen in those 40 runs.",
+    );
+
+    const invoice: TemporalGroupedSpan = {
+      durationMs: 120,
+      eventIds: [42],
+      id: "activity-42",
+      kind: "activity",
+      label: "sendInvoice",
+      startedEventId: 42,
+      startOffsetMs: 30_300,
+      status: "running",
+      timestamp: STARTED,
+    };
+
+    render({
+      spans: [
+        activity(27, 29),
+        timer({ closedEventId: 34, durationMs: 30_000, status: "fired" }),
+        charge,
+        invoice,
+      ],
+    });
+
+    const updatedCall = canvasProps.mock.lastCall![0];
+    expect(updatedCall.map.nodes.map((n) => n.id)).toContain(
+      "activity:sendInvoice",
+    );
+    expect(
+      updatedCall.run.path.steps["activity:chargeSubscription"]!.state,
+    ).toBe("done");
+    expect(updatedCall.run.path.steps["activity:sendInvoice"]!.state).toBe(
+      "now",
+    );
+  });
+
+  it("does not snap back to an earlier focused span when new live steps arrive after returning to Now", () => {
+    const initialSpans = [activity(27, 29), timer({})];
+    const focus = { id: "activity-27", seq: 1 };
+
+    render({ focusSpan: focus, spans: initialSpans });
+    expect(stepper()).toContain("Step 1 of 2");
+
+    // User returns to Now while watching the run live.
+    press("Now");
+    expect(stepper()).toContain("Now · 2 steps so far");
+
+    // A new step arrives on the next poll with the same stale focusSpan prop.
+    render({
+      focusSpan: focus,
+      spans: [
+        activity(27, 29),
+        timer({ closedEventId: 34, durationMs: 30_000, status: "fired" }),
+        activity(36, 38),
+      ],
+    });
+    expect(stepper()).toContain("Now · 3 steps so far");
   });
 });

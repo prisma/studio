@@ -4,6 +4,7 @@ import {
   buildTypeMap,
   extractRunBuildId,
   formatTimerLength,
+  mergeRunIntoTypeMap,
   pickTypeMapSample,
   runMomentOnTypeMap,
   runPathOnTypeMap,
@@ -393,6 +394,54 @@ describe("timerProgress", () => {
   });
 });
 
+describe("mergeRunIntoTypeMap", () => {
+  it("returns the map unchanged when every step and edge of the run is already present", () => {
+    const first = run("sub-1", "Running", [
+      step("Timer: 1", 5, 6, {
+        kind: "timer",
+        status: "fired",
+        timerMs: 60_000,
+      }),
+      step("chargeSubscription", 8, 10),
+    ]);
+    const map = buildTypeMap([first]);
+
+    expect(mergeRunIntoTypeMap(map, first)).toBe(map);
+  });
+
+  it("adds steps and arrows from the current run that no sampled run took", () => {
+    const newborn = run("sub-new", "Running", [
+      step("Timer: 1", 5, undefined, { kind: "timer", timerMs: 60_000 }),
+    ]);
+    const progressed = run("sub-progressed", "Running", [
+      step("Timer: 1", 5, 6, {
+        kind: "timer",
+        status: "fired",
+        timerMs: 60_000,
+      }),
+      step("chargeSubscription", 8, 10),
+      step("sendInvoice", 12, 14),
+      step("Timer: 2", 16, undefined, { kind: "timer", timerMs: 60_000 }),
+    ]);
+    const map = buildTypeMap([newborn]);
+    const merged = mergeRunIntoTypeMap(map, progressed);
+
+    expect(merged.nodes.map((node) => [node.id, node.runCount])).toEqual([
+      ["start", 1],
+      ["timer:Timer 1m", 1],
+      ["activity:chargeSubscription", 0],
+      ["activity:sendInvoice", 0],
+    ]);
+    expect(edgesOf(merged)).toEqual([
+      "activity:chargeSubscription > activity:sendInvoice (0)",
+      "activity:sendInvoice > timer:Timer 1m (0)",
+      "start > timer:Timer 1m (1)",
+      "timer:Timer 1m > activity:chargeSubscription (0)",
+    ]);
+    expect(runPathOnTypeMap(progressed, merged).unknownStepCount).toBe(0);
+  });
+});
+
 describe("pickTypeMapSample", () => {
   it("takes the newest runs and keeps a few of a status that is rare among them", () => {
     const minute = (n: number) =>
@@ -409,6 +458,66 @@ describe("pickTypeMapSample", () => {
     expect(sample).toHaveLength(8);
     expect(sample.map((item) => item.workflowId)).toContain("order-failed");
     expect(sample[0]!.workflowId).toBe("order-19");
+  });
+
+  it("includes recent closed runs and progressed open runs alongside newborn open runs", () => {
+    const sec = (n: number) =>
+      new Date(
+        Date.parse("2026-11-23T10:00:00.000Z") + n * 1_000,
+      ).toISOString();
+    const runs = [
+      // 60 brand-new Running runs with only 2 events.
+      ...Array.from({ length: 60 }, (_, index) => ({
+        ...execution(`newborn-${index}`, "Running", sec(200 + index)),
+        historyLength: 2,
+      })),
+      // 10 mature Running runs started earlier that have progressed far.
+      ...Array.from({ length: 10 }, (_, index) => ({
+        ...execution(`mature-${index}`, "Running", sec(50 + index)),
+        historyLength: 120 + index,
+      })),
+      // 20 closed runs started earlier that closed recently.
+      ...Array.from({ length: 20 }, (_, index) => ({
+        ...execution(`closed-${index}`, "ContinuedAsNew", sec(index)),
+        closeTime: sec(180 + index),
+        historyLength: 345,
+      })),
+    ];
+    const sample = pickTypeMapSample(runs, 40);
+    const closedInSample = sample.filter(
+      (item) => item.status === "ContinuedAsNew",
+    );
+    const matureInSample = sample.filter((item) =>
+      item.workflowId.startsWith("mature-"),
+    );
+
+    expect(sample).toHaveLength(40);
+    expect(closedInSample.length).toBeGreaterThanOrEqual(20);
+    expect(matureInSample.length).toBeGreaterThanOrEqual(10);
+  });
+
+  it("includes progressed open runs even when every candidate run is Running", () => {
+    const sec = (n: number) =>
+      new Date(
+        Date.parse("2026-11-23T10:00:00.000Z") + n * 1_000,
+      ).toISOString();
+    const runs = [
+      ...Array.from({ length: 50 }, (_, index) => ({
+        ...execution(`newborn-${index}`, "Running", sec(100 + index)),
+        historyLength: 2,
+      })),
+      ...Array.from({ length: 10 }, (_, index) => ({
+        ...execution(`mature-${index}`, "Running", sec(index)),
+        historyLength: 80 + index,
+      })),
+    ];
+    const sample = pickTypeMapSample(runs, 20);
+    const matureInSample = sample.filter((item) =>
+      item.workflowId.startsWith("mature-"),
+    );
+
+    expect(sample).toHaveLength(20);
+    expect(matureInSample).toHaveLength(5);
   });
 });
 

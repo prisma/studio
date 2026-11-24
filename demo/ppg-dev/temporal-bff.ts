@@ -323,6 +323,8 @@ const SORTED_RUNS_MIN_AGE_MS = 4_000;
  */
 const TOO_MANY_RUNS_RECHECK_MS = 5 * 60_000;
 const RUNNING_QUERY = 'ExecutionStatus = "Running"';
+const CLOSED_QUERY =
+  'ExecutionStatus IN ("Completed", "Failed", "Canceled", "Terminated", "ContinuedAsNew", "TimedOut")';
 const SORTED_OFFSET_TOKEN = /^offset:(\d+)$/;
 
 const WORKFLOW_SORT_FIELDS: Record<
@@ -1051,8 +1053,9 @@ export class TemporalGrpcBffClient {
 
   /**
    * The runs of a Workflow Type that the BFF knows. In a namespace too large
-   * to copy that is one page of the type's runs, and the running ones, which
-   * that page may not hold; `complete` is then false.
+   * to copy that is one page of the type's runs, one page of its closed runs
+   * (since newest-first servers list open runs before closed ones), and the
+   * running ones; `complete` is then false.
    */
   async #runsOfType(
     namespace: string,
@@ -1066,13 +1069,20 @@ export class TemporalGrpcBffClient {
       return { complete: true, runs: ofType(all) };
     }
 
-    const [page, running] = await Promise.all([
+    const escapedType = workflowType.replaceAll('"', '\\"');
+    const [page, closedPage, running] = await Promise.all([
       this.listWorkflows({
         includeCounts: false,
         namespace,
         pageSize: TYPE_MAP_CANDIDATE_RUNS,
-        query: `WorkflowType = "${workflowType.replaceAll('"', '\\"')}"`,
+        query: `WorkflowType = "${escapedType}"`,
       }),
+      this.listWorkflows({
+        includeCounts: false,
+        namespace,
+        pageSize: TYPE_MAP_CANDIDATE_RUNS,
+        query: `WorkflowType = "${escapedType}" AND ${CLOSED_QUERY}`,
+      }).catch(() => null),
       this.matchingRuns(namespace, RUNNING_QUERY),
     ]);
 
@@ -1080,10 +1090,11 @@ export class TemporalGrpcBffClient {
       complete: false,
       runs: [
         ...new Map(
-          [...page.executions, ...ofType(running.value ?? [])].map((run) => [
-            run.runId,
-            run,
-          ]),
+          [
+            ...page.executions,
+            ...(closedPage?.executions ?? []),
+            ...ofType(running.value ?? []),
+          ].map((run) => [run.runId, run]),
         ).values(),
       ],
     };
