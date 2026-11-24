@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -137,19 +137,27 @@ describe("TemporalWorkflowChainView", () => {
     vi.clearAllMocks();
   });
 
-  function render() {
-    act(() =>
-      root.render(
-        <TemporalWorkflowChainView
-          followMode="live"
-          namespace="default"
-          onFollowModeChange={vi.fn()}
-          onOpenExecution={onOpenExecution}
-          onOpenStart={onOpenStart}
-          workflowId="sub-cus_4920"
-        />,
-      ),
+  // Holds the status filter as the URL does in the app.
+  function Harness() {
+    const [statusFilter, setStatusFilter] =
+      useState<TemporalWorkflowStatus | null>(null);
+
+    return (
+      <TemporalWorkflowChainView
+        followMode="live"
+        namespace="default"
+        onFollowModeChange={vi.fn()}
+        onOpenExecution={onOpenExecution}
+        onOpenStart={onOpenStart}
+        onStatusFilterChange={setStatusFilter}
+        statusFilter={statusFilter}
+        workflowId="sub-cus_4920"
+      />
     );
+  }
+
+  function render() {
+    act(() => root.render(<Harness />));
   }
 
   it("renders the Workflow Type > Workflow ID breadcrumb, chain summary, and numbered runs", () => {
@@ -312,9 +320,71 @@ describe("TemporalWorkflowChainView", () => {
     workflowsResult.data = { executions: [] };
     render();
 
-    expect(container.textContent).toContain(
-      "No executions found for Workflow ID",
-    );
+    expect(container.textContent).toContain("No runs found for Workflow ID");
     expect(container.textContent).toContain("Find a Workflow ID");
+    expect(container.textContent).not.toContain("Open in Executions");
+  });
+  it("says nothing about the number of runs while they load or when the request fails", () => {
+    workflowsResult.data = undefined;
+    workflowsResult.isLoading = true;
+    render();
+
+    expect(
+      container.querySelector('[data-testid="temporal-chain-range"]')
+        ?.textContent,
+    ).toBe("");
+
+    workflowsResult.isLoading = false;
+    workflowsResult.isError = true;
+    workflowsResult.error = new Error("rpc error: connection refused");
+    render();
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not load the runs of sub-cus_4920.",
+    );
+    expect(container.textContent).toContain("rpc error: connection refused");
+    expect(container.textContent).not.toContain("Runs0");
+    expect(
+      container.querySelector('[data-testid="temporal-chain-range"]')
+        ?.textContent,
+    ).toBe("");
+  });
+
+  it("moves the row cursor with the keys only, and opens the row it is on", () => {
+    render();
+
+    const focusedRunId = () =>
+      container
+        .querySelector('tr[data-focused="true"]')
+        ?.getAttribute("data-testid");
+
+    expect(focusedRunId()).toBe("temporal-chain-row-01a20d4c-0003");
+
+    act(() => {
+      container
+        .querySelector('[data-testid="temporal-chain-row-01a20d4c-0001"]')!
+        .dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    });
+    expect(focusedRunId()).toBe("temporal-chain-row-01a20d4c-0003");
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "j" }));
+    });
+    expect(focusedRunId()).toBe("temporal-chain-row-01a20d4c-0002");
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    });
+    expect(onOpenExecution).toHaveBeenCalledWith(
+      "sub-cus_4920",
+      "01a20d4c-0002",
+    );
+  });
+
+  it("names the page with the Workflow ID and labels the status as the latest run's", () => {
+    render();
+
+    expect(container.querySelector("h1")?.textContent).toBe("sub-cus_4920");
+    expect(container.textContent).toContain("Latest run: Running");
   });
 });

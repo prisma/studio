@@ -135,9 +135,10 @@ export function formatFailureMessage(failure: FailureMessageParts): string {
 }
 
 /**
- * Grid shortcuts (j/k, Space, Enter) must not fire while the user types or
- * works in an overlay, and Space and Enter must still activate a focused
- * button or link.
+ * Grid shortcuts (j/k, the arrow keys, Space, Enter) must not fire while the
+ * user types or works in an overlay. Space and Enter must still activate a
+ * focused button or link, and the arrow keys must still move the selection of
+ * a focused radio group or tab list.
  */
 export function isShortcutBlockedTarget(
   target: EventTarget | null,
@@ -155,6 +156,14 @@ export function isShortcutBlockedTarget(
     target.closest(
       'input, textarea, select, [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]',
     ) !== null
+  ) {
+    return true;
+  }
+
+  // A radio group and a tab list move their own selection with the arrow keys.
+  if (
+    key.startsWith("Arrow") &&
+    target.closest('[role="radio"], [role="radiogroup"], [role="tab"]') !== null
   ) {
     return true;
   }

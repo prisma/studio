@@ -86,7 +86,7 @@ The Related tab shows the parent, this run and its Child Workflows as a tree, an
 ## Temporal Workflow IDs
 
 A Workflow ID names one business object, such as an order or a subscription, and can have many runs: one per retry, cron tick or continue-as-new. The Workflow IDs entry in the sidebar lists the IDs among the 200 executions the server returns first, each with its latest run, its start time and the statuses of its recent runs. A search field finds any other ID by how it starts.
-Opening an ID shows every run of it, newest first, numbered from the oldest, with a filter by status. A chain of more than 100 runs is counted and filtered by the server and shown in pages.
+Opening an ID shows every run of it, newest first, numbered from the oldest, with a filter by status that stays in the URL. A chain of more than 100 runs is counted and filtered by the server and shown in pages.
 The page of an ID links to its latest run, starts a new run with the same ID, and opens the same runs in Executions.
 
 ## Temporal Timers and the Run Diagram

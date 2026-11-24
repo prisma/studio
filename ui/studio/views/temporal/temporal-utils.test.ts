@@ -104,6 +104,24 @@ describe("isShortcutBlockedTarget", () => {
     return document.querySelector("[data-target]")!;
   }
 
+  it("leaves the arrow keys to a focused radio group or tab list", () => {
+    const radio = mount(
+      '<div role="group"><button role="radio" data-target>UTC</button></div>',
+    );
+
+    expect(isShortcutBlockedTarget(radio, "ArrowDown")).toBe(true);
+    expect(isShortcutBlockedTarget(radio, "j")).toBe(false);
+    expect(
+      isShortcutBlockedTarget(
+        mount('<button role="tab" data-target>Raw Events</button>'),
+        "ArrowUp",
+      ),
+    ).toBe(true);
+    expect(
+      isShortcutBlockedTarget(mount("<div data-target></div>"), "ArrowDown"),
+    ).toBe(false);
+  });
+
   it("lets Space and Enter activate a focused button or link", () => {
     const button = mount("<button data-target>Views</button>");
 

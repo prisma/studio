@@ -10,11 +10,13 @@ const navigation = {
   setTemporalFollowParam: vi.fn(),
   setTemporalRunParam: vi.fn(),
   setTemporalSectionParam: vi.fn(),
+  setTemporalStatusParam: vi.fn(),
   setTemporalWfParam: vi.fn(),
   temporalFollowParam: null,
   temporalNsParam: null,
   temporalRunParam: null as string | null,
   temporalSectionParam: null,
+  temporalStatusParam: null as string | null,
   temporalWfParam: null as string | null,
 };
 
@@ -45,8 +47,20 @@ vi.mock("./TemporalExecutionDebugger", () => ({
 }));
 
 vi.mock("./TemporalWorkflowChainView", () => ({
-  TemporalWorkflowChainView: (props: { workflowId: string }) => (
-    <div data-testid="chain">{props.workflowId}</div>
+  chainStatusOfParam: (raw: string | null) =>
+    raw === "Failed" ? "Failed" : null,
+  TemporalWorkflowChainView: (props: {
+    onOpenExecution: (workflowId: string, runId?: string) => void;
+    statusFilter: string | null;
+    workflowId: string;
+  }) => (
+    <button
+      data-status={props.statusFilter ?? ""}
+      data-testid="chain"
+      onClick={() => props.onOpenExecution(props.workflowId, "run-9")}
+    >
+      {props.workflowId}
+    </button>
   ),
 }));
 
@@ -89,6 +103,7 @@ describe("TemporalView", () => {
     document.body.innerHTML = "";
     navigation.searchParam = "";
     navigation.temporalSectionParam = null;
+    navigation.temporalStatusParam = null;
     navigation.temporalWfParam = null;
     vi.clearAllMocks();
   });
@@ -141,6 +156,28 @@ describe("TemporalView", () => {
     expect(container.querySelector('[data-testid="chain"]')?.textContent).toBe(
       "sub-cus_4920",
     );
+  });
+
+  it("reads the status filter of a Workflow ID from the URL and drops it from the entry of an opened run", () => {
+    navigation.temporalSectionParam = "workflow" as never;
+    navigation.temporalStatusParam = "Failed";
+    navigation.temporalWfParam = "sub-cus_4920";
+
+    const container = render();
+    const chain = container.querySelector<HTMLElement>(
+      '[data-testid="chain"]',
+    )!;
+
+    expect(chain.getAttribute("data-status")).toBe("Failed");
+
+    act(() => chain.click());
+
+    expect(navigation.setTemporalStatusParam).toHaveBeenCalledWith(null, {
+      history: "push",
+    });
+    expect(navigation.setTemporalRunParam).toHaveBeenCalledWith("run-9", {
+      history: "push",
+    });
   });
 
   it("renders the Workflow IDs list for the workflow section with no Workflow ID", () => {

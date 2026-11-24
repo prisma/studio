@@ -34,6 +34,7 @@ export type StateKey =
   | "temporalRun"
   | "temporalSchedule"
   | "temporalSection"
+  | "temporalStatus"
   | "temporalType"
   | "temporalWf"
   | "sort"

@@ -22,7 +22,10 @@ import {
 import { TemporalTaskQueuesView } from "./TemporalTaskQueuesView";
 import { TemporalTypesView } from "./TemporalTypesView";
 import { TemporalWorkersView } from "./TemporalWorkersView";
-import { TemporalWorkflowChainView } from "./TemporalWorkflowChainView";
+import {
+  chainStatusOfParam,
+  TemporalWorkflowChainView,
+} from "./TemporalWorkflowChainView";
 import { TemporalWorkflowIdsView } from "./TemporalWorkflowIdsView";
 import { TemporalWorkflowsGrid } from "./TemporalWorkflowsGrid";
 
@@ -61,6 +64,8 @@ export function TemporalView() {
     setTemporalRunParam,
     temporalSectionParam,
     setTemporalSectionParam,
+    temporalStatusParam,
+    setTemporalStatusParam,
     temporalWfParam,
     setTemporalWfParam,
   } = useNavigation();
@@ -113,6 +118,7 @@ export function TemporalView() {
   // The search of the Workflow IDs list stays in the entry the Back button returns to.
   const openWorkflowId = (workflowId: string) => {
     void setSearchParam(null, { history: "push" });
+    void setTemporalStatusParam(null, { history: "push" });
     void setTemporalSectionParam("workflow", { history: "push" });
     void setTemporalWfParam(workflowId, { history: "push" });
     void setTemporalRunParam(null, { history: "push" });
@@ -147,8 +153,14 @@ export function TemporalView() {
           followMode={followMode}
           namespace={namespace}
           onFollowModeChange={(m) => void setTemporalFollowParam(m)}
-          onOpenExecution={openExecution}
+          onOpenExecution={(workflowId, runId) => {
+            // The status filter stays in the entry the Back button returns to.
+            void setTemporalStatusParam(null, { history: "push" });
+            openExecution(workflowId, runId);
+          }}
           onOpenStart={openStartSheet}
+          onStatusFilterChange={(status) => void setTemporalStatusParam(status)}
+          statusFilter={chainStatusOfParam(temporalStatusParam)}
           workflowId={temporalWfParam}
         />
       ) : section === "workflow" ? (

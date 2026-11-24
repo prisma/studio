@@ -189,7 +189,7 @@ describe("TemporalWorkflowIdsView", () => {
     expect(onOpenWorkflowId).toHaveBeenCalledWith("sub-cus_2");
 
     const latestRunButton = [...rows()[1]!.querySelectorAll("button")].find(
-      (button) => button.textContent?.includes("Latest run"),
+      (button) => button.textContent?.includes("Latest Run"),
     )!;
 
     act(() => latestRunButton.click());

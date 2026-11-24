@@ -51,6 +51,7 @@ Only keys declared in [`ui/hooks/nuqs.ts`](../ui/hooks/nuqs.ts) are allowed:
 - `temporalWf`
 - `temporalRun`
 - `temporalSchedule`
+- `temporalStatus`
 - `temporalEvent`
 - `temporalFollow`
 - `aggregations`

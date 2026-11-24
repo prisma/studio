@@ -50,6 +50,9 @@ const linkClassName =
 
 const cellClassName = "px-2 py-2";
 
+/** Marks the row the keyboard is on, as the Executions grid does. */
+const focusedCellClassName = "shadow-[inset_2px_0_0_0_var(--foreground)]";
+
 export interface TemporalWorkflowIdGroup {
   latestRun: TemporalWorkflowExecution;
   /** The runs of the ID among the executions read, newest first. */
@@ -113,6 +116,7 @@ export function TemporalWorkflowIdsView(props: TemporalWorkflowIdsViewProps) {
   const { createUrl } = useNavigation();
   const { data: capabilities } = useTemporalCapabilities();
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const tableAreaRef = useRef<HTMLDivElement | null>(null);
   const [draft, setDraft] = useState(search);
   // The last search this page sent or received, so its own change does not overwrite newer typing.
   const syncedSearch = useRef(search);
@@ -156,6 +160,8 @@ export function TemporalWorkflowIdsView(props: TemporalWorkflowIdsViewProps) {
   );
   const executionCount = data?.executions.length ?? 0;
   const hasMoreExecutions = Boolean(data?.nextPageToken);
+  // Until the first answer, the page knows nothing about the IDs and must not say "0".
+  const hasAnswer = data !== undefined && !isError;
 
   useEffect(() => {
     setFocusedIndex((prev) =>
@@ -164,6 +170,16 @@ export function TemporalWorkflowIdsView(props: TemporalWorkflowIdsViewProps) {
   }, [groups.length]);
 
   useEffect(() => {
+    // The keys move the cursor out of view on a long list, so the page follows it.
+    const moveTo = (nextIndex: number) => {
+      setFocusedIndex(nextIndex);
+      requestAnimationFrame(() => {
+        tableAreaRef.current
+          ?.querySelector('tr[data-focused="true"]')
+          ?.scrollIntoView({ block: "nearest" });
+      });
+    };
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (isShortcutBlockedTarget(event.target, event.key)) {
         return;
@@ -182,10 +198,10 @@ export function TemporalWorkflowIdsView(props: TemporalWorkflowIdsViewProps) {
 
       if (event.key === "j" || event.key === "ArrowDown") {
         event.preventDefault();
-        setFocusedIndex((i) => Math.min(groups.length - 1, i + 1));
+        moveTo(Math.min(groups.length - 1, focusedIndex + 1));
       } else if (event.key === "k" || event.key === "ArrowUp") {
         event.preventDefault();
-        setFocusedIndex((i) => Math.max(0, i - 1));
+        moveTo(Math.max(0, focusedIndex - 1));
       } else if (event.key === "Enter") {
         const current = groups[focusedIndex];
 
@@ -213,11 +229,12 @@ export function TemporalWorkflowIdsView(props: TemporalWorkflowIdsViewProps) {
     : capabilities?.nativeListOrder === "newest-first"
       ? "started most recently"
       : "that the server lists first";
-  const footerText =
-    groups.length === 0
+  const footerText = !hasAnswer
+    ? ""
+    : groups.length === 0
       ? "0 Workflow IDs"
       : hasMoreExecutions
-        ? `${pluralize(groups.length, "Workflow ID")} from the ${executionCount.toLocaleString("en-US")} executions ${scope}`
+        ? `${pluralize(groups.length, "Workflow ID")} from the ${executionCount.toLocaleString("en-US")} executions ${scope}. ${prefix ? "Type more of the ID to narrow the list." : "Search to find any other ID."}`
         : `${pluralize(groups.length, "Workflow ID")}, ${pluralize(executionCount, "execution")}`;
 
   return (
@@ -232,7 +249,13 @@ export function TemporalWorkflowIdsView(props: TemporalWorkflowIdsViewProps) {
         title="Workflow IDs"
         endContent={
           <>
-            <span className="contents @max-2xl:hidden">
+            {/* A narrow page drops the control while it reads Live, and keeps it while refresh is paused. */}
+            <span
+              className={cn(
+                "contents",
+                followMode !== "paused" && "@max-2xl:hidden",
+              )}
+            >
               <TemporalFollowControl
                 onChange={onFollowModeChange}
                 value={followMode}
@@ -247,7 +270,9 @@ export function TemporalWorkflowIdsView(props: TemporalWorkflowIdsViewProps) {
               onClick={() => void refetch()}
               disabled={isFetching}
             >
-              <RefreshCw className={cn(isFetching && "animate-spin")} />
+              <RefreshCw
+                className={cn(isFetching && "motion-safe:animate-spin")}
+              />
             </Button>
           </>
         }
@@ -275,7 +300,18 @@ export function TemporalWorkflowIdsView(props: TemporalWorkflowIdsViewProps) {
             className="h-8 pr-8 pl-8 font-mono text-xs"
             data-testid="temporal-workflow-id-search"
             onChange={(event) => setDraft(event.target.value)}
-            placeholder="Find a Workflow ID by how it starts"
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") {
+                return;
+              }
+
+              if (draft.length > 0) {
+                clearSearch();
+              } else {
+                event.currentTarget.blur();
+              }
+            }}
+            placeholder="Workflow ID starts with…"
             spellCheck={false}
             value={draft}
           />
@@ -294,7 +330,7 @@ export function TemporalWorkflowIdsView(props: TemporalWorkflowIdsViewProps) {
         </form>
       </StudioHeader>
 
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div ref={tableAreaRef} className="min-h-0 flex-1 overflow-auto">
         {isLoading ? (
           <div className="flex flex-col gap-2 p-4">
             {Array.from({ length: 8 }).map((_, index) => (
@@ -302,12 +338,19 @@ export function TemporalWorkflowIdsView(props: TemporalWorkflowIdsViewProps) {
             ))}
           </div>
         ) : isError ? (
-          <div className="flex flex-col items-center justify-center gap-3 p-10 text-sm text-muted-foreground">
-            <p className="font-medium text-destructive">
-              {error instanceof Error
-                ? error.message
-                : "Could not load the Workflow IDs"}
+          <div
+            className="flex flex-col items-center justify-center gap-3 p-10 text-center text-sm text-muted-foreground"
+            role="alert"
+          >
+            <p className="font-medium text-foreground">
+              Could not load the Workflow IDs of namespace{" "}
+              <code className="font-mono">{namespace}</code>.
             </p>
+            {error instanceof Error ? (
+              <p className="max-w-prose font-mono text-xs break-words">
+                {error.message}
+              </p>
+            ) : null}
             <Button variant="outline" size="sm" onClick={() => void refetch()}>
               Retry
             </Button>
@@ -388,7 +431,6 @@ export function TemporalWorkflowIdsView(props: TemporalWorkflowIdsViewProps) {
                     viewParam: "temporal",
                   })}
                   isFocused={focusedIndex === index}
-                  onFocus={() => setFocusedIndex(index)}
                   onOpen={() => onOpenWorkflowId(group.workflowId)}
                   onOpenLatestRun={() =>
                     onOpenExecution(group.workflowId, group.latestRun.runId)
@@ -400,21 +442,16 @@ export function TemporalWorkflowIdsView(props: TemporalWorkflowIdsViewProps) {
         )}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-muted/20 px-4 py-1.5 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-card px-4 py-1.5 text-xs text-muted-foreground">
         <span
           className="tabular-nums"
           data-testid="temporal-workflow-ids-range"
         >
           {footerText}
-          {hasMoreExecutions && !prefix
-            ? ". Search to find any other ID."
-            : hasMoreExecutions
-              ? ". Type more of the ID to narrow the list."
-              : ""}
         </span>
         <div className="flex items-center gap-3">
           <span className="hidden font-mono text-2xs @3xl:inline">
-            j/k move · Enter open · / search
+            {groups.length > 0 ? "j/k move · Enter open · " : ""}/ search
           </span>
           <TemporalTimeFormatControl className="h-6" />
         </div>
@@ -427,11 +464,10 @@ function WorkflowIdRow(props: {
   group: TemporalWorkflowIdGroup;
   href: string;
   isFocused: boolean;
-  onFocus: () => void;
   onOpen: () => void;
   onOpenLatestRun: () => void;
 }) {
-  const { group, href, isFocused, onFocus, onOpen, onOpenLatestRun } = props;
+  const { group, href, isFocused, onOpen, onOpenLatestRun } = props;
   const { latestRun, runs, workflowId } = group;
   const marks = runs.slice(0, MAX_RUN_MARKS);
   const runsSummary = `${pluralize(runs.length, "recent run")}, newest first: ${runs
@@ -444,13 +480,19 @@ function WorkflowIdRow(props: {
       data-focused={isFocused ? "true" : undefined}
       data-testid={`temporal-workflow-id-row-${workflowId}`}
       onClick={onOpen}
-      onMouseEnter={onFocus}
       className={cn(
-        "group cursor-pointer border-border/60 text-xs hover:bg-muted/30",
+        // The margin keeps a row the keys scroll to clear of the sticky header.
+        "group cursor-pointer scroll-mt-9 border-border/60 text-xs hover:bg-muted/30",
         isFocused && "bg-muted/30",
       )}
     >
-      <TableCell className={cn(cellClassName, "max-w-0 w-[36%] pl-4")}>
+      <TableCell
+        className={cn(
+          cellClassName,
+          "max-w-0 w-[36%] pl-4",
+          isFocused && focusedCellClassName,
+        )}
+      >
         <a
           href={href}
           className={cn(
@@ -489,7 +531,10 @@ function WorkflowIdRow(props: {
         <WorkflowStatusBadge status={latestRun.status} />
       </TableCell>
       <TableCell
-        className={cn(cellClassName, "whitespace-nowrap text-muted-foreground")}
+        className={cn(
+          cellClassName,
+          "whitespace-nowrap tabular-nums text-muted-foreground",
+        )}
       >
         <TemporalTime iso={latestRun.startTime} />
       </TableCell>
@@ -523,14 +568,14 @@ function WorkflowIdRow(props: {
           <Button
             variant="ghost"
             size="xs"
-            className="whitespace-nowrap text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 group-data-[focused=true]:opacity-100"
+            className="hidden whitespace-nowrap text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 @3xl:inline-flex"
             title="Open the latest run of this Workflow ID"
             onClick={(event) => {
               event.stopPropagation();
               onOpenLatestRun();
             }}
           >
-            Latest run
+            Latest Run
             <ArrowRight />
           </Button>
           <ChevronRight

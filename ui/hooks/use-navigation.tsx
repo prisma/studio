@@ -239,6 +239,8 @@ function useNavigationInternal() {
     useQueryState("temporalSchedule");
   const [temporalSectionParam, setTemporalSectionParam] =
     useQueryState("temporalSection");
+  const [temporalStatusParam, setTemporalStatusParam] =
+    useQueryState("temporalStatus");
   const [temporalTypeParam, setTemporalTypeParam] =
     useQueryState("temporalType");
   const [temporalWfParam, setTemporalWfParam] = useQueryState("temporalWf");
@@ -340,6 +342,7 @@ function useNavigationInternal() {
     temporalRunParam,
     temporalScheduleParam,
     temporalSectionParam,
+    temporalStatusParam,
     temporalTypeParam,
     temporalWfParam,
     viewParam: resolvedViewParam,
@@ -373,6 +376,8 @@ function useNavigationInternal() {
       setTemporalScheduleParam as NuqsSetNullableValue<string>,
     setTemporalSectionParam:
       setTemporalSectionParam as NuqsSetNullableValue<string>,
+    setTemporalStatusParam:
+      setTemporalStatusParam as NuqsSetNullableValue<string>,
     setTemporalTypeParam: setTemporalTypeParam as NuqsSetNullableValue<string>,
     setTemporalWfParam: setTemporalWfParam as NuqsSetNullableValue<string>,
     setViewParam: setViewParam as NuqsSetNullableValue<string>,
