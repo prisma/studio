@@ -222,12 +222,6 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
     sort.direction === "desc"
       ? undefined
       : sort;
-  // Show the Started ↓ indicator when the server natively returns newest-first.
-  const displaySort =
-    sort ??
-    (isNativeNewestFirst
-      ? ({ direction: "desc", field: "StartTime" } as const)
-      : undefined);
   const sortKey = requestSort
     ? `${requestSort.field}:${requestSort.direction}`
     : "";
@@ -338,6 +332,16 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
   )?.id;
   const countsByStatus = data?.countsByStatus ?? {};
   const totalCount = data?.totalCount ?? executions.length;
+  // Show the actual order in the header; never display a skipped sort arrow.
+  const displaySort = data?.sortSkippedReason
+    ? isNativeNewestFirst
+      ? ({ direction: "desc", field: "StartTime" } as const)
+      : undefined
+    : (sort ??
+      (isNativeNewestFirst
+        ? ({ direction: "desc", field: "StartTime" } as const)
+        : undefined));
+  const exceedsSortLimit = hasCounts && totalCount > 10_000;
   const firstRowNumber = pageTokens.length * pageSize + 1;
   const hasNextPage = Boolean(data?.nextPageToken) && !isPlaceholderData;
   const goToNextPage = () => {
@@ -746,6 +750,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
                     onResize={(width) => setColumnWidth(column.id, width)}
                     onSort={toggleSort}
                     sort={displaySort}
+                    sortDisabled={exceedsSortLimit}
                     width={widthOf(column)}
                   />
                 ))}
@@ -1243,9 +1248,10 @@ function ColumnHead(props: {
   onResize: (width: number) => void;
   onSort: (field: TemporalWorkflowSortField) => void;
   sort: TemporalWorkflowSort | undefined;
+  sortDisabled?: boolean;
   width: number;
 }) {
-  const { column, onResize, onSort, sort, width } = props;
+  const { column, onResize, onSort, sort, sortDisabled, width } = props;
   const direction =
     column.sortField && sort?.field === column.sortField
       ? sort.direction
@@ -1286,7 +1292,7 @@ function ColumnHead(props: {
         column.align === "right" && "text-right",
       )}
     >
-      {column.sortField ? (
+      {column.sortField && !sortDisabled ? (
         <button
           type="button"
           onClick={() => onSort(column.sortField!)}
@@ -1304,7 +1310,24 @@ function ColumnHead(props: {
           ) : null}
         </button>
       ) : (
-        <span className="block truncate">{column.label}</span>
+        <span
+          className={cn(
+            "inline-flex h-6 max-w-full items-center gap-1 uppercase",
+            direction && "text-foreground",
+          )}
+          title={
+            column.sortField && sortDisabled
+              ? "Filter to 10,000 or fewer workflows to change sort order"
+              : undefined
+          }
+        >
+          <span className="truncate">{column.label}</span>
+          {direction === "asc" ? (
+            <ArrowUp aria-hidden className="size-3 shrink-0" />
+          ) : direction === "desc" ? (
+            <ArrowDown aria-hidden className="size-3 shrink-0" />
+          ) : null}
+        </span>
       )}
       <span
         role="separator"
