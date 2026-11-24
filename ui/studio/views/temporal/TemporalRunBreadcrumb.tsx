@@ -133,7 +133,7 @@ export function TemporalRunBreadcrumb(props: {
               href={workflowsUrl(
                 `WorkflowType = ${quoteFilterValue(workflowType)}`,
               )}
-              title={`Workflow Type ${workflowType}: open its runs`}
+              title={`Workflow Type ${workflowType}: open its executions`}
             >
               {workflowType}
             </a>
@@ -173,7 +173,7 @@ export function TemporalRunBreadcrumb(props: {
             className={cn(linkClassName, "truncate")}
             data-testid="temporal-crumb-workflow-id"
             href={workflowsUrl(idFilter)}
-            title={`Workflow ID ${workflowId}: open every run of it`}
+            title={`Workflow ID ${workflowId}: open all executions of this ID`}
           >
             {workflowId}
           </a>
@@ -209,7 +209,7 @@ export function TemporalRunBreadcrumb(props: {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-80">
               <DropdownMenuLabel className="text-2xs font-normal text-muted-foreground">
-                Runs of {workflowId}, newest first
+                Executions of {workflowId}, newest first
               </DropdownMenuLabel>
               <div className="max-h-72 overflow-y-auto">
                 {runs.map((run) => (
@@ -247,7 +247,7 @@ export function TemporalRunBreadcrumb(props: {
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild className="text-xs">
                 <a href={workflowsUrl(idFilter)}>
-                  Open all {total.toLocaleString("en-US")} in Workflows
+                  Open all {total.toLocaleString("en-US")} in Executions
                 </a>
               </DropdownMenuItem>
             </DropdownMenuContent>

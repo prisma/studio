@@ -223,7 +223,7 @@ export function TemporalRunPreview(props: {
             }
           >
             <Play />
-            Clone &amp; Re-run
+            Clone &amp; Start
           </Button>
           <Button size="sm" onClick={onOpen}>
             Inspect

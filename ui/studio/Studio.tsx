@@ -214,7 +214,7 @@ function DatabaseUnavailableView(props: {
       : props.hasStreamsServer
         ? "This Studio session was started without a database URL. Select a stream from the sidebar to browse stream data."
         : props.hasTemporalServer
-          ? "This Studio session was started without a database URL. Select Temporal Workflows from the sidebar to inspect executions."
+          ? "This Studio session was started without a database URL. Select Temporal Executions from the sidebar to inspect workflow executions."
           : "This Studio session was started without a database URL.";
 
   return (

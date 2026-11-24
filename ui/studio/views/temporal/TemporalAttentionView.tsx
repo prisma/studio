@@ -451,7 +451,7 @@ export function TemporalAttentionView(props: {
       />
 
       <TemporalConfirmDialog
-        confirmLabel="Terminate Workflow"
+        confirmLabel="Terminate Execution"
         defaultReason="Terminated from Needs Attention"
         description={`This stops ${terminateTarget?.workflowId ?? ""} immediately, without running cleanup logic.`}
         isPending={terminateWorkflow.isPending}
@@ -747,7 +747,7 @@ function AttentionGroup(props: {
                           onClick={() => onTerminate(item)}
                         >
                           <StopCircle />
-                          Terminate Workflow
+                          Terminate Execution
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>

@@ -421,12 +421,15 @@ describe("Studio command palette", () => {
     expect(text).not.toContain("Console");
     expect(text).not.toContain("SQL");
     expect(text).not.toContain("Workers");
-    expect(text).toContain("Workflows");
+    expect(text).toContain("Workflow Types");
+    expect(text).toContain("Executions");
     expect(text).toContain("Needs Attention");
     expect(text).toContain("Schedules");
-    expect(text).toContain("Workflow Types");
     expect(text).toContain("Task Queues");
     expect(text).toContain("Cluster & Shards");
+    expect(text.indexOf("Workflow Types")).toBeLessThan(
+      text.indexOf("Executions"),
+    );
 
     act(() => {
       root.unmount();

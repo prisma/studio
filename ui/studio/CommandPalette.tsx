@@ -558,10 +558,25 @@ function StudioCommandPalette() {
       items.push(
         {
           disabled: false,
+          icon: Waypoints,
+          id: "view:temporal:types",
+          keywords: ["temporal", "workflow types", "diagram", "steps", "map"],
+          label: temporalLabel("Workflow Types"),
+          onSelect: () => {
+            window.location.hash = createUrl({
+              temporalNsParam: ns,
+              temporalSectionParam: "types",
+              viewParam: "temporal",
+            });
+          },
+          section: "views",
+        },
+        {
+          disabled: false,
           icon: Workflow,
           id: "view:temporal:workflows",
-          keywords: ["temporal", "workflows", "executions", "debugger"],
-          label: temporalLabel("Workflows"),
+          keywords: ["temporal", "executions", "workflows", "runs", "debugger"],
+          label: temporalLabel("Executions"),
           onSelect: () => {
             window.location.hash = createUrl({
               temporalNsParam: ns,
@@ -606,38 +621,21 @@ function StudioCommandPalette() {
         });
       }
 
-      items.push(
-        {
-          disabled: false,
-          icon: Waypoints,
-          id: "view:temporal:types",
-          keywords: ["temporal", "workflow types", "diagram", "steps", "map"],
-          label: temporalLabel("Workflow Types"),
-          onSelect: () => {
-            window.location.hash = createUrl({
-              temporalNsParam: ns,
-              temporalSectionParam: "types",
-              viewParam: "temporal",
-            });
-          },
-          section: "views",
+      items.push({
+        disabled: false,
+        icon: Layers,
+        id: "view:temporal:queues",
+        keywords: ["temporal", "task queues", "pollers", "workers"],
+        label: temporalLabel("Task Queues"),
+        onSelect: () => {
+          window.location.hash = createUrl({
+            temporalNsParam: ns,
+            temporalSectionParam: "queues",
+            viewParam: "temporal",
+          });
         },
-        {
-          disabled: false,
-          icon: Layers,
-          id: "view:temporal:queues",
-          keywords: ["temporal", "task queues", "pollers", "workers"],
-          label: temporalLabel("Task Queues"),
-          onSelect: () => {
-            window.location.hash = createUrl({
-              temporalNsParam: ns,
-              temporalSectionParam: "queues",
-              viewParam: "temporal",
-            });
-          },
-          section: "views",
-        },
-      );
+        section: "views",
+      });
 
       // The sidebar shows these two screens only on a server that has them.
       if (temporalCapabilities?.supportsDescribeTaskQueue) {
@@ -965,7 +963,7 @@ function StudioCommandPalette() {
           <DialogTitle className="sr-only">Command palette</DialogTitle>
           <DialogDescription className="sr-only">
             {isTemporalOnly
-              ? "Search commands, workflows, schedules, and views."
+              ? "Search commands, executions, schedules, and views."
               : "Search commands, tables, and Studio views."}
           </DialogDescription>
           <Command className="font-sans" shouldFilter={false}>
@@ -988,7 +986,7 @@ function StudioCommandPalette() {
               })}
               {renderSection({
                 items: workflowItems,
-                label: "Workflows",
+                label: "Executions",
               })}
               {renderSection({
                 items: scheduleItems,

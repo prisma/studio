@@ -138,7 +138,7 @@ export function TemporalRelatedPanel(props: {
   return (
     <div className="flex flex-col gap-5 text-xs" data-testid="temporal-related">
       <section className="flex flex-col gap-1.5">
-        <TemporalSectionLabel>Parent and Child Workflows</TemporalSectionLabel>
+        <TemporalSectionLabel>Parent and Child Executions</TemporalSectionLabel>
         {!root && !parent && children.length === 0 ? (
           <p className="text-muted-foreground">
             No Workflow started this run, and it started no Child Workflow.
@@ -278,7 +278,7 @@ export function TemporalRelatedPanel(props: {
               className="text-2xs font-medium text-foreground underline underline-offset-2 hover:no-underline"
               href={workflowIdUrl}
             >
-              Open all {total.toLocaleString("en-US")} in Workflows
+              Open all {total.toLocaleString("en-US")} in Executions
             </a>
           </>
         )}

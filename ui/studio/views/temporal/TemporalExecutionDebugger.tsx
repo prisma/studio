@@ -100,7 +100,6 @@ interface TemporalExecutionDebuggerProps {
    */
   imported?: TemporalExecutionDetail;
   namespace: string;
-  onBack: () => void;
   onClone: (preset: TemporalStartPreset) => void;
   onFollowModeChange: (mode: TemporalFollowMode) => void;
   onOpenExecution: (workflowId: string, runId?: string) => void;
@@ -117,7 +116,6 @@ export function TemporalExecutionDebugger(
     workflowId,
     runId,
     followMode,
-    onBack,
     onClone,
     onFollowModeChange,
     onOpenExecution,
@@ -401,7 +399,7 @@ export function TemporalExecutionDebugger(
               data-testid="temporal-clone-btn"
             >
               <Play />
-              <span className="@max-4xl:sr-only">Clone &amp; Re-run</span>
+              <span className="@max-4xl:sr-only">Clone &amp; Start</span>
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -409,7 +407,7 @@ export function TemporalExecutionDebugger(
                   variant="outline"
                   size="sm"
                   className="w-8 px-0"
-                  aria-label="Workflow actions"
+                  aria-label="Execution actions"
                   data-testid="temporal-debugger-actions"
                 >
                   <MoreHorizontal />
@@ -471,7 +469,7 @@ export function TemporalExecutionDebugger(
                     }
                   >
                     {isPaused ? <Play /> : <Pause />}
-                    {isPaused ? "Resume Workflow" : "Pause Workflow"}
+                    {isPaused ? "Resume Execution" : "Pause Execution"}
                   </DropdownMenuItem>
                 ) : null}
                 {canAct && execution ? (
@@ -518,7 +516,7 @@ export function TemporalExecutionDebugger(
                       onClick={() => setTerminateConfirmOpen(true)}
                     >
                       <StopCircle />
-                      Terminate Workflow
+                      Terminate Execution
                     </DropdownMenuItem>
                   </>
                 ) : null}
@@ -528,23 +526,9 @@ export function TemporalExecutionDebugger(
         }
       >
         <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="shrink-0 px-2 text-muted-foreground"
-            onClick={onBack}
-            data-testid="temporal-back-to-grid"
-          >
-            <ArrowLeft />
-            <span className="@max-4xl:sr-only">Workflows</span>
-          </Button>
           {execution ? (
             <>
               {/* A narrow page has no room for the path in the header; the row under it shows it. */}
-              <ChevronRight
-                aria-hidden
-                className="size-3 shrink-0 text-muted-foreground/70 @max-4xl:hidden"
-              />
               <TemporalRunBreadcrumb
                 className="@max-4xl:hidden"
                 execution={execution}
@@ -1299,7 +1283,7 @@ export function TemporalExecutionDebugger(
       )}
 
       <TemporalConfirmDialog
-        confirmLabel="Terminate Workflow"
+        confirmLabel="Terminate Execution"
         defaultReason="Terminated via Prisma Studio"
         description={`This stops ${workflowId} immediately, without running cleanup logic.`}
         isPending={terminateWorkflow.isPending}
@@ -1320,7 +1304,7 @@ export function TemporalExecutionDebugger(
       />
 
       <TemporalConfirmDialog
-        confirmLabel="Reset Workflow"
+        confirmLabel="Reset Execution"
         defaultReason="Reset via Prisma Studio"
         description={`This starts a new run of ${workflowId} from the history up to event ${resetEventId ?? ""}, and terminates this run if it is still open. Activities after that event run again.`}
         isPending={resetWorkflow.isPending}

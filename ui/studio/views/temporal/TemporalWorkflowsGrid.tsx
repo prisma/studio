@@ -477,7 +477,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
       data-testid="temporal-workflows-grid"
     >
       <StudioHeader
-        title="Workflows"
+        title="Executions"
         endContent={
           <>
             {/* A narrow page keeps the search field usable and drops the rare controls. */}
@@ -535,7 +535,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
               data-testid="temporal-start-workflow-btn"
             >
               <Plus />
-              <span className="@max-3xl:sr-only">Start Workflow</span>
+              <span className="@max-3xl:sr-only">Start Execution</span>
             </Button>
           </>
         }
@@ -682,10 +682,10 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
         ) : executions.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 p-10 text-sm text-muted-foreground">
             <p>
-              No workflows found in namespace{" "}
+              No executions found in namespace{" "}
               <code className="font-mono text-foreground">{namespace}</code>
               {isPlainTextSearch
-                ? ` with a workflow ID, type or run ID starting with ${query.trim()}`
+                ? ` with a Workflow ID, Workflow Type or Run ID starting with ${query.trim()}`
                 : query
                   ? ` matching ${query}`
                   : ""}
@@ -703,7 +703,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
               ) : null}
               <Button size="sm" onClick={() => onOpenStart(null)}>
                 <Plus />
-                Start Workflow
+                Start Execution
               </Button>
             </div>
           </div>

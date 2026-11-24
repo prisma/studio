@@ -95,7 +95,6 @@ function render(workflowId: string) {
       <TemporalExecutionDebugger
         followMode="paused"
         namespace="default"
-        onBack={vi.fn()}
         onClone={vi.fn()}
         onFollowModeChange={vi.fn()}
         onOpenExecution={vi.fn()}
@@ -119,6 +118,9 @@ describe("TemporalExecutionDebugger", () => {
     const { container, unmount } = render("order-2");
 
     expect(container.textContent).toContain("typeOf-order-2");
+    expect(
+      container.querySelector('[data-testid="temporal-back-to-grid"]'),
+    ).toBeNull();
     unmount();
   });
 

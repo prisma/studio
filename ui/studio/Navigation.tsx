@@ -604,7 +604,7 @@ export function Navigation({ className }: NavigationProps) {
     services.push({
       attention:
         failedWorkflowCount > 0
-          ? `${failedWorkflowCount} failed ${failedWorkflowCount === 1 ? "workflow" : "workflows"}`
+          ? `${failedWorkflowCount} failed ${failedWorkflowCount === 1 ? "execution" : "executions"}`
           : null,
       href:
         serviceLocations.temporal ??
@@ -1594,6 +1594,24 @@ const TemporalSection = (props: {
         <Navigation.Item
           asChild
           className={itemClassName}
+          isActive={isTemporalOpen && activeSection === "types"}
+        >
+          <a
+            className="w-full"
+            data-testid="navigation-temporal-types"
+            href={createUrl({
+              ...temporalUrlBase,
+              temporalSectionParam: "types",
+            })}
+          >
+            <Waypoints aria-hidden />
+            Workflow Types
+          </a>
+        </Navigation.Item>
+
+        <Navigation.Item
+          asChild
+          className={itemClassName}
           isActive={
             isTemporalOpen &&
             activeSection === "workflows" &&
@@ -1611,7 +1629,7 @@ const TemporalSection = (props: {
           >
             <span className="flex min-w-0 items-center gap-2">
               <Workflow aria-hidden />
-              <span className="truncate">Workflows</span>
+              <span className="truncate">Executions</span>
             </span>
             <span className="flex shrink-0 items-center gap-0.5 tabular-nums">
               {runningCount > 0 ? (
@@ -1654,7 +1672,7 @@ const TemporalSection = (props: {
             {attentionCount > 0 ? (
               <span
                 className="shrink-0 rounded-full bg-amber-500/20 px-1.5 py-0.5 font-mono text-2xs font-medium tabular-nums text-foreground"
-                title={`${attentionCount} running workflows need attention`}
+                title={`${attentionCount} running executions need attention`}
               >
                 {attentionCount}
               </span>
@@ -1681,24 +1699,6 @@ const TemporalSection = (props: {
             </a>
           </Navigation.Item>
         ) : null}
-
-        <Navigation.Item
-          asChild
-          className={itemClassName}
-          isActive={isTemporalOpen && activeSection === "types"}
-        >
-          <a
-            className="w-full"
-            data-testid="navigation-temporal-types"
-            href={createUrl({
-              ...temporalUrlBase,
-              temporalSectionParam: "types",
-            })}
-          >
-            <Waypoints aria-hidden />
-            Workflow Types
-          </a>
-        </Navigation.Item>
 
         <Navigation.Item
           asChild

@@ -1174,9 +1174,9 @@ describe("Navigation", () => {
     const database = renderNavigation();
     const temporalLink = getServiceLinks(database.container)[2];
 
-    expect(temporalLink?.textContent).toBe("Temporal2 failed workflows");
+    expect(temporalLink?.textContent).toBe("Temporal2 failed executions");
     expect(temporalLink?.getAttribute("title")).toBe(
-      "Temporal: 2 failed workflows",
+      "Temporal: 2 failed executions",
     );
     database.unmount();
 
@@ -1227,6 +1227,11 @@ describe("Navigation", () => {
         .querySelector('[data-testid="navigation-temporal-workflows"]')
         ?.getAttribute("data-active"),
     ).toBe("true");
+    const temporalNavLabels = Array.from(
+      container.querySelectorAll('[data-testid="navigation-temporal-block"] a'),
+    ).map((link) => link.textContent ?? "");
+    expect(temporalNavLabels[0]).toBe("Workflow Types");
+    expect(temporalNavLabels[1]).toContain("Executions");
 
     unmount();
   });

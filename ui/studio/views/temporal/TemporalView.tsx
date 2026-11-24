@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type {
   TemporalExecutionDetail,
@@ -98,8 +98,8 @@ export function TemporalView() {
     setStartSheetOpen(true);
   };
 
-  // Opening and closing a run each add a browser history entry, so the
-  // browser's Back button returns to the screen the user came from.
+  // Opening a run adds a browser history entry, so the browser's Back button
+  // returns to whichever screen the user came from.
   const openExecution = (workflowId: string, runId?: string) => {
     setImportedDetail(null);
     void setTemporalSectionParam("workflows", { history: "push" });
@@ -107,10 +107,15 @@ export function TemporalView() {
     void setTemporalRunParam(runId ?? null, { history: "push" });
   };
 
-  const closeExecution = () => {
-    void setTemporalWfParam(null, { history: "push" });
-    void setTemporalRunParam(null, { history: "push" });
-  };
+  useEffect(() => {
+    setImportedDetail(null);
+  }, [
+    searchParam,
+    temporalNsParam,
+    temporalRunParam,
+    temporalSectionParam,
+    temporalWfParam,
+  ]);
 
   return (
     <>
@@ -119,7 +124,6 @@ export function TemporalView() {
           followMode="paused"
           imported={importedDetail}
           namespace={namespace}
-          onBack={() => setImportedDetail(null)}
           onClone={openStartSheet}
           onFollowModeChange={() => undefined}
           onOpenExecution={openExecution}
@@ -130,7 +134,6 @@ export function TemporalView() {
         <TemporalExecutionDebugger
           followMode={followMode}
           namespace={namespace}
-          onBack={closeExecution}
           onClone={openStartSheet}
           onFollowModeChange={(m) => void setTemporalFollowParam(m)}
           onOpenExecution={openExecution}

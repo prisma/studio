@@ -39,8 +39,8 @@ vi.mock("./TemporalWorkflowsGrid", () => ({
 }));
 
 vi.mock("./TemporalExecutionDebugger", () => ({
-  TemporalExecutionDebugger: (props: { onBack: () => void }) => (
-    <button data-testid="back" onClick={props.onBack} />
+  TemporalExecutionDebugger: (props: { workflowId: string }) => (
+    <div data-testid="debugger">{props.workflowId}</div>
   ),
 }));
 
@@ -100,20 +100,13 @@ describe("TemporalView", () => {
     );
   });
 
-  it("adds a browser history entry when the run closes", () => {
+  it("renders the execution debugger when a Workflow ID is in the URL", () => {
     navigation.temporalWfParam = "order-7";
 
     const container = render();
 
-    act(() =>
-      container.querySelector<HTMLElement>('[data-testid="back"]')!.click(),
-    );
-
-    expect(navigation.setTemporalWfParam).toHaveBeenCalledWith(null, {
-      history: "push",
-    });
-    expect(navigation.setTemporalRunParam).toHaveBeenCalledWith(null, {
-      history: "push",
-    });
+    expect(
+      container.querySelector('[data-testid="debugger"]')?.textContent,
+    ).toBe("order-7");
   });
 });
