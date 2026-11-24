@@ -287,6 +287,72 @@ describe("Temporal history grouping & payload decoding", () => {
     ]);
   });
 
+  it("says which timeout closed a run that timed out", () => {
+    const timedOut = (started: Record<string, unknown>, closedAt: string) =>
+      buildExecutionDetail({
+        execution: {
+          closeTime: closedAt,
+          durationMs: Date.parse(closedAt) - Date.parse("2026-11-22T10:00:00Z"),
+          historyLength: 2,
+          historySizeBytes: 256,
+          memo: {},
+          namespace: "default",
+          runId: "run-1",
+          searchAttributes: {},
+          startTime: "2026-11-22T10:00:00.000Z",
+          status: "TimedOut",
+          taskQueue: "shipping",
+          workflowId: "shipment-1",
+          workflowType: "shipment",
+        },
+        rawEvents: [
+          {
+            eventId: 1,
+            eventTime: "2026-11-22T10:00:00.000Z",
+            eventType: "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+            workflowExecutionStartedEventAttributes: started,
+          },
+          {
+            eventId: 2,
+            eventTime: closedAt,
+            eventType: "EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT",
+            workflowExecutionTimedOutEventAttributes: {
+              retryState: "RETRY_STATE_RETRY_POLICY_NOT_SET",
+            },
+          },
+        ],
+      }).failure;
+
+    expect(
+      timedOut(
+        { workflowExecutionTimeout: {}, workflowRunTimeout: { seconds: 180 } },
+        "2026-11-22T10:03:00.002Z",
+      ),
+    ).toEqual({
+      message: "The run did not close within 3m.",
+      retryState: "RETRY_POLICY_NOT_SET",
+      type: "Workflow Run Timeout",
+    });
+    // The Execution Timeout counts from the first run of the chain, so it can pass early in a later run.
+    expect(
+      timedOut(
+        {
+          workflowExecutionTimeout: { seconds: 3600 },
+          workflowRunTimeout: { seconds: 3600 },
+        },
+        "2026-11-22T10:10:00.000Z",
+      ),
+    ).toMatchObject({
+      message:
+        "The Workflow did not close within 1h, counted from its first run.",
+      type: "Workflow Execution Timeout",
+    });
+    expect(timedOut({}, "2026-11-22T10:10:00.000Z")).toMatchObject({
+      message: "The run did not close in time.",
+      type: "Workflow Timeout",
+    });
+  });
+
   it("reads the run chain, the summary and the details from the history", () => {
     const execution: TemporalWorkflowExecution = {
       durationMs: 5_000,

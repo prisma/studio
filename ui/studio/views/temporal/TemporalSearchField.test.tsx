@@ -19,6 +19,8 @@ const facets: TemporalFacets = {
 
 function Harness(props: { onSubmit: (text: string) => void }) {
   const [draft, setDraft] = useState("");
+  // The search that is applied: what the last Enter sent.
+  const [applied, setApplied] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   return (
@@ -26,9 +28,13 @@ function Harness(props: { onSubmit: (text: string) => void }) {
       draft={draft}
       facets={facets}
       inputRef={inputRef}
+      onCancel={() => setDraft(applied)}
       onClear={() => setDraft("")}
       onDraftChange={setDraft}
-      onSubmit={props.onSubmit}
+      onSubmit={(text) => {
+        setApplied(text);
+        props.onSubmit(text);
+      }}
     />
   );
 }
@@ -119,5 +125,33 @@ describe("TemporalSearchField", () => {
     press("Enter");
     expect(input.value).toBe('TaskQueue = ""');
     expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the field on Escape with the applied search in it, after Escape closed the list", () => {
+    const { input, options, press, type } = render();
+
+    type("order");
+    press("Enter");
+    type("order ta");
+
+    // The list of a real page closes on the first Escape; this text offers none.
+    expect(options()).toEqual([]);
+
+    press("Escape");
+
+    expect(document.activeElement).not.toBe(input);
+    expect(input.value).toBe("order");
+  });
+
+  it("keeps the focus on the first Escape, which only closes the list", () => {
+    const { input, options, press, type } = render();
+
+    type("ta");
+    expect(options()).toEqual(["TaskQueue"]);
+
+    press("Escape");
+
+    expect(document.activeElement).toBe(input);
+    expect(input.value).toBe("ta");
   });
 });

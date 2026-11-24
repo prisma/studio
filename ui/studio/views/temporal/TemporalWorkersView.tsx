@@ -19,12 +19,13 @@ import { StudioHeader } from "../../StudioHeader";
 import {
   TemporalFollowControl,
   temporalIconScale,
+  TemporalLoadError,
   TemporalNamespaceBadge,
-  TemporalSectionLabel,
+  TemporalRefreshError,
   temporalTableHeadClass,
   TemporalTime,
+  useNow,
 } from "./TemporalPrimitives";
-import { quoteFilterValue } from "./TemporalRunBreadcrumb";
 
 /**
  * Workers, Worker Deployments and Nexus Endpoints. A list the server does not
@@ -37,15 +38,19 @@ export function TemporalWorkersView(props: {
 }) {
   const { followMode, namespace, onFollowModeChange } = props;
   const { createUrl } = useNavigation();
-  const { data, error, isError, isFetching, isLoading, refetch } =
-    useTemporalWorkers({ followMode, namespace });
-  const queueUrl = (queueName: string) =>
-    createUrl({
-      searchParam: `TaskQueue = ${quoteFilterValue(queueName)}`,
-      temporalNsParam: namespace,
-      temporalSectionParam: "workflows",
-      viewParam: "temporal",
-    });
+  const query = useTemporalWorkers({ followMode, namespace });
+  const { dataUpdatedAt, error, isError, isFetching, refetch } = query;
+  // The answer for another namespace is not shown under this namespace's name.
+  const data = query.isPlaceholderData ? undefined : query.data;
+  // Renders again every few seconds, so relative times keep counting while refresh is paused.
+  useNow(5_000, true);
+  // A queue that only runs Activities has no run of its own, so the link goes to the queue, not to its runs.
+  const taskQueuesUrl = createUrl({
+    ...(followMode === "paused" ? { temporalFollowParam: "paused" } : {}),
+    temporalNsParam: namespace,
+    temporalSectionParam: "queues",
+    viewParam: "temporal",
+  });
 
   return (
     <div
@@ -67,7 +72,8 @@ export function TemporalWorkersView(props: {
               variant="outline"
               size="sm"
               className="w-8 px-0"
-              aria-label="Refresh"
+              aria-label="Refresh Workers"
+              title="Refresh Workers"
               onClick={() => void refetch()}
             >
               <RefreshCw
@@ -80,23 +86,39 @@ export function TemporalWorkersView(props: {
         <TemporalNamespaceBadge namespace={namespace} />
       </StudioHeader>
 
+      {data && dataUpdatedAt ? (
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground">
+          <span>A Worker is listed by the identity it polls with</span>
+          <span data-testid="temporal-workers-as-of">
+            As of <TemporalTime iso={new Date(dataUpdatedAt).toISOString()} />
+            {followMode === "paused" ? " · Paused" : ""}
+          </span>
+        </div>
+      ) : null}
+
+      {data && isError ? (
+        <TemporalRefreshError error={error} onRetry={() => void refetch()} />
+      ) : null}
+
       <div className="min-h-0 flex-1 overflow-auto">
-        {isLoading ? (
-          <div className="flex flex-col gap-2 p-4">
-            <Skeleton className="h-9 w-full" />
-            <Skeleton className="h-9 w-full" />
-          </div>
-        ) : isError || !data ? (
-          <div className="flex flex-col items-center justify-center gap-3 p-10 text-sm text-muted-foreground">
-            <p className="font-medium text-destructive">
-              {error instanceof Error
-                ? error.message
-                : "Could not load workers"}
-            </p>
-            <Button variant="outline" size="sm" onClick={() => void refetch()}>
-              Retry
-            </Button>
-          </div>
+        {!data ? (
+          isError ? (
+            <TemporalLoadError
+              error={error}
+              onRetry={() => void refetch()}
+              title={
+                <>
+                  Could not load the Workers of namespace{" "}
+                  <code className="font-mono">{namespace}</code>.
+                </>
+              }
+            />
+          ) : (
+            <div className="flex flex-col gap-2 p-4">
+              <Skeleton className="h-9 w-full" />
+              <Skeleton className="h-9 w-full" />
+            </div>
+          )
         ) : (
           <div className="flex flex-col">
             <WorkersSection
@@ -111,8 +133,9 @@ export function TemporalWorkersView(props: {
                     {worker.taskQueues.map((queue) => (
                       <a
                         key={`${queue.name}:${queue.type}`}
-                        href={queueUrl(queue.name)}
-                        className="rounded-md border border-border bg-card px-1.5 py-0.5 font-mono text-2xs text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        href={taskQueuesUrl}
+                        title={`Open Task Queues, where ${queue.name} is listed`}
+                        className="rounded-md border border-border bg-card px-1.5 py-0.5 font-mono text-2xs whitespace-nowrap text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         {queue.name} · {queue.type}
                       </a>
@@ -190,9 +213,9 @@ function WorkersSection(props: {
       data-testid={`temporal-workers-${title.toLowerCase().replaceAll(" ", "-")}`}
     >
       <div className="flex items-center gap-2 bg-muted/20 px-4 py-2.5">
-        <TemporalSectionLabel className="text-foreground">
+        <h2 className="font-mono text-2xs tracking-loose text-foreground uppercase">
           {title}
-        </TemporalSectionLabel>
+        </h2>
         {rows ? (
           <span className="font-mono text-2xs tabular-nums text-muted-foreground">
             {rows.length}
@@ -221,7 +244,8 @@ function WorkersSection(props: {
             {rows.map((row) => (
               <TableRow
                 key={row.key}
-                className="border-border/60 hover:bg-muted/30"
+                // No hover highlight: a row opens nothing.
+                className="border-border/60 hover:bg-transparent"
               >
                 {row.cells.map((cell, index) => (
                   <TableCell

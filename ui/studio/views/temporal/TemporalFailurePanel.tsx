@@ -126,7 +126,7 @@ export function TemporalFailurePanel(props: {
         </p>
       </div>
 
-      <dl className="flex flex-col gap-1.5 border-t border-destructive/20 p-3">
+      <dl className="flex flex-col gap-1.5 border-t border-destructive/20 p-3 empty:hidden">
         {origin ? (
           <Fact label="Thrown in">
             <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
@@ -135,8 +135,9 @@ export function TemporalFailurePanel(props: {
                   {origin.functionName}
                 </span>
               ) : null}
+              {/* The line number is at the end, so the path wraps instead of being cut. */}
               <span
-                className="truncate font-mono text-muted-foreground"
+                className="min-w-0 font-mono break-all text-muted-foreground"
                 title={frameLocation(origin, false)}
               >
                 {frameLocation(origin, true)}

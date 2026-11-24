@@ -12,7 +12,7 @@ import {
   Trash2,
   Zap,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type {
@@ -82,10 +82,13 @@ import {
   TemporalField,
   TemporalFollowControl,
   temporalIconScale,
+  TemporalLoadError,
   TemporalNamespaceBadge,
+  TemporalRefreshError,
   TemporalSectionLabel,
   TemporalStatusBadge,
   temporalTableHeadClass,
+  TemporalTime,
 } from "./TemporalPrimitives";
 
 const OVERLAP_POLICIES: TemporalScheduleOverlapPolicy[] = [
@@ -128,8 +131,35 @@ function ScheduleStateBadge(props: { paused: boolean }) {
   );
 }
 
-function toastError(err: unknown) {
-  toast.error(err instanceof Error ? err.message : String(err));
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** The first time a schedule is due that has not passed. The server's list can be hours old. */
+function nextRunTime(times: string[]): string | undefined {
+  const now = Date.now();
+
+  return times.find((iso) => Date.parse(iso) > now);
+}
+
+/** The cadence with the time zone of a cron expression, which decides when it fires. */
+function cadenceText(schedule: TemporalScheduleSummary): string {
+  return schedule.cronExpression
+    ? `${schedule.cadenceSummary} (${schedule.timezone ?? "UTC"})`
+    : schedule.cadenceSummary;
+}
+
+function triggerDescription(schedule: TemporalScheduleSummary): string {
+  return `This starts one run of ${schedule.workflowType} on Task Queue ${schedule.taskQueue} now, outside the times of schedule ${schedule.scheduleId}.`;
+}
+
+/** A dialog opened from code has no trigger, so the control that opened it must get focus back. */
+function focusSoon(element: HTMLElement | null) {
+  setTimeout(() => {
+    if (element?.isConnected) {
+      element.focus();
+    }
+  }, 0);
 }
 
 interface TemporalSchedulesViewProps {
@@ -196,6 +226,32 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
   const [bulkPauseNote, setBulkPauseNote] = useState("Maintenance window");
   const [bulkTriggerConfirmOpen, setBulkTriggerConfirmOpen] = useState(false);
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
+  // `isOpen` closes the dialog and keeps its text until it is gone.
+  const [triggering, setTriggering] = useState<{
+    isOpen: boolean;
+    schedule: TemporalScheduleSummary;
+  } | null>(null);
+  const dialogOpener = useRef<HTMLElement | null>(null);
+  // A narrow page has the filter and New Schedule in a row of their own, so there are two of each.
+  const headerFilter = useRef<HTMLInputElement>(null);
+  const rowFilter = useRef<HTMLInputElement>(null);
+  const openNewSchedule = (opener: HTMLElement) => {
+    dialogOpener.current = opener;
+    setCreateOpen(true);
+  };
+  const pausingId =
+    patchSchedule.isPending &&
+    patchSchedule.variables?.input.action !== "trigger"
+      ? patchSchedule.variables?.scheduleId
+      : undefined;
+  // The queue that the schedules of a Workflow Type use, as a suggestion for a new schedule of that type.
+  const queueByWorkflowType = useMemo(
+    () =>
+      Object.fromEntries(
+        (data?.schedules ?? []).map((s) => [s.workflowType, s.taskQueue]),
+      ),
+    [data?.schedules],
+  );
 
   const filtered = useMemo(() => {
     const q = filterText.trim().toLowerCase();
@@ -251,7 +307,7 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
       );
       setSelectedIds(new Set());
     } catch (err) {
-      toastError(err);
+      toast.error(`Bulk ${action} failed: ${errorText(err)}`);
     }
   };
 
@@ -261,7 +317,7 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
   return (
     <div
       className={cn(
-        "flex h-full min-h-0 flex-col bg-background",
+        "@container flex h-full min-h-0 flex-col bg-background",
         temporalIconScale,
       )}
       data-testid="temporal-schedules-view"
@@ -270,15 +326,24 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
         title="Schedules"
         endContent={
           <>
-            <TemporalFollowControl
-              value={followMode}
-              onChange={onFollowModeChange}
-            />
+            {/* A narrow page drops the control while it reads Live, and keeps it while refresh is paused. */}
+            <span
+              className={cn(
+                "contents",
+                followMode !== "paused" && "@max-2xl:hidden",
+              )}
+            >
+              <TemporalFollowControl
+                value={followMode}
+                onChange={onFollowModeChange}
+              />
+            </span>
             <Button
               variant="outline"
               size="sm"
               className="w-8 px-0"
-              aria-label="Refresh schedules"
+              aria-label="Refresh Schedules"
+              title="Refresh Schedules"
               onClick={() => void refetch()}
             >
               <RefreshCw
@@ -287,33 +352,58 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
             </Button>
             <Button
               size="sm"
-              onClick={() => setCreateOpen(true)}
+              className="@max-lg:hidden @max-2xl:w-8 @max-2xl:px-0"
+              title="New Schedule"
+              onClick={(event) => openNewSchedule(event.currentTarget)}
               data-testid="temporal-create-schedule-btn"
             >
               <Plus />
-              New Schedule
+              <span className="@max-2xl:sr-only">New Schedule</span>
             </Button>
           </>
         }
       >
-        <TemporalNamespaceBadge namespace={namespace} />
-        <div className="relative flex min-w-0 max-w-md flex-1 items-center">
-          <Search className="pointer-events-none absolute left-2.5 size-3.5 text-muted-foreground" />
-          <Input
-            aria-label="Filter schedules"
-            value={filterText}
-            onChange={(e) => setFilterText(e.target.value)}
-            placeholder="Filter schedules"
-            className="h-8 pl-8 text-xs"
-          />
-        </div>
+        <span className="contents @max-3xl:hidden">
+          <TemporalNamespaceBadge namespace={namespace} />
+        </span>
+        <ScheduleFilter
+          className="max-w-md @max-lg:hidden"
+          inputRef={headerFilter}
+          onChange={setFilterText}
+          value={filterText}
+        />
       </StudioHeader>
 
-      <div className="flex items-center gap-4 border-b border-border px-4 py-2 text-xs text-muted-foreground">
-        <SummaryCount count={schedules.length} label="total" />
-        <SummaryCount count={activeCount} label="active" />
-        <SummaryCount count={pausedCount} label="paused" />
+      <div className="flex items-center gap-2 border-b border-border px-4 py-2 @lg:hidden">
+        <ScheduleFilter
+          inputRef={rowFilter}
+          onChange={setFilterText}
+          value={filterText}
+        />
+        <Button
+          size="sm"
+          onClick={(event) => openNewSchedule(event.currentTarget)}
+        >
+          <Plus />
+          New Schedule
+        </Button>
       </div>
+
+      {data ? (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground">
+          <SummaryCount count={schedules.length} label="total" />
+          <SummaryCount count={activeCount} label="active" />
+          <SummaryCount count={pausedCount} label="paused" />
+          {filtered.length < schedules.length ? (
+            <span className="ml-auto">
+              The filter shows {filtered.length} of {schedules.length}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      {data && isError ? (
+        <TemporalRefreshError error={error} onRetry={() => void refetch()} />
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-auto">
         {isLoading ? (
@@ -322,29 +412,55 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
               <Skeleton key={i} className="h-10 w-full" />
             ))}
           </div>
-        ) : isError ? (
-          <div className="flex flex-col items-center justify-center gap-3 p-10 text-sm text-muted-foreground">
-            <p className="font-medium text-destructive">
-              {error instanceof Error
-                ? error.message
-                : "Could not load schedules"}
-            </p>
-            <Button variant="outline" size="sm" onClick={() => void refetch()}>
-              Retry
-            </Button>
-          </div>
+        ) : !data ? (
+          <TemporalLoadError
+            error={error}
+            onRetry={() => void refetch()}
+            title={
+              <>
+                Could not load the schedules of namespace{" "}
+                <code className="font-mono">{namespace}</code>.
+              </>
+            }
+          />
         ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 p-10 text-sm text-muted-foreground">
+          <div className="flex flex-col items-center justify-center gap-3 p-10 text-center text-sm text-muted-foreground">
             <CalendarClock className="size-6 opacity-60" />
-            <p>
-              {schedules.length === 0
-                ? `No schedules in namespace ${namespace}.`
-                : "No schedules match this filter."}
-            </p>
-            <Button size="sm" onClick={() => setCreateOpen(true)}>
-              <Plus />
-              New Schedule
-            </Button>
+            {schedules.length === 0 ? (
+              <>
+                <p>No schedules in namespace {namespace}.</p>
+                <Button
+                  size="sm"
+                  onClick={(event) => openNewSchedule(event.currentTarget)}
+                >
+                  <Plus />
+                  New Schedule
+                </Button>
+              </>
+            ) : (
+              <>
+                <p>
+                  No schedule has{" "}
+                  <code className="font-mono text-foreground">
+                    {filterText.trim()}
+                  </code>{" "}
+                  in its ID, Workflow Type, Task Queue or notes.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setFilterText("");
+                    // The one of the two filter fields that the page shows at this width.
+                    [headerFilter.current, rowFilter.current]
+                      .find((input) => input?.offsetParent)
+                      ?.focus();
+                  }}
+                >
+                  Clear Filter
+                </Button>
+              </>
+            )}
           </div>
         ) : (
           <Table className="text-xs">
@@ -360,15 +476,35 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
                 <TableHead className={temporalTableHeadClass}>
                   Schedule
                 </TableHead>
-                <TableHead className={temporalTableHeadClass}>State</TableHead>
-                <TableHead className={temporalTableHeadClass}>
+                <TableHead
+                  className={cn(
+                    temporalTableHeadClass,
+                    "hidden @lg:table-cell",
+                  )}
+                >
+                  State
+                </TableHead>
+                <TableHead
+                  className={cn(
+                    temporalTableHeadClass,
+                    "hidden @3xl:table-cell",
+                  )}
+                >
                   Workflow / Queue
                 </TableHead>
-                <TableHead className={temporalTableHeadClass}>
+                <TableHead
+                  className={cn(
+                    temporalTableHeadClass,
+                    "hidden @3xl:table-cell",
+                  )}
+                >
                   Cadence
                 </TableHead>
                 <TableHead
-                  className={cn(temporalTableHeadClass, "hidden xl:table-cell")}
+                  className={cn(
+                    temporalTableHeadClass,
+                    "hidden @5xl:table-cell",
+                  )}
                 >
                   Overlap
                 </TableHead>
@@ -385,6 +521,7 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
             <TableBody>
               {filtered.map((sched) => {
                 const isSelected = selectedIds.has(sched.scheduleId);
+                const nextRun = nextRunTime(sched.nextActionTimes);
                 return (
                   <TableRow
                     key={sched.scheduleId}
@@ -403,11 +540,13 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
                         aria-label={`Select schedule ${sched.scheduleId}`}
                       />
                     </TableCell>
-                    <TableCell className="w-full min-w-48 max-w-0 px-2 py-2.5">
+                    <TableCell className="w-full max-w-0 min-w-36 px-2 py-2.5">
                       <div className="flex min-w-0 flex-col">
                         <button
                           type="button"
-                          className="max-w-full self-start truncate rounded-sm py-1 font-mono font-medium text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="max-w-full self-start truncate rounded-sm py-1 text-left font-mono font-medium text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none @max-lg:break-all @max-lg:whitespace-normal"
+                          data-schedule-id={sched.scheduleId}
+                          title={sched.scheduleId}
                           onClick={(e) => {
                             e.stopPropagation();
                             setActiveScheduleId(sched.scheduleId);
@@ -417,18 +556,30 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
                         </button>
                         {sched.notes ? (
                           <span
-                            className="truncate text-2xs text-muted-foreground"
+                            className="truncate text-2xs text-muted-foreground @max-3xl:hidden"
                             title={sched.notes}
                           >
                             {sched.notes}
                           </span>
                         ) : null}
+                        {/* A narrow page has no State, Workflow and Cadence columns, so they go under the ID. */}
+                        <span
+                          className="truncate text-2xs text-muted-foreground @3xl:hidden"
+                          title={`${sched.workflowType} · ${cadenceText(sched)}`}
+                        >
+                          {sched.paused ? (
+                            <span className="font-medium text-amber-700 @lg:hidden dark:text-amber-400">
+                              Paused ·{" "}
+                            </span>
+                          ) : null}
+                          {sched.workflowType} · {cadenceText(sched)}
+                        </span>
                       </div>
                     </TableCell>
-                    <TableCell className="px-2 py-2.5">
+                    <TableCell className="hidden px-2 py-2.5 @lg:table-cell">
                       <ScheduleStateBadge paused={sched.paused} />
                     </TableCell>
-                    <TableCell className="px-2 py-2.5">
+                    <TableCell className="hidden px-2 py-2.5 @3xl:table-cell">
                       <div className="flex flex-col gap-0.5">
                         <span className="font-medium text-foreground">
                           {sched.workflowType}
@@ -438,17 +589,27 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
                         </span>
                       </div>
                     </TableCell>
-                    <TableCell className="whitespace-nowrap px-2 py-2.5 font-mono text-foreground">
-                      {sched.cadenceSummary}
+                    <TableCell className="hidden px-2 py-2.5 whitespace-nowrap @3xl:table-cell">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-mono text-foreground">
+                          {sched.cadenceSummary}
+                        </span>
+                        {sched.cronExpression ? (
+                          <span
+                            className="text-2xs text-muted-foreground"
+                            title="The time zone the cron expression is read in"
+                          >
+                            {sched.timezone ?? "UTC"}
+                          </span>
+                        ) : null}
+                      </div>
                     </TableCell>
-                    <TableCell className="hidden px-2 py-2.5 font-mono text-muted-foreground xl:table-cell">
+                    <TableCell className="hidden px-2 py-2.5 font-mono text-muted-foreground @5xl:table-cell">
                       {OVERLAP_POLICY_TEXT[sched.overlapPolicy]?.label ??
                         sched.overlapPolicy}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap px-2 py-2.5 tabular-nums text-muted-foreground">
-                      {!sched.paused && sched.nextActionTimes[0]
-                        ? formatRelativeTime(sched.nextActionTimes[0])
-                        : "—"}
+                    <TableCell className="px-2 py-2.5 whitespace-nowrap text-muted-foreground tabular-nums">
+                      {sched.paused ? "—" : <TemporalTime iso={nextRun} />}
                     </TableCell>
                     <TableCell
                       className="py-2.5 pr-4 pl-2"
@@ -460,18 +621,11 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
                           size="xs"
                           className="w-7 px-0 text-muted-foreground"
                           aria-label={`Trigger ${sched.scheduleId} now`}
-                          title="Trigger now"
-                          onClick={() =>
-                            void patchSchedule
-                              .mutateAsync({
-                                input: { action: "trigger" },
-                                scheduleId: sched.scheduleId,
-                              })
-                              .then(() =>
-                                toast.success(`Triggered ${sched.scheduleId}`),
-                              )
-                              .catch(toastError)
-                          }
+                          title="Trigger Now"
+                          onClick={(event) => {
+                            dialogOpener.current = event.currentTarget;
+                            setTriggering({ isOpen: true, schedule: sched });
+                          }}
                         >
                           <Zap />
                         </Button>
@@ -481,6 +635,7 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
                           className="w-7 px-0 text-muted-foreground"
                           aria-label={`${sched.paused ? "Resume" : "Pause"} ${sched.scheduleId}`}
                           title={sched.paused ? "Resume" : "Pause"}
+                          disabled={pausingId === sched.scheduleId}
                           onClick={() =>
                             void patchSchedule
                               .mutateAsync({
@@ -494,7 +649,11 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
                                   `${sched.paused ? "Resumed" : "Paused"} ${sched.scheduleId}`,
                                 ),
                               )
-                              .catch(toastError)
+                              .catch((err) =>
+                                toast.error(
+                                  `Could not ${sched.paused ? "resume" : "pause"} ${sched.scheduleId}: ${errorText(err)}`,
+                                ),
+                              )
                           }
                         >
                           {sched.paused ? <Play /> : <Pause />}
@@ -571,7 +730,10 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
               variant="outline"
               size="sm"
               disabled={bulkScheduleAction.isPending}
-              onClick={() => setBulkPauseOpen(true)}
+              onClick={(event) => {
+                dialogOpener.current = event.currentTarget;
+                setBulkPauseOpen(true);
+              }}
             >
               <Pause />
               Pause
@@ -589,7 +751,10 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
               variant="outline"
               size="sm"
               disabled={bulkScheduleAction.isPending}
-              onClick={() => setBulkTriggerConfirmOpen(true)}
+              onClick={(event) => {
+                dialogOpener.current = event.currentTarget;
+                setBulkTriggerConfirmOpen(true);
+              }}
             >
               <Zap />
               Trigger
@@ -598,7 +763,10 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
               variant="destructive"
               size="sm"
               disabled={bulkScheduleAction.isPending}
-              onClick={() => setBulkDeleteConfirmOpen(true)}
+              onClick={(event) => {
+                dialogOpener.current = event.currentTarget;
+                setBulkDeleteConfirmOpen(true);
+              }}
             >
               <Trash2 />
               Delete
@@ -608,7 +776,10 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
       ) : null}
 
       <Dialog open={bulkPauseOpen} onOpenChange={setBulkPauseOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent
+          className="sm:max-w-md"
+          onCloseAutoFocus={() => dialogOpener.current?.focus()}
+        >
           <DialogHeader>
             <DialogTitle>
               Pause {pluralize(selectedSchedules.length, "schedule")}
@@ -647,7 +818,10 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
         description={`This starts one workflow run now for each of ${selectedSummary}.`}
         isPending={bulkScheduleAction.isPending}
         onConfirm={() => runBulk("trigger")}
-        onOpenChange={setBulkTriggerConfirmOpen}
+        onOpenChange={(open) => {
+          setBulkTriggerConfirmOpen(open);
+          focusSoon(dialogOpener.current);
+        }}
         open={bulkTriggerConfirmOpen}
         title="Trigger selected schedules?"
         variant="default"
@@ -658,9 +832,46 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
         description={`This permanently deletes ${selectedSummary} in namespace ${namespace}. Workflows that already started keep running.`}
         isPending={bulkScheduleAction.isPending}
         onConfirm={() => runBulk("delete")}
-        onOpenChange={setBulkDeleteConfirmOpen}
+        onOpenChange={(open) => {
+          setBulkDeleteConfirmOpen(open);
+          focusSoon(dialogOpener.current);
+        }}
         open={bulkDeleteConfirmOpen}
         title="Delete selected schedules?"
+      />
+
+      <TemporalConfirmDialog
+        confirmLabel="Trigger Now"
+        description={triggering ? triggerDescription(triggering.schedule) : ""}
+        isPending={patchSchedule.isPending}
+        onConfirm={async () => {
+          if (!triggering) {
+            return;
+          }
+
+          const { scheduleId } = triggering.schedule;
+
+          try {
+            await patchSchedule.mutateAsync({
+              input: { action: "trigger" },
+              scheduleId,
+            });
+            toast.success(`Triggered ${scheduleId}`);
+          } catch (err) {
+            toast.error(`Could not trigger ${scheduleId}: ${errorText(err)}`);
+          }
+        }}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTriggering((current) =>
+              current ? { ...current, isOpen: false } : null,
+            );
+            focusSoon(dialogOpener.current);
+          }
+        }}
+        open={triggering?.isOpen === true}
+        title={`Trigger ${triggering?.schedule.scheduleId ?? "schedule"} now?`}
+        variant="default"
       />
 
       <ScheduleDetailSheet
@@ -672,7 +883,10 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
           // No history entry: Back must not reopen a schedule that is gone.
           void setTemporalScheduleParam(null);
         }}
-        onEdit={setEditingSchedule}
+        onEdit={(detail, opener) => {
+          dialogOpener.current = opener;
+          setEditingSchedule(detail);
+        }}
         onOpenExecution={onOpenExecution}
         onPatch={async (id, input) => {
           await patchSchedule.mutateAsync({ input, scheduleId: id });
@@ -695,6 +909,7 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
         knownTaskQueues={knownTaskQueues}
         knownWorkflowTypes={knownWorkflowTypes}
         namespace={namespace}
+        onClosed={() => dialogOpener.current?.focus()}
         onOpenChange={(open) => {
           setCreateOpen(open);
 
@@ -712,6 +927,38 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
           }
         }}
         open={createOpen || editingSchedule !== null}
+        queueByWorkflowType={queueByWorkflowType}
+      />
+    </div>
+  );
+}
+
+function ScheduleFilter(props: {
+  className?: string;
+  inputRef: React.Ref<HTMLInputElement>;
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  const { className, inputRef, onChange, value } = props;
+
+  return (
+    <div
+      className={cn("relative flex min-w-24 flex-1 items-center", className)}
+    >
+      <Search className="pointer-events-none absolute left-2.5 size-3.5 text-muted-foreground" />
+      <Input
+        ref={inputRef}
+        aria-label="Filter schedules"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && value) {
+            event.stopPropagation();
+            onChange("");
+          }
+        }}
+        placeholder="Filter schedules"
+        className="h-8 pl-8 text-xs"
       />
     </div>
   );
@@ -728,11 +975,35 @@ function SummaryCount(props: { count: number; label: string }) {
   );
 }
 
+/** "in 37d" up to two months, then months or years: thousands of days say little. */
+function formatTimeUntil(iso: string): string {
+  const days = (Date.parse(iso) - Date.now()) / 86_400_000;
+
+  return days > 730
+    ? `in ${Math.round(days / 365)}y`
+    : days > 60
+      ? `in ${Math.round(days / 30)}mo`
+      : formatRelativeTime(iso);
+}
+
+/** A time as the sheet writes every UTC time: `2026-11-24 14:05:00Z`. */
+function formatUtc(iso: string): string {
+  return `${iso.replace("T", " ").slice(0, 19)}Z`;
+}
+
+/** The last hour, as the values of two `datetime-local` inputs read in UTC. */
+function lastHourWindow(): { end: string; start: string } {
+  return {
+    end: new Date().toISOString().slice(0, 16),
+    start: new Date(Date.now() - 3_600_000).toISOString().slice(0, 16),
+  };
+}
+
 function ScheduleDetailSheet(props: {
   namespace: string;
   onClose: () => void;
   onDelete: (scheduleId: string) => Promise<void>;
-  onEdit: (detail: TemporalScheduleDetail) => void;
+  onEdit: (detail: TemporalScheduleDetail, opener: HTMLElement) => void;
   onOpenExecution: (workflowId: string, runId?: string) => void;
   onPatch: (
     scheduleId: string,
@@ -764,27 +1035,49 @@ function ScheduleDetailSheet(props: {
     onPreviewMatching,
   } = props;
 
-  const { data: detail, isLoading } = useTemporalScheduleDetail({
-    namespace,
-    scheduleId: scheduleId ?? undefined,
-  });
+  const { data, error, isError, isLoading, refetch } =
+    useTemporalScheduleDetail({
+      namespace,
+      scheduleId: scheduleId ?? undefined,
+    });
+  // The query keeps the details of the schedule that was open before while the next one loads.
+  const detail = data?.scheduleId === scheduleId ? data : undefined;
 
-  const nowIso = new Date().toISOString().slice(0, 16);
-  const oneHourAgoIso = new Date(Date.now() - 3600 * 1000)
-    .toISOString()
-    .slice(0, 16);
-  const [backfillStart, setBackfillStart] = useState(oneHourAgoIso);
-  const [backfillEnd, setBackfillEnd] = useState(nowIso);
+  const [backfillStart, setBackfillStart] = useState(
+    () => lastHourWindow().start,
+  );
+  const [backfillEnd, setBackfillEnd] = useState(() => lastHourWindow().end);
   const [backfillPreview, setBackfillPreview] = useState<string[] | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [backfillConfirmOpen, setBackfillConfirmOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [triggerConfirmOpen, setTriggerConfirmOpen] = useState(false);
+  const [isPausing, setIsPausing] = useState(false);
+  const dialogOpener = useRef<HTMLElement | null>(null);
+  const lastOpenId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!scheduleId) {
+      return;
+    }
+
+    const lastHour = lastHourWindow();
+
+    lastOpenId.current = scheduleId;
+    setBackfillStart(lastHour.start);
+    setBackfillEnd(lastHour.end);
+    setBackfillPreview(null);
+  }, [scheduleId]);
 
   const info = detail ?? summary;
   const upcomingTimes = info
-    ? (detail?.matchingTimes ?? info.nextActionTimes).slice(0, 8)
+    ? (detail?.matchingTimes ?? info.nextActionTimes)
+        .filter((iso) => Date.parse(iso) > Date.now())
+        .slice(0, 8)
     : [];
   const recentActions = info ? info.recentActions.slice(-8).reverse() : [];
+  const isWindowSet = backfillStart !== "" && backfillEnd !== "";
+  const isWindowValid = isWindowSet && backfillStart < backfillEnd;
 
   return (
     <Sheet open={Boolean(scheduleId)} onOpenChange={(o) => !o && onClose()}>
@@ -793,6 +1086,12 @@ function ScheduleDetailSheet(props: {
           "flex w-full flex-col gap-0 p-0 sm:max-w-lg",
           temporalIconScale,
         )}
+        // The sheet opens from the URL, so it has no trigger to give focus back to.
+        onCloseAutoFocus={() =>
+          [...document.querySelectorAll<HTMLElement>("[data-schedule-id]")]
+            .find((row) => row.dataset.scheduleId === lastOpenId.current)
+            ?.focus()
+        }
       >
         <SheetHeader className="border-b border-border px-5 py-4">
           <div className="flex items-center gap-2 pr-8">
@@ -803,24 +1102,40 @@ function ScheduleDetailSheet(props: {
           </div>
           <SheetDescription className="text-xs">
             {info
-              ? `${info.workflowType} on queue ${info.taskQueue} · ${info.cadenceSummary} · Overlap: ${OVERLAP_POLICY_TEXT[info.overlapPolicy]?.label ?? info.overlapPolicy}`
+              ? `${info.workflowType} on queue ${info.taskQueue} · ${cadenceText(info)} · Overlap: ${OVERLAP_POLICY_TEXT[info.overlapPolicy]?.label ?? info.overlapPolicy}`
               : `Namespace ${namespace}`}
           </SheetDescription>
         </SheetHeader>
 
+        {info && isError ? (
+          <TemporalRefreshError error={error} onRetry={() => void refetch()} />
+        ) : null}
+
         <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-5 py-5 text-xs *:shrink-0">
-          {isLoading && !info ? (
-            <Skeleton className="h-32 w-full" />
-          ) : info ? (
+          {!info ? (
+            isError ? (
+              <TemporalLoadError
+                error={error}
+                onRetry={() => void refetch()}
+                title={
+                  <>
+                    Could not load schedule{" "}
+                    <code className="font-mono">{scheduleId}</code>.
+                  </>
+                }
+              />
+            ) : isLoading ? (
+              <Skeleton className="h-32 w-full" />
+            ) : null
+          ) : (
             <>
               <div className="flex flex-wrap gap-2">
                 <Button
                   size="sm"
-                  onClick={() =>
-                    void onPatch(info.scheduleId, { action: "trigger" })
-                      .then(() => toast.success(`Triggered ${info.scheduleId}`))
-                      .catch(toastError)
-                  }
+                  onClick={(event) => {
+                    dialogOpener.current = event.currentTarget;
+                    setTriggerConfirmOpen(true);
+                  }}
                 >
                   <Zap />
                   Trigger Now
@@ -828,7 +1143,9 @@ function ScheduleDetailSheet(props: {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() =>
+                  disabled={isPausing}
+                  onClick={() => {
+                    setIsPausing(true);
                     void onPatch(info.scheduleId, {
                       action: info.paused ? "unpause" : "pause",
                     })
@@ -837,8 +1154,13 @@ function ScheduleDetailSheet(props: {
                           `${info.paused ? "Resumed" : "Paused"} ${info.scheduleId}`,
                         ),
                       )
-                      .catch(toastError)
-                  }
+                      .catch((err) =>
+                        toast.error(
+                          `Could not ${info.paused ? "resume" : "pause"} ${info.scheduleId}: ${errorText(err)}`,
+                        ),
+                      )
+                      .finally(() => setIsPausing(false));
+                  }}
                 >
                   {info.paused ? <Play /> : <Pause />}
                   {info.paused ? "Resume" : "Pause"}
@@ -847,7 +1169,14 @@ function ScheduleDetailSheet(props: {
                   variant="outline"
                   size="sm"
                   disabled={!detail}
-                  onClick={() => detail && onEdit(detail)}
+                  title={
+                    detail
+                      ? undefined
+                      : "Edit needs the details of the schedule, which have not loaded"
+                  }
+                  onClick={(event) =>
+                    detail && onEdit(detail, event.currentTarget)
+                  }
                   data-testid="temporal-schedule-edit"
                 >
                   <Pencil />
@@ -857,7 +1186,10 @@ function ScheduleDetailSheet(props: {
                   variant="outline"
                   size="sm"
                   className="ml-auto text-destructive hover:text-destructive"
-                  onClick={() => setDeleteConfirmOpen(true)}
+                  onClick={(event) => {
+                    dialogOpener.current = event.currentTarget;
+                    setDeleteConfirmOpen(true);
+                  }}
                 >
                   <Trash2 />
                   Delete
@@ -868,7 +1200,11 @@ function ScheduleDetailSheet(props: {
                 <TemporalSectionLabel>
                   Upcoming Fire Times (UTC)
                 </TemporalSectionLabel>
-                {upcomingTimes.length === 0 ? (
+                {info.paused ? (
+                  <p className="text-muted-foreground">
+                    Paused. This schedule starts no runs until it is resumed.
+                  </p>
+                ) : upcomingTimes.length === 0 ? (
                   <p className="text-muted-foreground">
                     No upcoming runs scheduled.
                   </p>
@@ -879,15 +1215,55 @@ function ScheduleDetailSheet(props: {
                         key={iso}
                         className="flex items-center justify-between gap-4 px-3 py-1.5 font-mono"
                       >
-                        <span>{iso.replace("T", " ").slice(0, 19)}Z</span>
+                        <span>{formatUtc(iso)}</span>
                         <span className="text-muted-foreground">
-                          {formatRelativeTime(iso)}
+                          {formatTimeUntil(iso)}
                         </span>
                       </li>
                     ))}
                   </ul>
                 )}
               </section>
+
+              {info.notes ||
+              detail?.catchupWindowSeconds ||
+              info.workflowArgs !== undefined ? (
+                <section className="flex flex-col gap-2">
+                  <TemporalSectionLabel>Details</TemporalSectionLabel>
+                  <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5">
+                    {info.notes ? (
+                      <div className="contents">
+                        <dt className="text-muted-foreground">Notes</dt>
+                        <dd className="break-words text-foreground">
+                          {info.notes}
+                        </dd>
+                      </div>
+                    ) : null}
+                    {detail?.catchupWindowSeconds ? (
+                      <div className="contents">
+                        <dt className="text-muted-foreground">
+                          Catch-up Window
+                        </dt>
+                        <dd className="text-foreground">
+                          {formatDuration(detail.catchupWindowSeconds * 1000)}
+                        </dd>
+                      </div>
+                    ) : null}
+                    {info.workflowArgs !== undefined ? (
+                      <div className="contents">
+                        <dt className="text-muted-foreground">
+                          Input Arguments
+                        </dt>
+                        <dd>
+                          <pre className="max-h-40 overflow-auto rounded-md border border-border bg-muted/30 p-2 font-mono text-2xs text-foreground">
+                            {safeJsonPretty(info.workflowArgs)}
+                          </pre>
+                        </dd>
+                      </div>
+                    ) : null}
+                  </dl>
+                </section>
+              ) : null}
 
               <section className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1">
@@ -917,6 +1293,12 @@ function ScheduleDetailSheet(props: {
                       id="bf-end"
                       type="datetime-local"
                       value={backfillEnd}
+                      aria-invalid={isWindowSet && !isWindowValid}
+                      aria-describedby={
+                        isWindowSet && !isWindowValid
+                          ? "bf-window-error"
+                          : undefined
+                      }
                       onChange={(e) => {
                         setBackfillEnd(e.target.value);
                         setBackfillPreview(null);
@@ -925,11 +1307,16 @@ function ScheduleDetailSheet(props: {
                     />
                   </TemporalField>
                 </div>
+                {isWindowSet && !isWindowValid ? (
+                  <p id="bf-window-error" className="text-destructive">
+                    The end must be after the start.
+                  </p>
+                ) : null}
                 <div className="flex items-center gap-2">
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={previewLoading}
+                    disabled={previewLoading || !isWindowValid}
                     onClick={() => {
                       setPreviewLoading(true);
                       void onPreviewMatching(
@@ -940,7 +1327,11 @@ function ScheduleDetailSheet(props: {
                         .then((res) => {
                           setBackfillPreview(res.times);
                         })
-                        .catch(toastError)
+                        .catch((err) =>
+                          toast.error(
+                            `Could not preview the fire times: ${errorText(err)}`,
+                          ),
+                        )
                         .finally(() => {
                           setPreviewLoading(false);
                         });
@@ -952,40 +1343,47 @@ function ScheduleDetailSheet(props: {
                   <Button
                     size="sm"
                     disabled={!backfillPreview || backfillPreview.length === 0}
-                    onClick={() => setBackfillConfirmOpen(true)}
+                    onClick={(event) => {
+                      dialogOpener.current = event.currentTarget;
+                      setBackfillConfirmOpen(true);
+                    }}
                   >
                     Run Backfill
                     {backfillPreview ? ` (${backfillPreview.length})` : ""}
                   </Button>
                 </div>
                 {backfillPreview !== null ? (
-                  <p
-                    className="text-foreground"
+                  <div
+                    className="flex flex-col gap-1 text-foreground"
                     data-testid="temporal-backfill-preview-result"
                   >
                     {backfillPreview.length === 0 ? (
-                      "No fire times match this window."
+                      <p>No fire times match this window.</p>
                     ) : (
                       <>
-                        {pluralize(backfillPreview.length, "fire time")}:{" "}
-                        <span className="font-mono">
-                          {backfillPreview
-                            .slice(0, 4)
-                            .map((t) => `${t.slice(11, 19)}Z`)
-                            .join(", ")}
-                        </span>
-                        {backfillPreview.length > 4
-                          ? ` and ${backfillPreview.length - 4} more`
-                          : ""}
+                        <p>{pluralize(backfillPreview.length, "fire time")}:</p>
+                        <ul className="font-mono">
+                          {backfillPreview.slice(0, 4).map((iso) => (
+                            <li key={iso}>{formatUtc(iso)}</li>
+                          ))}
+                        </ul>
+                        {backfillPreview.length > 4 ? (
+                          <p className="text-muted-foreground">
+                            and {backfillPreview.length - 4} more
+                          </p>
+                        ) : null}
                       </>
                     )}
-                  </p>
+                  </div>
                 ) : null}
               </section>
 
               <section className="flex flex-col gap-2">
                 <TemporalSectionLabel>
-                  Recent Runs ({info.recentActions.length})
+                  Recent Runs
+                  {info.recentActions.length > recentActions.length
+                    ? ` (the newest ${recentActions.length} of ${info.recentActions.length})`
+                    : ` (${recentActions.length})`}
                 </TemporalSectionLabel>
                 {recentActions.length === 0 ? (
                   <p className="text-muted-foreground">
@@ -1010,9 +1408,9 @@ function ScheduleDetailSheet(props: {
                           {act.workflowId || "Pending"}
                         </span>
                         <span className="shrink-0 text-muted-foreground">
-                          {formatRelativeTime(
-                            act.actualTime ?? act.scheduleTime,
-                          )}
+                          <TemporalTime
+                            iso={act.actualTime ?? act.scheduleTime}
+                          />
                         </span>
                       </button>
                     ))}
@@ -1020,8 +1418,31 @@ function ScheduleDetailSheet(props: {
                 )}
               </section>
             </>
-          ) : null}
+          )}
         </div>
+
+        <TemporalConfirmDialog
+          confirmLabel="Trigger Now"
+          description={info ? triggerDescription(info) : ""}
+          onConfirm={async () => {
+            if (!info) return;
+            try {
+              await onPatch(info.scheduleId, { action: "trigger" });
+              toast.success(`Triggered ${info.scheduleId}`);
+            } catch (err) {
+              toast.error(
+                `Could not trigger ${info.scheduleId}: ${errorText(err)}`,
+              );
+            }
+          }}
+          onOpenChange={(open) => {
+            setTriggerConfirmOpen(open);
+            focusSoon(dialogOpener.current);
+          }}
+          open={triggerConfirmOpen}
+          title={`Trigger ${scheduleId ?? "schedule"} now?`}
+          variant="default"
+        />
 
         <TemporalConfirmDialog
           confirmLabel={`Start ${pluralize(backfillPreview?.length ?? 0, "Run")}`}
@@ -1040,10 +1461,13 @@ function ScheduleDetailSheet(props: {
               );
               setBackfillPreview(null);
             } catch (err) {
-              toastError(err);
+              toast.error(`Could not run the backfill: ${errorText(err)}`);
             }
           }}
-          onOpenChange={setBackfillConfirmOpen}
+          onOpenChange={(open) => {
+            setBackfillConfirmOpen(open);
+            focusSoon(dialogOpener.current);
+          }}
           open={backfillConfirmOpen}
           title="Run backfill?"
           variant="default"
@@ -1052,10 +1476,18 @@ function ScheduleDetailSheet(props: {
         <TemporalConfirmDialog
           confirmLabel="Delete Schedule"
           description={`This permanently deletes schedule ${scheduleId ?? ""}. Workflows that already started keep running.`}
-          onConfirm={() =>
-            scheduleId ? onDelete(scheduleId) : Promise.resolve()
-          }
-          onOpenChange={setDeleteConfirmOpen}
+          onConfirm={async () => {
+            if (!scheduleId) return;
+            try {
+              await onDelete(scheduleId);
+            } catch (err) {
+              toast.error(`Could not delete ${scheduleId}: ${errorText(err)}`);
+            }
+          }}
+          onOpenChange={(open) => {
+            setDeleteConfirmOpen(open);
+            focusSoon(dialogOpener.current);
+          }}
           open={deleteConfirmOpen}
           title="Delete schedule?"
         />
@@ -1069,29 +1501,68 @@ const TIME_ZONES: string[] =
     ? Intl.supportedValuesOf("timeZone")
     : [];
 
+/** A shorter interval is almost always a typing mistake, and floods the Task Queue. */
+const MIN_INTERVAL_SECONDS = 10;
+
+/** A whole number of seconds as typed into the form, or null for any other text. */
+function parseSeconds(text: string): number | null {
+  return /^\d+$/.test(text.trim()) ? Number(text.trim()) : null;
+}
+
+/** What is wrong with a cron expression that the form can tell without the server. */
+function cronError(text: string): string | null {
+  const fields = text.trim().split(/\s+/).filter(Boolean);
+
+  if (fields.length === 0) {
+    return "Enter a cron expression.";
+  }
+
+  // The server also takes a seconds and a year field, and words such as @daily.
+  return text.trim().startsWith("@") ||
+    (fields.length >= 5 && fields.length <= 7)
+    ? null
+    : "A cron expression has five fields: minute, hour, day of month, month and day of week.";
+}
+
+function isTimeZone(zone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone });
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** The form that creates a schedule, or changes the one passed as `editing`. */
 export function ScheduleFormSheet(props: {
   editing: TemporalScheduleDetail | null;
   knownTaskQueues: string[];
   knownWorkflowTypes: string[];
   namespace: string;
+  /** Called when the sheet is gone, to give focus back to what opened it. */
+  onClosed?: () => void;
   onOpenChange: (open: boolean) => void;
   onSave: (input: TemporalCreateScheduleInput) => Promise<void>;
   open: boolean;
+  /** The Task Queue to suggest for a Workflow Type, where one is known. */
+  queueByWorkflowType: Record<string, string>;
 }) {
   const {
     editing,
     knownTaskQueues,
     knownWorkflowTypes,
     namespace,
+    onClosed,
     onOpenChange,
     onSave: onCreate,
     open,
+    queueByWorkflowType,
   } = props;
 
   const [scheduleId, setScheduleId] = useState("");
-  const [workflowType, setWorkflowType] = useState(knownWorkflowTypes[0] || "");
-  const [taskQueue, setTaskQueue] = useState(knownTaskQueues[0] || "");
+  const [workflowType, setWorkflowType] = useState("");
+  const [taskQueue, setTaskQueue] = useState("");
   const [cadenceMode, setCadenceMode] = useState<"interval" | "cron">(
     "interval",
   );
@@ -1104,17 +1575,21 @@ export function ScheduleFormSheet(props: {
   const [notes, setNotes] = useState("");
   const [argsText, setArgsText] = useState("[{}]");
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
       return;
     }
 
+    setSubmitError(null);
+
     if (!editing) {
       // A new schedule starts empty, also after another schedule was edited.
+      // No type or queue is filled in: the first of each list need not belong together.
       setScheduleId("");
-      setWorkflowType(knownWorkflowTypes[0] || "");
-      setTaskQueue(knownTaskQueues[0] || "");
+      setWorkflowType("");
+      setTaskQueue("");
       setCadenceMode("interval");
       setCronExpression("0 * * * *");
       setIntervalSeconds("3600");
@@ -1147,30 +1622,59 @@ export function ScheduleFormSheet(props: {
             : [editing.workflowArgs],
       ),
     );
-    // The known types and queues only seed a new form; a refetch must not reset it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing, open]);
 
   const parsedArgs = parseJsonArgsText(argsText);
+  const interval = parseSeconds(intervalSeconds);
+  const catchup = parseSeconds(catchupSeconds);
+  const cadenceError =
+    cadenceMode === "cron"
+      ? cronError(cronExpression)
+      : interval === null
+        ? "Enter a whole number of seconds, such as 3600 for one hour."
+        : interval < MIN_INTERVAL_SECONDS
+          ? `The shortest interval is ${MIN_INTERVAL_SECONDS} seconds.`
+          : null;
+  const catchupError =
+    catchupSeconds.trim() === "" || (catchup !== null && catchup > 0)
+      ? null
+      : "Enter a whole number of seconds, or leave it empty.";
+  const timezoneError =
+    timezone.trim() === "" || isTimeZone(timezone.trim())
+      ? null
+      : "Not a time zone name, such as Europe/Berlin.";
+  const isInvalid =
+    cadenceError !== null ||
+    catchupError !== null ||
+    timezoneError !== null ||
+    Boolean(parsedArgs.error);
+
+  const chooseWorkflowType = (value: string) => {
+    const suggested = queueByWorkflowType[value];
+
+    // The queue follows the type while it is empty or was filled in for the type before.
+    if (
+      suggested &&
+      (taskQueue === "" || taskQueue === queueByWorkflowType[workflowType])
+    ) {
+      setTaskQueue(suggested);
+    }
+
+    setWorkflowType(value);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (parsedArgs.error) return;
+    if (isInvalid) return;
     setSubmitting(true);
+    setSubmitError(null);
     try {
       await onCreate({
         args: parsedArgs.args,
         ...(cadenceMode === "cron"
           ? { cronExpression: cronExpression.trim() }
-          : {
-              intervalSeconds: Math.max(
-                10,
-                Number.parseInt(intervalSeconds, 10) || 300,
-              ),
-            }),
-        ...(Number.parseInt(catchupSeconds, 10) > 0
-          ? { catchupWindowSeconds: Number.parseInt(catchupSeconds, 10) }
-          : {}),
+          : { intervalSeconds: interval ?? undefined }),
+        ...(catchup ? { catchupWindowSeconds: catchup } : {}),
         notes: notes.trim() || undefined,
         overlapPolicy,
         scheduleId: scheduleId.trim(),
@@ -1183,7 +1687,7 @@ export function ScheduleFormSheet(props: {
       });
       onOpenChange(false);
     } catch (err) {
-      toastError(err);
+      setSubmitError(errorText(err));
     } finally {
       setSubmitting(false);
     }
@@ -1196,9 +1700,13 @@ export function ScheduleFormSheet(props: {
           "flex w-full flex-col gap-0 p-0 sm:max-w-lg",
           temporalIconScale,
         )}
+        onCloseAutoFocus={onClosed}
         onOpenAutoFocus={(e) => {
           e.preventDefault();
-          document.getElementById("sched-id")?.focus();
+          // The ID of an existing schedule cannot change, so focus starts at the first field that can.
+          document
+            .getElementById(editing ? "sched-wf-type" : "sched-id")
+            ?.focus();
         }}
       >
         <SheetHeader className="border-b border-border px-5 py-4">
@@ -1233,7 +1741,7 @@ export function ScheduleFormSheet(props: {
                 <TemporalCombobox
                   id="sched-wf-type"
                   listLabel="Workflow Types"
-                  onChange={setWorkflowType}
+                  onChange={chooseWorkflowType}
                   options={knownWorkflowTypes.map((value) => ({ value }))}
                   placeholder="Choose or type"
                   value={workflowType}
@@ -1278,6 +1786,9 @@ export function ScheduleFormSheet(props: {
               >
                 <Input
                   id="sched-cadence"
+                  aria-describedby="sched-cadence-hint"
+                  aria-invalid={cadenceError !== null}
+                  inputMode={cadenceMode === "cron" ? undefined : "numeric"}
                   value={
                     cadenceMode === "cron" ? cronExpression : intervalSeconds
                   }
@@ -1288,12 +1799,26 @@ export function ScheduleFormSheet(props: {
                   }
                   className="h-8 font-mono text-xs"
                 />
+                <p
+                  id="sched-cadence-hint"
+                  className={cn(
+                    "text-2xs",
+                    cadenceError ? "text-destructive" : "text-muted-foreground",
+                  )}
+                >
+                  {cadenceError ??
+                    (cadenceMode === "cron"
+                      ? "Minute, hour, day of month, month, day of week."
+                      : `Every ${formatDuration((interval ?? 0) * 1000)}.`)}
+                </p>
               </TemporalField>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <TemporalField htmlFor="sched-timezone" label="Time Zone">
                 <Input
                   id="sched-timezone"
+                  aria-describedby="sched-timezone-hint"
+                  aria-invalid={timezoneError !== null}
                   list="sched-timezones"
                   value={timezone}
                   onChange={(e) => setTimezone(e.target.value)}
@@ -1305,8 +1830,17 @@ export function ScheduleFormSheet(props: {
                     <option key={zone} value={zone} />
                   ))}
                 </datalist>
-                <p className="text-2xs text-muted-foreground">
-                  A cron expression is read in this time zone.
+                <p
+                  id="sched-timezone-hint"
+                  className={cn(
+                    "text-2xs",
+                    timezoneError
+                      ? "text-destructive"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {timezoneError ??
+                    "A cron expression is read in this time zone."}
                 </p>
               </TemporalField>
               <TemporalField
@@ -1315,17 +1849,23 @@ export function ScheduleFormSheet(props: {
               >
                 <Input
                   id="sched-catchup"
+                  aria-describedby="sched-catchup-hint"
+                  aria-invalid={catchupError !== null}
                   inputMode="numeric"
                   value={catchupSeconds}
                   onChange={(e) => setCatchupSeconds(e.target.value)}
                   placeholder="Server default (1 year)"
                   className="h-8 font-mono text-xs"
                 />
-                <p className="text-2xs text-muted-foreground">
-                  {Number.parseInt(catchupSeconds, 10) > 0
-                    ? `${formatDuration(Number.parseInt(catchupSeconds, 10) * 1000)}. `
-                    : ""}
-                  After an outage, runs missed by more than this are skipped.
+                <p
+                  id="sched-catchup-hint"
+                  className={cn(
+                    "text-2xs",
+                    catchupError ? "text-destructive" : "text-muted-foreground",
+                  )}
+                >
+                  {catchupError ??
+                    `${catchup ? `${formatDuration(catchup * 1000)}. ` : ""}After an outage, runs missed by more than this are skipped.`}
                 </p>
               </TemporalField>
             </div>
@@ -1375,6 +1915,15 @@ export function ScheduleFormSheet(props: {
               ) : null}
             </TemporalField>
           </div>
+          {submitError ? (
+            <p
+              className="border-t border-border px-5 py-2 text-xs break-words text-destructive"
+              role="alert"
+            >
+              Could not {editing ? "save" : "create"} the schedule:{" "}
+              {submitError}
+            </p>
+          ) : null}
           <SheetFooter className="border-t border-border px-5 py-3">
             <Button
               type="button"
@@ -1392,7 +1941,7 @@ export function ScheduleFormSheet(props: {
                 !scheduleId.trim() ||
                 !workflowType.trim() ||
                 !taskQueue.trim() ||
-                Boolean(parsedArgs.error)
+                isInvalid
               }
             >
               {editing ? "Save Changes" : "Create Schedule"}

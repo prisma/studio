@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { TemporalTypeMapNode } from "@/data/temporal";
 
-import { describeTypeMapEdge } from "./TemporalTypeMapCanvas";
+import { describeTypeMapEdge, openingViewport } from "./TemporalTypeMapCanvas";
 
 function node(
   id: string,
@@ -118,5 +118,91 @@ describe("describeTypeMapEdge", () => {
 
     expect(edge.label).toBe("after timer · this run");
     expect(edge.tooltip).toContain("Only in this run");
+  });
+
+  it("gives the share of the runs that reached the source step, in those words", () => {
+    const timer = node("timer:Timer 30m", "timer", "Timer 30m", {
+      runCount: 12,
+    });
+    const charge = node("activity:charge", "activity", "charge", {
+      runCount: 29,
+    });
+    const edge = describeTypeMapEdge({
+      edgeRunCount: 2,
+      from: timer,
+      isLoop: false,
+      outgoingEdgeCount: 2,
+      to: charge,
+      totalRuns: 40,
+    });
+
+    expect(edge.label).toBe("after timer · 2 (17%)");
+    expect(edge.tooltip).toContain(
+      "2 of the 12 sampled runs that reached Timer 30m (17%)",
+    );
+    expect(edge.tooltip).not.toContain("of 40");
+  });
+
+  it("gives the share of all sampled runs for an arrow from Start", () => {
+    const start = node("start", "start", "Start", { runCount: 40 });
+    const validate = node("activity:validate", "activity", "validate");
+
+    expect(
+      describeTypeMapEdge({
+        edgeRunCount: 40,
+        from: start,
+        isLoop: false,
+        outgoingEdgeCount: 1,
+        to: validate,
+        totalRuns: 40,
+      }).tooltip,
+    ).toContain("40 of 40 sampled runs");
+  });
+
+  it("writes a share the same way with and without a role", () => {
+    const shipment = node(
+      "child-workflow:Child: shipment",
+      "child-workflow",
+      "Child: shipment",
+      {
+        runCount: 29,
+      },
+    );
+    const email = node("activity:sendOrderEmail", "activity", "sendOrderEmail");
+
+    expect(
+      describeTypeMapEdge({
+        edgeRunCount: 24,
+        from: shipment,
+        isLoop: false,
+        outgoingEdgeCount: 2,
+        to: email,
+        totalRuns: 40,
+      }).label,
+    ).toBe("24 runs (83%)");
+  });
+});
+
+describe("openingViewport", () => {
+  it("opens a diagram wider than the view on its Start step", () => {
+    const viewport = openingViewport(
+      { height: 400, width: 1_000, x: 0, y: 0 },
+      { height: 600, width: 370 },
+      { width: 80, x: 400 },
+    );
+
+    // Start's middle, at x 440, is in the middle of the view.
+    expect(viewport.zoom).toBe(0.8);
+    expect(viewport.x).toBeCloseTo(370 / 2 - 440 * 0.8);
+  });
+
+  it("does not open past the left edge of a wide diagram", () => {
+    const viewport = openingViewport(
+      { height: 400, width: 1_000, x: 0, y: 0 },
+      { height: 600, width: 370 },
+      { width: 80, x: 0 },
+    );
+
+    expect(viewport.x).toBe(24);
   });
 });

@@ -61,6 +61,10 @@ import {
   type TableSearchUiState,
 } from "./navigation-ui-state";
 import { toVisibilityQuery } from "./views/temporal/temporal-utils";
+import {
+  TemporalTime,
+  workflowStatusLabel,
+} from "./views/temporal/TemporalPrimitives";
 
 const COMMAND_PALETTE_UI_STATE_KEY = "studio:command-palette";
 
@@ -94,6 +98,8 @@ interface CommandPaletteStateContextValue {
 }
 
 interface CommandPaletteItem {
+  /** Shown after the label, such as the time a run started. */
+  detail?: ReactNode;
   disabled: boolean;
   icon: LucideIcon;
   id: string;
@@ -129,6 +135,25 @@ function matchesCommandSearch(args: {
     .join(" ")
     .toLowerCase()
     .includes(normalizedQuery);
+}
+
+/** Orders matches: a label that starts with the query, then a label that holds it, then a keyword. */
+function rankCommandMatch(item: { label: string }, query: string): number {
+  const normalizedQuery = normalizeQuery(query);
+  const label = item.label.toLowerCase();
+
+  if (normalizedQuery.length === 0) {
+    return 0;
+  }
+
+  if (
+    label.startsWith(normalizedQuery) ||
+    label.includes(` ${normalizedQuery}`)
+  ) {
+    return 0;
+  }
+
+  return label.includes(normalizedQuery) ? 1 : 2;
 }
 
 function resolveActionLabel(
@@ -362,7 +387,13 @@ function StudioCommandPalette() {
   const isTemporalOnly =
     !hasDatabase && typeof streamsUrl !== "string" && hasTemporal;
   const { data: temporalCapabilities } = useTemporalCapabilities();
-  const { createUrl, schemaParam, temporalNsParam } = useNavigation();
+  const { createUrl, schemaParam, temporalFollowParam, temporalNsParam } =
+    useNavigation();
+  // A paused Temporal page stays paused when the palette opens another one.
+  const temporalFollow = useMemo(
+    () => (temporalFollowParam ? { temporalFollowParam } : {}),
+    [temporalFollowParam],
+  );
   const { isOpen, setIsOpen, viewActions } = useCommandPaletteStateContext();
   const [query, setQuery] = useState("");
   const [, setTableSearchUiState] = useUiState<TableSearchUiState>(
@@ -565,6 +596,7 @@ function StudioCommandPalette() {
           label: temporalLabel("Workflow Types"),
           onSelect: () => {
             window.location.hash = createUrl({
+              ...temporalFollow,
               temporalNsParam: ns,
               temporalSectionParam: "types",
               viewParam: "temporal",
@@ -589,6 +621,7 @@ function StudioCommandPalette() {
           label: temporalLabel("Workflow IDs"),
           onSelect: () => {
             window.location.hash = createUrl({
+              ...temporalFollow,
               temporalNsParam: ns,
               temporalSectionParam: "workflow",
               viewParam: "temporal",
@@ -604,6 +637,7 @@ function StudioCommandPalette() {
           label: temporalLabel("Executions"),
           onSelect: () => {
             window.location.hash = createUrl({
+              ...temporalFollow,
               temporalNsParam: ns,
               temporalSectionParam: "workflows",
               viewParam: "temporal",
@@ -616,9 +650,10 @@ function StudioCommandPalette() {
           icon: CircleAlert,
           id: "view:temporal:attention",
           keywords: ["temporal", "attention", "stuck", "retrying", "failed"],
-          label: temporalLabel("Needs Attention"),
+          label: temporalLabel("Attention"),
           onSelect: () => {
             window.location.hash = createUrl({
+              ...temporalFollow,
               temporalNsParam: ns,
               temporalSectionParam: "attention",
               viewParam: "temporal",
@@ -637,6 +672,7 @@ function StudioCommandPalette() {
           label: temporalLabel("Schedules"),
           onSelect: () => {
             window.location.hash = createUrl({
+              ...temporalFollow,
               temporalNsParam: ns,
               temporalSectionParam: "schedules",
               viewParam: "temporal",
@@ -654,6 +690,7 @@ function StudioCommandPalette() {
         label: temporalLabel("Task Queues"),
         onSelect: () => {
           window.location.hash = createUrl({
+            ...temporalFollow,
             temporalNsParam: ns,
             temporalSectionParam: "queues",
             viewParam: "temporal",
@@ -672,6 +709,7 @@ function StudioCommandPalette() {
           label: temporalLabel("Workers"),
           onSelect: () => {
             window.location.hash = createUrl({
+              ...temporalFollow,
               temporalNsParam: ns,
               temporalSectionParam: "workers",
               viewParam: "temporal",
@@ -690,6 +728,7 @@ function StudioCommandPalette() {
           label: temporalLabel("Cluster & Shards"),
           onSelect: () => {
             window.location.hash = createUrl({
+              ...temporalFollow,
               temporalNsParam: ns,
               temporalSectionParam: "cluster",
               viewParam: "temporal",
@@ -700,12 +739,17 @@ function StudioCommandPalette() {
       }
     }
 
-    return items.filter((item) =>
-      matchesCommandSearch({
-        label: item.label,
-        keywords: item.keywords,
-        query,
-      }),
+    return (
+      items
+        .filter((item) =>
+          matchesCommandSearch({
+            label: item.label,
+            keywords: item.keywords,
+            query,
+          }),
+        )
+        // Typing "workers" puts Workers above Task Queues, which only has it as a keyword.
+        .sort((a, b) => rankCommandMatch(a, query) - rankCommandMatch(b, query))
     );
   }, [
     createUrl,
@@ -714,6 +758,7 @@ function StudioCommandPalette() {
     isTemporalOnly,
     query,
     temporalCapabilities,
+    temporalFollow,
     temporalNsParam,
   ]);
   // Workflows and schedules come from the Temporal server, so the palette asks
@@ -729,7 +774,11 @@ function StudioCommandPalette() {
 
   const isTemporalSearchActive =
     typeof temporalUrl === "string" && isOpen && temporalSearch.length >= 2;
-  const { data: matchingWorkflows } = useTemporalWorkflows({
+  const {
+    data: matchingWorkflows,
+    isError: hasWorkflowSearchFailed,
+    isPlaceholderData: isPreviousWorkflowSearch,
+  } = useTemporalWorkflows({
     enabled: isTemporalSearchActive,
     followMode: "paused",
     includeCounts: false,
@@ -742,16 +791,30 @@ function StudioCommandPalette() {
     followMode: "paused",
     namespace: temporalNamespace,
   });
+  // The runs on screen must be the answer to the text in the field, never to an earlier text.
+  const hasWorkflowAnswer =
+    isTemporalSearchActive &&
+    temporalSearch === query.trim() &&
+    matchingWorkflows !== undefined &&
+    !isPreviousWorkflowSearch;
+  const isSearchingWorkflows =
+    typeof temporalUrl === "string" &&
+    isOpen &&
+    query.trim().length >= 2 &&
+    !hasWorkflowAnswer &&
+    !hasWorkflowSearchFailed;
   const workflowItems = useMemo<CommandPaletteItem[]>(
     () =>
-      isTemporalSearchActive
+      hasWorkflowAnswer
         ? (matchingWorkflows?.executions ?? []).map((run) => ({
+            detail: <TemporalTime iso={run.startTime} />,
             disabled: false,
             icon: Workflow,
             id: `workflow:${run.workflowId}:${run.runId}`,
-            label: `${run.workflowId} · ${run.workflowType} · ${run.status}`,
+            label: `${run.workflowId} · ${run.workflowType} · ${workflowStatusLabel(run.status)}`,
             onSelect: () => {
               window.location.hash = createUrl({
+                ...temporalFollow,
                 temporalNsParam: temporalNamespace,
                 temporalRunParam: run.runId,
                 temporalSectionParam: "workflows",
@@ -762,7 +825,13 @@ function StudioCommandPalette() {
             section: "workflows",
           }))
         : [],
-    [createUrl, isTemporalSearchActive, matchingWorkflows, temporalNamespace],
+    [
+      createUrl,
+      hasWorkflowAnswer,
+      matchingWorkflows,
+      temporalFollow,
+      temporalNamespace,
+    ],
   );
   const scheduleItems = useMemo<CommandPaletteItem[]>(
     () =>
@@ -772,7 +841,7 @@ function StudioCommandPalette() {
               matchesCommandSearch({
                 keywords: [schedule.workflowType],
                 label: schedule.scheduleId,
-                query: temporalSearch,
+                query,
               }),
             )
             .slice(0, 6)
@@ -783,6 +852,7 @@ function StudioCommandPalette() {
               label: `${schedule.scheduleId} · ${schedule.cadenceSummary}`,
               onSelect: () => {
                 window.location.hash = createUrl({
+                  ...temporalFollow,
                   temporalNsParam: temporalNamespace,
                   temporalScheduleParam: schedule.scheduleId,
                   temporalSectionParam: "schedules",
@@ -795,9 +865,10 @@ function StudioCommandPalette() {
     [
       createUrl,
       isTemporalSearchActive,
+      query,
       scheduleList,
+      temporalFollow,
       temporalNamespace,
-      temporalSearch,
     ],
   );
 
@@ -856,6 +927,11 @@ function StudioCommandPalette() {
                 <ItemIcon className="size-3.5" />
               </span>
               <span className="min-w-0 truncate">{item.label}</span>
+              {item.detail ? (
+                <span className="ml-auto shrink-0 pl-3 text-xs text-muted-foreground">
+                  {item.detail}
+                </span>
+              ) : null}
             </CommandItem>
           );
         })}
@@ -1009,10 +1085,22 @@ function StudioCommandPalette() {
                 items: tableItems,
                 label: "Tables",
               })}
-              {renderSection({
-                items: workflowItems,
-                label: "Executions",
-              })}
+              {isSearchingWorkflows ? (
+                <CommandGroup heading="Executions">
+                  <div
+                    className="px-3 py-2 text-sm text-muted-foreground"
+                    data-testid="command-palette-searching"
+                    role="status"
+                  >
+                    Searching…
+                  </div>
+                </CommandGroup>
+              ) : (
+                renderSection({
+                  items: workflowItems,
+                  label: "Executions",
+                })
+              )}
               {renderSection({
                 items: scheduleItems,
                 label: "Schedules",
@@ -1022,7 +1110,7 @@ function StudioCommandPalette() {
                 items: viewItems,
                 label: "Navigation",
               })}
-              {!shouldShowAppearanceSection ? (
+              {!shouldShowAppearanceSection && !isSearchingWorkflows ? (
                 <CommandEmpty>No matching commands.</CommandEmpty>
               ) : null}
             </CommandList>

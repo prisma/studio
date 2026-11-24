@@ -124,6 +124,54 @@ describe("TemporalRunBreadcrumb", () => {
     expect(switcher.textContent).toContain("2 of 3");
   });
 
+  it("writes run IDs so that runs made close in time differ", () => {
+    const container = render({
+      execution: run("01a20d99-0d5c-7af8-bffe-865954a459e0", "Terminated"),
+      runs: [
+        run("01a20d99-0d82-7222-b496-9939c1719edf", "TimedOut"),
+        run("01a20d99-0d5c-7af8-bffe-865954a459e0", "Terminated"),
+      ],
+    });
+
+    expect(
+      container.querySelector('[data-testid="temporal-run-switcher"]')!
+        .textContent,
+    ).toContain("Run 01a20d99…59e0");
+  });
+
+  it("counts from the server's total when only the newest runs are loaded", () => {
+    const container = render({
+      hasMoreRuns: true,
+      runCount: 130,
+      runs: [run("03cccccc-cccc"), run("01a20953-aaaa")],
+    });
+
+    expect(
+      container.querySelector('[data-testid="temporal-run-switcher"]')!
+        .textContent,
+    ).toContain("129 of 130");
+  });
+
+  it("prints no total and no position while it does not know how many runs there are", () => {
+    const container = render({
+      hasMoreRuns: true,
+      runs: [run("03cccccc-cccc"), run("01a20953-aaaa")],
+    });
+    const switcher = container.querySelector(
+      '[data-testid="temporal-run-switcher"]',
+    )!;
+
+    expect(switcher.textContent).not.toMatch(/\d of \d/);
+    expect(switcher.textContent).toContain("one of 2+ runs");
+  });
+
+  it("makes the run the page's heading", () => {
+    expect(
+      render({ runs: [run("01a20953-aaaa", "Running")] }).querySelector("h1")!
+        .textContent,
+    ).toContain("Run 01a20953-aaaa");
+  });
+
   it("shows a run from a history file as text, because the server does not have it", () => {
     const container = render({ isImported: true });
 
@@ -255,6 +303,59 @@ describe("TemporalRelatedPanel", () => {
   });
 });
 
+describe("TemporalRelatedPanel with more runs than it loaded", () => {
+  let root: Root | undefined;
+
+  afterEach(() => {
+    act(() => root?.unmount());
+    root = undefined;
+    document.body.innerHTML = "";
+  });
+
+  function render(runCount?: number) {
+    const container = document.createElement("div");
+
+    document.body.append(container);
+    root = createRoot(container);
+    act(() =>
+      root!.render(
+        <TemporalRelatedPanel
+          execution={run("01a20d99-0d5c-7af8-bffe-865954a459e0")}
+          hasMoreRuns
+          isLoadingRuns={false}
+          onOpenExecution={vi.fn()}
+          runCount={runCount}
+          runs={[
+            run("01a20d99-0d82-7222-b496-9939c1719edf"),
+            run("01a20d99-0d5c-7af8-bffe-865954a459e0"),
+          ]}
+          spans={[]}
+          workflowIdUrl="#all"
+        />,
+      ),
+    );
+
+    return container;
+  }
+
+  it("says that it lists the newest runs, with the server's total", () => {
+    const text = render(130).textContent;
+
+    expect(text).toContain("Runs of This Workflow ID (130)");
+    expect(text).toContain("The newest 2 of 130 runs.");
+    expect(text).toContain("View all 130 runs");
+    expect(text).toContain("01a20d99…9edf");
+  });
+
+  it("prints no total while it does not know one", () => {
+    const text = render().textContent;
+
+    expect(text).toContain("The newest 2 runs.");
+    expect(text).toContain("View all runs");
+    expect(text).not.toContain("(2)");
+  });
+});
+
 describe("relatedRunCount", () => {
   it("counts the parent, the children and the other runs, not this run", () => {
     expect(
@@ -267,5 +368,14 @@ describe("relatedRunCount", () => {
     expect(
       relatedRunCount({ execution: run("a"), runs: [run("a")], spans: [] }),
     ).toBe(0);
+    // A Workflow ID with more runs than the page loaded.
+    expect(
+      relatedRunCount({
+        execution: run("a"),
+        runCount: 130,
+        runs: [run("a"), run("b")],
+        spans: [],
+      }),
+    ).toBe(129);
   });
 });

@@ -17,6 +17,9 @@ const PHASE_LABEL: Record<TemporalQueryPhase, string> = {
 /** How long the button shows what the last query took. */
 const SHOW_DURATION_MS = 2_500;
 
+/** One width for every state, so the header beside it stays still when a query starts and ends. */
+const slotClass = "w-[5.5rem] shrink-0 @max-2xl:w-14";
+
 function formatElapsed(ms: number): string {
   const seconds = ms / 1_000;
 
@@ -82,21 +85,24 @@ export function TemporalQueryStatusButton(props: {
   if (phase !== null) {
     return (
       <div
-        className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 font-sans text-xs text-foreground shadow-xs"
+        className={cn(
+          slotClass,
+          "inline-flex h-8 items-center justify-center gap-1.5 overflow-hidden rounded-md border border-border bg-background px-2 font-sans text-xs text-foreground shadow-xs",
+        )}
         data-phase={phase}
         data-testid="temporal-query-status"
         role="status"
+        title={PHASE_LABEL[phase]}
       >
         <Loader2
           aria-hidden
-          className="size-3.5 text-muted-foreground motion-safe:animate-spin"
+          className="size-3.5 shrink-0 text-muted-foreground motion-safe:animate-spin @max-2xl:hidden"
         />
-        {/* A narrow page keeps the time and drops the words. */}
-        <span className="@max-2xl:sr-only">{PHASE_LABEL[phase]}</span>
+        <span className="sr-only">{PHASE_LABEL[phase]}</span>
         {/* The time changes ten times a second; a screen reader hears the words only. */}
         <span
           aria-hidden
-          className="min-w-8 text-right font-mono tabular-nums text-muted-foreground"
+          className="font-mono tabular-nums text-muted-foreground"
         >
           {formatElapsed(startedAt === null ? 0 : now - startedAt)}
         </span>
@@ -109,11 +115,12 @@ export function TemporalQueryStatusButton(props: {
       <Button
         variant="outline"
         size="sm"
-        className="w-8 px-0"
+        className={cn(slotClass, "gap-1.5 px-2")}
         aria-label="The query failed. Run it again"
         onClick={onRefresh}
       >
         <AlertTriangle className="text-destructive" />
+        <span className="@max-2xl:sr-only">Retry</span>
       </Button>
     );
   }
@@ -122,19 +129,22 @@ export function TemporalQueryStatusButton(props: {
     <Button
       variant="outline"
       size="sm"
-      className={cn(tookMs === null ? "w-8 px-0" : "gap-1.5 px-2.5")}
+      className={cn(slotClass, "gap-1.5 px-2")}
       aria-label={
         tookMs === null
-          ? "Refresh workflows"
-          : `Refresh workflows. The last query took ${formatDuration(tookMs)}`
+          ? "Refresh executions"
+          : `Refresh executions. The last query took ${formatDuration(tookMs)}`
       }
       onClick={onRefresh}
     >
       {tookMs === null ? (
-        <RefreshCw className={cn(isPolling && "motion-safe:animate-spin")} />
+        <>
+          <RefreshCw className={cn(isPolling && "motion-safe:animate-spin")} />
+          <span className="@max-2xl:sr-only">Refresh</span>
+        </>
       ) : (
         <>
-          <Check className="text-muted-foreground" />
+          <Check className="text-muted-foreground @max-2xl:hidden" />
           <span className="font-mono text-xs tabular-nums text-muted-foreground">
             {formatDuration(tookMs)}
           </span>

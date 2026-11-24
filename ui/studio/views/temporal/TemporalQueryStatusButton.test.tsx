@@ -60,7 +60,7 @@ describe("TemporalQueryStatusButton", () => {
     render(null);
 
     expect(status()).toBeNull();
-    expect(button()!.getAttribute("aria-label")).toBe("Refresh workflows");
+    expect(button()!.getAttribute("aria-label")).toBe("Refresh executions");
     act(() => button()!.click());
     expect(onRefresh).toHaveBeenCalledTimes(1);
   });
@@ -98,12 +98,33 @@ describe("TemporalQueryStatusButton", () => {
 
     expect(button()!.textContent).toContain("2.40s");
     expect(button()!.getAttribute("aria-label")).toBe(
-      "Refresh workflows. The last query took 2.40s",
+      "Refresh executions. The last query took 2.40s",
     );
 
     wait(3_000);
-    expect(button()!.textContent).toBe("");
-    expect(button()!.getAttribute("aria-label")).toBe("Refresh workflows");
+    expect(button()!.textContent).toBe("Refresh");
+    expect(button()!.getAttribute("aria-label")).toBe("Refresh executions");
+  });
+
+  it("is as wide in every state, so the header beside it does not move", () => {
+    const width = () =>
+      [...(status() ?? button())!.classList].filter((name) =>
+        /^(@max-2xl:)?w-/.test(name),
+      );
+
+    render(null);
+    const idle = width();
+
+    expect(idle.length).toBeGreaterThan(0);
+
+    render("rows");
+    expect(width()).toEqual(idle);
+
+    render(null);
+    expect(width()).toEqual(idle);
+
+    render(null, { isError: true });
+    expect(width()).toEqual(idle);
   });
 
   it("offers to run a failed query again", () => {

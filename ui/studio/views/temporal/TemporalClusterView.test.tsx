@@ -88,18 +88,25 @@ vi.mock("@/ui/hooks/use-temporal", () => ({
     setAdmission: { isPending: false, mutateAsync: vi.fn() },
   }),
   useTemporalClusterOverview: () => ({
-    data: mockOverview,
-    error: null,
-    isError: false,
+    data: overviewMock(),
+    dataUpdatedAt: Date.now() - 90_000,
+    error: errorMock(),
+    isError: errorMock() !== null,
     isFetching: false,
     isLoading: false,
     refetch: vi.fn(),
   }),
   useTemporalClusterTraces: () => ({
-    data: { capacity: 4096, traces: [] },
+    data: { capacity: 4096, traces: tracesMock() },
     refetch: vi.fn(),
   }),
 }));
+
+const overviewMock = vi.fn<() => TemporalClusterOverview | undefined>(
+  () => mockOverview,
+);
+const errorMock = vi.fn<() => Error | null>(() => null);
+const tracesMock = vi.fn<() => Array<Record<string, unknown>>>(() => []);
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -118,6 +125,161 @@ describe("TemporalClusterView shard state popup", () => {
   afterEach(() => {
     act(() => root.unmount());
     document.body.innerHTML = "";
+    overviewMock.mockImplementation(() => mockOverview);
+    errorMock.mockReturnValue(null);
+    tracesMock.mockReturnValue([]);
+  });
+
+  function renderView() {
+    act(() => {
+      root.render(
+        <TemporalClusterView
+          followMode="paused"
+          onFollowModeChange={vi.fn()}
+          onOpenExecution={vi.fn()}
+        />,
+      );
+    });
+  }
+
+  function typeInto(id: string, value: string) {
+    const input = container.querySelector<HTMLInputElement>(`#${id}`)!;
+    const setValue = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.bind(input);
+
+    act(() => {
+      setValue(value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+
+  const applyButton = () =>
+    container.querySelector<HTMLButtonElement>(
+      '[data-testid="temporal-admission-apply-btn"]',
+    )!;
+
+  it("explains the server's trouble once, not under every shard", () => {
+    const shard = mockOverview.shards[0]!;
+
+    overviewMock.mockReturnValue({
+      ...mockOverview,
+      health: {
+        reasons: [{ signal: "headroom", unit: "share", value: 0.12 }],
+        state: "busy",
+        tags: ["worker_shortage"],
+      },
+      shards: [
+        {
+          ...shard,
+          health: "busy",
+          healthReasons: [
+            { shard: 0, signal: "progress_sojourn", unit: "ms", value: 7.13 },
+          ],
+        },
+      ],
+    });
+    renderView();
+
+    const note = container.querySelector(
+      '[data-testid="temporal-cluster-health-note"]',
+    )!;
+    const shardState = container.querySelector(
+      '[data-testid="temporal-shard-state-0"]',
+    )!;
+
+    expect(note.textContent).toContain("Tasks wait for Workers.");
+    expect(note.textContent).toContain("headroom 12%");
+    expect(shardState.textContent).not.toContain("Tasks wait for Workers.");
+    expect(shardState.textContent).toContain("progress_sojourn");
+  });
+
+  it("offers no shard handoff on a single node and says why", () => {
+    renderView();
+
+    expect(container.textContent).not.toContain("Hand Off");
+    expect(container.textContent).toContain("single node, not available");
+  });
+
+  it("offers a handoff for each shard of a cell with several servers", () => {
+    overviewMock.mockReturnValue({
+      ...mockOverview,
+      info: { ...mockOverview.info, placementVersion: 2 },
+    });
+    renderView();
+
+    expect(
+      container.querySelector('button[aria-label="Hand off shard/0"]')!
+        .textContent,
+    ).toBe("Hand Off");
+  });
+
+  it("refuses a hold that lasts longer than the server allows", () => {
+    renderView();
+    expect(applyButton().disabled).toBe(false);
+
+    typeInto("adm-ttl", "99999");
+
+    expect(applyButton().disabled).toBe(true);
+    expect(container.querySelector("#adm-ttl-error")!.textContent).toBe(
+      "Enter 1 to 3600 whole seconds.",
+    );
+  });
+
+  it("refuses an empty rate instead of applying another one", () => {
+    renderView();
+    typeInto("adm-rate", "");
+
+    expect(applyButton().disabled).toBe(true);
+    expect(container.querySelector("#adm-rate-error")!.textContent).toBe(
+      "Enter a rate above 0.",
+    );
+  });
+
+  it("shows the fields the server reports for a sampled trace", () => {
+    tracesMock.mockReturnValue([
+      { effect_ms: 0.4, workflow_id: "order-1", write_ms: 1.2 },
+    ]);
+    renderView();
+
+    expect(container.textContent).toContain("order-1");
+    expect(container.textContent).toContain("effect_ms 0.4 · write_ms 1.2");
+  });
+
+  it("says when the data was read and that refresh is paused", () => {
+    renderView();
+
+    expect(
+      container.querySelector('[data-testid="temporal-cluster-as-of"]')!
+        .textContent,
+    ).toBe("As of 1m ago · Paused");
+  });
+
+  it("says that the load failed, with the server's message", () => {
+    overviewMock.mockReturnValue(undefined);
+    errorMock.mockReturnValue(new Error("unauthenticated"));
+    renderView();
+
+    const alert = container.querySelector('[role="alert"]')!;
+
+    expect(alert.textContent).toContain(
+      "Could not load the cluster diagnostics",
+    );
+    expect(alert.textContent).toContain("unauthenticated");
+  });
+
+  it("keeps the diagnostics on screen when a refresh fails", () => {
+    errorMock.mockReturnValue(new Error("admin API timed out"));
+    renderView();
+
+    expect(
+      container.querySelector('[data-testid="temporal-shard-row-0"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="temporal-refresh-error"]')!
+        .textContent,
+    ).toContain("admin API timed out");
   });
 
   it("shows all shard lifecycle and health states with descriptions when hovering or focusing the shard state", () => {

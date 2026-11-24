@@ -488,6 +488,42 @@ function normalizeEventTypeName(name: string): string {
 }
 
 /**
+ * Why a run timed out. The close event does not say which timeout passed, so
+ * the run's own length decides: a run as long as its Run Timeout hit that one,
+ * and a shorter run hit the Execution Timeout, which counts from the first run
+ * of the chain.
+ */
+function workflowTimeoutFailure(args: {
+  elapsedMs: number;
+  executionTimeoutMs: number;
+  runTimeoutMs: number;
+}): TemporalFailureInfo {
+  const { elapsedMs, executionTimeoutMs, runTimeoutMs } = args;
+  // The server's timer fires a little after or before the exact length.
+  const reachedRunTimeout =
+    runTimeoutMs > 0 && elapsedMs >= runTimeoutMs - 1_000;
+
+  if (reachedRunTimeout || (runTimeoutMs > 0 && executionTimeoutMs === 0)) {
+    return {
+      message: `The run did not close within ${formatTimerLength(runTimeoutMs)}.`,
+      type: "Workflow Run Timeout",
+    };
+  }
+
+  if (executionTimeoutMs > 0) {
+    return {
+      message: `The Workflow did not close within ${formatTimerLength(executionTimeoutMs)}, counted from its first run.`,
+      type: "Workflow Execution Timeout",
+    };
+  }
+
+  return {
+    message: "The run did not close in time.",
+    type: "Workflow Timeout",
+  };
+}
+
+/**
  * Converts a workflow execution + raw Temporal history events into structured
  * grouped spans, normalized raw events, decoded input/result/failure, and
  * timeline bounds suitable for Prisma Studio's Execution Debugger.
@@ -507,6 +543,8 @@ export function buildExecutionDetail(args: {
   let workflowFailure: TemporalFailureInfo | undefined;
   let workflowSummary: string | undefined;
   let workflowDetails: string | undefined;
+  let runTimeoutMs = 0;
+  let executionTimeoutMs = 0;
   const chain: TemporalRunChain = {};
 
   const normalizedRawEvents: TemporalHistoryEvent[] = [];
@@ -554,6 +592,9 @@ export function buildExecutionDetail(args: {
       workflowDetails = readUserMetadata(raw, "details");
       chain.previousRunId = nonEmptyString(attributes.continuedExecutionRunId);
       chain.firstRunId = nonEmptyString(attributes.firstExecutionRunId);
+      runTimeoutMs = durationToMs(attributes.workflowRunTimeout) ?? 0;
+      executionTimeoutMs =
+        durationToMs(attributes.workflowExecutionTimeout) ?? 0;
     } else if (eventType === "WorkflowExecutionCompleted") {
       workflowResult = decodePayloads(
         attributes.result as RawPayloads | undefined,
@@ -568,6 +609,17 @@ export function buildExecutionDetail(args: {
           ? attributes.reason
           : "Workflow terminated";
       workflowFailure = { message: reason, type: "Terminated" };
+    } else if (eventType === "WorkflowExecutionTimedOut") {
+      const retryState = enumName(attributes.retryState, "RETRY_STATE_");
+
+      workflowFailure = {
+        ...workflowTimeoutFailure({
+          elapsedMs: offsetMs,
+          executionTimeoutMs,
+          runTimeoutMs,
+        }),
+        ...(retryState ? { retryState } : {}),
+      };
     } else if (eventType === "ActivityTaskScheduled") {
       const actType =
         (attributes.activityType as { name?: string } | undefined)?.name ??

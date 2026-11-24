@@ -170,7 +170,8 @@ export function TemporalRunPreview(props: {
           ) : null}
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        {/* No wider than the preview, so the buttons wrap on a narrow page. */}
+        <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">
           {typeof streamsUrl === "string" ? (
             <Button
               asChild

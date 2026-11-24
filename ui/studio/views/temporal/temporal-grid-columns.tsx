@@ -7,7 +7,11 @@ import type {
 import { useUiState } from "@/ui/hooks/use-ui-state";
 
 import { formatDuration } from "./temporal-utils";
-import { TemporalTime, WorkflowStatusBadge } from "./TemporalPrimitives";
+import {
+  TemporalTime,
+  useNow,
+  WorkflowStatusBadge,
+} from "./TemporalPrimitives";
 
 export interface WorkflowColumn {
   align?: "right";
@@ -17,7 +21,7 @@ export interface WorkflowColumn {
   label: string;
   render: (
     run: TemporalWorkflowExecution,
-    actions: { onOpen: () => void },
+    actions: { href: string; onOpen: () => void },
   ) => React.ReactNode;
   sortField?: TemporalWorkflowSortField;
 }
@@ -32,6 +36,25 @@ interface GridColumnsState {
 
 const DEFAULT_STATE: GridColumnsState = { shown: null, widths: {} };
 const MIN_COLUMN_WIDTH = 64;
+
+/** The server gives the duration as of the last refresh, so an open run counts on from its start. */
+function RunDuration(props: { run: TemporalWorkflowExecution }) {
+  const { run } = props;
+  const isOpen =
+    !run.closeTime && (run.status === "Running" || run.status === "Paused");
+  const now = useNow(1_000, isOpen);
+  const startMs = Date.parse(run.startTime);
+
+  return (
+    <>
+      {formatDuration(
+        isOpen && Number.isFinite(startMs)
+          ? Math.max(run.durationMs, now - startMs)
+          : run.durationMs,
+      )}
+    </>
+  );
+}
 
 const BUILT_IN_COLUMNS: WorkflowColumn[] = [
   {
@@ -53,18 +76,29 @@ const BUILT_IN_COLUMNS: WorkflowColumn[] = [
     defaultWidth: 260,
     id: "workflowId",
     label: "Workflow ID",
-    render: (run, { onOpen }) => (
-      <button
-        type="button"
+    render: (run, { href, onOpen }) => (
+      <a
+        href={href}
         onClick={(event) => {
           event.stopPropagation();
-          onOpen();
+
+          // A modified click opens the link in a new tab or window, as the browser does.
+          if (
+            !event.metaKey &&
+            !event.ctrlKey &&
+            !event.shiftKey &&
+            !event.altKey &&
+            event.button === 0
+          ) {
+            event.preventDefault();
+            onOpen();
+          }
         }}
         className="block max-w-full truncate rounded-sm py-1 text-left font-mono text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         title={run.workflowId}
       >
         {run.workflowId}
-      </button>
+      </a>
     ),
     sortField: "WorkflowId",
   },
@@ -98,7 +132,7 @@ const BUILT_IN_COLUMNS: WorkflowColumn[] = [
     defaultWidth: 110,
     id: "duration",
     label: "Duration",
-    render: (run) => formatDuration(run.durationMs),
+    render: (run) => <RunDuration run={run} />,
     sortField: "Duration",
   },
   {
@@ -195,6 +229,11 @@ export function useWorkflowColumns(executions: TemporalWorkflowExecution[]) {
     (id: string) => {
       setState((previous) => {
         const shown = previous.shown ?? DEFAULT_COLUMN_IDS;
+
+        // A grid with no column shows rows that cannot be told apart.
+        if (shown.length === 1 && shown[0] === id) {
+          return previous;
+        }
 
         return {
           ...previous,

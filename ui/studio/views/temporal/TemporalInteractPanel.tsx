@@ -20,6 +20,7 @@ import {
   TemporalSectionLabel,
   TemporalSegmentedControl,
 } from "./TemporalPrimitives";
+import { TemporalCopyButton } from "./TemporalRunBreadcrumb";
 
 type InteractKind = "query" | "signal" | "update";
 
@@ -215,8 +216,8 @@ export function TemporalInteractPanel(props: {
 
       {!isRunning ? (
         <p className="text-2xs text-muted-foreground">
-          This run is closed. It still answers Queries, but takes no Signal or
-          Update.
+          This run is closed. It takes no Signal or Update. A Query still works
+          when a Worker of its Task Queue can replay the run.
         </p>
       ) : null}
 
@@ -358,8 +359,20 @@ function HandlerRow(props: {
           value={argsText}
         />
       ) : null}
+      {argsOpen ? (
+        <SendHint verb={kind === "query" ? "runs" : "sends"} />
+      ) : null}
       {output ? <InteractOutputBlock output={output} /> : null}
     </div>
+  );
+}
+
+/** The key that sends from inside the arguments field, where Enter adds a line. */
+function SendHint(props: { verb: "runs" | "sends" }) {
+  return (
+    <p className="-mt-1 text-2xs text-muted-foreground">
+      ⌘↵ or Ctrl+Enter {props.verb} it.
+    </p>
   );
 }
 
@@ -490,6 +503,7 @@ function CustomInteraction(props: {
           value={argsText}
         />
       </TemporalField>
+      <SendHint verb={effectiveKind === "query" ? "runs" : "sends"} />
       <Button
         size="sm"
         disabled={isPending}
@@ -513,12 +527,23 @@ function InteractOutputBlock(props: { output: InteractOutput }) {
       data-testid="temporal-interact-output"
     >
       <div className="flex items-center justify-between gap-2 text-xs">
-        <span className="font-medium text-foreground">{output.label}</span>
-        {output.durationMs != null ? (
-          <span className="font-mono text-2xs tabular-nums text-muted-foreground">
-            {output.durationMs}ms
-          </span>
-        ) : null}
+        <span className="min-w-0 truncate font-medium text-foreground">
+          {output.label}
+        </span>
+        <span className="flex shrink-0 items-center gap-1">
+          {output.durationMs != null ? (
+            <span className="font-mono text-2xs tabular-nums text-muted-foreground">
+              {output.durationMs}ms
+            </span>
+          ) : null}
+          {output.error || output.value === undefined ? null : (
+            <TemporalCopyButton
+              label="Copy the result"
+              toastText="Copied the result"
+              value={safeJsonPretty(output.value)}
+            />
+          )}
+        </span>
       </div>
       {output.error ? (
         <pre className="whitespace-pre-wrap font-mono text-xs text-destructive">

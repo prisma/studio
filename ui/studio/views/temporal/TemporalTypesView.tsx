@@ -16,12 +16,16 @@ import { useTemporalFacets, useTemporalTypeMap } from "@/ui/hooks/use-temporal";
 import { cn } from "@/ui/lib/utils";
 
 import { StudioHeader } from "../../StudioHeader";
-import { formatDuration } from "./temporal-utils";
+import { formatDuration, pluralize } from "./temporal-utils";
 import {
   TemporalFollowControl,
   temporalIconScale,
+  TemporalLoadError,
   TemporalNamespaceBadge,
+  TemporalRefreshError,
   TemporalSectionLabel,
+  TemporalTime,
+  useNow,
   WorkflowStatusIcon,
   workflowStatusLabel,
 } from "./TemporalPrimitives";
@@ -72,7 +76,18 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
     }
     return types.filter((type) => type.name.toLowerCase().includes(q));
   }, [typeSearch, types]);
-  const activeType = temporalTypeParam ?? types[0]?.name ?? null;
+  // The list is in order of run count, which changes; the type on screen must not change with it.
+  const [firstListedType, setFirstListedType] = useState<string | null>(null);
+  const isFirstTypeListed = types.some((type) => type.name === firstListedType);
+
+  if (!isFirstTypeListed && types[0] && types[0].name !== firstListedType) {
+    setFirstListedType(types[0].name);
+  }
+
+  const activeType =
+    temporalTypeParam ??
+    (isFirstTypeListed ? firstListedType : types[0]?.name) ??
+    null;
   const map = useTemporalTypeMap({
     followMode,
     namespace,
@@ -93,6 +108,17 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
   );
   const selected =
     shownMap?.nodes.find((node) => node.id === selectedId) ?? null;
+  // The moment the BFF drew the diagram, so its age keeps counting between requests.
+  const drawnAt = useMemo(
+    () =>
+      map.data
+        ? new Date(
+            (map.dataUpdatedAt || Date.now()) - map.data.ageMs,
+          ).toISOString()
+        : undefined,
+    [map.data, map.dataUpdatedAt],
+  );
+  const isKnownType = types.some((type) => type.name === activeType);
 
   useEffect(() => {
     setSelectedId(null);
@@ -128,8 +154,12 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
               variant="outline"
               size="sm"
               className="w-8 px-0"
-              aria-label="Draw the diagram again"
-              onClick={() => void map.refetch()}
+              aria-label="Refresh Workflow Types"
+              title="Refresh Workflow Types"
+              onClick={() => {
+                void facets.refetch();
+                void map.refetch();
+              }}
             >
               <RefreshCw
                 className={cn(map.isFetching && "motion-safe:animate-spin")}
@@ -138,7 +168,9 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
           </>
         }
       >
-        <TemporalNamespaceBadge namespace={namespace} />
+        <span className="contents @max-3xl:hidden">
+          <TemporalNamespaceBadge namespace={namespace} />
+        </span>
       </StudioHeader>
 
       <div className="flex min-h-0 flex-1 flex-col @3xl:flex-row">
@@ -153,6 +185,12 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
                 aria-label="Filter Workflow Types"
                 value={typeSearch}
                 onChange={(e) => setTypeSearch(e.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && typeSearch) {
+                    event.stopPropagation();
+                    setTypeSearch("");
+                  }
+                }}
                 placeholder="Filter types"
                 className="h-7 pl-7 text-xs"
                 data-testid="temporal-type-filter"
@@ -164,14 +202,35 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
               Array.from({ length: 4 }).map((_, index) => (
                 <Skeleton key={index} className="h-8 w-full" />
               ))
+            ) : facets.isError && types.length === 0 ? (
+              // Without a type in the URL the pane beside the list says so, with Retry.
+              activeType === null ? null : (
+                <div className="flex flex-col items-start gap-2 p-2 text-xs text-muted-foreground">
+                  <p>Could not load the list of Workflow Types.</p>
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    onClick={() => void facets.refetch()}
+                  >
+                    Retry
+                  </Button>
+                </div>
+              )
             ) : types.length === 0 ? (
               <p className="p-2 text-xs text-muted-foreground">
                 No Workflow has run in this namespace yet.
               </p>
             ) : filteredTypes.length === 0 ? (
-              <p className="p-2 text-xs text-muted-foreground">
-                No Workflow Type matches this filter.
-              </p>
+              <div className="flex flex-col items-start gap-2 p-2 text-xs text-muted-foreground">
+                <p>No Workflow Type matches this filter.</p>
+                <Button
+                  variant="outline"
+                  size="xs"
+                  onClick={() => setTypeSearch("")}
+                >
+                  Clear Filter
+                </Button>
+              </div>
             ) : (
               filteredTypes.map((type) => (
                 <button
@@ -204,25 +263,36 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
         </nav>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          {activeType === null ? (
+          {activeType === null && facets.isError ? (
+            <div className="flex flex-1 flex-col justify-center">
+              <TemporalLoadError
+                error={facets.error}
+                onRetry={() => void facets.refetch()}
+                title={
+                  <>
+                    Could not load the Workflow Types of namespace{" "}
+                    <code className="font-mono">{namespace}</code>.
+                  </>
+                }
+              />
+            </div>
+          ) : activeType === null && !facets.isLoading ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-sm text-muted-foreground">
               <Waypoints className="size-6 opacity-60" />
               <p>Start a Workflow to see its steps here.</p>
             </div>
-          ) : map.isError ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-sm text-muted-foreground">
-              <p className="font-medium text-destructive">
-                {map.error instanceof Error
-                  ? map.error.message
-                  : "Could not draw this Workflow Type"}
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void map.refetch()}
-              >
-                Retry
-              </Button>
+          ) : map.isError && !shownMap ? (
+            <div className="flex flex-1 flex-col justify-center">
+              <TemporalLoadError
+                error={map.error}
+                onRetry={() => void map.refetch()}
+                title={
+                  <>
+                    Could not draw Workflow Type{" "}
+                    <code className="font-mono">{activeType}</code>.
+                  </>
+                }
+              />
             </div>
           ) : !shownMap ? (
             <div className="flex flex-1 flex-col items-center gap-4 p-8">
@@ -233,7 +303,14 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
             </div>
           ) : (
             <>
+              {map.isError ? (
+                <TemporalRefreshError
+                  error={map.error}
+                  onRetry={() => void map.refetch()}
+                />
+              ) : null}
               <SampleLine
+                drawnAt={drawnAt}
                 map={shownMap}
                 workflowsUrl={workflowsUrl(typeFilter)}
               />
@@ -279,7 +356,9 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
               <div className="min-h-0 flex-1">
                 {shownMap.runCount === 0 ? (
                   <p className="p-10 text-center text-sm text-muted-foreground">
-                    No run of this type has a history that Studio can read.
+                    {facets.data && !isKnownType
+                      ? "No Workflow of this type has run in this namespace."
+                      : "No run of this type has a history that Studio can read."}
                   </p>
                 ) : (
                   <TemporalTypeMapCanvas
@@ -313,10 +392,11 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
 
 /** Which runs the diagram is drawn from, so its counts are not read as counts of all runs. */
 function SampleLine(props: {
+  drawnAt?: string;
   map: TemporalTypeMapResponse;
   workflowsUrl: string;
 }) {
-  const { map, workflowsUrl } = props;
+  const { drawnAt, map, workflowsUrl } = props;
 
   return (
     <div
@@ -361,23 +441,27 @@ function SampleLine(props: {
         </span>
       ) : null}
       <span className="ml-auto flex items-center gap-4">
-        {map.ageMs >= 1_000 ? (
+        {drawnAt ? (
           <span>
-            {map.ageMs < 60_000
-              ? `${Math.round(map.ageMs / 1_000)}s`
-              : formatDuration(map.ageMs)}{" "}
-            ago
+            Drawn <TickingTime iso={drawnAt} />
           </span>
         ) : null}
         <a
           className="font-medium text-foreground underline underline-offset-2 hover:no-underline"
           href={workflowsUrl}
         >
-          Open the runs in Executions
+          Open every run of this type in Executions
         </a>
       </span>
     </div>
   );
+}
+
+/** A time whose relative form keeps counting while nothing else renders. */
+function TickingTime(props: { iso: string }) {
+  useNow(1_000, true);
+
+  return <TemporalTime iso={props.iso} />;
 }
 
 function RunLinks(props: {
@@ -467,7 +551,7 @@ function NodeDetail(props: {
       ? null
       : ["Median", formatDuration(node.medianDurationMs)],
     node.retriedRunCount > 0
-      ? ["Retried in", `${node.retriedRunCount} runs`]
+      ? ["Retried in", pluralize(node.retriedRunCount, "run")]
       : null,
   ].filter((fact) => fact !== null) as Array<[string, string]>;
 

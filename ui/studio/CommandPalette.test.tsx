@@ -20,6 +20,7 @@ interface NavigationMockValue {
   schemaParam: string;
   setSchemaParam: () => Promise<URLSearchParams>;
   setTableParam: () => Promise<URLSearchParams>;
+  temporalFollowParam?: string;
   viewParam: "table" | "schema" | "console" | "sql";
 }
 
@@ -42,7 +43,9 @@ let temporalUrl: string | undefined;
 const temporalMocks = {
   capabilities: vi.fn<() => { data?: Record<string, unknown> }>(() => ({})),
   schedules: vi.fn<(args: unknown) => { data?: unknown }>(() => ({})),
-  workflows: vi.fn<(args: unknown) => { data?: unknown }>(() => ({})),
+  workflows: vi.fn<
+    (args: unknown) => { data?: unknown; isPlaceholderData?: boolean }
+  >(() => ({})),
 };
 const uiStateStore = new Map<string, unknown>();
 const uiStateListeners = new Map<string, Set<() => void>>();
@@ -423,7 +426,7 @@ describe("Studio command palette", () => {
     expect(text).not.toContain("Workers");
     expect(text).toContain("Workflow Types");
     expect(text).toContain("Executions");
-    expect(text).toContain("Needs Attention");
+    expect(text).toContain("Attention");
     expect(text).toContain("Schedules");
     expect(text).toContain("Task Queues");
     expect(text).toContain("Cluster & Shards");
@@ -498,6 +501,7 @@ describe("Studio command palette", () => {
     });
     // The palette asks the server only after typing has paused.
     expect(document.body.textContent).not.toContain("order-8488");
+    expect(document.body.textContent).toContain("Searching…");
     act(() => {
       vi.advanceTimersByTime(250);
     });
@@ -526,6 +530,145 @@ describe("Studio command palette", () => {
       root.unmount();
     });
     container.remove();
+    vi.useRealTimers();
+  });
+
+  function openPaletteAndType(text: string) {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <StudioCommandPaletteProvider>{null}</StudioCommandPaletteProvider>,
+      );
+    });
+    act(() => {
+      keyDown("k", { metaKey: true });
+    });
+    act(() => {
+      inputText(
+        document.querySelector<HTMLInputElement>(
+          'input[aria-label="Search commands"]',
+        )!,
+        text,
+      );
+    });
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+
+    return () => {
+      act(() => root.unmount());
+      container.remove();
+    };
+  }
+
+  it("shows Searching, not the runs of the previous text, while a search is on its way", () => {
+    vi.useFakeTimers();
+    temporalUrl = "/api/temporal";
+    temporalMocks.workflows.mockImplementation(() => ({
+      data: {
+        executions: [
+          {
+            runId: "run-1",
+            startTime: "2026-11-24T10:00:00.000Z",
+            status: "Running",
+            workflowId: "payout-mch_010",
+            workflowType: "merchantPayout",
+          },
+        ],
+      },
+      isPlaceholderData: true,
+    }));
+
+    const unmount = openPaletteAndType("order-zzz");
+
+    expect(document.body.textContent).not.toContain("payout-mch_010");
+    expect(
+      document.querySelector('[data-testid="command-palette-searching"]')!
+        .textContent,
+    ).toBe("Searching…");
+    expect(document.body.textContent).not.toContain("No matching commands.");
+
+    unmount();
+    vi.useRealTimers();
+  });
+
+  it("names a run's status as the screens do and says when it started", () => {
+    vi.useFakeTimers();
+    temporalUrl = "/api/temporal";
+    temporalMocks.workflows.mockImplementation(() => ({
+      data: {
+        executions: [
+          {
+            runId: "run-1",
+            startTime: "2026-11-24T10:00:00.000Z",
+            status: "TimedOut",
+            workflowId: "nightly-report-eu",
+            workflowType: "nightlyReport",
+          },
+        ],
+      },
+    }));
+
+    const unmount = openPaletteAndType("nightly");
+    const item = getCommandItemByText("nightly-report-eu")!;
+
+    expect(item.textContent).toContain(
+      "nightly-report-eu · nightlyReport · Timed Out",
+    );
+    expect(item.querySelector("time")!.getAttribute("datetime")).toBe(
+      "2026-11-24T10:00:00.000Z",
+    );
+
+    unmount();
+    vi.useRealTimers();
+  });
+
+  it("puts a view whose name matches above one that matches by keyword only", () => {
+    vi.useFakeTimers();
+    temporalUrl = "/api/temporal";
+    temporalMocks.capabilities.mockReturnValue({
+      data: { supportsDescribeTaskQueue: true },
+    });
+    temporalMocks.workflows.mockImplementation(() => ({
+      data: { executions: [] },
+    }));
+
+    const unmount = openPaletteAndType("workers");
+    const labels = getCommandItems().map((item) => item.textContent?.trim());
+
+    expect(labels.indexOf("Temporal Workers")).toBeGreaterThanOrEqual(0);
+    expect(labels.indexOf("Temporal Workers")).toBeLessThan(
+      labels.indexOf("Temporal Task Queues"),
+    );
+
+    unmount();
+    vi.useRealTimers();
+  });
+
+  it("keeps a paused Temporal page paused when it opens another view", () => {
+    vi.useFakeTimers();
+    temporalUrl = "/api/temporal";
+    useNavigationMock.mockReturnValue({
+      ...useNavigationMock(),
+      temporalFollowParam: "paused",
+    });
+    temporalMocks.workflows.mockImplementation(() => ({
+      data: { executions: [] },
+    }));
+
+    const unmount = openPaletteAndType("task queues");
+
+    act(() => {
+      getCommandItemByText("Temporal Task Queues")?.click();
+    });
+
+    expect(window.location.hash).toContain("temporalFollowParam=paused");
+    expect(window.location.hash).toContain("temporalSectionParam=queues");
+
+    unmount();
     vi.useRealTimers();
   });
 

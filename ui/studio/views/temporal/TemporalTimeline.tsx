@@ -157,6 +157,7 @@ export function TemporalTimeline(props: {
   );
   const [expandedChildIds, setExpandedChildIds] = useState<string[]>([]);
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+  const [focusedRowKey, setFocusedRowKey] = useState<string | null>(null);
   const [rowsBelow, setRowsBelow] = useState(0);
   const [containerWidth, setContainerWidth] = useState(900);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -503,6 +504,33 @@ export function TemporalTimeline(props: {
     card.style.transform = `translate(${left}px, ${top}px)`;
   };
 
+  const tabStopKey = rows.some((row) => row.key === focusedRowKey)
+    ? focusedRowKey
+    : rows[0]?.key;
+  const moveBetweenRows = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    const labels = Array.from(
+      scrollRef.current?.querySelectorAll<HTMLButtonElement>(
+        "[data-timeline-label]",
+      ) ?? [],
+    );
+    const index = labels.indexOf(event.currentTarget);
+    const target =
+      event.key === "ArrowDown"
+        ? labels[index + 1]
+        : event.key === "ArrowUp"
+          ? labels[index - 1]
+          : event.key === "Home"
+            ? labels[0]
+            : event.key === "End"
+              ? labels.at(-1)
+              : undefined;
+
+    if (target) {
+      event.preventDefault();
+      target.focus();
+    }
+  };
+
   return (
     <div
       ref={wrapperRef}
@@ -521,7 +549,7 @@ export function TemporalTimeline(props: {
             <ToggleGroupItem
               key={filter.label}
               value={filter.label}
-              className="h-6 px-2 text-2xs font-normal text-muted-foreground data-[state=on]:bg-secondary data-[state=on]:text-foreground"
+              className="h-6 border border-transparent px-2 text-2xs font-normal text-muted-foreground data-[state=off]:line-through data-[state=off]:opacity-70 data-[state=on]:border-border data-[state=on]:bg-secondary data-[state=on]:text-foreground"
             >
               {filter.label}{" "}
               <span className="font-mono tabular-nums">
@@ -666,6 +694,8 @@ export function TemporalTimeline(props: {
 
           {rows.map((row) => {
             const { span } = row;
+            // One row is a tab stop; the arrow keys reach the others.
+            const isTabStop = row.key === tabStopKey;
             const isSelected = !row.child && selectedSpanId === span.id;
             const isHighlighted = !row.child && highlightedSet.has(span.id);
             const isChildSpan =
@@ -717,6 +747,7 @@ export function TemporalTimeline(props: {
                   {isChildSpan ? (
                     <button
                       type="button"
+                      tabIndex={isTabStop ? 0 : -1}
                       aria-expanded={isExpanded}
                       aria-label={`${isExpanded ? "Hide" : "Show"} the spans of ${span.childWorkflowId}`}
                       className="flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -739,8 +770,12 @@ export function TemporalTimeline(props: {
                   )}
                   <button
                     type="button"
+                    tabIndex={isTabStop ? 0 : -1}
                     aria-pressed={row.child ? undefined : isSelected}
+                    data-timeline-label
                     onClick={select}
+                    onFocus={() => setFocusedRowKey(row.key)}
+                    onKeyDown={moveBetweenRows}
                     className={cn(
                       "h-full min-w-0 flex-1 truncate rounded-sm text-left font-mono text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                       isHighlighted && "font-medium",
@@ -762,6 +797,7 @@ export function TemporalTimeline(props: {
                   {isChildSpan ? (
                     <button
                       type="button"
+                      tabIndex={isTabStop ? 0 : -1}
                       aria-label={`Open ${span.childWorkflowId}`}
                       className="hidden size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:flex"
                       onClick={() =>

@@ -15,6 +15,7 @@ import {
   WorkflowStatusIcon,
   workflowStatusLabel,
 } from "./TemporalPrimitives";
+import { compactRunId } from "./TemporalRunBreadcrumb";
 
 function childrenOf(spans: TemporalGroupedSpan[]): TemporalGroupedSpan[] {
   return spans.filter((span) => span.kind === "child-workflow");
@@ -35,16 +36,18 @@ function rootOf(execution: TemporalWorkflowExecution): string | undefined {
  */
 export function relatedRunCount(args: {
   execution: TemporalWorkflowExecution;
+  /** How many runs the Workflow ID has, when the server counted more than `runs` holds. */
+  runCount?: number;
   runs?: TemporalWorkflowExecution[];
   spans: TemporalGroupedSpan[];
 }): number {
-  const { execution, runs, spans } = args;
+  const { execution, runCount, runs, spans } = args;
 
   return (
     (rootOf(execution) ? 1 : 0) +
     (execution.parentWorkflowId ? 1 : 0) +
     childrenOf(spans).length +
-    Math.max(0, (runs?.length ?? 1) - 1)
+    Math.max(0, (runCount ?? runs?.length ?? 1) - 1)
   );
 }
 
@@ -111,11 +114,13 @@ function TreeRow(props: {
  */
 export function TemporalRelatedPanel(props: {
   execution: TemporalWorkflowExecution;
+  /** True when the Workflow ID has more runs than `runs` holds. */
+  hasMoreRuns?: boolean;
   isLoadingRuns: boolean;
   onOpenExecution: (workflowId: string, runId?: string) => void;
-  /** How many runs the Workflow ID has, when the server said. */
+  /** How many runs the Workflow ID has, when the server counted them. */
   runCount?: number;
-  /** The runs of this Workflow ID, newest first. */
+  /** The newest runs of this Workflow ID, newest first. */
   runs?: TemporalWorkflowExecution[];
   spans: TemporalGroupedSpan[];
   /** The Workflows list with every run of this Workflow ID. */
@@ -123,6 +128,7 @@ export function TemporalRelatedPanel(props: {
 }) {
   const {
     execution,
+    hasMoreRuns,
     isLoadingRuns,
     onOpenExecution,
     runs,
@@ -133,12 +139,13 @@ export function TemporalRelatedPanel(props: {
   const root = rootOf(execution);
   const parent = execution.parentWorkflowId;
   const ownDepth = (root ? 1 : 0) + (parent ? 1 : 0);
-  const total = Math.max(props.runCount ?? 0, runs?.length ?? 0);
+  // With more runs than the list holds, only the server's count is a total.
+  const total = hasMoreRuns ? props.runCount : (runs?.length ?? 0);
 
   return (
     <div className="flex flex-col gap-5 text-xs" data-testid="temporal-related">
       <section className="flex flex-col gap-1.5">
-        <TemporalSectionLabel>Parent and Child Executions</TemporalSectionLabel>
+        <TemporalSectionLabel>Parent and Child Workflows</TemporalSectionLabel>
         {!root && !parent && children.length === 0 ? (
           <p className="text-muted-foreground">
             No Workflow started this run, and it started no Child Workflow.
@@ -202,7 +209,9 @@ export function TemporalRelatedPanel(props: {
       <section className="flex flex-col gap-1.5">
         <TemporalSectionLabel>
           Runs of This Workflow ID
-          {total > 1 ? ` (${total.toLocaleString("en-US")})` : ""}
+          {total !== undefined && total > 1
+            ? ` (${total.toLocaleString("en-US")})`
+            : ""}
         </TemporalSectionLabel>
         {isLoadingRuns ? (
           <Skeleton className="h-9 w-full" />
@@ -217,6 +226,15 @@ export function TemporalRelatedPanel(props: {
           </p>
         ) : (
           <>
+            {hasMoreRuns ? (
+              <p className="text-2xs text-muted-foreground">
+                The newest {runs.length.toLocaleString("en-US")}
+                {total === undefined
+                  ? ""
+                  : ` of ${total.toLocaleString("en-US")}`}{" "}
+                runs.
+              </p>
+            ) : null}
             <ul
               className="flex flex-col gap-0.5"
               data-testid="temporal-related-runs"
@@ -226,14 +244,17 @@ export function TemporalRelatedPanel(props: {
                 const content = (
                   <>
                     <WorkflowStatusIcon status={run.status} />
-                    <span className="font-mono text-foreground">
-                      {run.runId.slice(0, 8)}
+                    <span
+                      className="shrink-0 font-mono text-foreground"
+                      title={run.runId}
+                    >
+                      {compactRunId(run.runId)}
                     </span>
-                    <span className="text-muted-foreground">
+                    <span className="min-w-0 truncate text-muted-foreground">
                       {isCurrent ? "This run" : workflowStatusLabel(run.status)}
                     </span>
                     <TemporalTime
-                      className="ml-auto text-2xs text-muted-foreground"
+                      className="ml-auto shrink-0 text-2xs text-muted-foreground"
                       iso={run.startTime}
                     />
                     {isCurrent ? null : (
@@ -278,7 +299,9 @@ export function TemporalRelatedPanel(props: {
               className="text-2xs font-medium text-foreground underline underline-offset-2 hover:no-underline"
               href={workflowIdUrl}
             >
-              View all {total.toLocaleString("en-US")} runs
+              {total === undefined
+                ? "View all runs"
+                : `View all ${total.toLocaleString("en-US")} runs`}
             </a>
           </>
         )}

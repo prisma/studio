@@ -56,23 +56,38 @@ const map: TemporalTypeMapResponse = {
   workflowType: "orderFulfillment",
 };
 
+const loadedFacets = {
+  data: {
+    complete: true,
+    searchAttributes: [],
+    taskQueues: [],
+    workflowTypes: [
+      { count: 400, name: "orderFulfillment" },
+      { count: 158, name: "subscriptionBilling" },
+    ],
+  },
+  isError: false,
+  isLoading: false,
+  refetch: vi.fn(),
+};
+const loadedMap = {
+  data: map as TemporalTypeMapResponse | undefined,
+  error: null as Error | null,
+  isError: false,
+  isFetching: false,
+  refetch: vi.fn(),
+};
+const queries = {
+  facets: loadedFacets as Record<string, unknown>,
+  map: loadedMap,
+};
+
 vi.mock("@/ui/hooks/use-temporal", () => ({
-  useTemporalFacets: () => ({
-    data: {
-      complete: true,
-      searchAttributes: [],
-      taskQueues: [],
-      workflowTypes: [
-        { count: 400, name: "orderFulfillment" },
-        { count: 158, name: "subscriptionBilling" },
-      ],
-    },
-    isLoading: false,
-  }),
+  useTemporalFacets: () => queries.facets,
   useTemporalTypeMap: (args: { workflowType: string | null }) => {
     typeMapArgs(args);
 
-    return { data: map, isError: false, isFetching: false, refetch: vi.fn() };
+    return queries.map;
   },
 }));
 
@@ -118,6 +133,8 @@ describe("TemporalTypesView", () => {
     act(() => root?.unmount());
     document.body.innerHTML = "";
     vi.clearAllMocks();
+    queries.facets = loadedFacets;
+    queries.map = loadedMap;
   });
 
   function render() {
@@ -216,6 +233,56 @@ describe("TemporalTypesView", () => {
         '[data-testid="temporal-type-subscriptionBilling"]',
       ),
     ).not.toBeNull();
+  });
+  it("says that the list could not load, not that no Workflow has run", () => {
+    queries.facets = {
+      data: undefined,
+      error: new Error("upstream unavailable"),
+      isError: true,
+      isLoading: false,
+      refetch: vi.fn(),
+    };
+
+    const text = render().textContent;
+
+    expect(text).toContain("Could not load the Workflow Types of namespace");
+    expect(text).toContain("upstream unavailable");
+    expect(text).not.toContain("No Workflow has run");
+    expect(text).not.toContain("Start a Workflow");
+  });
+
+  it("does not ask for a first Workflow while the list loads", () => {
+    queries.facets = { data: undefined, isError: false, isLoading: true };
+
+    expect(render().textContent).not.toContain("Start a Workflow");
+  });
+
+  it("keeps the diagram when a refresh of it fails", () => {
+    queries.map = {
+      ...loadedMap,
+      error: new Error("upstream unavailable"),
+      isError: true,
+    };
+
+    const container = render();
+
+    expect(
+      container.querySelector('[data-testid="temporal-refresh-error"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="node-activity:chargePayment"]'),
+    ).not.toBeNull();
+  });
+
+  it("says that a type could not be drawn when its first request fails", () => {
+    queries.map = {
+      ...loadedMap,
+      data: undefined,
+      error: new Error("upstream unavailable"),
+      isError: true,
+    };
+
+    expect(render().textContent).toContain("Could not draw Workflow Type");
   });
 });
 

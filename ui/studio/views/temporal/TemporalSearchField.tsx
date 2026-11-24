@@ -20,20 +20,33 @@ import {
  * The search field of the Workflows grid. While the user types a List Filter
  * it offers attribute names, then values, then AND or OR. Tab takes the
  * offered item; Enter always runs the search as typed unless the arrow keys
- * chose an item, so plain text and pasted IDs work as before.
+ * chose an item, so plain text and pasted IDs work as before. Escape closes
+ * the list, and then leaves the field.
  */
 export function TemporalSearchField(props: {
   draft: string;
   facets: TemporalFacets | undefined;
   inputRef: React.RefObject<HTMLInputElement | null>;
+  /** Escape left the field: the text goes back to the search that is applied. */
+  onCancel: () => void;
   onClear: () => void;
   onDraftChange: (text: string) => void;
   onSubmit: (text: string) => void;
 }) {
-  const { draft, facets, inputRef, onClear, onDraftChange, onSubmit } = props;
+  const {
+    draft,
+    facets,
+    inputRef,
+    onCancel,
+    onClear,
+    onDraftChange,
+    onSubmit,
+  } = props;
   const listId = useId();
   const formRef = useRef<HTMLFormElement | null>(null);
   const pendingCursor = useRef<number | null>(null);
+  // The list hears Escape before the field does, and is closed by the time the field hears it.
+  const escapeClosedList = useRef(false);
   const [cursor, setCursor] = useState(draft.length);
   const [isFocused, setIsFocused] = useState(false);
   const [isDismissed, setIsDismissed] = useState(false);
@@ -100,7 +113,7 @@ export function TemporalSearchField(props: {
                 ? `${listId}-${chosenIndex}`
                 : undefined
             }
-            aria-label="Visibility query"
+            aria-label="Search executions"
             autoComplete="off"
             spellCheck={false}
             value={draft}
@@ -127,6 +140,20 @@ export function TemporalSearchField(props: {
               setChosenIndex(-1);
             }}
             onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                const closedList = escapeClosedList.current || isOpen;
+
+                escapeClosedList.current = false;
+
+                // The grid's keys (j, k, Space, Enter) work only outside the field.
+                if (!closedList) {
+                  onCancel();
+                  event.currentTarget.blur();
+                }
+
+                return;
+              }
+
               if (!isOpen) {
                 return;
               }
@@ -155,7 +182,7 @@ export function TemporalSearchField(props: {
               type="button"
               variant="ghost"
               size="xs"
-              aria-label="Clear visibility query"
+              aria-label="Clear search"
               onClick={onClear}
               className="absolute right-1 w-6 px-0 text-muted-foreground"
             >
@@ -169,6 +196,9 @@ export function TemporalSearchField(props: {
         className="w-(--radix-popover-trigger-width) min-w-72 p-1"
         onOpenAutoFocus={(event) => event.preventDefault()}
         onCloseAutoFocus={(event) => event.preventDefault()}
+        onEscapeKeyDown={() => {
+          escapeClosedList.current = true;
+        }}
         onInteractOutside={(event) => {
           // A click in the field itself moves the cursor; it does not close the list.
           if (formRef.current?.contains(event.target as Node)) {

@@ -20,8 +20,9 @@ import {
 import { useNavigation } from "@/ui/hooks/use-navigation";
 import { cn } from "@/ui/lib/utils";
 
+import { formatAbsoluteTime, formatRelativeTime } from "./temporal-utils";
 import {
-  TemporalTime,
+  useTemporalTimeFormat,
   WorkflowStatusIcon,
   workflowStatusLabel,
 } from "./TemporalPrimitives";
@@ -45,10 +46,19 @@ export function runPosition(
   return index < 0 ? null : total - index;
 }
 
+/**
+ * A run ID that still tells runs apart when it is cut: run IDs made close in
+ * time start with the same characters and differ at the end.
+ */
+export function compactRunId(runId: string): string {
+  return runId.length > 14 ? `${runId.slice(0, 8)}…${runId.slice(-4)}` : runId;
+}
+
 const linkClassName =
   "rounded-sm hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none";
 
-function CopyButton(props: {
+/** An icon button that copies a value and confirms it with a toast. */
+export function TemporalCopyButton(props: {
   label: string;
   toastText: string;
   value: string;
@@ -93,16 +103,26 @@ export function TemporalRunBreadcrumb(props: {
   className?: string;
   execution: TemporalWorkflowExecution;
   isImported?: boolean;
+  /** True when the Workflow ID has more runs than `runs` holds. */
+  hasMoreRuns?: boolean;
   namespace: string;
   onOpenRun: (runId: string) => void;
-  /** How many runs the Workflow ID has, when the server said. */
+  /** How many runs the Workflow ID has, when the server counted them. */
   runCount?: number;
-  /** The runs of this Workflow ID, newest first. Undefined while they load. */
+  /** The newest runs of this Workflow ID, newest first. Undefined while they load. */
   runs?: TemporalWorkflowExecution[];
 }) {
-  const { className, execution, isImported, namespace, onOpenRun, runs } =
-    props;
+  const {
+    className,
+    execution,
+    hasMoreRuns,
+    isImported,
+    namespace,
+    onOpenRun,
+    runs,
+  } = props;
   const { createUrl } = useNavigation();
+  const [timeFormat] = useTemporalTimeFormat();
   const { runId, workflowId, workflowType } = execution;
   const workflowsUrl = (filter: string) =>
     createUrl({
@@ -117,9 +137,17 @@ export function TemporalRunBreadcrumb(props: {
     temporalWfParam: workflowId,
     viewParam: "temporal",
   });
-  const total = Math.max(props.runCount ?? 0, runs?.length ?? 0);
-  const position = runs ? runPosition(runs, runId, total) : null;
-  const shortRunId = runId.slice(0, 8);
+  // With more runs than the list holds, only the server's count is a total.
+  const total = hasMoreRuns ? props.runCount : (runs?.length ?? 0);
+  const position =
+    runs && total !== undefined ? runPosition(runs, runId, total) : null;
+  const shortRunId = compactRunId(runId);
+  const place =
+    total === undefined
+      ? `one of ${(runs?.length ?? 0).toLocaleString("en-US")}+ runs`
+      : position
+        ? `${position.toLocaleString("en-US")} of ${total.toLocaleString("en-US")}`
+        : `one of ${total.toLocaleString("en-US")} runs`;
 
   return (
     <nav
@@ -183,7 +211,7 @@ export function TemporalRunBreadcrumb(props: {
             {workflowId}
           </a>
         )}
-        <CopyButton
+        <TemporalCopyButton
           label={`Copy workflow ID ${workflowId}`}
           toastText="Copied Workflow ID"
           value={workflowId}
@@ -192,29 +220,31 @@ export function TemporalRunBreadcrumb(props: {
 
       <Separator />
 
-      <span className="flex shrink-0 items-center gap-0.5 font-mono text-xs">
+      {/* The run is what this page shows, so it is the page's heading. */}
+      <h1 className="flex shrink-0 items-center gap-0.5 font-mono text-xs font-normal">
         {!isImported && runs && runs.length > 1 ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="outline"
                 size="xs"
-                aria-label={`Run ${shortRunId}${position ? `, run ${position} of ${total}` : ""}. Open another run of this Workflow ID`}
+                aria-label={`Run ${runId}, ${place}. Open another run of this Workflow ID`}
                 className="gap-1.5 font-mono font-normal"
                 data-testid="temporal-run-switcher"
               >
                 <span className="text-foreground">Run {shortRunId}</span>
-                {position ? (
-                  <span className="font-sans text-muted-foreground">
-                    {position} of {total.toLocaleString("en-US")}
-                  </span>
-                ) : null}
+                <span className="font-sans text-muted-foreground">{place}</span>
                 <ChevronDown />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-80">
+            <DropdownMenuContent
+              align="start"
+              className="w-[26rem] max-w-[calc(100vw-2rem)]"
+            >
               <DropdownMenuLabel className="text-2xs font-normal text-muted-foreground">
-                Runs of {workflowId}, newest first
+                {hasMoreRuns
+                  ? `The newest ${runs.length.toLocaleString("en-US")} runs of ${workflowId}`
+                  : `Runs of ${workflowId}, newest first`}
               </DropdownMenuLabel>
               <div className="max-h-72 overflow-y-auto">
                 {runs.map((run) => (
@@ -236,23 +266,35 @@ export function TemporalRunBreadcrumb(props: {
                       )}
                     />
                     <WorkflowStatusIcon status={run.status} />
-                    <span className="font-mono text-foreground">
-                      {run.runId.slice(0, 8)}
+                    <span
+                      className="shrink-0 font-mono text-foreground"
+                      title={run.runId}
+                    >
+                      {compactRunId(run.runId)}
                     </span>
-                    <span className="text-muted-foreground">
+                    <span className="min-w-0 truncate text-muted-foreground">
                       {workflowStatusLabel(run.status)}
                     </span>
-                    <TemporalTime
-                      className="ml-auto text-2xs text-muted-foreground"
-                      iso={run.startTime}
-                    />
+                    {/* To the second: runs of one ID often start within the same minute. */}
+                    <time
+                      className="ml-auto shrink-0 font-mono text-2xs text-muted-foreground tabular-nums"
+                      dateTime={run.startTime}
+                      title={`Started ${formatRelativeTime(run.startTime)}`}
+                    >
+                      {formatAbsoluteTime(
+                        run.startTime,
+                        timeFormat === "utc" ? "utc" : "local",
+                      )}
+                    </time>
                   </DropdownMenuItem>
                 ))}
               </div>
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild className="text-xs">
                 <a href={chainUrl}>
-                  View all {total.toLocaleString("en-US")} runs
+                  {total === undefined
+                    ? "View all runs"
+                    : `View all ${total.toLocaleString("en-US")} runs`}
                 </a>
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -271,12 +313,12 @@ export function TemporalRunBreadcrumb(props: {
             ) : null}
           </span>
         )}
-        <CopyButton
+        <TemporalCopyButton
           label={`Copy run ID ${runId}`}
           toastText="Copied Run ID"
           value={runId}
         />
-      </span>
+      </h1>
     </nav>
   );
 }

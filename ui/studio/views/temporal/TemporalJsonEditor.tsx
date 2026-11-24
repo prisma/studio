@@ -223,6 +223,8 @@ export function TemporalJsonEditor(props: {
         isInvalid && "[&:not(:focus-within)]:border-destructive",
       )}
       extensions={extensions}
+      // Tab moves on to the next control, as in every other field of a form.
+      indentWithTab={false}
       maxHeight="320px"
       minHeight={minHeight}
       onChange={onChange}

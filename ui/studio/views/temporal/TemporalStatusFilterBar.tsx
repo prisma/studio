@@ -23,9 +23,11 @@ const STATUS_PRESETS: Array<{
 }> = [
   { label: "All", status: "All" },
   { label: "Running", status: "Running" },
+  { label: "Paused", status: "Paused" },
   { label: "Failed", status: "Failed" },
   { label: "Timed Out", status: "TimedOut" },
   { label: "Completed", status: "Completed" },
+  { label: "Continued as New", status: "ContinuedAsNew" },
   { label: "Canceled", status: "Canceled" },
   { label: "Terminated", status: "Terminated" },
 ];

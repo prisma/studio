@@ -242,7 +242,11 @@ Raw event attributes are decoded before they leave the BFF: `decodeAttributePayl
 - **Tables.** Column headers and row borders match the Queries table (`temporalTableHeadClass`, `border-border/70` on the header row, `border-border/60` on body rows). The shared `TableRow` sets a border width but no colour, so every row must pass a border colour.
 - **Status.** Labels stay ink-coloured. The badge fill and icon carry the status.
 - **Refresh mode.** `tail` and `live` poll on the same interval, so `TemporalFollowControl` shows two options: Paused and Live.
-- **Confirmation.** Terminate, delete, bulk cancel, bulk trigger, backfill, and closing an admission class each ask for confirmation through `TemporalConfirmDialog`.
+- **Confirmation.** Terminate, request cancel, delete, trigger, backfill, an Activity reset, a sticky queue reset, every bulk action, and closing an admission class each ask for confirmation through `TemporalConfirmDialog`. Pause and resume are one click and are disabled while the request runs.
+- **A failed request.** A first load that fails shows `TemporalLoadError`: one sentence that names what could not load, the server's message as detail, and Retry. A screen that already shows data keeps it when a later request fails and shows `TemporalRefreshError` above it, so typed text and open rows are not lost. A query stops polling after a failed first load, so the error does not alternate with a skeleton, and a request the server refuses (4xx) is not sent again.
+- **No number before the first answer.** A count, a total or "0" shows only once the server has answered. While a request is on its way, the place is empty or a skeleton.
+- **Data age.** A screen that shows sampled or polled data has an "As of" or "Checked" time that keeps counting while refresh is paused. Under a narrow page the Paused and Live control is dropped only while it reads Live.
+- **Row cursor.** In Executions, Workflow IDs and the page of one Workflow ID, `j`, `k` and the arrow keys move a cursor that is kept by row key, scrolled into view, and marked with an inset bar. The pointer does not move it.
 
 ## URL State
 

@@ -119,11 +119,40 @@ export function rootCauseOf(failure: TemporalFailureInfo): TemporalFailureInfo {
  */
 export function failureOrigin(failure: TemporalFailureInfo): StackFrame | null {
   const frames = [
-    ...parseStackTrace(rootCauseOf(failure).stackTrace),
-    ...parseStackTrace(failure.stackTrace),
+    ...userFrames(rootCauseOf(failure).stackTrace),
+    ...userFrames(failure.stackTrace),
   ];
 
-  return frames.find((frame) => !frame.isLibrary) ?? null;
+  return frames[0] ?? null;
+}
+
+const APPLICATION_FAILURE_FACTORIES = new Set([
+  "create",
+  "fromError",
+  "nonRetryable",
+  "retryable",
+]);
+
+/**
+ * The frames of a stack trace in the user's own code. Workflow code runs from
+ * one bundled file, so no path marks the SDK there: the frames at the top of an
+ * `ApplicationFailure` that carry the name of one of its factories are the SDK.
+ */
+function userFrames(stackTrace: string | undefined): StackFrame[] {
+  const frames = parseStackTrace(stackTrace);
+  const isApplicationFailure = /^\s*ApplicationFailure\b/.test(
+    stackTrace ?? "",
+  );
+  let start = 0;
+
+  while (
+    isApplicationFailure &&
+    APPLICATION_FAILURE_FACTORIES.has(frames[start]?.functionName ?? "")
+  ) {
+    start += 1;
+  }
+
+  return frames.slice(start).filter((frame) => !frame.isLibrary);
 }
 
 /** The last parts of a path, which name the file without the deploy directory. */

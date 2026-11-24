@@ -8,7 +8,7 @@ import {
   StopCircle,
   XCircle,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type {
@@ -47,11 +47,14 @@ import {
   TemporalConfirmDialog,
   TemporalFollowControl,
   temporalIconScale,
+  TemporalLoadError,
   TemporalNamespaceBadge,
+  TemporalRefreshError,
   TemporalSectionLabel,
   temporalTableHeadClass,
   TemporalTime,
   type TemporalTone,
+  useNow,
   WorkflowStatusIcon,
 } from "./TemporalPrimitives";
 
@@ -110,6 +113,48 @@ function runKey(item: Pick<TemporalAttentionItem, "runId" | "workflowId">) {
   return `${item.workflowId}::${item.runId}`;
 }
 
+/** The actions on one run that ask first, because they are hard to take back. */
+type ConfirmedAction = "cancel" | "reset-activity" | "reset-sticky";
+
+const CONFIRM_COPY: Record<
+  ConfirmedAction,
+  {
+    confirmLabel: string;
+    describe: (item: TemporalAttentionItem) => string;
+    title: string;
+  }
+> = {
+  cancel: {
+    confirmLabel: "Request Cancel",
+    describe: (item) =>
+      `This asks ${item.workflowId} to cancel. The execution can run its cleanup logic before it stops.`,
+    title: "Request cancellation?",
+  },
+  "reset-activity": {
+    confirmLabel: "Reset Activity",
+    describe: (item) =>
+      `This sets ${item.activityType ?? "the Activity"} of ${item.workflowId} back to attempt 1 and tries it again now.`,
+    title: "Reset the Activity?",
+  },
+  "reset-sticky": {
+    confirmLabel: "Reset Sticky Queue",
+    describe: (item) =>
+      `The next Workflow Task of ${item.workflowId} goes to the Task Queue ${item.taskQueue}, where any Worker can pick it up. Use this when the Worker that held the execution is gone.`,
+    title: "Reset the sticky Task Queue?",
+  },
+};
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** A time whose relative form keeps counting while refresh is paused. */
+function TickingTime(props: { iso: string }) {
+  useNow(1_000, true);
+
+  return <TemporalTime iso={props.iso} />;
+}
+
 export function TemporalAttentionView(props: {
   followMode: TemporalFollowMode;
   namespace: string;
@@ -117,8 +162,15 @@ export function TemporalAttentionView(props: {
   onOpenExecution: (workflowId: string, runId?: string) => void;
 }) {
   const { followMode, namespace, onFollowModeChange, onOpenExecution } = props;
-  const { data, error, isError, isFetching, isLoading, refetch } =
-    useTemporalAttention({ followMode, namespace });
+  const {
+    data,
+    dataUpdatedAt,
+    error,
+    isError,
+    isFetching,
+    isLoading,
+    refetch,
+  } = useTemporalAttention({ followMode, namespace });
   const { data: capabilities } = useTemporalCapabilities();
   const {
     activityOperation,
@@ -135,6 +187,32 @@ export function TemporalAttentionView(props: {
   const [bulkTerminateOpen, setBulkTerminateOpen] = useState(false);
   const [terminateTarget, setTerminateTarget] =
     useState<TemporalAttentionItem | null>(null);
+  // `isOpen` closes the dialog and keeps its text until it is gone.
+  const [confirming, setConfirming] = useState<{
+    action: ConfirmedAction;
+    isOpen: boolean;
+    item: TemporalAttentionItem;
+  } | null>(null);
+  // A dialog opened from code has no trigger, so nothing gets focus back when it closes.
+  const dialogOpener = useRef<HTMLElement | null>(null);
+  const refocusOpener = () => {
+    const opener = dialogOpener.current;
+
+    setTimeout(() => {
+      if (opener?.isConnected) {
+        opener.focus();
+      }
+    }, 0);
+  };
+  // The moment of the check, so its age keeps counting between requests.
+  const checkedAt = useMemo(
+    () =>
+      data
+        ? new Date((dataUpdatedAt || Date.now()) - data.ageMs).toISOString()
+        : undefined,
+    [data, dataUpdatedAt],
+  );
+  const isPartialCheck = data ? data.checkedRunning < data.totalRunning : false;
 
   // One run can have two problems; the summary counts runs.
   const openRunsByKey = useMemo(() => {
@@ -197,7 +275,7 @@ export function TemporalAttentionView(props: {
           runId: item.runId,
           workflowId: item.workflowId,
         })),
-        reason: reason || `Bulk ${action} from Needs Attention`,
+        reason: reason || `Bulk ${action} from Attention`,
       });
       toast.success(
         `Bulk ${action}: ${res.succeeded} succeeded${res.failed > 0 ? `, ${res.failed} failed` : ""}`,
@@ -205,20 +283,52 @@ export function TemporalAttentionView(props: {
       setSelectedKeys(new Set());
       void refetch();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(`Bulk ${action} failed: ${errorText(err)}`);
+    }
+  };
+
+  const runConfirmed = async () => {
+    if (!confirming) {
+      return;
+    }
+
+    const { action, item } = confirming;
+    const run = { runId: item.runId, workflowId: item.workflowId };
+
+    try {
+      if (action === "cancel") {
+        await cancelWorkflow.mutateAsync(run);
+        toast.success(`Cancel requested for ${item.workflowId}`);
+      } else if (action === "reset-sticky") {
+        await resetStickyTaskQueue.mutateAsync(run);
+        toast.success(`Reset sticky queue for ${item.workflowId}`);
+      } else if (item.activityId) {
+        await activityOperation.mutateAsync({
+          ...run,
+          activityId: item.activityId,
+          operation: "reset",
+        });
+        toast.success(`Reset ${item.activityType} of ${item.workflowId}`);
+      }
+
+      void refetch();
+    } catch (err) {
+      toast.error(
+        `${CONFIRM_COPY[action].confirmLabel} failed for ${item.workflowId}: ${errorText(err)}`,
+      );
     }
   };
 
   return (
     <div
       className={cn(
-        "flex h-full min-h-0 flex-col bg-background",
+        "@container flex h-full min-h-0 flex-col bg-background",
         temporalIconScale,
       )}
       data-testid="temporal-attention-view"
     >
       <StudioHeader
-        title="Needs Attention"
+        title="Attention"
         endContent={
           <>
             <TemporalFollowControl
@@ -229,7 +339,8 @@ export function TemporalAttentionView(props: {
               variant="outline"
               size="sm"
               className="w-8 px-0"
-              aria-label="Refresh"
+              aria-label="Refresh Attention"
+              title="Refresh Attention"
               onClick={() => void refetch()}
             >
               <RefreshCw
@@ -239,35 +350,38 @@ export function TemporalAttentionView(props: {
           </>
         }
       >
-        <TemporalNamespaceBadge namespace={namespace} />
+        <span className="contents @max-3xl:hidden">
+          <TemporalNamespaceBadge namespace={namespace} />
+        </span>
       </StudioHeader>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground">
-        {data ? (
-          <>
+      {data && checkedAt ? (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground">
+          <span>
+            <span className="font-medium tabular-nums text-foreground">
+              {openProblems}
+            </span>{" "}
+            of{" "}
+            {isPartialCheck
+              ? `the ${data.checkedRunning.toLocaleString("en-US")} oldest running executions`
+              : pluralize(data.totalRunning, "running execution")}{" "}
+            {openProblems === 1 ? "needs" : "need"} attention
+          </span>
+          {isPartialCheck ? (
             <span>
-              <span className="font-medium tabular-nums text-foreground">
-                {openProblems}
-              </span>{" "}
-              of {pluralize(data.totalRunning, "running execution")}{" "}
-              {openProblems === 1 ? "needs" : "need"} attention
+              {data.totalRunning.toLocaleString("en-US")} are running. The newer
+              ones are not checked.
             </span>
-            {data.checkedRunning < data.totalRunning ? (
-              <span>
-                Checked the {data.checkedRunning.toLocaleString("en-US")} oldest
-              </span>
-            ) : null}
-            <span className="ml-auto">
-              Checked{" "}
-              {formatRelativeTime(
-                new Date(Date.now() - data.ageMs).toISOString(),
-              )}
-            </span>
-          </>
-        ) : (
-          <span>Checking every running execution</span>
-        )}
-      </div>
+          ) : null}
+          <span className="ml-auto">
+            Checked <TickingTime iso={checkedAt} />
+          </span>
+        </div>
+      ) : isLoading ? (
+        <div className="border-b border-border px-4 py-2 text-xs text-muted-foreground">
+          Checking every running execution
+        </div>
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-auto">
         {isLoading ? (
@@ -276,28 +390,35 @@ export function TemporalAttentionView(props: {
               <Skeleton key={index} className="h-9 w-full" />
             ))}
           </div>
-        ) : isError ? (
-          <div className="flex flex-col items-center justify-center gap-3 p-10 text-sm text-muted-foreground">
-            <p className="font-medium text-destructive">
-              {error instanceof Error
-                ? error.message
-                : "Could not check the running executions"}
-            </p>
-            <Button variant="outline" size="sm" onClick={() => void refetch()}>
-              Retry
-            </Button>
-          </div>
-        ) : items.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 p-10 text-sm text-muted-foreground">
-            <CircleCheck className="size-6 opacity-60" />
-            <p>
-              No running execution in{" "}
-              <code className="font-mono text-foreground">{namespace}</code>{" "}
-              needs attention.
-            </p>
-          </div>
+        ) : !data ? (
+          <TemporalLoadError
+            error={error}
+            onRetry={() => void refetch()}
+            title={
+              <>
+                Could not check the running executions of namespace{" "}
+                <code className="font-mono">{namespace}</code>.
+              </>
+            }
+          />
         ) : (
           <div className="flex flex-col">
+            {isError ? (
+              <TemporalRefreshError
+                error={error}
+                onRetry={() => void refetch()}
+              />
+            ) : null}
+            {items.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-2 p-10 text-sm text-muted-foreground">
+                <CircleCheck className="size-6 opacity-60" />
+                <p>
+                  No running execution in{" "}
+                  <code className="font-mono text-foreground">{namespace}</code>{" "}
+                  needs attention.
+                </p>
+              </div>
+            ) : null}
             {GROUPS.map((group) => {
               const groupItems = items.filter(
                 (item) => item.kind === group.kind,
@@ -307,13 +428,22 @@ export function TemporalAttentionView(props: {
                 <AttentionGroup
                   key={group.kind}
                   description={group.description}
+                  dialogOpener={dialogOpener}
                   dotClassName={TONE_DOT[group.tone]}
                   items={groupItems}
                   kind={group.kind}
-                  onActivityOp={(item, operation) => {
+                  isActivityPending={activityOperation.isPending}
+                  onConfirm={(item, action) =>
+                    setConfirming({ action, isOpen: true, item })
+                  }
+                  onOpenExecution={onOpenExecution}
+                  onToggleActivityPause={(item) => {
                     if (!item.activityId) {
                       return;
                     }
+
+                    const operation = item.activityPaused ? "unpause" : "pause";
+
                     void activityOperation
                       .mutateAsync({
                         activityId: item.activityId,
@@ -323,50 +453,13 @@ export function TemporalAttentionView(props: {
                       })
                       .then(() => {
                         toast.success(
-                          `Activity ${item.activityId}: ${operation} done`,
+                          `${operation === "pause" ? "Paused" : "Unpaused"} ${item.activityType} of ${item.workflowId}`,
                         );
                         void refetch();
                       })
                       .catch((err) =>
                         toast.error(
-                          err instanceof Error ? err.message : String(err),
-                        ),
-                      );
-                  }}
-                  onCancel={(item) => {
-                    void cancelWorkflow
-                      .mutateAsync({
-                        runId: item.runId,
-                        workflowId: item.workflowId,
-                      })
-                      .then(() => {
-                        toast.success(
-                          `Cancel requested for ${item.workflowId}`,
-                        );
-                        void refetch();
-                      })
-                      .catch((err) =>
-                        toast.error(
-                          err instanceof Error ? err.message : String(err),
-                        ),
-                      );
-                  }}
-                  onOpenExecution={onOpenExecution}
-                  onResetSticky={(item) => {
-                    void resetStickyTaskQueue
-                      .mutateAsync({
-                        runId: item.runId,
-                        workflowId: item.workflowId,
-                      })
-                      .then(() => {
-                        toast.success(
-                          `Reset sticky queue for ${item.workflowId}`,
-                        );
-                        void refetch();
-                      })
-                      .catch((err) =>
-                        toast.error(
-                          err instanceof Error ? err.message : String(err),
+                          `Could not ${operation} ${item.activityType} of ${item.workflowId}: ${errorText(err)}`,
                         ),
                       );
                   }}
@@ -408,7 +501,10 @@ export function TemporalAttentionView(props: {
               variant="outline"
               size="sm"
               disabled={bulkAction.isPending}
-              onClick={() => setBulkCancelOpen(true)}
+              onClick={(event) => {
+                dialogOpener.current = event.currentTarget;
+                setBulkCancelOpen(true);
+              }}
             >
               <XCircle />
               Request Cancel
@@ -417,7 +513,10 @@ export function TemporalAttentionView(props: {
               variant="destructive"
               size="sm"
               disabled={bulkAction.isPending}
-              onClick={() => setBulkTerminateOpen(true)}
+              onClick={(event) => {
+                dialogOpener.current = event.currentTarget;
+                setBulkTerminateOpen(true);
+              }}
             >
               <StopCircle />
               Terminate
@@ -431,19 +530,25 @@ export function TemporalAttentionView(props: {
         description={`This asks ${selectedSummary} to cancel. Each execution can run its cleanup logic before it stops.`}
         isPending={bulkAction.isPending}
         onConfirm={() => runBulk("cancel")}
-        onOpenChange={setBulkCancelOpen}
+        onOpenChange={(open) => {
+          setBulkCancelOpen(open);
+          refocusOpener();
+        }}
         open={bulkCancelOpen}
         title="Request cancellation?"
         variant="default"
       />
 
       <TemporalConfirmDialog
-        confirmLabel={`Terminate ${pluralize(selectedRuns.length, "execution")}`}
-        defaultReason="Bulk terminated from Needs Attention"
+        confirmLabel={`Terminate ${pluralize(selectedRuns.length, "Execution")}`}
+        defaultReason="Bulk terminated from Attention"
         description={`This stops ${selectedSummary} immediately, without running cleanup logic.`}
         isPending={bulkAction.isPending}
         onConfirm={(reason) => runBulk("terminate", reason)}
-        onOpenChange={setBulkTerminateOpen}
+        onOpenChange={(open) => {
+          setBulkTerminateOpen(open);
+          refocusOpener();
+        }}
         open={bulkTerminateOpen}
         reasonLabel="Termination reason"
         showReasonInput
@@ -452,7 +557,7 @@ export function TemporalAttentionView(props: {
 
       <TemporalConfirmDialog
         confirmLabel="Terminate Execution"
-        defaultReason="Terminated from Needs Attention"
+        defaultReason="Terminated from Attention"
         description={`This stops ${terminateTarget?.workflowId ?? ""} immediately, without running cleanup logic.`}
         isPending={terminateWorkflow.isPending}
         onConfirm={async (reason) => {
@@ -460,7 +565,7 @@ export function TemporalAttentionView(props: {
             return;
           }
           await terminateWorkflow.mutateAsync({
-            reason: reason || "Terminated from Needs Attention",
+            reason: reason || "Terminated from Attention",
             runId: terminateTarget.runId,
             workflowId: terminateTarget.workflowId,
           });
@@ -471,6 +576,7 @@ export function TemporalAttentionView(props: {
         onOpenChange={(open) => {
           if (!open) {
             setTerminateTarget(null);
+            refocusOpener();
           }
         }}
         open={terminateTarget !== null}
@@ -478,23 +584,90 @@ export function TemporalAttentionView(props: {
         showReasonInput
         title="Terminate workflow execution?"
       />
+
+      <TemporalConfirmDialog
+        confirmLabel={
+          confirming ? CONFIRM_COPY[confirming.action].confirmLabel : ""
+        }
+        description={
+          confirming
+            ? CONFIRM_COPY[confirming.action].describe(confirming.item)
+            : ""
+        }
+        isPending={
+          cancelWorkflow.isPending ||
+          resetStickyTaskQueue.isPending ||
+          activityOperation.isPending
+        }
+        onConfirm={runConfirmed}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConfirming((current) =>
+              current ? { ...current, isOpen: false } : null,
+            );
+            refocusOpener();
+          }
+        }}
+        open={confirming?.isOpen === true}
+        title={confirming ? CONFIRM_COPY[confirming.action].title : ""}
+        variant="default"
+      />
     </div>
   );
 }
 
+/** What is wrong with one run, in one line. */
+function ProblemText(props: {
+  item: TemporalAttentionItem;
+  kind: TemporalAttentionKind;
+  showNextAttempt: boolean;
+}) {
+  const { item, kind, showNextAttempt } = props;
+
+  if (kind !== "activity-retrying") {
+    return <span className="text-foreground">{item.detail}</span>;
+  }
+
+  return (
+    <>
+      <span className="font-mono font-medium text-foreground">
+        {item.activityType}
+      </span>{" "}
+      <span className="text-foreground">
+        attempt {item.attempt}
+        {item.maximumAttempts ? ` of ${item.maximumAttempts}` : ""}
+      </span>
+      <span className="text-muted-foreground">
+        {" "}
+        · {item.detail}
+        {!showNextAttempt &&
+        item.nextAttemptTime &&
+        Date.parse(item.nextAttemptTime) > Date.now()
+          ? ` · next attempt ${formatRelativeTime(item.nextAttemptTime)}`
+          : ""}
+      </span>
+    </>
+  );
+}
+
+/** A sticky cell needs its own line below it: a collapsed table border stays behind. */
+const headCellClassName = cn(
+  temporalTableHeadClass,
+  "shadow-[inset_0_-1px_0_var(--border)]",
+);
+
 function AttentionGroup(props: {
   description: string;
+  /** Set to the row's menu button, which gets focus back when a dialog closes. */
+  dialogOpener: React.RefObject<HTMLElement | null>;
   dotClassName: string;
+  isActivityPending: boolean;
   items: TemporalAttentionItem[];
   kind: TemporalAttentionKind;
-  onActivityOp: (
-    item: TemporalAttentionItem,
-    operation: "pause" | "reset" | "unpause",
-  ) => void;
-  onCancel: (item: TemporalAttentionItem) => void;
+  onConfirm: (item: TemporalAttentionItem, action: ConfirmedAction) => void;
   onOpenExecution: (workflowId: string, runId?: string) => void;
-  onResetSticky: (item: TemporalAttentionItem) => void;
   onTerminate: (item: TemporalAttentionItem) => void;
+  onToggleActivityPause: (item: TemporalAttentionItem) => void;
   onToggleGroup: () => void;
   onToggleSelect: (item: TemporalAttentionItem) => void;
   selectedKeys: ReadonlySet<string>;
@@ -503,14 +676,15 @@ function AttentionGroup(props: {
 }) {
   const {
     description,
+    dialogOpener,
     dotClassName,
+    isActivityPending,
     items,
     kind,
-    onActivityOp,
-    onCancel,
+    onConfirm,
     onOpenExecution,
-    onResetSticky,
     onTerminate,
+    onToggleActivityPause,
     onToggleGroup,
     onToggleSelect,
     selectedKeys,
@@ -537,26 +711,38 @@ function AttentionGroup(props: {
       className="border-b border-border"
       data-testid={`temporal-attention-${kind}`}
     >
-      <div className="flex flex-col gap-0.5 bg-muted/20 px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          <span
-            aria-hidden
-            className={cn("size-2 shrink-0 rounded-full", dotClassName)}
-          />
-          <TemporalSectionLabel className="text-foreground">
-            {title}
-          </TemporalSectionLabel>
-          <span className="font-mono text-2xs tabular-nums text-muted-foreground">
-            {items.length}
-          </span>
-        </div>
-        <p className="pl-4 text-2xs text-muted-foreground">{description}</p>
-      </div>
-      <Table className="text-xs">
-        <TableHeader>
-          <TableRow className="border-border/70 hover:bg-transparent">
+      <Table
+        className="text-xs"
+        // The page scrolls, not the table, so the header can stick to the page.
+        containerProps={{ className: "h-auto overflow-visible" }}
+      >
+        <TableHeader className="sticky top-0 z-10 bg-background">
+          <TableRow className="border-0 hover:bg-transparent">
+            <TableHead
+              colSpan={6}
+              scope="colgroup"
+              className="h-auto bg-muted/20 px-4 py-2.5 font-normal"
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  aria-hidden
+                  className={cn("size-2 shrink-0 rounded-full", dotClassName)}
+                />
+                <TemporalSectionLabel className="text-foreground">
+                  {title}
+                </TemporalSectionLabel>
+                <span className="font-mono text-2xs tabular-nums text-muted-foreground">
+                  {items.length}
+                </span>
+              </div>
+              <p className="pl-4 text-2xs text-muted-foreground">
+                {description}
+              </p>
+            </TableHead>
+          </TableRow>
+          <TableRow className="border-0 hover:bg-transparent">
             {isOpenGroup ? (
-              <TableHead className="h-9 w-10 pr-2 pl-4">
+              <TableHead className={cn(headCellClassName, "w-10 pr-2 pl-4")}>
                 <Checkbox
                   checked={allSelected}
                   onCheckedChange={onToggleGroup}
@@ -566,15 +752,25 @@ function AttentionGroup(props: {
             ) : null}
             <TableHead
               className={cn(
-                temporalTableHeadClass,
-                "w-[26%]",
+                headCellClassName,
+                "@3xl:w-[26%]",
                 !isOpenGroup && "pl-4",
               )}
             >
               Workflow
             </TableHead>
-            <TableHead className={temporalTableHeadClass}>Problem</TableHead>
-            <TableHead className={cn(temporalTableHeadClass, "w-28")}>
+            <TableHead
+              className={cn(headCellClassName, "hidden @3xl:table-cell")}
+            >
+              Problem
+            </TableHead>
+            <TableHead
+              className={cn(
+                headCellClassName,
+                "w-20 @3xl:w-28 @max-3xl:whitespace-normal",
+                !isOpenGroup && "@max-3xl:pr-4",
+              )}
+            >
               {kind === "failed"
                 ? "Closed"
                 : showNextAttempt
@@ -585,8 +781,8 @@ function AttentionGroup(props: {
             </TableHead>
             <TableHead
               className={cn(
-                temporalTableHeadClass,
-                "w-24",
+                headCellClassName,
+                "hidden w-28 @3xl:table-cell",
                 !isOpenGroup && "pr-4",
               )}
             >
@@ -594,9 +790,12 @@ function AttentionGroup(props: {
             </TableHead>
             {isOpenGroup ? (
               <TableHead
-                className={cn(temporalTableHeadClass, "w-20 pr-4 text-right")}
+                className={cn(
+                  headCellClassName,
+                  "w-12 pr-4 text-right @3xl:w-20",
+                )}
               >
-                Actions
+                <span className="@max-3xl:sr-only">Actions</span>
               </TableHead>
             ) : null}
           </TableRow>
@@ -624,7 +823,10 @@ function AttentionGroup(props: {
                   </TableCell>
                 ) : null}
                 <TableCell
-                  className={cn("max-w-0 py-1.5 pr-2", !isOpenGroup && "pl-4")}
+                  className={cn(
+                    "max-w-0 py-1.5 pr-2",
+                    isOpenGroup ? "pl-2" : "pl-4",
+                  )}
                 >
                   <button
                     type="button"
@@ -640,49 +842,47 @@ function AttentionGroup(props: {
                     <span className="min-w-12 shrink truncate font-mono text-foreground hover:underline">
                       {item.workflowId}
                     </span>
-                    <span className="min-w-0 shrink-[4] truncate text-muted-foreground">
+                    <span className="min-w-0 shrink-[4] truncate text-muted-foreground @max-3xl:hidden">
                       {item.workflowType}
                     </span>
                   </button>
-                </TableCell>
-                <TableCell className="max-w-0 px-2 py-2">
-                  <span className="block truncate" title={item.detail}>
-                    {kind === "activity-retrying" ? (
-                      <>
-                        <span className="font-mono font-medium text-foreground">
-                          {item.activityType}
-                        </span>{" "}
-                        <span className="text-foreground">
-                          attempt {item.attempt}
-                          {item.maximumAttempts
-                            ? ` of ${item.maximumAttempts}`
-                            : ""}
-                        </span>
-                        <span className="text-muted-foreground">
-                          {" "}
-                          · {item.detail}
-                          {!showNextAttempt &&
-                          item.nextAttemptTime &&
-                          Date.parse(item.nextAttemptTime) > Date.now()
-                            ? ` · next attempt ${formatRelativeTime(item.nextAttemptTime)}`
-                            : ""}
-                        </span>
-                      </>
-                    ) : (
-                      <span className="text-foreground">{item.detail}</span>
-                    )}
+                  {/* A narrow page has no Problem column, so the problem goes under the ID. */}
+                  <span
+                    className="line-clamp-3 pb-0.5 pl-6 text-2xs @3xl:hidden"
+                    title={item.detail}
+                  >
+                    <ProblemText
+                      item={item}
+                      kind={kind}
+                      showNextAttempt={showNextAttempt}
+                    />
                   </span>
                 </TableCell>
-                <TableCell className="whitespace-nowrap px-2 py-2 text-muted-foreground">
+                <TableCell className="hidden max-w-0 px-2 py-2 @3xl:table-cell">
+                  <span className="block truncate" title={item.detail}>
+                    <ProblemText
+                      item={item}
+                      kind={kind}
+                      showNextAttempt={showNextAttempt}
+                    />
+                  </span>
+                </TableCell>
+                <TableCell
+                  className={cn(
+                    "px-2 py-2 whitespace-nowrap text-muted-foreground",
+                    !isOpenGroup && "@max-3xl:pr-4",
+                  )}
+                >
                   <TemporalTime
                     iso={showNextAttempt ? item.nextAttemptTime : item.since}
                   />
                 </TableCell>
                 <TableCell
                   className={cn(
-                    "py-2 pl-2 font-mono text-muted-foreground",
+                    "hidden max-w-28 truncate py-2 pl-2 font-mono text-muted-foreground @3xl:table-cell",
                     isOpenGroup ? "pr-2" : "pr-4",
                   )}
+                  title={item.taskQueue}
                 >
                   {item.taskQueue}
                 </TableCell>
@@ -699,6 +899,12 @@ function AttentionGroup(props: {
                           className="w-7 px-0 text-muted-foreground"
                           aria-label={`Actions for ${item.workflowId}`}
                           data-testid={`temporal-attention-actions-${item.workflowId}`}
+                          onKeyDown={(event) => {
+                            dialogOpener.current = event.currentTarget;
+                          }}
+                          onPointerDown={(event) => {
+                            dialogOpener.current = event.currentTarget;
+                          }}
                         >
                           <MoreHorizontal />
                         </Button>
@@ -712,18 +918,15 @@ function AttentionGroup(props: {
                         item.activityId ? (
                           <>
                             <DropdownMenuItem
-                              onClick={() => onActivityOp(item, "reset")}
+                              disabled={isActivityPending}
+                              onClick={() => onConfirm(item, "reset-activity")}
                             >
                               <RotateCcw />
                               Reset Activity
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              onClick={() =>
-                                onActivityOp(
-                                  item,
-                                  item.activityPaused ? "unpause" : "pause",
-                                )
-                              }
+                              disabled={isActivityPending}
+                              onClick={() => onToggleActivityPause(item)}
                             >
                               {item.activityPaused ? <Play /> : <Pause />}
                               {item.activityPaused
@@ -733,12 +936,16 @@ function AttentionGroup(props: {
                             <DropdownMenuSeparator />
                           </>
                         ) : null}
-                        <DropdownMenuItem onClick={() => onResetSticky(item)}>
+                        <DropdownMenuItem
+                          onClick={() => onConfirm(item, "reset-sticky")}
+                        >
                           <RotateCcw />
                           Reset Sticky Queue
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => onCancel(item)}>
+                        <DropdownMenuItem
+                          onClick={() => onConfirm(item, "cancel")}
+                        >
                           <XCircle />
                           Request Cancel
                         </DropdownMenuItem>

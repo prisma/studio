@@ -13,7 +13,10 @@ describe("TemporalSparkline", () => {
     document.body.innerHTML = "";
   });
 
-  function render(values: number[]) {
+  function render(
+    values: number[],
+    props: { times?: number[]; windowMs?: number } = {},
+  ) {
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
@@ -21,12 +24,24 @@ describe("TemporalSparkline", () => {
       root.render(
         <TemporalSparkline
           formatValue={(v) => `${v}ms`}
+          height={20}
           label="Progress lag"
           values={values}
+          width={100}
+          {...props}
         />,
       );
     });
     return { container, unmount: () => act(() => root.unmount()) };
+  }
+
+  /** The points of the line, as `[x, y]` pairs. */
+  function linePoints(container: HTMLElement): number[][] {
+    return container
+      .querySelectorAll("path")[1]!
+      .getAttribute("d")!
+      .split(" ")
+      .map((point) => point.slice(1).split(",").map(Number));
   }
 
   it("renders a dashed baseline when empty", () => {
@@ -45,6 +60,30 @@ describe("TemporalSparkline", () => {
     );
     expect(container.querySelectorAll("path")).toHaveLength(2);
     expect(container.querySelector("circle")).not.toBeNull();
+    unmount();
+  });
+
+  it("starts the vertical axis at zero, so a small change stays small", () => {
+    const { container, unmount } = render([105, 106]);
+    const [first, second] = linePoints(container);
+
+    // 14 pixels of height stand for 0 to 106, so one more run moves the line by a fraction of a pixel.
+    expect(Math.abs(first![1]! - second![1]!)).toBeLessThan(0.5);
+    unmount();
+  });
+
+  it("places samples by the time they were taken", () => {
+    const { container, unmount } = render([1, 1, 1], {
+      times: [0, 10_000, 100_000],
+      windowMs: 200_000,
+    });
+    const xs = linePoints(container).map((point) => point[0]);
+
+    // 96 pixels stand for 200 seconds and the newest sample is at the right edge.
+    expect(xs).toEqual([50, 54.8, 98]);
+    expect(
+      container.querySelector("svg")!.getAttribute("aria-label"),
+    ).toContain("across 3 samples over 1m 40s");
     unmount();
   });
 });

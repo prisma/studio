@@ -63,13 +63,38 @@ import {
   TemporalField,
   TemporalFollowControl,
   temporalIconScale,
+  TemporalLoadError,
+  TemporalRefreshError,
   TemporalStatusBadge,
   temporalTableHeadClass,
+  TemporalTime,
   type TemporalTone,
+  useNow,
 } from "./TemporalPrimitives";
 import { TemporalSparkline, TemporalSparklineCard } from "./TemporalSparkline";
 
 const LOAD_WINDOWS = ["10s", "60s", "5m", "1h"];
+const TREND_WINDOW_MS = 5 * 60_000;
+const MAX_ADMISSION_TTL_S = 3_600;
+
+/** A delay in milliseconds. Under 10 ms it keeps two decimals: a healthy shard lags by a fraction of a millisecond. */
+function formatLag(ms: number): string {
+  return ms < 10 ? `${ms.toFixed(2)}ms` : formatDuration(ms);
+}
+
+/** The fields of a sampled trace besides its Workflow ID, as `write_ms 1.2 · effect_ms 0.4`. */
+function describeTraceFields(trace: Record<string, unknown>): string {
+  return Object.entries(trace)
+    .filter(
+      ([key, value]) =>
+        key !== "workflow_id" &&
+        (typeof value === "number" ||
+          typeof value === "string" ||
+          typeof value === "boolean"),
+    )
+    .map(([key, value]) => `${key} ${String(value)}`)
+    .join(" · ");
+}
 
 const TONE_DOT_CLASS: Record<TemporalTone, string> = {
   danger: "bg-destructive",
@@ -148,11 +173,8 @@ function ShardStateLegendList(props: {
  * Whether the shard serves, and how loaded it is. Hovering reveals all possible
  * lifecycle and health states with descriptions and highlights the current ones.
  */
-function ShardState(props: {
-  serverTags: string[];
-  shard: TemporalClusterShard;
-}) {
-  const { serverTags, shard } = props;
+function ShardState(props: { shard: TemporalClusterShard }) {
+  const { shard } = props;
   const lifecycle = describeShardLifecycle(shard.lifecycle);
   const health = describeClusterHealth(shard.health);
   const isServing = lifecycle.key === "serving";
@@ -209,7 +231,6 @@ function ShardState(props: {
       {shard.health === "ok" ? null : (
         <p className="text-2xs leading-snug text-muted-foreground">
           {health.meaning}
-          {serverTags.map((tag) => ` ${describeHealthTag(tag)}`).join("")}
           {shard.healthReasons.length > 0 ? (
             <>
               {" "}
@@ -236,8 +257,10 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
   const { followMode, onFollowModeChange, onOpenExecution } = props;
 
   const [windowParam, setWindowParam] = useState("10s");
-  const { data, isLoading, isError, error, refetch, isFetching } =
+  const { data, dataUpdatedAt, isError, error, refetch, isFetching } =
     useTemporalClusterOverview({ followMode, window: windowParam });
+  // Renders again every few seconds, so the "as of" time keeps counting while refresh is paused.
+  useNow(5_000, true);
   const { data: tracesData, refetch: refetchTraces } = useTemporalClusterTraces(
     { followMode },
   );
@@ -258,16 +281,33 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
   const [handoffTarget, setHandoffTarget] = useState("");
   const [handoffError, setHandoffError] = useState<string | null>(null);
 
+  const rate = Number(admRate);
+  const ttl = Number(admTtl);
+  const rateError =
+    admMode === "limit" && !(admRate.trim() !== "" && rate > 0)
+      ? "Enter a rate above 0."
+      : null;
+  const ttlError =
+    Number.isInteger(ttl) && ttl >= 1 && ttl <= MAX_ADMISSION_TTL_S
+      ? null
+      : `Enter 1 to ${MAX_ADMISSION_TTL_S} whole seconds.`;
+
   const applyAdmissionHold = async () => {
+    if (rateError || ttlError) {
+      return;
+    }
+
     try {
       await setAdmission.mutateAsync({
         class: admClass,
         mode: admMode,
-        ratePerS: admMode === "limit" ? Number(admRate) || 50 : undefined,
+        ratePerS: admMode === "limit" ? rate : undefined,
         scope: "server",
-        ttlS: Number(admTtl) || 300,
+        ttlS: ttl,
       });
-      toast.success(`Applied ${admMode} hold on "${admClass}" for ${admTtl}s`);
+      toast.success(
+        `Applied ${admMode} hold on "${admClass}" for ${formatDuration(ttl * 1_000)}`,
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
     }
@@ -275,6 +315,20 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
 
   const traceCount = tracesData?.traces.length ?? 0;
   const isSingleNode = data?.info.placementVersion === 1;
+  const historySpanMs =
+    data?.history && data.history.length > 1
+      ? data.history[data.history.length - 1]!.at - data.history[0]!.at
+      : 0;
+  const historyTimes = data?.history?.map((sample) => sample.at);
+  const serverReasons =
+    data?.health.reasons.filter((reason) => reason.shard === undefined) ?? [];
+  // The server reports a window only when asked for it, so the figure names the one it has.
+  const headroom =
+    data?.headroom.overall10s != null
+      ? { label: "Headroom (10s)", value: data.headroom.overall10s }
+      : data?.headroom.overall60s != null
+        ? { label: "Headroom (60s)", value: data.headroom.overall60s }
+        : null;
 
   return (
     <div
@@ -288,21 +342,6 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
         title="Cluster & Shards"
         endContent={
           <>
-            <Select value={windowParam} onValueChange={setWindowParam}>
-              <SelectTrigger
-                aria-label="Load metrics window"
-                className="h-8 w-20 font-mono text-xs"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {LOAD_WINDOWS.map((w) => (
-                  <SelectItem key={w} value={w} className="font-mono">
-                    {w}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
             <TemporalFollowControl
               value={followMode}
               onChange={onFollowModeChange}
@@ -311,7 +350,8 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
               variant="outline"
               size="sm"
               className="w-8 px-0"
-              aria-label="Refresh cluster diagnostics"
+              aria-label="Refresh Cluster & Shards"
+              title="Refresh Cluster & Shards"
               onClick={() => {
                 void refetch();
                 void refetchTraces();
@@ -325,23 +365,63 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
         }
       />
 
-      {isLoading ? (
-        <div className="flex flex-col gap-3 p-4">
-          <Skeleton className="h-12 w-full" />
-          <Skeleton className="h-40 w-full" />
-          <Skeleton className="h-32 w-full" />
+      {data ? (
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-border px-4 py-1.5 text-xs text-muted-foreground">
+          <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span>The whole server, not one namespace</span>
+            <Select value={windowParam} onValueChange={setWindowParam}>
+              <SelectTrigger
+                aria-label="Load window"
+                className="h-7 w-auto gap-2 font-mono text-xs"
+                label="Load window"
+                title="The time the server reports its load over"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LOAD_WINDOWS.map((w) => (
+                  <SelectItem key={w} value={w} className="font-mono">
+                    {w}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </span>
+          {dataUpdatedAt ? (
+            <span data-testid="temporal-cluster-as-of">
+              As of <TemporalTime iso={new Date(dataUpdatedAt).toISOString()} />
+              {followMode === "paused" ? " · Paused" : ""}
+            </span>
+          ) : null}
         </div>
-      ) : isError || !data ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-sm text-muted-foreground">
-          <p className="font-medium text-destructive">
-            {error instanceof Error
-              ? error.message
-              : "The slate-temporal-next Admin API is unavailable"}
-          </p>
-          <Button variant="outline" size="sm" onClick={() => void refetch()}>
-            Retry
-          </Button>
-        </div>
+      ) : null}
+
+      {data && isError ? (
+        <TemporalRefreshError
+          error={error}
+          onRetry={() => {
+            void refetch();
+            void refetchTraces();
+          }}
+        />
+      ) : null}
+
+      {!data ? (
+        isError ? (
+          <div className="flex flex-1 flex-col justify-center">
+            <TemporalLoadError
+              error={error}
+              onRetry={() => void refetch()}
+              title="Could not load the cluster diagnostics from the slate-temporal-next Admin API."
+            />
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3 p-4">
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-40 w-full" />
+            <Skeleton className="h-32 w-full" />
+          </div>
+        )
       ) : (
         <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-4 text-xs *:shrink-0">
           <section className="rounded-lg border border-border bg-card">
@@ -370,6 +450,7 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
                 />
                 <ServerFact
                   label="RSS"
+                  title="Memory the server process holds (resident set size)"
                   value={
                     data.memory.rssBytes
                       ? formatBytes(data.memory.rssBytes)
@@ -381,15 +462,39 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
                   value={describeClusterHealth(data.health.state).label}
                 />
                 <ServerFact
-                  label="Headroom (10s)"
+                  label={headroom?.label ?? "Headroom"}
+                  title={`Spare capacity of ${data.headroom.binding || "the resource"} closest to its limit`}
                   value={
-                    data.headroom.overall10s != null
-                      ? `${Math.round(data.headroom.overall10s * 100)}%`
-                      : "—"
+                    headroom ? `${Math.round(headroom.value * 100)}%` : "—"
                   }
                 />
               </dl>
             </div>
+
+            {data.health.state !== "ok" || data.health.tags.length > 0 ? (
+              <p
+                className="border-b border-border px-4 py-2 leading-snug text-muted-foreground"
+                data-testid="temporal-cluster-health-note"
+              >
+                <span className="font-medium text-foreground">
+                  {describeClusterHealth(data.health.state).label}.
+                </span>{" "}
+                {describeClusterHealth(data.health.state).meaning}
+                {data.health.tags
+                  .map((tag) => ` ${describeHealthTag(tag)}`)
+                  .join("")}
+                {serverReasons.length > 0 ? (
+                  <>
+                    {" "}
+                    Measured:{" "}
+                    <span className="font-mono text-foreground">
+                      {serverReasons.map(formatHealthReason).join(", ")}
+                    </span>
+                    .
+                  </>
+                ) : null}
+              </p>
+            ) : null}
 
             <dl className="[&>*+*]:border-t [&>*+*]:border-border/60">
               {Object.entries(data.readyz.subsystems).map(([name, status]) => (
@@ -417,31 +522,44 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
                 <h2 className="font-sans text-sm font-semibold text-foreground">
                   Rolling 5-Minute Trends
                 </h2>
-                <span className="text-2xs text-muted-foreground">
-                  {data.history.length}{" "}
-                  {data.history.length === 1 ? "sample" : "samples"} in memory
+                <span
+                  className="text-2xs text-muted-foreground"
+                  title="Studio samples the server while a page shows this screen"
+                >
+                  {pluralize(data.history.length, "sample")}
+                  {historySpanMs > 0
+                    ? ` over ${formatDuration(historySpanMs)}`
+                    : ""}
                 </span>
               </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <TemporalSparklineCard
+                  times={historyTimes}
+                  windowMs={TREND_WINDOW_MS}
                   formatValue={(v) => `${v.toFixed(1)}/s`}
                   label="Runs Opened / s"
                   value={`${data.history[data.history.length - 1]!.runsOpenedPerS.toFixed(1)}/s`}
                   values={data.history.map((s) => s.runsOpenedPerS)}
                 />
                 <TemporalSparklineCard
+                  times={historyTimes}
+                  windowMs={TREND_WINDOW_MS}
                   formatValue={(v) => `${v.toFixed(1)}/s`}
                   label="Runs Closed / s"
                   value={`${data.history[data.history.length - 1]!.runsClosedPerS.toFixed(1)}/s`}
                   values={data.history.map((s) => s.runsClosedPerS)}
                 />
                 <TemporalSparklineCard
+                  times={historyTimes}
+                  windowMs={TREND_WINDOW_MS}
                   formatValue={(v) => `${v.toFixed(1)}/s`}
                   label="History Events / s"
                   value={`${data.history[data.history.length - 1]!.historyEventsPerS.toFixed(1)}/s`}
                   values={data.history.map((s) => s.historyEventsPerS)}
                 />
                 <TemporalSparklineCard
+                  times={historyTimes}
+                  windowMs={TREND_WINDOW_MS}
                   formatValue={(v) => formatDuration(v)}
                   label="Oldest Ready Task"
                   tone={
@@ -453,17 +571,23 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
                   values={data.history.map((s) => s.matcherOldestReadyMs)}
                 />
                 <TemporalSparklineCard
-                  formatValue={(v) => `${v.toFixed(2)}ms`}
+                  times={historyTimes}
+                  windowMs={TREND_WINDOW_MS}
+                  formatValue={formatLag}
                   label="Max Progress Lag"
                   tone={
                     data.history[data.history.length - 1]!.progressDelayMs > 250
                       ? "warning"
                       : "info"
                   }
-                  value={`${data.history[data.history.length - 1]!.progressDelayMs.toFixed(2)}ms`}
+                  value={formatLag(
+                    data.history[data.history.length - 1]!.progressDelayMs,
+                  )}
                   values={data.history.map((s) => s.progressDelayMs)}
                 />
                 <TemporalSparklineCard
+                  times={historyTimes}
+                  windowMs={TREND_WINDOW_MS}
                   formatValue={(v) => formatBytes(v)}
                   label="Unflushed WAL"
                   tone={
@@ -487,6 +611,13 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
                 </span>
               </h2>
               <dl className="flex flex-wrap items-center gap-x-5 gap-y-1 text-muted-foreground">
+                {isSingleNode ? (
+                  <ServerFact
+                    label="Handoff"
+                    title="Moving a shard to another server needs a cell with more than one server (placement v2)"
+                    value="single node, not available"
+                  />
+                ) : null}
                 <ServerFact
                   label="Active storage"
                   value={formatBytes(data.storageActiveBytes)}
@@ -514,54 +645,65 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
                       </TableHead>
                       <TableHead
                         className={cn(temporalTableHeadClass, "text-right")}
+                        title="Sequence number of the last write the storage confirmed"
                       >
                         Durable Seq
                       </TableHead>
                       <TableHead
                         className={cn(temporalTableHeadClass, "text-right")}
+                        title="How late the shard is with work it accepted"
                       >
                         Progress Lag
                       </TableHead>
                       <TableHead
                         className={cn(temporalTableHeadClass, "text-right")}
+                        title="Level-0 storage files that wait for compaction, and what the compactor does now"
                       >
                         L0 / Compaction
                       </TableHead>
                       <TableHead
-                        className={cn(temporalTableHeadClass, "text-right")}
+                        className={cn(
+                          temporalTableHeadClass,
+                          "text-right",
+                          isSingleNode && "pr-4",
+                        )}
+                        title="Bytes written but not yet flushed to storage files"
                       >
                         Unflushed
                       </TableHead>
-                      <TableHead
-                        className={cn(
-                          temporalTableHeadClass,
-                          "pr-4 text-right",
-                        )}
-                      >
-                        Actions
-                      </TableHead>
+                      {isSingleNode ? null : (
+                        <TableHead
+                          className={cn(
+                            temporalTableHeadClass,
+                            "pr-4 text-right",
+                          )}
+                        >
+                          Actions
+                        </TableHead>
+                      )}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {data.shards.map((shard) => (
                       <TableRow
                         key={shard.id}
-                        className="border-border/60 hover:bg-muted/30"
+                        // No hover highlight: a row opens nothing.
+                        className="border-border/60 hover:bg-transparent"
                         data-testid={`temporal-shard-row-${shard.id}`}
                       >
                         <TableCell className="whitespace-nowrap py-2.5 pr-2 pl-4 font-mono">
                           <span className="font-medium text-foreground">
                             shard/{shard.id}
                           </span>{" "}
-                          <span className="text-muted-foreground">
+                          <span
+                            className="text-muted-foreground"
+                            title="Generation: goes up by one each time the shard is handed off"
+                          >
                             gen {shard.generation}
                           </span>
                         </TableCell>
                         <TableCell className="px-2 py-2.5 whitespace-normal">
-                          <ShardState
-                            serverTags={data.health.tags}
-                            shard={shard}
-                          />
+                          <ShardState shard={shard} />
                         </TableCell>
                         <TableCell className="px-2 py-2.5">
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono">
@@ -587,7 +729,7 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
                             {shard.progressDelayHistory &&
                             shard.progressDelayHistory.length > 0 ? (
                               <TemporalSparkline
-                                formatValue={(v) => `${v.toFixed(2)}ms`}
+                                formatValue={formatLag}
                                 height={18}
                                 label={`Shard ${shard.id} progress lag`}
                                 tone={
@@ -599,28 +741,36 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
                                 width={52}
                               />
                             ) : null}
-                            <span>{shard.progressDelayMs.toFixed(2)}ms</span>
+                            <span>{formatLag(shard.progressDelayMs)}</span>
                           </div>
                         </TableCell>
                         <TableCell className="whitespace-nowrap px-2 py-2.5 text-right font-mono tabular-nums text-muted-foreground">
                           {shard.l0Ssts} L0 · {shard.compactionState}
                         </TableCell>
-                        <TableCell className="whitespace-nowrap px-2 py-2.5 text-right font-mono tabular-nums text-muted-foreground">
+                        <TableCell
+                          className={cn(
+                            "px-2 py-2.5 text-right font-mono whitespace-nowrap text-muted-foreground tabular-nums",
+                            isSingleNode && "pr-4",
+                          )}
+                        >
                           {formatBytes(shard.unflushedBytes)}
                         </TableCell>
-                        <TableCell className="py-2.5 pr-4 pl-2 text-right">
-                          <Button
-                            variant="outline"
-                            size="xs"
-                            onClick={() => {
-                              setHandoffError(null);
-                              setHandoffShardId(shard.id);
-                            }}
-                          >
-                            <ArrowRightLeft />
-                            Handoff
-                          </Button>
-                        </TableCell>
+                        {isSingleNode ? null : (
+                          <TableCell className="py-2.5 pr-4 pl-2 text-right">
+                            <Button
+                              variant="outline"
+                              size="xs"
+                              aria-label={`Hand off shard/${shard.id}`}
+                              onClick={() => {
+                                setHandoffError(null);
+                                setHandoffShardId(shard.id);
+                              }}
+                            >
+                              <ArrowRightLeft />
+                              Hand Off
+                            </Button>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -697,21 +847,44 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
                   <Input
                     id="adm-rate"
                     type="number"
+                    min={1}
                     disabled={admMode === "closed"}
+                    aria-describedby={rateError ? "adm-rate-error" : undefined}
+                    aria-invalid={rateError !== null}
                     value={admRate}
                     onChange={(e) => setAdmRate(e.target.value)}
                     className="h-8 font-mono text-xs"
                   />
+                  {rateError ? (
+                    <p
+                      id="adm-rate-error"
+                      className="text-2xs text-destructive"
+                    >
+                      {rateError}
+                    </p>
+                  ) : null}
                 </TemporalField>
 
-                <TemporalField htmlFor="adm-ttl" label="TTL (s, max 3600)">
+                <TemporalField
+                  htmlFor="adm-ttl"
+                  label={`TTL (s, max ${MAX_ADMISSION_TTL_S})`}
+                >
                   <Input
                     id="adm-ttl"
                     type="number"
+                    min={1}
+                    max={MAX_ADMISSION_TTL_S}
+                    aria-describedby={ttlError ? "adm-ttl-error" : undefined}
+                    aria-invalid={ttlError !== null}
                     value={admTtl}
                     onChange={(e) => setAdmTtl(e.target.value)}
                     className="h-8 font-mono text-xs"
                   />
+                  {ttlError ? (
+                    <p id="adm-ttl-error" className="text-2xs text-destructive">
+                      {ttlError}
+                    </p>
+                  ) : null}
                 </TemporalField>
               </div>
 
@@ -719,7 +892,11 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
                 <Button
                   size="sm"
                   variant={admMode === "closed" ? "destructive" : "default"}
-                  disabled={setAdmission.isPending}
+                  disabled={
+                    setAdmission.isPending ||
+                    rateError !== null ||
+                    ttlError !== null
+                  }
                   onClick={() => {
                     if (admMode === "closed") {
                       setConfirmCloseOpen(true);
@@ -747,7 +924,7 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
                   }
                   data-testid="temporal-admission-lift-btn"
                 >
-                  Lift Hold on {admClass}
+                  Lift &quot;{admClass}&quot; Hold
                 </Button>
               </div>
             </section>
@@ -785,7 +962,8 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
                   </Button>
                 </div>
                 <p className="text-muted-foreground">
-                  Write and effect latency for sampled commits.
+                  The commits the server sampled, with the fields it reports for
+                  each.
                 </p>
               </div>
 
@@ -801,13 +979,21 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
                       typeof trace.workflow_id === "string"
                         ? trace.workflow_id
                         : undefined;
+                    const fields = describeTraceFields(trace);
+
                     return (
                       <div
                         key={idx}
                         className="flex items-center justify-between gap-3 px-3 py-1.5 font-mono"
+                        title={JSON.stringify(trace, null, 2)}
                       >
-                        <span className="truncate text-foreground">
-                          {wfId ?? JSON.stringify(trace).slice(0, 80)}
+                        <span className="flex min-w-0 items-baseline gap-3">
+                          <span className="truncate text-foreground">
+                            {wfId ?? "No Workflow ID"}
+                          </span>
+                          <span className="truncate text-2xs text-muted-foreground">
+                            {fields}
+                          </span>
                         </span>
                         {wfId ? (
                           <Button
@@ -853,20 +1039,10 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
             </SheetDescription>
           </SheetHeader>
           <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-5 py-5 text-xs *:shrink-0">
-            {isSingleNode ? (
-              <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-foreground">
-                <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-700 dark:text-amber-300" />
-                <p>
-                  This server runs as a single node (placement v1). Shard
-                  handoff needs a multi-node placement v2 cell.
-                </p>
-              </div>
-            ) : null}
             <TemporalField htmlFor="handoff-target" label="Target Server ID">
               <Input
                 id="handoff-target"
                 value={handoffTarget}
-                disabled={isSingleNode}
                 onChange={(e) => setHandoffTarget(e.target.value)}
                 placeholder="Server ID"
                 className="h-8 font-mono text-xs"
@@ -889,7 +1065,6 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
             <Button
               size="sm"
               disabled={
-                isSingleNode ||
                 handoffShard.isPending ||
                 handoffShardId === null ||
                 !handoffTarget.trim()
@@ -923,7 +1098,7 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
 
       <TemporalConfirmDialog
         confirmLabel={`Close "${admClass}" Traffic`}
-        description={`This rejects incoming "${admClass}" requests for ${admTtl} seconds, or until you lift the hold.`}
+        description={`This rejects incoming "${admClass}" requests for ${formatDuration(ttl * 1_000)}, or until you lift the hold.`}
         isPending={setAdmission.isPending}
         onConfirm={applyAdmissionHold}
         onOpenChange={setConfirmCloseOpen}
@@ -934,9 +1109,9 @@ export function TemporalClusterView(props: TemporalClusterViewProps) {
   );
 }
 
-function ServerFact(props: { label: string; value: string }) {
+function ServerFact(props: { label: string; title?: string; value: string }) {
   return (
-    <div className="flex items-baseline gap-1.5">
+    <div className="flex items-baseline gap-1.5" title={props.title}>
       <dt>{props.label}</dt>
       <dd className="font-mono text-foreground">{props.value}</dd>
     </div>

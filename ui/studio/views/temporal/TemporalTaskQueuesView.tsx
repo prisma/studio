@@ -31,14 +31,18 @@ import {
 import { cn } from "@/ui/lib/utils";
 
 import { StudioHeader } from "../../StudioHeader";
-import { formatDuration, formatRelativeTime } from "./temporal-utils";
+import { formatDuration } from "./temporal-utils";
 import {
   TemporalFollowControl,
   temporalIconScale,
+  TemporalLoadError,
   TemporalNamespaceBadge,
+  TemporalRefreshError,
   TemporalSectionLabel,
   TemporalStatusBadge,
   temporalTableHeadClass,
+  TemporalTime,
+  useNow,
   WorkflowStatusBadge,
 } from "./TemporalPrimitives";
 import { TemporalSparkline } from "./TemporalSparkline";
@@ -53,17 +57,25 @@ interface TemporalTaskQueuesViewProps {
 export function TemporalTaskQueuesView(props: TemporalTaskQueuesViewProps) {
   const { followMode, namespace, onFollowModeChange, onOpenExecution } = props;
 
-  const { data, isLoading, isError, error, refetch, isFetching } =
-    useTemporalTaskQueues({ followMode, namespace });
+  const query = useTemporalTaskQueues({ followMode, namespace });
+  const { dataUpdatedAt, isError, error, refetch, isFetching } = query;
+  // The answer for another namespace is not shown under this namespace's name.
+  const data = query.isPlaceholderData ? undefined : query.data;
   const { resetStickyTaskQueue } = useTemporalActions(namespace);
   const [expandedQueue, setExpandedQueue] = useState<string | null>(null);
+  // Renders again every few seconds, so relative times keep counting while refresh is paused.
+  useNow(5_000, true);
 
   const queues = data?.queues ?? [];
+  const asOf =
+    data && dataUpdatedAt
+      ? new Date(dataUpdatedAt - data.ageMs).toISOString()
+      : undefined;
 
   return (
     <div
       className={cn(
-        "flex h-full min-h-0 flex-col bg-background",
+        "@container flex h-full min-h-0 flex-col bg-background",
         temporalIconScale,
       )}
       data-testid="temporal-task-queues-view"
@@ -80,7 +92,8 @@ export function TemporalTaskQueuesView(props: TemporalTaskQueuesViewProps) {
               variant="outline"
               size="sm"
               className="w-8 px-0"
-              aria-label="Refresh task queues"
+              aria-label="Refresh Task Queues"
+              title="Refresh Task Queues"
               onClick={() => void refetch()}
             >
               <RefreshCw
@@ -93,69 +106,80 @@ export function TemporalTaskQueuesView(props: TemporalTaskQueuesViewProps) {
         <TemporalNamespaceBadge namespace={namespace} />
       </StudioHeader>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground">
-        <span>
-          <span className="font-medium tabular-nums text-foreground">
-            {queues.length}
-          </span>{" "}
-          {queues.length === 1 ? "queue" : "queues"}
-        </span>
-        {typeof data?.matcherOldestReadyMs === "number" ? (
-          <span className="inline-flex items-center gap-2">
-            <span>
-              Oldest ready task{" "}
-              <span className="font-mono text-foreground">
-                {formatDuration(data.matcherOldestReadyMs)}
-              </span>
-            </span>
-            {data.matcherOldestReadyHistory &&
-            data.matcherOldestReadyHistory.length > 0 ? (
-              <TemporalSparkline
-                formatValue={(v) => formatDuration(v)}
-                height={18}
-                label="Oldest ready task"
-                tone={data.matcherOldestReadyMs > 5_000 ? "warning" : "info"}
-                values={data.matcherOldestReadyHistory.map((p) => p.ms)}
-                width={56}
-              />
-            ) : null}
+      {data ? (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground">
+          <span>
+            <span className="font-medium tabular-nums text-foreground">
+              {queues.length}
+            </span>{" "}
+            {queues.length === 1 ? "queue" : "queues"}
           </span>
-        ) : null}
-        {data ? (
+          {typeof data.matcherOldestReadyMs === "number" ? (
+            <span className="inline-flex items-center gap-2">
+              <span>
+                Oldest ready task{" "}
+                <span className="font-mono text-foreground">
+                  {formatDuration(data.matcherOldestReadyMs)}
+                </span>
+              </span>
+              {data.matcherOldestReadyHistory &&
+              data.matcherOldestReadyHistory.length > 0 ? (
+                <TemporalSparkline
+                  formatValue={(v) => formatDuration(v)}
+                  height={18}
+                  label="Oldest ready task"
+                  times={data.matcherOldestReadyHistory.map((p) => p.at)}
+                  tone={data.matcherOldestReadyMs > 5_000 ? "warning" : "info"}
+                  values={data.matcherOldestReadyHistory.map((p) => p.ms)}
+                  width={56}
+                  windowMs={TREND_WINDOW_MS}
+                />
+              ) : null}
+            </span>
+          ) : null}
           <span className="ml-auto" data-testid="temporal-queues-counted">
             {data.complete
               ? "Counted from every run in the namespace"
               : data.runningComplete
                 ? "Counted from the running runs: the namespace holds more runs than Studio copies"
                 : "Counted from the first 1,000 running runs"}
-            {data.ageMs >= 1_000
-              ? `, ${data.ageMs < 60_000 ? `${Math.round(data.ageMs / 1_000)}s` : formatDuration(data.ageMs)} ago`
-              : ""}
             {data.pollersSupported
               ? ""
               : " · This server does not report which Workers poll a queue"}
           </span>
-        ) : null}
-      </div>
+          {asOf ? (
+            <span data-testid="temporal-queues-as-of">
+              As of <TemporalTime iso={asOf} />
+              {followMode === "paused" ? " · Paused" : ""}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {data && isError ? (
+        <TemporalRefreshError error={error} onRetry={() => void refetch()} />
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-auto">
-        {isLoading ? (
-          <div className="flex flex-col gap-2 p-4">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-10 w-full" />
-            ))}
-          </div>
-        ) : isError ? (
-          <div className="flex flex-col items-center justify-center gap-3 p-10 text-sm text-muted-foreground">
-            <p className="font-medium text-destructive">
-              {error instanceof Error
-                ? error.message
-                : "Could not load task queues"}
-            </p>
-            <Button variant="outline" size="sm" onClick={() => void refetch()}>
-              Retry
-            </Button>
-          </div>
+        {!data ? (
+          isError ? (
+            <TemporalLoadError
+              error={error}
+              onRetry={() => void refetch()}
+              title={
+                <>
+                  Could not load the Task Queues of namespace{" "}
+                  <code className="font-mono">{namespace}</code>.
+                </>
+              }
+            />
+          ) : (
+            <div className="flex flex-col gap-2 p-4">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 w-full" />
+              ))}
+            </div>
+          )
         ) : queues.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 p-10 text-sm text-muted-foreground">
             <Layers className="size-6 opacity-60" />
@@ -180,8 +204,11 @@ export function TemporalTaskQueuesView(props: TemporalTaskQueuesViewProps) {
                 <TableHead className={cn(temporalTableHeadClass, "text-right")}>
                   Pending Activities
                 </TableHead>
-                <TableHead className={temporalTableHeadClass}>
-                  5m Trend
+                <TableHead
+                  className={temporalTableHeadClass}
+                  title="Running runs plus pending Activities over the last 5 minutes, sampled while a Studio page shows this screen"
+                >
+                  Active (5m)
                 </TableHead>
                 <TableHead className={cn(temporalTableHeadClass, "text-right")}>
                   Schedules
@@ -189,7 +216,7 @@ export function TemporalTaskQueuesView(props: TemporalTaskQueuesViewProps) {
                 <TableHead className={cn(temporalTableHeadClass, "text-right")}>
                   Total Runs
                 </TableHead>
-                {data?.pollersSupported ? (
+                {data.pollersSupported ? (
                   <TableHead
                     className={cn(temporalTableHeadClass, "text-right")}
                   >
@@ -209,23 +236,30 @@ export function TemporalTaskQueuesView(props: TemporalTaskQueuesViewProps) {
                 return (
                   <TaskQueueRow
                     key={queue.name}
-                    countsClosedRuns={data?.complete ?? false}
+                    countsClosedRuns={data.complete}
+                    followMode={followMode}
                     namespace={namespace}
                     isExpanded={isExpanded}
                     onOpenExecution={onOpenExecution}
                     onResetSticky={async (workflowId, runId) => {
-                      await resetStickyTaskQueue.mutateAsync({
-                        runId,
-                        workflowId,
-                      });
-                      toast.success(`Reset sticky queue for ${workflowId}`);
+                      try {
+                        await resetStickyTaskQueue.mutateAsync({
+                          runId,
+                          workflowId,
+                        });
+                        toast.success(`Reset sticky queue for ${workflowId}`);
+                      } catch (err) {
+                        toast.error(
+                          err instanceof Error ? err.message : String(err),
+                        );
+                      }
                     }}
                     onToggle={() =>
                       setExpandedQueue((prev) =>
                         prev === queue.name ? null : queue.name,
                       )
                     }
-                    pollersSupported={data?.pollersSupported ?? false}
+                    pollersSupported={data.pollersSupported}
                     queue={queue}
                   />
                 );
@@ -280,10 +314,38 @@ function CountCell(props: {
 }
 
 const SHOWN_RUNS = 8;
+const TREND_WINDOW_MS = 5 * 60_000;
+
+/** Why a queue has its health, in a few words. Null when the badge says it all. */
+export function queueHealthReason(
+  queue: TemporalTaskQueueSummary,
+  pollersSupported: boolean,
+): string | null {
+  if (queue.health === "stalled") {
+    return pollersSupported
+      ? "No Worker polls this queue"
+      : "A task has waited over 30 seconds for a Worker";
+  }
+
+  if (queue.health === "backlogged") {
+    return `${queue.pendingBacklogCount.toLocaleString("en-US")} tasks wait for a Worker`;
+  }
+
+  if (queue.health === "retrying") {
+    const count = queue.retryingActivityCount || queue.retryingWorkflowCount;
+
+    return count === 1
+      ? "1 Activity retrying"
+      : `${count.toLocaleString("en-US")} Activities retrying`;
+  }
+
+  return null;
+}
 
 function TaskQueueRow(props: {
   /** False when the queue is counted from its running runs only. */
   countsClosedRuns: boolean;
+  followMode: TemporalFollowMode;
   isExpanded: boolean;
   namespace: string;
   onOpenExecution: (workflowId: string, runId?: string) => void;
@@ -294,6 +356,7 @@ function TaskQueueRow(props: {
 }) {
   const {
     countsClosedRuns,
+    followMode,
     isExpanded,
     namespace,
     onOpenExecution,
@@ -306,6 +369,7 @@ function TaskQueueRow(props: {
   const workflowsUrl = (filter: string) =>
     createUrl({
       searchParam: filter,
+      ...(followMode === "paused" ? { temporalFollowParam: "paused" } : {}),
       temporalNsParam: namespace,
       temporalSectionParam: "workflows",
       viewParam: "temporal",
@@ -317,6 +381,8 @@ function TaskQueueRow(props: {
     ? (queue.totalWorkflowCount ?? 0)
     : queue.activeWorkflowCount;
   const listedNoun = countsClosedRuns ? "run" : "running run";
+  const healthReason = queueHealthReason(queue, pollersSupported);
+  const hasNoWorker = pollersSupported && queue.pollers.length === 0;
 
   return (
     <>
@@ -341,7 +407,7 @@ function TaskQueueRow(props: {
           </Button>
         </TableCell>
         <TableCell className="px-2 py-2">
-          <span className="font-mono font-medium text-foreground">
+          <span className="font-mono font-medium whitespace-nowrap text-foreground">
             {queue.name}
           </span>
           <span className="ml-2 text-2xs text-muted-foreground">
@@ -356,7 +422,17 @@ function TaskQueueRow(props: {
           </span>
         </TableCell>
         <TableCell className="px-2 py-2">
-          <QueueHealthBadge health={queue.health} />
+          <div className="flex flex-col items-start gap-1">
+            <QueueHealthBadge health={queue.health} />
+            {healthReason ? (
+              <span
+                className="max-w-44 text-2xs leading-snug whitespace-normal text-muted-foreground"
+                data-testid={`temporal-queue-health-reason-${queue.name}`}
+              >
+                {healthReason}
+              </span>
+            ) : null}
+          </div>
         </TableCell>
         <CountCell
           emphasize
@@ -374,7 +450,8 @@ function TaskQueueRow(props: {
           <TemporalSparkline
             formatValue={(v) => `${v} active`}
             height={18}
-            label={`Active load on ${queue.name}`}
+            label={`Running runs plus pending Activities on ${queue.name}`}
+            times={(queue.history ?? []).map((point) => point.at)}
             tone={
               queue.health === "stalled"
                 ? "danger"
@@ -386,6 +463,7 @@ function TaskQueueRow(props: {
               (point) => point.activeWorkflowCount + point.pendingActivityCount,
             )}
             width={60}
+            windowMs={TREND_WINDOW_MS}
           />
         </TableCell>
         <CountCell value={queue.scheduleCount} />
@@ -393,16 +471,26 @@ function TaskQueueRow(props: {
           href={workflowsUrl(queueFilter)}
           value={queue.totalWorkflowCount}
         />
-        {pollersSupported ? <CountCell value={queue.pollers.length} /> : null}
+        {pollersSupported ? (
+          <CountCell
+            className={
+              queue.health === "stalled" && hasNoWorker
+                ? "font-medium text-foreground"
+                : undefined
+            }
+            value={queue.pollers.length}
+          />
+        ) : null}
         <TableCell className="whitespace-nowrap py-2 pr-4 pl-2 text-right text-muted-foreground">
-          {formatRelativeTime(queue.lastActivityTime)}
+          <TemporalTime iso={queue.lastActivityTime} />
         </TableCell>
       </TableRow>
 
       {isExpanded ? (
         <TableRow className="border-border/60 bg-muted/20 hover:bg-muted/20">
-          <TableCell colSpan={12} className="px-4 py-4">
-            <div className="flex flex-col gap-4">
+          <TableCell colSpan={12} className="p-0">
+            {/* As wide as the visible screen, not the table, so no part of it scrolls out of view. */}
+            <div className="sticky left-0 flex w-[100cqw] max-w-full flex-col gap-4 p-4 whitespace-normal">
               {queue.workflowTypes.length > 0 ||
               queue.activityTypes.length > 0 ? (
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -448,24 +536,40 @@ function TaskQueueRow(props: {
                 </div>
               ) : null}
 
-              {queue.pollers.length > 0 ? (
+              {pollersSupported ? (
                 <div className="flex flex-col gap-2">
                   <TemporalSectionLabel>
                     Active Pollers ({queue.pollers.length})
                   </TemporalSectionLabel>
-                  <div className="flex flex-wrap gap-2">
-                    {queue.pollers.map((p) => (
-                      <div
-                        key={`${p.taskQueueType}:${p.identity}`}
-                        className="rounded-md border border-border bg-card px-2.5 py-1 font-mono text-xs"
-                      >
-                        {p.identity} · {p.taskQueueType}
-                        {p.lastAccessTime
-                          ? ` · ${formatRelativeTime(p.lastAccessTime)}`
-                          : ""}
-                      </div>
-                    ))}
-                  </div>
+                  {hasNoWorker ? (
+                    <p
+                      className="text-muted-foreground"
+                      data-testid="temporal-queue-no-worker"
+                    >
+                      No Worker polls this queue.
+                      {queue.activeWorkflowCount > 0 ||
+                      queue.pendingActivityCount > 0
+                        ? " Its tasks wait until one does."
+                        : ""}
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {queue.pollers.map((p) => (
+                        <div
+                          key={`${p.taskQueueType}:${p.identity}`}
+                          className="rounded-md border border-border bg-card px-2.5 py-1 font-mono text-xs"
+                        >
+                          {p.identity} · {p.taskQueueType}
+                          {p.lastAccessTime ? (
+                            <>
+                              {" · last poll "}
+                              <TemporalTime iso={p.lastAccessTime} />
+                            </>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ) : null}
 
@@ -504,6 +608,9 @@ function TaskQueueRow(props: {
                           ) : null}
                         </div>
                         <div className="flex items-center gap-1">
+                          <span className="mr-2 text-2xs whitespace-nowrap text-muted-foreground">
+                            Started <TemporalTime iso={wf.startTime} />
+                          </span>
                           {wf.status === "Running" ? (
                             <Button
                               variant="ghost"

@@ -75,6 +75,27 @@ describe("failureOrigin", () => {
     ).toMatchObject({ functionName: "chargeSubscription", line: 171 });
   });
 
+  it("skips the SDK's failure factory in a bundle, where no path marks it as library code", () => {
+    expect(
+      failureOrigin({
+        message: "No reviewer decided within 30 minutes",
+        stackTrace: `ApplicationFailure: No reviewer decided within 30 minutes
+    at nonRetryable (/app/workflow-bundle-7c39.js:1969:24)
+    at orderFulfillment (/app/workflow-bundle-7c39.js:9819:104)`,
+      }),
+    ).toMatchObject({ functionName: "orderFulfillment", line: 9819 });
+  });
+
+  it("keeps a function of the user's own that has a factory's name", () => {
+    expect(
+      failureOrigin({
+        message: "boom",
+        stackTrace: `Error: boom
+    at create (/app/apps/shop/orders.ts:12:3)`,
+      }),
+    ).toMatchObject({ functionName: "create", line: 12 });
+  });
+
   it("names nothing when every frame is library code", () => {
     expect(
       failureOrigin({

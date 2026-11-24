@@ -9,7 +9,8 @@ import type {
 
 import { TemporalTaskQueuesView } from "./TemporalTaskQueuesView";
 
-const queuesMock = vi.fn<() => TemporalTaskQueuesResponse>();
+const queuesMock = vi.fn<() => TemporalTaskQueuesResponse | undefined>();
+const errorMock = vi.fn<() => Error | null>(() => null);
 
 vi.mock("@/ui/hooks/use-temporal", () => ({
   useTemporalActions: () => ({
@@ -17,6 +18,9 @@ vi.mock("@/ui/hooks/use-temporal", () => ({
   }),
   useTemporalTaskQueues: () => ({
     data: queuesMock(),
+    dataUpdatedAt: Date.now(),
+    error: errorMock(),
+    isError: errorMock() !== null,
     isFetching: false,
     isLoading: false,
     refetch: vi.fn(),
@@ -72,21 +76,26 @@ describe("TemporalTaskQueuesView", () => {
   afterEach(() => {
     act(() => root?.unmount());
     document.body.innerHTML = "";
+    errorMock.mockReturnValue(null);
   });
 
-  function renderExpanded(response: Partial<TemporalTaskQueuesResponse>) {
+  function renderView(response: Partial<TemporalTaskQueuesResponse> | null) {
     const container = document.createElement("div");
 
     document.body.append(container);
-    queuesMock.mockReturnValue({
-      ageMs: 0,
-      complete: true,
-      pollersSupported: false,
-      queues: [],
-      runningComplete: true,
-      source: "synthesized",
-      ...response,
-    });
+    queuesMock.mockReturnValue(
+      response === null
+        ? undefined
+        : {
+            ageMs: 0,
+            complete: true,
+            pollersSupported: false,
+            queues: [],
+            runningComplete: true,
+            source: "synthesized",
+            ...response,
+          },
+    );
     root = createRoot(container);
     act(() =>
       root!.render(
@@ -98,6 +107,13 @@ describe("TemporalTaskQueuesView", () => {
         />,
       ),
     );
+
+    return container;
+  }
+
+  function renderExpanded(response: Partial<TemporalTaskQueuesResponse>) {
+    const container = renderView(response);
+
     act(() =>
       container
         .querySelector<HTMLElement>(
@@ -163,5 +179,84 @@ describe("TemporalTaskQueuesView", () => {
     expect(filterOf(note.querySelector("a"))).toBe(
       'TaskQueue = "billing" AND ExecutionStatus = "Running"',
     );
+  });
+
+  it("shows no queue count while there is no answer", () => {
+    const container = renderView(null);
+
+    expect(container.textContent).not.toContain("0 queues");
+    expect(container.querySelector("table")).toBeNull();
+  });
+
+  it("says that the load failed, with the server's message, and shows no count", () => {
+    errorMock.mockReturnValue(new Error("14 UNAVAILABLE: connection refused"));
+    const container = renderView(null);
+    const alert = container.querySelector('[role="alert"]')!;
+
+    expect(alert.textContent).toContain(
+      "Could not load the Task Queues of namespace payments-eu.",
+    );
+    expect(alert.textContent).toContain("14 UNAVAILABLE: connection refused");
+    expect(container.textContent).not.toContain("0 queues");
+  });
+
+  it("keeps the queues on screen when a refresh fails", () => {
+    errorMock.mockReturnValue(new Error("14 UNAVAILABLE: connection refused"));
+    const container = renderView({ queues: [billing({})] });
+
+    expect(
+      container.querySelector('[data-testid="temporal-queue-row-billing"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="temporal-refresh-error"]')!
+        .textContent,
+    ).toContain("14 UNAVAILABLE: connection refused");
+  });
+
+  it("says when the data was read and that refresh is paused", () => {
+    const container = renderView({ ageMs: 90_000, queues: [billing({})] });
+
+    expect(
+      container.querySelector('[data-testid="temporal-queues-as-of"]')!
+        .textContent,
+    ).toBe("As of 1m ago · Paused");
+  });
+
+  it("says why a queue is stalled and that no Worker polls it", () => {
+    const container = renderExpanded({
+      pollersSupported: true,
+      queues: [billing({ health: "stalled" })],
+    });
+
+    expect(
+      container.querySelector(
+        '[data-testid="temporal-queue-health-reason-billing"]',
+      )!.textContent,
+    ).toBe("No Worker polls this queue");
+    expect(
+      container.querySelector('[data-testid="temporal-queue-no-worker"]')!
+        .textContent,
+    ).toBe("No Worker polls this queue. Its tasks wait until one does.");
+  });
+
+  it("names the rule behind a stalled queue on a server that reports no pollers", () => {
+    const container = renderView({
+      queues: [billing({ health: "stalled" })],
+    });
+
+    expect(
+      container.querySelector(
+        '[data-testid="temporal-queue-health-reason-billing"]',
+      )!.textContent,
+    ).toBe("A task has waited over 30 seconds for a Worker");
+  });
+
+  it("shows when each listed run started", () => {
+    const container = renderExpanded({ queues: [billing({})] });
+
+    expect(container.textContent).toContain("Started ");
+    expect(
+      container.querySelectorAll("time[datetime='2026-11-23T10:00:00.000Z']"),
+    ).toHaveLength(8);
   });
 });

@@ -99,7 +99,9 @@ import {
   TemporalConfirmDialog,
   TemporalFollowControl,
   temporalIconScale,
+  TemporalLoadError,
   TemporalNamespaceBadge,
+  TemporalRefreshError,
   temporalTableHeadClass,
   TemporalTimeFormatControl,
 } from "./TemporalPrimitives";
@@ -140,6 +142,34 @@ function parseWorkflowSort(
         field: field as TemporalWorkflowSortField,
       }
     : null;
+}
+
+const NEWEST_FIRST = { direction: "desc", field: "StartTime" } as const;
+
+const SERVER_ORDER_NOTE =
+  "Server order: running first, then the most recently closed";
+
+function rowKey(exec: TemporalWorkflowExecution): string {
+  return `${exec.workflowId}::${exec.runId}`;
+}
+
+/** Signal, cancel and terminate reach an execution only while it is open. */
+function isOpenExecution(exec: TemporalWorkflowExecution): boolean {
+  return exec.status === "Running" || exec.status === "Paused";
+}
+
+/** The Workflow IDs that more than one of the executions has. */
+function repeatedWorkflowIds(
+  executions: TemporalWorkflowExecution[],
+): Set<string> {
+  const seen = new Set<string>();
+  const repeated = new Set<string>();
+
+  for (const exec of executions) {
+    (seen.has(exec.workflowId) ? repeated : seen).add(exec.workflowId);
+  }
+
+  return repeated;
 }
 
 interface TemporalWorkflowsGridProps {
@@ -183,7 +213,8 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
 
   const [draftQuery, setDraftQuery] = useState(query);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
-  const [focusedIndex, setFocusedIndex] = useState<number>(-1);
+  // The cursor is on an execution, not on a row number, so a refresh that adds rows does not move it.
+  const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(
     () => new Set(),
   );
@@ -194,8 +225,18 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
   const [bulkTerminateConfirmOpen, setBulkTerminateConfirmOpen] =
     useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const { sortParam, setSortParam } = useNavigation();
-  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]!);
+  const tableAreaRef = useRef<HTMLDivElement | null>(null);
+  const {
+    createUrl,
+    pageSizeParam,
+    setPageSizeParam,
+    sortParam,
+    setSortParam,
+  } = useNavigation();
+  // The page size is in the URL, so the Back button and a reload keep it.
+  const pageSize = PAGE_SIZES.includes(Number(pageSizeParam))
+    ? Number(pageSizeParam)
+    : PAGE_SIZES[0]!;
   // The token that loads each page after the first, in page order.
   const [pageTokens, setPageTokens] = useState<string[]>([]);
 
@@ -207,14 +248,15 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
   // Plain text, such as a pasted ID, becomes a search on IDs and types.
   const visibilityQuery = toVisibilityQuery(query);
   const isPlainTextSearch = visibilityQuery !== query.trim();
-  // A server that lists by Workflow Id shows the newest runs first instead.
-  const isNativeNewestFirst = capabilities?.nativeListOrder === "newest-first";
+  const nativeListOrder = capabilities?.nativeListOrder;
+  const isNativeNewestFirst = nativeListOrder === "newest-first";
   const parsedSort = parseWorkflowSort(sortParam);
-  const sort =
-    parsedSort ??
-    (capabilities?.nativeListOrder === "workflow-id"
-      ? ({ direction: "desc", field: "StartTime" } as const)
-      : undefined);
+  // The order with no sort in the URL. A server that lists running executions first has none by a column.
+  const defaultSort =
+    nativeListOrder === "newest-first" || nativeListOrder === "workflow-id"
+      ? NEWEST_FIRST
+      : undefined;
+  const sort = parsedSort ?? defaultSort;
   // Skip in-memory sorting when the server already lists newest-first natively.
   const requestSort =
     isNativeNewestFirst &&
@@ -230,20 +272,21 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
     setPageTokens([]);
     setSelectedKeys(new Set());
     setAllMatchingSelected(false);
-    setFocusedIndex(-1);
+    setFocusedKey(null);
   }, [namespace, pageSize, sortKey, visibilityQuery]);
 
   const toggleSort = (field: TemporalWorkflowSortField) => {
-    // On native newest-first servers, Started is already descending by default.
-    if (isNativeNewestFirst && field === "StartTime" && !parsedSort) {
-      void setSortParam("StartTime:asc");
+    // The list is already in this column's first order, so the first click gives the other one.
+    if (!parsedSort && defaultSort?.field === field) {
+      void setSortParam(`${field}:asc`);
+
       return;
     }
 
     // First click sorts descending, the second ascending, the third clears the sort.
-    if (sort?.field !== field || !sortParam) {
+    if (parsedSort?.field !== field) {
       void setSortParam(`${field}:desc`);
-    } else if (sort.direction === "desc") {
+    } else if (parsedSort.direction === "desc") {
       void setSortParam(`${field}:asc`);
     } else {
       void setSortParam(null);
@@ -275,6 +318,15 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
   const { clearRecentFilters, recentFilters, rememberFilter } =
     useTemporalRecentFilters();
   const hasRowsOfQuery = data !== undefined && !isPlaceholderData && !isError;
+  // A failed refresh leaves the rows that loaded before; a failed first load has none.
+  const isFirstLoadError = isError && data === undefined;
+  const isRefreshError = isError && data !== undefined;
+  // Only a request the server refused is about the filter. Any other failure is the server or the network.
+  const isFilterRefused =
+    isFirstLoadError &&
+    (error as { status?: unknown } | null)?.status === 400 &&
+    query.trim().length > 0 &&
+    !isPlainTextSearch;
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refresh = () => {
     setIsRefreshing(true);
@@ -335,12 +387,13 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
   // Show the actual order in the header; never display a skipped sort arrow.
   const displaySort = data?.sortSkippedReason
     ? isNativeNewestFirst
-      ? ({ direction: "desc", field: "StartTime" } as const)
+      ? NEWEST_FIRST
       : undefined
-    : (sort ??
-      (isNativeNewestFirst
-        ? ({ direction: "desc", field: "StartTime" } as const)
-        : undefined));
+    : sort;
+  const serverOrderNote =
+    nativeListOrder === "open-first" && !displaySort && !data?.sortSkippedReason
+      ? SERVER_ORDER_NOTE
+      : undefined;
   const exceedsSortLimit = hasCounts && totalCount > 10_000;
   const firstRowNumber = pageTokens.length * pageSize + 1;
   const hasNextPage = Boolean(data?.nextPageToken) && !isPlaceholderData;
@@ -348,19 +401,20 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
     if (data?.nextPageToken) {
       setPageTokens((tokens) => [...tokens, data.nextPageToken!]);
       setSelectedKeys(new Set());
-      setFocusedIndex(-1);
+      setAllMatchingSelected(false);
+      setFocusedKey(null);
     }
   };
   const goToPreviousPage = () => {
     setPageTokens((tokens) => tokens.slice(0, -1));
     setSelectedKeys(new Set());
-    setFocusedIndex(-1);
+    setAllMatchingSelected(false);
+    setFocusedKey(null);
   };
 
-  const rowKey = (exec: TemporalWorkflowExecution) =>
-    `${exec.workflowId}::${exec.runId}`;
-
   const toggleSelect = useCallback((key: string) => {
+    // A change to the rows means the user no longer wants every match.
+    setAllMatchingSelected(false);
     setSelectedKeys((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
@@ -374,6 +428,8 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
     executions.every((e) => selectedKeys.has(rowKey(e)));
 
   const toggleSelectAll = () => {
+    setAllMatchingSelected(false);
+
     if (allSelected) {
       setSelectedKeys(new Set());
     } else {
@@ -385,7 +441,26 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
     () => executions.filter((e) => selectedKeys.has(rowKey(e))),
     [executions, selectedKeys],
   );
-  const selectedSummary = `${pluralize(selectedExecutions.length, "execution")} (${summarizeIds(selectedExecutions.map((e) => e.workflowId))})`;
+  const actionableExecutions = useMemo(
+    () => selectedExecutions.filter(isOpenExecution),
+    [selectedExecutions],
+  );
+  const closedSelectedCount =
+    selectedExecutions.length - actionableExecutions.length;
+  const repeatedIds = useMemo(
+    () => repeatedWorkflowIds(executions),
+    [executions],
+  );
+  // Runs of one Workflow ID share the first 8 characters of a time-ordered run ID for a minute, so the label takes 13.
+  const labelOf = (exec: TemporalWorkflowExecution) =>
+    repeatedIds.has(exec.workflowId)
+      ? `${exec.workflowId}, run ${exec.runId.slice(0, 13)}`
+      : exec.workflowId;
+  const selectedSummary = `${pluralize(actionableExecutions.length, "running execution")} (${summarizeIds(actionableExecutions.map(labelOf))})`;
+  const focusedIndex =
+    focusedKey === null
+      ? -1
+      : executions.findIndex((exec) => rowKey(exec) === focusedKey);
 
   const applyQuery = (nextQuery: string) => {
     setDraftQuery(nextQuery);
@@ -394,6 +469,22 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
 
   // Keyboard navigation (j/k, Space, Enter, /)
   useEffect(() => {
+    // The keys move the cursor out of view on a long page, so the page follows it.
+    const moveTo = (index: number) => {
+      const next = executions[index];
+
+      if (!next) {
+        return;
+      }
+
+      setFocusedKey(rowKey(next));
+      requestAnimationFrame(() => {
+        tableAreaRef.current
+          ?.querySelector('tr[data-focused="true"]')
+          ?.scrollIntoView({ block: "nearest" });
+      });
+    };
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (isShortcutBlockedTarget(event.target, event.key)) return;
 
@@ -407,10 +498,10 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
 
       if (event.key === "j" || event.key === "ArrowDown") {
         event.preventDefault();
-        setFocusedIndex((i) => Math.min(executions.length - 1, i + 1));
+        moveTo(Math.min(executions.length - 1, focusedIndex + 1));
       } else if (event.key === "k" || event.key === "ArrowUp") {
         event.preventDefault();
-        setFocusedIndex((i) => Math.max(0, i - 1));
+        moveTo(Math.max(0, focusedIndex - 1));
       } else if (event.key === "x" || event.key === " ") {
         const current = executions[focusedIndex];
         if (current) {
@@ -433,10 +524,11 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
     (countsByStatus.Running ?? 0) + (countsByStatus.Paused ?? 0);
   const bulkCount = allMatchingSelected
     ? runningTotal
-    : selectedExecutions.length;
+    : actionableExecutions.length;
   const bulkSummary = allMatchingSelected
-    ? `${pluralize(runningTotal, "running execution")} matching ${query.trim() ? "this search" : "in this namespace"}`
+    ? `${runningTotal === 1 ? "the" : "all"} ${pluralize(runningTotal, "running execution")}${query.trim() ? " that this search matches" : ""}`
     : selectedSummary;
+  const bulkSignalArgsError = parseJsonArgsText(bulkSignalArgs).error;
 
   const runBulkAction = async (
     action: TemporalBulkActionKind,
@@ -451,7 +543,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
         ...(allMatchingSelected
           ? { query: visibilityQuery }
           : {
-              items: selectedExecutions.map((e) => ({
+              items: actionableExecutions.map((e) => ({
                 runId: e.runId,
                 workflowId: e.workflowId,
               })),
@@ -480,8 +572,13 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
         title="Executions"
         endContent={
           <>
-            {/* A narrow page keeps the search field usable and drops the rare controls. */}
-            <span className="contents @max-2xl:hidden">
+            {/* A narrow page drops the control while it reads Live. While paused only a very narrow one does, and says so below. */}
+            <span
+              className={cn(
+                "contents",
+                followMode === "paused" ? "@max-lg:hidden" : "@max-2xl:hidden",
+              )}
+            >
               <TemporalFollowControl
                 value={followMode}
                 onChange={onFollowModeChange}
@@ -547,6 +644,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
           draft={draftQuery}
           facets={facets}
           inputRef={searchInputRef}
+          onCancel={() => setDraftQuery(query)}
           onClear={() => applyQuery("")}
           onDraftChange={setDraftQuery}
           onSubmit={onQueryChange}
@@ -562,7 +660,8 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
               <Button
                 variant="outline"
                 size="sm"
-                className="shrink-0"
+                // The header of a very narrow page has no room for it.
+                className="shrink-0 @max-md:hidden"
                 data-testid="temporal-save-view"
               >
                 <Bookmark />
@@ -627,58 +726,84 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
         counts={namespaceCounts ?? (query.trim() === "" ? data : undefined)}
         isLoadingRows={isPlaceholderData}
         isPlainTextSearch={isPlainTextSearch}
-        matchCount={hasCounts ? totalCount : undefined}
+        matchCount={hasCounts && !isFirstLoadError ? totalCount : undefined}
         onApply={applyQuery}
         onClearRecent={clearRecentFilters}
         query={query}
         recentFilters={recentFilters}
       />
 
-      <div className="min-h-0 flex-1 overflow-auto">
+      {followMode === "paused" ? (
+        // Where the header has no room for the Paused and Live control, this says the list stands still.
+        <div
+          className="hidden items-center justify-between gap-3 border-b border-border bg-muted/40 px-4 py-1.5 text-xs text-foreground @max-lg:flex"
+          data-testid="temporal-paused-note"
+        >
+          <span>Refresh is paused.</span>
+          <Button
+            variant="outline"
+            size="xs"
+            onClick={() => onFollowModeChange("live")}
+          >
+            Resume
+          </Button>
+        </div>
+      ) : null}
+
+      {isRefreshError ? (
+        <TemporalRefreshError error={error} onRetry={refresh} />
+      ) : null}
+
+      <div ref={tableAreaRef} className="min-h-0 flex-1 overflow-auto">
         {isLoading ? (
           <div className="flex flex-col gap-2 p-4">
             {Array.from({ length: 6 }).map((_, idx) => (
               <Skeleton key={idx} className="h-9 w-full" />
             ))}
           </div>
-        ) : isError ? (
+        ) : isFilterRefused ? (
           <div
             className="flex flex-col items-center justify-center gap-3 p-10 text-center text-sm text-muted-foreground"
             data-testid="temporal-grid-error"
+            role="alert"
           >
             <p className="font-medium text-foreground">
-              {query && !isPlainTextSearch
-                ? "The server could not read this filter"
-                : "Could not load the workflows"}
+              The server could not read this filter
             </p>
-            <p className="max-w-xl font-mono text-xs text-destructive">
+            <p className="max-w-xl font-mono text-xs break-words text-destructive">
               {error instanceof Error ? error.message : "Unknown error"}
             </p>
-            {query && !isPlainTextSearch ? (
-              <p className="max-w-xl text-xs">
-                A filter compares attributes, joined with AND or OR. For
-                example:{" "}
-                <code className="font-mono text-foreground">
-                  WorkflowType = &quot;orderFulfillment&quot; AND
-                  ExecutionStatus = &quot;Failed&quot;
-                </code>
-              </p>
-            ) : null}
+            <p className="max-w-xl text-xs">
+              A filter compares attributes, joined with AND or OR. For example:{" "}
+              <code className="font-mono text-foreground">
+                WorkflowType = &quot;orderFulfillment&quot; AND ExecutionStatus
+                = &quot;Failed&quot;
+              </code>
+            </p>
             <div className="flex gap-2">
-              {query ? (
-                <Button size="sm" onClick={() => applyQuery("")}>
-                  Clear Filter
-                </Button>
-              ) : null}
+              <Button size="sm" onClick={() => searchInputRef.current?.focus()}>
+                Edit Filter
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => void refetch()}
+                onClick={() => applyQuery("")}
               >
-                Retry
+                Clear Filter
               </Button>
             </div>
           </div>
+        ) : isFirstLoadError ? (
+          <TemporalLoadError
+            error={error}
+            onRetry={refresh}
+            title={
+              <>
+                Could not load the executions of namespace{" "}
+                <code className="font-mono">{namespace}</code>.
+              </>
+            }
+          />
         ) : executions.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 p-10 text-sm text-muted-foreground">
             <p>
@@ -739,7 +864,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
                   <Checkbox
                     checked={allSelected}
                     onCheckedChange={toggleSelectAll}
-                    aria-label="Select all workflows"
+                    aria-label="Select all executions on this page"
                   />
                 </TableHead>
                 <TableHead className="h-9 px-0" />
@@ -751,13 +876,16 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
                     onSort={toggleSort}
                     sort={displaySort}
                     sortDisabled={exceedsSortLimit}
+                    title={
+                      column.id === "started" ? serverOrderNote : undefined
+                    }
                     width={widthOf(column)}
                   />
                 ))}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {executions.map((exec, index) => {
+              {executions.map((exec) => {
                 const key = rowKey(exec);
 
                 return (
@@ -766,11 +894,22 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
                     columns={columns}
                     execution={exec}
                     isExpanded={expandedKey === key}
-                    isFocused={focusedIndex === index}
+                    href={createUrl({
+                      ...(followMode === "paused"
+                        ? { temporalFollowParam: "paused" }
+                        : {}),
+                      temporalNsParam: namespace,
+                      temporalRunParam: exec.runId,
+                      temporalSectionParam: "workflows",
+                      temporalWfParam: exec.workflowId,
+                      viewParam: "temporal",
+                    })}
+                    isFocused={focusedKey === key}
                     isSelected={selectedKeys.has(key)}
+                    label={labelOf(exec)}
                     namespace={namespace}
                     onClone={(preset) => onOpenStart(preset)}
-                    onFocus={() => setFocusedIndex(index)}
+                    onFocus={() => setFocusedKey(key)}
                     onOpen={() => onOpenExecution(exec.workflowId, exec.runId)}
                     onOpenRun={(runId) =>
                       onOpenExecution(exec.workflowId, runId)
@@ -792,15 +931,24 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
           className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-muted/40 px-4 py-2 text-xs"
           data-testid="temporal-bulk-bar"
         >
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="font-medium text-foreground">
               {allMatchingSelected
                 ? `All ${runningTotal.toLocaleString("en-US")} running matches selected`
                 : `${selectedExecutions.length} selected`}
             </span>
+            {!allMatchingSelected && closedSelectedCount > 0 ? (
+              <span className="text-muted-foreground">
+                {actionableExecutions.length === 0
+                  ? `${closedSelectedCount === 1 ? "It is" : "They are"} not running, so no action applies.`
+                  : `${actionableExecutions.length} running. The actions apply to ${actionableExecutions.length === 1 ? "it" : "them"} only.`}
+              </span>
+            ) : null}
             {allSelected &&
             !allMatchingSelected &&
-            totalCount > executions.length ? (
+            hasCounts &&
+            totalCount > executions.length &&
+            runningTotal > actionableExecutions.length ? (
               <Button
                 variant="link"
                 size="xs"
@@ -828,7 +976,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
             <Button
               variant="outline"
               size="sm"
-              disabled={isBulkPending}
+              disabled={isBulkPending || bulkCount === 0}
               onClick={() => setBulkSignalOpen(true)}
             >
               <Send />
@@ -837,7 +985,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
             <Button
               variant="outline"
               size="sm"
-              disabled={isBulkPending}
+              disabled={isBulkPending || bulkCount === 0}
               onClick={() => setBulkCancelConfirmOpen(true)}
             >
               <XCircle />
@@ -846,7 +994,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
             <Button
               variant="destructive"
               size="sm"
-              disabled={isBulkPending}
+              disabled={isBulkPending || bulkCount === 0}
               onClick={() => setBulkTerminateConfirmOpen(true)}
             >
               <StopCircle />
@@ -869,7 +1017,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
               className="h-5 px-2 text-2xs"
               onClick={() => void setSortParam(null)}
             >
-              Reset sort
+              Reset Sort
             </Button>
           ) : null}
         </div>
@@ -878,7 +1026,8 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-border bg-card px-4 py-1.5 text-2xs text-muted-foreground">
         <div className="flex items-center gap-2">
           <span data-testid="temporal-row-range">
-            {executions.length === 0 ? (
+            {/* No row count while nothing loaded, and no total before the server counted. */}
+            {isLoading || isFirstLoadError ? null : executions.length === 0 ? (
               "No rows"
             ) : (
               <>
@@ -888,11 +1037,18 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
                   {(firstRowNumber + executions.length - 1).toLocaleString(
                     "en-US",
                   )}
-                </span>{" "}
-                of{" "}
-                <span className="font-medium tabular-nums text-foreground">
-                  {totalCount.toLocaleString("en-US")}
                 </span>
+                {hasCounts ? (
+                  <>
+                    {" "}
+                    of{" "}
+                    <span className="font-medium tabular-nums text-foreground">
+                      {totalCount.toLocaleString("en-US")}
+                    </span>
+                  </>
+                ) : isCounting ? (
+                  " · counting matches…"
+                ) : null}
               </>
             )}
           </span>
@@ -918,7 +1074,11 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
           </Button>
           <Select
             value={String(pageSize)}
-            onValueChange={(next) => setPageSize(Number(next))}
+            onValueChange={(next) =>
+              void setPageSizeParam(
+                Number(next) === PAGE_SIZES[0] ? null : next,
+              )
+            }
           >
             <SelectTrigger
               aria-label="Rows per page"
@@ -955,6 +1115,11 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
                   key={column.id}
                   checked={shownColumnIds.includes(column.id)}
                   className="text-xs"
+                  // The last column stays, so the rows can be told apart.
+                  disabled={
+                    shownColumnIds.length === 1 &&
+                    shownColumnIds[0] === column.id
+                  }
                   // Keep the menu open, so several columns can be changed at once.
                   onSelect={(event) => event.preventDefault()}
                   onCheckedChange={() => toggleColumn(column.id)}
@@ -968,7 +1133,16 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          {capabilities ? (
+          {serverOrderNote ? (
+            <span
+              className="hidden @2xl:inline"
+              data-testid="temporal-server-order"
+            >
+              {serverOrderNote}
+            </span>
+          ) : null}
+          {/* The order note is about the server too, and one line holds only one of the two. */}
+          {capabilities && !serverOrderNote ? (
             <span className="hidden font-mono @7xl:inline">
               {capabilities.serverKind} ({capabilities.persistenceStore} ·{" "}
               {pluralize(capabilities.shardCount, "shard")})
@@ -976,7 +1150,13 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
           ) : null}
         </div>
         <div className="flex items-center gap-3">
-          <span className="hidden font-mono @5xl:inline">
+          <span
+            className={cn(
+              "hidden font-mono",
+              // Beside the order note the keys fit on a wide page only.
+              serverOrderNote ? "@7xl:inline" : "@5xl:inline",
+            )}
+          >
             j/k move · Space select · Enter inspect · / search
           </span>
           <TemporalTimeFormatControl className="h-6" />
@@ -987,7 +1167,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              Signal {pluralize(bulkCount, "execution")}
+              Signal {pluralize(bulkCount, "running execution")}
             </DialogTitle>
             <DialogDescription>
               Send the same signal to {bulkSummary} in namespace{" "}
@@ -1014,7 +1194,19 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
                 rows={3}
                 className="font-mono text-sm"
                 spellCheck={false}
+                aria-invalid={Boolean(bulkSignalArgsError)}
+                aria-describedby={
+                  bulkSignalArgsError ? "bulk-sig-args-error" : undefined
+                }
               />
+              {bulkSignalArgsError ? (
+                <p
+                  id="bulk-sig-args-error"
+                  className="text-xs text-destructive"
+                >
+                  {bulkSignalArgsError}
+                </p>
+              ) : null}
             </div>
           </div>
           <DialogFooter>
@@ -1022,13 +1214,18 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
               Cancel
             </Button>
             <Button
-              disabled={!bulkSignalName.trim() || isBulkPending}
+              disabled={
+                !bulkSignalName.trim() ||
+                isBulkPending ||
+                Boolean(bulkSignalArgsError)
+              }
               onClick={() => {
                 const parsed = parseJsonArgsText(bulkSignalArgs);
+
                 if (parsed.error) {
-                  toast.error(parsed.error);
                   return;
                 }
+
                 void runBulkAction("signal", {
                   signalArgs: parsed.args,
                   signalName: bulkSignalName.trim(),
@@ -1053,7 +1250,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
       />
 
       <TemporalConfirmDialog
-        confirmLabel={`Terminate ${pluralize(bulkCount, "execution")}`}
+        confirmLabel={`Terminate ${pluralize(bulkCount, "Execution")}`}
         defaultReason="Bulk terminated via Prisma Studio"
         description={`This stops ${bulkSummary} immediately, without running cleanup logic.`}
         isPending={isBulkPending}
@@ -1142,9 +1339,13 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
 function WorkflowGridRow(props: {
   columns: WorkflowColumn[];
   execution: TemporalWorkflowExecution;
+  /** The link to the run, for a click that opens a new tab. */
+  href: string;
   isExpanded: boolean;
   isFocused: boolean;
   isSelected: boolean;
+  /** The Workflow ID, with the start of the run ID when the page has the ID twice. */
+  label: string;
   namespace: string;
   onClone: (preset: TemporalStartPreset) => void;
   onFocus: () => void;
@@ -1156,6 +1357,8 @@ function WorkflowGridRow(props: {
   const {
     columns,
     execution,
+    href,
+    label,
     namespace,
     isExpanded,
     isSelected,
@@ -1172,9 +1375,11 @@ function WorkflowGridRow(props: {
     <>
       <TableRow
         onClick={onFocus}
+        data-focused={isFocused ? "true" : undefined}
         data-state={isSelected ? "selected" : undefined}
         className={cn(
-          "border-border/60 hover:bg-muted/30 data-[state=selected]:bg-muted/50",
+          // The margin keeps a row the keys scroll to clear of the sticky header.
+          "scroll-mt-9 border-border/60 hover:bg-muted/30 data-[state=selected]:bg-muted/50",
           isFocused && "bg-muted/30",
         )}
         data-testid={`temporal-wf-row-${execution.workflowId}`}
@@ -1189,7 +1394,7 @@ function WorkflowGridRow(props: {
           <Checkbox
             checked={isSelected}
             onCheckedChange={onToggleSelect}
-            aria-label={`Select ${execution.workflowId}`}
+            aria-label={`Select ${label}`}
           />
         </TableCell>
         <TableCell className="px-0 py-2">
@@ -1202,7 +1407,7 @@ function WorkflowGridRow(props: {
               onToggleExpand();
             }}
             aria-expanded={isExpanded}
-            aria-label={`${isExpanded ? "Collapse" : "Expand"} ${execution.workflowId}`}
+            aria-label={`${isExpanded ? "Collapse" : "Expand"} ${label}`}
             data-testid={`temporal-expand-${execution.workflowId}`}
           >
             {isExpanded ? <ChevronDown /> : <ChevronRight />}
@@ -1217,7 +1422,7 @@ function WorkflowGridRow(props: {
               column.cellClassName,
             )}
           >
-            {column.render(execution, { onOpen })}
+            {column.render(execution, { href, onOpen })}
           </TableCell>
         ))}
       </TableRow>
@@ -1251,9 +1456,11 @@ function ColumnHead(props: {
   onSort: (field: TemporalWorkflowSortField) => void;
   sort: TemporalWorkflowSort | undefined;
   sortDisabled?: boolean;
+  /** Says what the order is when no column gives it. */
+  title?: string;
   width: number;
 }) {
-  const { column, onResize, onSort, sort, sortDisabled, width } = props;
+  const { column, onResize, onSort, sort, sortDisabled, title, width } = props;
   const direction =
     column.sortField && sort?.field === column.sortField
       ? sort.direction
@@ -1298,6 +1505,7 @@ function ColumnHead(props: {
         <button
           type="button"
           onClick={() => onSort(column.sortField!)}
+          title={title}
           className={cn(
             "inline-flex h-6 max-w-full items-center gap-1 rounded-sm uppercase hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             direction && "text-foreground",

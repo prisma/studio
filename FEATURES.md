@@ -45,7 +45,7 @@ The Workflows grid sorts by any column and pages through every match, with 50, 1
 Temporal servers sort by at most one fixed order, so Studio's BFF reads every matching run (up to 10,000), sorts them, and keeps the result for a few seconds; above that limit the grid says so and lists the runs in the server's order.
 The default is newest first on every server, the sort is part of the URL, and Type and Workflow ID are separate columns.
 
-## Temporal Needs Attention
+## Temporal Attention
 
 The Attention view lists the running workflows that will not finish without help: Workflow Tasks that keep failing, tasks that no Worker picks up, Activities that are retrying (with attempt count, last error and next attempt), and runs that take three times longer than 95% of closed runs of their type. It also lists the failures of the last hour.
 No Temporal filter can find these, so the BFF describes every running workflow and keeps the answer for 15 seconds. The sidebar shows the count.

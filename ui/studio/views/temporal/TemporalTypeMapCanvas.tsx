@@ -24,6 +24,7 @@ import ReactFlow, {
   type NodeProps,
   type NodeTypes,
   Position,
+  type ReactFlowInstance,
 } from "reactflow";
 
 import type { TemporalTypeMap, TemporalTypeMapNode } from "@/data/temporal";
@@ -344,10 +345,11 @@ export function describeTypeMapEdge(params: {
     totalRuns,
   } = params;
   const countText = edgeRunCount.toLocaleString("en-US");
-  const baseRuns = from && from.runCount > 0 ? from.runCount : totalRuns;
+  // A share is of the runs that reached the source step, not of all runs.
+  const sourceRuns = from && from.runCount > 0 ? from.runCount : totalRuns;
   const pct =
-    baseRuns > 0
-      ? Math.min(100, Math.round((edgeRunCount / baseRuns) * 100))
+    sourceRuns > 0
+      ? Math.min(100, Math.round((edgeRunCount / sourceRuns) * 100))
       : null;
   const showPct = outgoingEdgeCount > 1 && pct !== null && pct < 100;
   const countWithShare = showPct ? `${countText} (${pct}%)` : countText;
@@ -389,7 +391,7 @@ export function describeTypeMapEdge(params: {
       : "this run"
     : role
       ? `${role} · ${countWithShare}`
-      : `${countText} ${edgeRunCount === 1 ? "run" : "runs"}${showPct ? ` · ${pct}%` : ""}`;
+      : `${countText} ${edgeRunCount === 1 ? "run" : "runs"}${showPct ? ` (${pct}%)` : ""}`;
   const label = isTakenNext ? `next · ${baseLabel}` : baseLabel;
 
   const fromName = from
@@ -409,11 +411,14 @@ export function describeTypeMapEdge(params: {
       : isNext
         ? "Possible next step"
         : null;
+  const shareText = pct === null ? "" : ` (${pct}%)`;
   const tooltipParts = [
     `${fromName} → ${toName}`,
     isRunOnly
       ? `Only in this run (not in ${totalRuns.toLocaleString("en-US")} sampled runs)`
-      : `${countText} of ${totalRuns.toLocaleString("en-US")} sampled runs${pct !== null ? ` (${pct}%)` : ""}`,
+      : !from || from.kind === "start" || sourceRuns === totalRuns
+        ? `${countText} of ${totalRuns.toLocaleString("en-US")} sampled runs${shareText}`
+        : `${countText} of the ${sourceRuns.toLocaleString("en-US")} sampled runs that reached ${fromName}${shareText}`,
     roleDescription,
     ...(runNote ? [runNote] : []),
   ];
@@ -485,11 +490,12 @@ const OPENING_MARGIN = 24;
 /**
  * Where the diagram opens: whole and centred when that leaves it readable.
  * A diagram too tall for that opens at a readable size with its start at the
- * top, and the user scrolls down it.
+ * top, and the user scrolls down it. One too wide opens on its Start step.
  */
 export function openingViewport(
   bounds: { height: number; width: number; x: number; y: number },
   view: { height: number; width: number },
+  start?: { width: number; x: number },
 ): { x: number; y: number; zoom: number } {
   const fit = Math.min(
     (view.width - 2 * OPENING_MARGIN) / bounds.width,
@@ -497,14 +503,53 @@ export function openingViewport(
   );
   const zoom = Math.min(1, Math.max(MIN_OPENING_ZOOM, fit));
   const fitsHeight = bounds.height * zoom <= view.height - 2 * OPENING_MARGIN;
+  const fitsWidth = bounds.width * zoom <= view.width - 2 * OPENING_MARGIN;
+  const leftmost = OPENING_MARGIN - bounds.x * zoom;
+  const rightmost =
+    view.width - OPENING_MARGIN - (bounds.x + bounds.width) * zoom;
 
   return {
-    x: (view.width - bounds.width * zoom) / 2 - bounds.x * zoom,
+    x:
+      fitsWidth || !start
+        ? (view.width - bounds.width * zoom) / 2 - bounds.x * zoom
+        : Math.min(
+            leftmost,
+            Math.max(
+              rightmost,
+              view.width / 2 - (start.x + start.width / 2) * zoom,
+            ),
+          ),
     y:
       (fitsHeight ? (view.height - bounds.height * zoom) / 2 : OPENING_MARGIN) -
       bounds.y * zoom,
     zoom,
   };
+}
+
+/** What a screen reader says for a node: its name, its kind and its counts. */
+function typeMapNodeName(node: TemporalTypeMapNode, totalRuns: number): string {
+  if (node.kind === "start") {
+    return "Start";
+  }
+
+  const runs = `${node.runCount} ${node.runCount === 1 ? "run" : "runs"}`;
+
+  if (node.kind === "end") {
+    return `${workflowStatusLabel(node.status ?? "Completed")}, ${runs}`;
+  }
+
+  return [
+    typeMapStepName(node),
+    TYPE_MAP_STEP_KINDS[node.kind].name,
+    node.runCount > 0
+      ? `${node.runCount} of ${totalRuns} runs`
+      : "only in this run",
+    node.waitingRunCount > 0 ? `${node.waitingRunCount} here now` : null,
+    node.failedRunCount > 0 ? `${node.failedRunCount} failed` : null,
+    node.retriedRunCount > 0 ? `${node.retriedRunCount} retried` : null,
+  ]
+    .filter((part) => part !== null)
+    .join(", ");
 }
 
 /** The arrow is 1.5 to 3 px wide by the share of the sampled runs that took it. */
@@ -553,6 +598,7 @@ export function TemporalTypeMapCanvas(props: {
     (TypeMapLayout & { shape: string }) | null
   >(null);
   const container = useRef<HTMLDivElement>(null);
+  const flow = useRef<ReactFlowInstance | null>(null);
 
   useEffect(() => {
     let isCurrent = true;
@@ -592,12 +638,21 @@ export function TemporalTypeMapCanvas(props: {
               : undefined;
 
             return {
+              ariaLabel: typeMapNodeName(node, map.runCount),
+              className: cn(
+                "outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                node.kind === "start" || node.kind === "end"
+                  ? "rounded-full"
+                  : "rounded-lg",
+              ),
               data: {
                 isSelected: node.id === selectedId,
                 node,
                 ...(runAtNode ? { run: runAtNode } : {}),
                 totalRuns: map.runCount,
               },
+              // Start opens no details, so the Tab key skips it.
+              focusable: node.kind !== "start",
               id: node.id,
               position: layout.nodes[node.id] ?? { x: 0, y: 0 },
               style: { height: size.height, width: size.width },
@@ -750,11 +805,76 @@ export function TemporalTypeMapCanvas(props: {
     },
   );
 
+  const startNode = nodes.find((node) => node.type === "start");
+
   return (
-    <div ref={container} className="size-full">
+    // The focused node inside is the control; this element only listens for its keys.
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+    <div
+      ref={container}
+      className="size-full"
+      onFocusCapture={(event) => {
+        const canvas = container.current?.querySelector(".react-flow");
+        const node = event.target;
+
+        if (!canvas || !node.classList.contains("react-flow__node")) {
+          return;
+        }
+
+        // The browser scrolls the canvas element to a focused node, which moves the background and the zoom bar. The viewport must move instead.
+        canvas.scrollTo(0, 0);
+
+        if (!flow.current || !node.matches(":focus-visible")) {
+          return;
+        }
+
+        const view = canvas.getBoundingClientRect();
+        const box = node.getBoundingClientRect();
+        const shift = (
+          start: number,
+          end: number,
+          low: number,
+          high: number,
+        ) =>
+          start < low + OPENING_MARGIN
+            ? low + OPENING_MARGIN - start
+            : end > high - OPENING_MARGIN
+              ? high - OPENING_MARGIN - end
+              : 0;
+        const dx = shift(box.left, box.right, view.left, view.right);
+        const dy = shift(box.top, box.bottom, view.top, view.bottom);
+
+        if (dx !== 0 || dy !== 0) {
+          const viewport = flow.current.getViewport();
+
+          flow.current.setViewport({
+            ...viewport,
+            x: viewport.x + dx,
+            y: viewport.y + dy,
+          });
+        }
+      }}
+      onKeyDown={(event) => {
+        const node = event.target as HTMLElement;
+        const id = node.getAttribute("data-id");
+
+        if (!id || !node.classList.contains("react-flow__node")) {
+          return;
+        }
+
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect(id === selectedId ? null : id);
+        } else if (event.key === "Escape" && selectedId !== null) {
+          onSelect(null);
+        }
+      }}
+    >
       <ReactFlow
         // A new shape is a new diagram: open it at its start again.
         key={shape}
+        // The view selects a node itself; React Flow's own keys would select and move nodes in its store.
+        disableKeyboardA11y
         edges={edges}
         edgesFocusable={false}
         edgeTypes={edgeTypes}
@@ -766,6 +886,8 @@ export function TemporalTypeMapCanvas(props: {
         onInit={(instance) => {
           const view = container.current?.getBoundingClientRect();
 
+          flow.current = instance;
+
           if (view && view.width > 0 && view.height > 0) {
             instance.setViewport(
               openingViewport(
@@ -776,6 +898,10 @@ export function TemporalTypeMapCanvas(props: {
                   y: bounds.top,
                 },
                 view,
+                startNode && {
+                  width: Number(startNode.style!.width),
+                  x: startNode.position.x,
+                },
               ),
             );
           }

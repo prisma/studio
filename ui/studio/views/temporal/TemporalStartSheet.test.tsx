@@ -307,4 +307,55 @@ describe("TemporalStartSheet", () => {
     });
     expect(onStarted).toHaveBeenCalledWith("started", "run-new");
   });
+
+  it("keeps the reason of a failed start in the form, and the form as it was", async () => {
+    mutateAsync.mockRejectedValueOnce(
+      new Error("Workflow execution is already running."),
+    );
+    render();
+    type("temporal-start-type", "orderFulfillment");
+    type("temporal-start-id", "order-mine");
+
+    await act(async () => {
+      document
+        .querySelector<HTMLElement>('[data-testid="temporal-start-submit"]')!
+        .click();
+      await Promise.resolve();
+    });
+
+    const error = document.querySelector(
+      '[data-testid="temporal-start-error"]',
+    )!;
+
+    expect(error.getAttribute("role")).toBe("alert");
+    expect(error.textContent).toContain(
+      "Workflow execution is already running.",
+    );
+    expect(field("temporal-start-id").value).toBe("order-mine");
+    expect(onStarted).not.toHaveBeenCalled();
+  });
+
+  it("starts on Cmd+Enter while the ID Reuse Policy has the focus, without opening its list", async () => {
+    render();
+    type("temporal-start-type", "orderFulfillment");
+
+    await act(async () => {
+      document.getElementById("temporal-start-reuse")!.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          key: "Enter",
+          metaKey: true,
+        }),
+      );
+      await Promise.resolve();
+    });
+
+    expect(mutateAsync).toHaveBeenCalledTimes(1);
+    expect(
+      document
+        .getElementById("temporal-start-reuse")!
+        .getAttribute("aria-expanded"),
+    ).toBe("false");
+  });
 });

@@ -186,6 +186,8 @@ function StartForm(props: TemporalStartSheetProps) {
   const [useSignalWithStart, setUseSignalWithStart] = useState(false);
   const [signalName, setSignalName] = useState("");
   const [signalArgsText, setSignalArgsText] = useState("[]");
+  // Why the last start failed. It stays in the form until the next try.
+  const [startError, setStartError] = useState<string | null>(null);
   // The type whose recent runs filled the form, so a later refresh of those
   // runs does not change a form the user is reading.
   const filledForType = useRef<string | null>(null);
@@ -322,6 +324,9 @@ function StartForm(props: TemporalStartSheetProps) {
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
+
+    setStartError(null);
+
     try {
       const res = await startWorkflow.mutateAsync({
         args: parsedArgs.args ?? [],
@@ -340,8 +345,10 @@ function StartForm(props: TemporalStartSheetProps) {
       onOpenChange(false);
       onStarted(res.workflowId, res.runId);
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to start execution",
+      setStartError(
+        err instanceof Error && err.message
+          ? err.message
+          : "The server gave no reason.",
       );
     }
   };
@@ -380,7 +387,7 @@ function StartForm(props: TemporalStartSheetProps) {
           <SheetTitle className="text-base">
             {preset?.clonedFromWorkflowId
               ? "Clone & Start Execution"
-              : "Start Workflow Execution"}
+              : "Start Execution"}
           </SheetTitle>
           <TemporalNamespaceBadge namespace={namespace} />
         </div>
@@ -466,7 +473,20 @@ function StartForm(props: TemporalStartSheetProps) {
               value={idReusePolicy}
               onValueChange={(v) => setIdReusePolicy(v as IdReusePolicy)}
             >
-              <SelectTrigger id="temporal-start-reuse" className="h-8 text-xs">
+              <SelectTrigger
+                id="temporal-start-reuse"
+                className="h-8 text-xs"
+                onKeyDown={(event) => {
+                  // Enter alone opens the list; with Cmd or Ctrl it starts, as in every other field.
+                  if (
+                    event.key === "Enter" &&
+                    (event.metaKey || event.ctrlKey)
+                  ) {
+                    event.preventDefault();
+                    void handleSubmit();
+                  }
+                }}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -667,6 +687,17 @@ function StartForm(props: TemporalStartSheetProps) {
           ) : null}
         </div>
       </div>
+
+      {startError ? (
+        <div
+          className="flex flex-col gap-1 border-t border-destructive/30 bg-destructive/10 px-5 py-2.5 text-xs text-foreground"
+          data-testid="temporal-start-error"
+          role="alert"
+        >
+          <span className="font-medium">Could not start the execution.</span>
+          <span className="font-mono text-2xs break-words">{startError}</span>
+        </div>
+      ) : null}
 
       <SheetFooter className="border-t border-border px-5 py-3 sm:items-center">
         {missingField ? (

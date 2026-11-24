@@ -25,6 +25,7 @@ vi.mock("@/ui/hooks/use-temporal", () => ({
     updateWorkflow: idle,
   }),
   useTemporalCapabilities: () => ({ data: undefined }),
+  useTemporalWorkflowCounts: () => ({}),
   useTemporalWorkflowDetail: () => detailMock(),
   useTemporalWorkflowDetails: () => [],
   useTemporalWorkflowMetadata: (args: unknown) => metadataMock(args),
@@ -121,6 +122,60 @@ describe("TemporalExecutionDebugger", () => {
     expect(
       container.querySelector('[data-testid="temporal-back-to-grid"]'),
     ).toBeNull();
+    unmount();
+  });
+
+  it("keeps the loaded run on screen when a refresh fails", () => {
+    detailMock.mockReturnValue({
+      data: detailOf("order-2", "run-2"),
+      error: new Error("14 UNAVAILABLE: connection lost"),
+      isError: true,
+    });
+
+    const { container, unmount } = render("order-2");
+
+    expect(container.textContent).toContain("typeOf-order-2");
+    expect(
+      container.querySelector('[data-testid="temporal-refresh-error"]')!
+        .textContent,
+    ).toContain("14 UNAVAILABLE: connection lost");
+    expect(
+      container.querySelector('[data-testid="temporal-load-error"]'),
+    ).toBeNull();
+    unmount();
+  });
+
+  it("says that the run could not load when the first request fails, with a way to the Executions", () => {
+    detailMock.mockReturnValue({
+      error: new Error("workflow not found for ID: order-2"),
+      isError: true,
+    });
+
+    const { container, unmount } = render("order-2");
+    const error = container.querySelector(
+      '[data-testid="temporal-load-error"]',
+    )!;
+
+    expect(error.textContent).toContain("Could not load this run");
+    expect(error.textContent).toContain("workflow not found for ID: order-2");
+    expect(error.querySelector("a")!.textContent).toBe("Open Executions");
+    expect(container.querySelector("h1")!.textContent).toContain("order-2");
+    unmount();
+  });
+
+  it("says that a closed run had no input and recorded no span, without 'undefined' or 'yet'", () => {
+    const detail = detailOf("order-2", "run-2");
+
+    detail.execution.status = "Terminated";
+    detailMock.mockReturnValue({ data: detail });
+
+    const { container, unmount } = render("order-2");
+
+    expect(container.textContent).not.toContain("undefined");
+    expect(container.textContent).not.toContain("yet");
+    expect(container.textContent).toContain(
+      "This run was started with no input.",
+    );
     unmount();
   });
 

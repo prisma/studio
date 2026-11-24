@@ -71,6 +71,25 @@ describe("TemporalStatusFilterBar", () => {
     expect(custom).toBeNull();
   });
 
+  it("has a preset for every status that has executions, so the counts add up to All", () => {
+    const { pill } = render({
+      counts: {
+        countsByStatus: {
+          Completed: 5,
+          ContinuedAsNew: 3,
+          Paused: 1,
+          Running: 2,
+        },
+        totalCount: 11,
+      },
+      query: "",
+    });
+
+    expect(pill("ContinuedAsNew")!.textContent).toBe("Continued as New3");
+    expect(pill("Paused")!.textContent).toBe("Paused1");
+    expect(pill("Failed")).toBeNull();
+  });
+
   it("shows any other search as one more selected item with its number of matches", () => {
     const { custom, pill } = render({
       matchCount: 12,
@@ -103,9 +122,10 @@ describe("statusPresetOfQuery", () => {
     expect(statusPresetOfQuery("ExecutionStatus = 'TimedOut'")).toBe(
       "TimedOut",
     );
-    expect(
-      statusPresetOfQuery('ExecutionStatus = "ContinuedAsNew"'),
-    ).toBeNull();
+    expect(statusPresetOfQuery('ExecutionStatus = "ContinuedAsNew"')).toBe(
+      "ContinuedAsNew",
+    );
+    expect(statusPresetOfQuery('ExecutionStatus = "Unspecified"')).toBeNull();
     expect(
       statusPresetOfQuery('ExecutionStatus = "Failed" AND TaskQueue = "x"'),
     ).toBeNull();
