@@ -348,13 +348,18 @@ export function StudioCommandPaletteProvider(props: PropsWithChildren) {
 
 function StudioCommandPalette() {
   const {
+    hasDatabase,
     isDarkMode,
     isNavigationOpen,
     setThemeMode,
+    streamsUrl,
     temporalUrl,
     themeMode,
     toggleNavigation,
   } = useStudio();
+  const hasTemporal = typeof temporalUrl === "string";
+  const isTemporalOnly =
+    !hasDatabase && typeof streamsUrl !== "string" && hasTemporal;
   const { data: temporalCapabilities } = useTemporalCapabilities();
   const { createUrl, schemaParam, temporalNsParam } = useNavigation();
   const { isOpen, setIsOpen, viewActions } = useCommandPaletteStateContext();
@@ -397,6 +402,10 @@ function StudioCommandPalette() {
       );
   }, [query, viewActions]);
   const visibleTableItems = useMemo(() => {
+    if (!hasDatabase) {
+      return [];
+    }
+
     return tables.slice(0, 3).map<CommandPaletteItem>((table) => ({
       disabled: false,
       icon: Database,
@@ -412,11 +421,10 @@ function StudioCommandPalette() {
       },
       section: "tables",
     }));
-  }, [createUrl, tables]);
-  const overflowTableCount = Math.max(
-    tables.length - visibleTableItems.length,
-    0,
-  );
+  }, [createUrl, hasDatabase, tables]);
+  const overflowTableCount = hasDatabase
+    ? Math.max(tables.length - visibleTableItems.length, 0)
+    : 0;
   const moreTablesItem = useMemo<CommandPaletteItem | null>(() => {
     if (overflowTableCount === 0) {
       return null;
@@ -502,51 +510,58 @@ function StudioCommandPalette() {
     setThemeMode(isDarkMode ? "light" : "dark");
   }, [isDarkMode, setThemeMode]);
   const viewItems = useMemo(() => {
-    const items: CommandPaletteItem[] = [
-      {
-        disabled: false,
-        icon: GalleryVerticalEnd,
-        id: "view:schema",
-        keywords: ["visualizer", "schema", "diagram"],
-        label: "Visualizer",
-        onSelect: () => {
-          window.location.hash = createUrl({ viewParam: "schema" });
-        },
-        section: "views",
-      },
-      {
-        disabled: false,
-        icon: BetweenVerticalStart,
-        id: "view:console",
-        keywords: ["console", "events", "operations"],
-        label: "Console",
-        onSelect: () => {
-          window.location.hash = createUrl({ viewParam: "console" });
-        },
-        section: "views",
-      },
-      {
-        disabled: false,
-        icon: FileCode2,
-        id: "view:sql",
-        keywords: ["sql", "query", "editor"],
-        label: "SQL",
-        onSelect: () => {
-          window.location.hash = createUrl({ viewParam: "sql" });
-        },
-        section: "views",
-      },
-    ];
+    const items: CommandPaletteItem[] = [];
 
-    if (typeof temporalUrl === "string") {
+    if (hasDatabase) {
+      items.push(
+        {
+          disabled: false,
+          icon: GalleryVerticalEnd,
+          id: "view:schema",
+          keywords: ["visualizer", "schema", "diagram"],
+          label: "Visualizer",
+          onSelect: () => {
+            window.location.hash = createUrl({ viewParam: "schema" });
+          },
+          section: "views",
+        },
+        {
+          disabled: false,
+          icon: BetweenVerticalStart,
+          id: "view:console",
+          keywords: ["console", "events", "operations"],
+          label: "Console",
+          onSelect: () => {
+            window.location.hash = createUrl({ viewParam: "console" });
+          },
+          section: "views",
+        },
+        {
+          disabled: false,
+          icon: FileCode2,
+          id: "view:sql",
+          keywords: ["sql", "query", "editor"],
+          label: "SQL",
+          onSelect: () => {
+            window.location.hash = createUrl({ viewParam: "sql" });
+          },
+          section: "views",
+        },
+      );
+    }
+
+    if (hasTemporal) {
       const ns = temporalNsParam ?? "default";
+      const temporalLabel = (name: string) =>
+        isTemporalOnly ? name : `Temporal ${name}`;
+
       items.push(
         {
           disabled: false,
           icon: Workflow,
           id: "view:temporal:workflows",
           keywords: ["temporal", "workflows", "executions", "debugger"],
-          label: "Temporal Workflows",
+          label: temporalLabel("Workflows"),
           onSelect: () => {
             window.location.hash = createUrl({
               temporalNsParam: ns,
@@ -561,7 +576,7 @@ function StudioCommandPalette() {
           icon: CircleAlert,
           id: "view:temporal:attention",
           keywords: ["temporal", "attention", "stuck", "retrying", "failed"],
-          label: "Temporal Needs Attention",
+          label: temporalLabel("Needs Attention"),
           onSelect: () => {
             window.location.hash = createUrl({
               temporalNsParam: ns,
@@ -571,16 +586,37 @@ function StudioCommandPalette() {
           },
           section: "views",
         },
-        {
+      );
+
+      if (temporalCapabilities?.supportsSchedules !== false) {
+        items.push({
           disabled: false,
           icon: CalendarClock,
           id: "view:temporal:schedules",
           keywords: ["temporal", "schedules", "cron", "backfill"],
-          label: "Temporal Schedules",
+          label: temporalLabel("Schedules"),
           onSelect: () => {
             window.location.hash = createUrl({
               temporalNsParam: ns,
               temporalSectionParam: "schedules",
+              viewParam: "temporal",
+            });
+          },
+          section: "views",
+        });
+      }
+
+      items.push(
+        {
+          disabled: false,
+          icon: Waypoints,
+          id: "view:temporal:types",
+          keywords: ["temporal", "workflow types", "diagram", "steps", "map"],
+          label: temporalLabel("Workflow Types"),
+          onSelect: () => {
+            window.location.hash = createUrl({
+              temporalNsParam: ns,
+              temporalSectionParam: "types",
               viewParam: "temporal",
             });
           },
@@ -591,7 +627,7 @@ function StudioCommandPalette() {
           icon: Layers,
           id: "view:temporal:queues",
           keywords: ["temporal", "task queues", "pollers", "workers"],
-          label: "Temporal Task Queues",
+          label: temporalLabel("Task Queues"),
           onSelect: () => {
             window.location.hash = createUrl({
               temporalNsParam: ns,
@@ -603,22 +639,6 @@ function StudioCommandPalette() {
         },
       );
 
-      items.push({
-        disabled: false,
-        icon: Waypoints,
-        id: "view:temporal:types",
-        keywords: ["temporal", "workflow types", "diagram", "steps", "map"],
-        label: "Temporal Workflow Types",
-        onSelect: () => {
-          window.location.hash = createUrl({
-            temporalNsParam: ns,
-            temporalSectionParam: "types",
-            viewParam: "temporal",
-          });
-        },
-        section: "views",
-      });
-
       // The sidebar shows these two screens only on a server that has them.
       if (temporalCapabilities?.supportsDescribeTaskQueue) {
         items.push({
@@ -626,7 +646,7 @@ function StudioCommandPalette() {
           icon: Cpu,
           id: "view:temporal:workers",
           keywords: ["temporal", "workers", "deployments", "nexus"],
-          label: "Temporal Workers",
+          label: temporalLabel("Workers"),
           onSelect: () => {
             window.location.hash = createUrl({
               temporalNsParam: ns,
@@ -638,13 +658,13 @@ function StudioCommandPalette() {
         });
       }
 
-      if (temporalCapabilities?.supportsAdminApi !== false) {
+      if (temporalCapabilities?.supportsAdminApi) {
         items.push({
           disabled: false,
           icon: Server,
           id: "view:temporal:cluster",
           keywords: ["temporal", "cluster", "shards", "admission", "slatedb"],
-          label: "Temporal Cluster & Shards",
+          label: temporalLabel("Cluster & Shards"),
           onSelect: () => {
             window.location.hash = createUrl({
               temporalNsParam: ns,
@@ -664,7 +684,15 @@ function StudioCommandPalette() {
         query,
       }),
     );
-  }, [createUrl, query, temporalCapabilities, temporalNsParam, temporalUrl]);
+  }, [
+    createUrl,
+    hasDatabase,
+    hasTemporal,
+    isTemporalOnly,
+    query,
+    temporalCapabilities,
+    temporalNsParam,
+  ]);
   // Workflows and schedules come from the Temporal server, so the palette asks
   // for them only once typing has paused.
   const temporalNamespace = temporalNsParam ?? "default";
@@ -936,7 +964,9 @@ function StudioCommandPalette() {
         >
           <DialogTitle className="sr-only">Command palette</DialogTitle>
           <DialogDescription className="sr-only">
-            Search commands, tables, and Studio views.
+            {isTemporalOnly
+              ? "Search commands, workflows, schedules, and views."
+              : "Search commands, tables, and Studio views."}
           </DialogDescription>
           <Command className="font-sans" shouldFilter={false}>
             <CommandInput

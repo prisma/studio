@@ -34,11 +34,13 @@ const useNavigationMock = vi.fn<() => NavigationMockValue>();
 const useIntrospectionMock = vi.fn<() => IntrospectionMockValue>();
 const toggleNavigationMock = vi.fn();
 const setThemeModeMock = vi.fn();
+let hasDatabase = true;
 let isNavigationOpen = true;
 let isDarkMode = false;
 let themeMode: "dark" | "light" | "system" = "system";
 let temporalUrl: string | undefined;
 const temporalMocks = {
+  capabilities: vi.fn<() => { data?: Record<string, unknown> }>(() => ({})),
   schedules: vi.fn<(args: unknown) => { data?: unknown }>(() => ({})),
   workflows: vi.fn<(args: unknown) => { data?: unknown }>(() => ({})),
 };
@@ -112,7 +114,7 @@ vi.mock("../hooks/use-streams", () => ({
 }));
 
 vi.mock("../hooks/use-temporal", () => ({
-  useTemporalCapabilities: () => ({}),
+  useTemporalCapabilities: () => temporalMocks.capabilities(),
   useTemporalNamespaces: () => ({}),
   useTemporalSchedules: (args: unknown) => temporalMocks.schedules(args),
   useTemporalWorkflows: (args: unknown) => temporalMocks.workflows(args),
@@ -167,7 +169,7 @@ vi.mock("../hooks/use-ui-state", async () => {
 vi.mock("./context", () => ({
   useStudio: () => ({
     adapter: { capabilities: { sqlDialect: "postgresql" } },
-    hasDatabase: true,
+    hasDatabase,
     hasQueryInsights: false,
     isDarkMode,
     temporalUrl,
@@ -308,10 +310,12 @@ describe("Studio command palette", () => {
       },
       isFetching: false,
     });
+    hasDatabase = true;
     isNavigationOpen = true;
     isDarkMode = false;
     themeMode = "system";
     temporalUrl = undefined;
+    temporalMocks.capabilities.mockImplementation(() => ({}));
     temporalMocks.schedules.mockImplementation(() => ({}));
     temporalMocks.workflows.mockImplementation(() => ({}));
     setThemeModeMock.mockReset();
@@ -380,6 +384,49 @@ describe("Studio command palette", () => {
     expect(document.body.textContent).toContain("Light");
     expect(document.body.textContent).toContain("Dark");
     expect(document.body.textContent).toContain("Match system theme");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("hides database views and tables when Studio runs in Temporal-only mode", () => {
+    hasDatabase = false;
+    temporalUrl = "/api/temporal";
+    temporalMocks.capabilities.mockReturnValue({
+      data: {
+        supportsAdminApi: true,
+        supportsDescribeTaskQueue: false,
+        supportsSchedules: true,
+      },
+    });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <StudioCommandPaletteProvider>{null}</StudioCommandPaletteProvider>,
+      );
+    });
+    act(() => {
+      keyDown("k", { metaKey: true });
+    });
+
+    const text = document.body.textContent ?? "";
+    expect(text).not.toContain("Tables");
+    expect(text).not.toContain("accounts");
+    expect(text).not.toContain("Visualizer");
+    expect(text).not.toContain("Console");
+    expect(text).not.toContain("SQL");
+    expect(text).not.toContain("Workers");
+    expect(text).toContain("Workflows");
+    expect(text).toContain("Needs Attention");
+    expect(text).toContain("Schedules");
+    expect(text).toContain("Workflow Types");
+    expect(text).toContain("Task Queues");
+    expect(text).toContain("Cluster & Shards");
 
     act(() => {
       root.unmount();
