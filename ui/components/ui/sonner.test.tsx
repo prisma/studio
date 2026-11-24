@@ -78,7 +78,6 @@ function firePointer(
         bubbles: true,
         button: 0,
         pointerType: "mouse",
-        buttons: type === "pointerup" ? 0 : 1,
         ...init,
       }),
     );
@@ -159,6 +158,37 @@ describe("Toaster", () => {
     });
 
     expect(description.scrollTop).toBe(50);
+  });
+
+  it("scrolls by each pointer's own movement", async () => {
+    const { description, toastElement } = await renderErrorToast();
+    const title = toastElement.querySelector<HTMLElement>("[data-title]")!;
+    const finger = { pointerId: 1, pointerType: "touch" };
+    const otherFinger = { pointerId: 2, pointerType: "touch" };
+    const mouse = { pointerId: 3, pointerType: "mouse" };
+    setContentHeight(description, { clientHeight: 100, scrollHeight: 500 });
+
+    firePointer(description, "pointerdown", { clientY: 90, ...finger });
+    firePointer(title, "pointerdown", { clientY: 200, ...otherFinger });
+    firePointer(description, "pointermove", { clientY: 70, ...finger });
+    expect(description.scrollTop).toBe(20);
+
+    firePointer(description, "pointermove", { clientY: 10, ...mouse });
+    firePointer(description, "pointermove", { clientY: 60, ...finger });
+    expect(description.scrollTop).toBe(30);
+  });
+
+  it("stops scrolling once the pointer is released", async () => {
+    const { description } = await renderErrorToast();
+    const pen = { pointerId: 1, pointerType: "pen" };
+    setContentHeight(description, { clientHeight: 100, scrollHeight: 500 });
+
+    firePointer(description, "pointerdown", { clientY: 90, ...pen });
+    firePointer(description, "pointermove", { clientY: 70, ...pen });
+    firePointer(description, "pointerup", { clientY: 70, ...pen });
+    firePointer(description, "pointermove", { clientY: 10, ...pen });
+
+    expect(description.scrollTop).toBe(20);
   });
 
   it("does not drag-scroll with a mouse, so text stays selectable", async () => {

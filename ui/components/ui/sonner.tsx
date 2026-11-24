@@ -15,10 +15,17 @@ function getScrollableDescription(target: EventTarget) {
 
 const Toaster = ({ ...props }: ToasterProps) => {
   // const { theme = "system" } = useTheme();
-  const lastPointerY = useRef(0);
+  // Last Y of every pressed touch or pen pointer, by pointer id.
+  const pressedPointerY = useRef(new Map<number, number>());
 
   function trackPointer(event: React.PointerEvent) {
-    lastPointerY.current = event.clientY;
+    if (event.pointerType !== "mouse") {
+      pressedPointerY.current.set(event.pointerId, event.clientY);
+    }
+  }
+
+  function untrackPointer(event: React.PointerEvent) {
+    pressedPointerY.current.delete(event.pointerId);
   }
 
   /**
@@ -36,11 +43,12 @@ const Toaster = ({ ...props }: ToasterProps) => {
 
     event.stopPropagation();
 
-    if (event.pointerType !== "mouse" && event.buttons > 0) {
-      description.scrollTop += lastPointerY.current - event.clientY;
-    }
+    const previousY = pressedPointerY.current.get(event.pointerId);
 
-    trackPointer(event);
+    if (previousY !== undefined) {
+      description.scrollTop += previousY - event.clientY;
+      trackPointer(event);
+    }
   }
 
   return (
@@ -51,6 +59,8 @@ const Toaster = ({ ...props }: ToasterProps) => {
       className="ps"
       onPointerDownCapture={trackPointer}
       onPointerMoveCapture={scrollInsteadOfSwipe}
+      onPointerUpCapture={untrackPointer}
+      onPointerCancelCapture={untrackPointer}
     >
       <Sonner
         // theme={theme as ToasterProps["theme"]}
