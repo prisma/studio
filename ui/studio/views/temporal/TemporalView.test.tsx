@@ -7,6 +7,7 @@ import { TemporalView } from "./TemporalView";
 const navigation = {
   searchParam: "",
   setSearchParam: vi.fn(),
+  setTemporalEventParam: vi.fn(),
   setTemporalFollowParam: vi.fn(),
   setTemporalRunParam: vi.fn(),
   setTemporalSectionParam: vi.fn(),

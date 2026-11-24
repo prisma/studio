@@ -45,6 +45,7 @@ import {
 import {
   TemporalFollowControl,
   temporalIconScale,
+  TemporalLoadError,
   temporalTableHeadClass,
   TemporalTime,
   TemporalTimeFormatControl,
@@ -569,23 +570,16 @@ export function TemporalWorkflowChainView(
             ))}
           </div>
         ) : isError ? (
-          <div
-            className="flex flex-col items-center justify-center gap-3 p-10 text-center text-sm text-muted-foreground"
-            role="alert"
-          >
-            <p className="font-medium text-foreground">
-              Could not load the runs of{" "}
-              <code className="font-mono">{workflowId}</code>.
-            </p>
-            {error instanceof Error ? (
-              <p className="max-w-prose font-mono text-xs break-words">
-                {error.message}
-              </p>
-            ) : null}
-            <Button variant="outline" size="sm" onClick={() => void refetch()}>
-              Retry
-            </Button>
-          </div>
+          <TemporalLoadError
+            error={error}
+            onRetry={() => void refetch()}
+            title={
+              <>
+                Could not load the runs of{" "}
+                <code className="font-mono">{workflowId}</code>.
+              </>
+            }
+          />
         ) : runs.length === 0 && !statusFilter ? (
           <div className="flex flex-col items-center justify-center gap-3 p-12 text-center text-sm text-muted-foreground">
             <p>

@@ -57,6 +57,7 @@ export function TemporalView() {
   const {
     searchParam,
     setSearchParam,
+    setTemporalEventParam,
     temporalFollowParam,
     setTemporalFollowParam,
     temporalNsParam,
@@ -79,7 +80,10 @@ export function TemporalView() {
       ? "workflows"
       : rawSection === "schedules" && capabilities?.supportsSchedules === false
         ? "workflows"
-        : rawSection;
+        : rawSection === "workers" &&
+            capabilities?.supportsDescribeTaskQueue === false
+          ? "workflows"
+          : rawSection;
   const visibilityQuery = searchParam ?? "";
 
   const [startSheetOpen, setStartSheetOpen] = useState(false);
@@ -110,6 +114,8 @@ export function TemporalView() {
   // returns to whichever screen the user came from.
   const openExecution = (workflowId: string, runId?: string) => {
     setImportedDetail(null);
+    // An event number belongs to one run, so it does not carry over to the next.
+    void setTemporalEventParam(null, { history: "push" });
     void setTemporalSectionParam("workflows", { history: "push" });
     void setTemporalWfParam(workflowId, { history: "push" });
     void setTemporalRunParam(runId ?? null, { history: "push" });

@@ -30,6 +30,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { toast } from "sonner";
 
 import PrismaWordmark from "../../assets/prisma-wordmark.svg";
 import PrismaWordmarkWhite from "../../assets/prisma-wordmark-white.svg";
@@ -1361,6 +1362,7 @@ const Item = ({
     <Comp
       data-sidebar="menu-button"
       data-size={size}
+      aria-current={isActive ? "page" : undefined}
       data-active={isActive}
       className={cn(
         "flex shrink-0 items-center gap-2 rounded-md border border-transparent bg-transparent px-2 py-1.5 text-sm font-medium",
@@ -1524,19 +1526,23 @@ const TemporalSection = (props: {
     workflowList,
     ...temporal
   } = useTemporalNavigation();
+  const { removeView, saveView, views: userViews } = useTemporalSavedViews();
 
   const isTemporalOpen = viewParam === "temporal";
+  // A link to a screen this server does not have opens Executions, as `TemporalView` does.
   const activeSection =
     temporalSectionParam === "attention" ||
-    temporalSectionParam === "schedules" ||
     temporalSectionParam === "queues" ||
     temporalSectionParam === "types" ||
-    temporalSectionParam === "workers" ||
     temporalSectionParam === "workflow" ||
-    temporalSectionParam === "cluster"
+    (temporalSectionParam === "schedules" &&
+      capabilities?.supportsSchedules !== false) ||
+    (temporalSectionParam === "workers" &&
+      capabilities?.supportsDescribeTaskQueue === true) ||
+    (temporalSectionParam === "cluster" &&
+      capabilities?.supportsAdminApi === true)
       ? temporalSectionParam
       : "workflows";
-  const { removeView, views: userViews } = useTemporalSavedViews();
   const savedViews = [...TEMPORAL_BUILT_IN_VIEWS, ...userViews];
   // The check describes every running run, so only the open service asks for it.
   const { data: attention } = useTemporalAttention({
@@ -1544,8 +1550,12 @@ const TemporalSection = (props: {
     followMode: temporalFollowParam === "paused" ? "paused" : "live",
     namespace: activeNamespace,
   });
-  const attentionCount =
-    attention?.items.filter((item) => item.kind !== "failed").length ?? 0;
+  // One run can have several problems, and the Attention page counts runs.
+  const attentionCount = new Set(
+    attention?.items
+      .filter((item) => item.kind !== "failed")
+      .map((item) => `${item.workflowId}\n${item.runId}`),
+  ).size;
   const failedCount = workflowList?.countsByStatus.Failed ?? 0;
   const runningCount = workflowList?.countsByStatus.Running ?? 0;
   const recentRuns = temporal.recentRuns ?? [];
@@ -1826,8 +1836,22 @@ const TemporalSection = (props: {
                 <button
                   type="button"
                   aria-label={`Delete saved view ${view.name}`}
-                  className="hidden size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover/view:flex"
-                  onClick={() => removeView(view.id)}
+                  // Transparent, not hidden, so the Tab key reaches it.
+                  className="flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover/view:opacity-100"
+                  onClick={() => {
+                    removeView(view.id);
+                    toast(`Deleted the saved view ${view.name}`, {
+                      action: {
+                        label: "Undo",
+                        onClick: () =>
+                          saveView({
+                            name: view.name,
+                            query: view.query,
+                            ...(view.sort ? { sort: view.sort } : {}),
+                          }),
+                      },
+                    });
+                  }}
                 >
                   <X aria-hidden className="size-3" />
                 </button>

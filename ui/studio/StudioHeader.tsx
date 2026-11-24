@@ -31,7 +31,7 @@ export function StudioHeader(props: StudioHeaderProps) {
             }
             variant="ghost"
             size="icon"
-            className="size-8 text-muted-foreground hover:text-foreground"
+            className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
             onClick={toggleNavigation}
           >
             {isNavigationOpen ? (

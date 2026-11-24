@@ -93,6 +93,23 @@ export function shouldRetryTemporalRequest(
   return !wasRefused && failureCount < 2;
 }
 
+/** True for a query that failed and has nothing to show. */
+function hasFailedFirstLoad(query: {
+  state: { data: unknown; status: string };
+}): boolean {
+  return query.state.status === "error" && query.state.data === undefined;
+}
+
+/**
+ * How often a query polls. It stops while refresh is paused. It also stops
+ * after a failed first load: polling again would replace the error and its
+ * Retry button with a skeleton every few seconds.
+ */
+function pollEvery(followMode: TemporalFollowMode, intervalMs: number) {
+  return (query: { state: { data: unknown; status: string } }) =>
+    followMode === "paused" || hasFailedFirstLoad(query) ? false : intervalMs;
+}
+
 export function useTemporalCapabilities() {
   const { temporalUrl } = useStudio();
   const enabled = typeof temporalUrl === "string" && temporalUrl.length > 0;
@@ -103,6 +120,7 @@ export function useTemporalCapabilities() {
       temporalFetch<TemporalCapabilities>(temporalUrl!, "/v1/capabilities"),
     queryKey: ["temporal", "capabilities", temporalUrl],
     staleTime: 60_000,
+    retry: shouldRetryTemporalRequest,
   });
 }
 
@@ -121,6 +139,7 @@ export function useTemporalNamespaces() {
     },
     queryKey: ["temporal", "namespaces", temporalUrl],
     staleTime: 30_000,
+    retry: shouldRetryTemporalRequest,
   });
 }
 
@@ -188,7 +207,7 @@ export function useTemporalWorkflows(args: {
       sortKey,
       pageToken,
     ],
-    refetchInterval: followMode === "paused" ? false : 2_500,
+    refetchInterval: pollEvery(followMode, 2_500),
     retry: shouldRetryTemporalRequest,
   });
   // A count can take seconds, because some servers scan the whole namespace
@@ -207,7 +226,7 @@ export function useTemporalWorkflows(args: {
       "counts",
       sortKey,
     ],
-    refetchInterval: followMode === "paused" ? false : 10_000,
+    refetchInterval: pollEvery(followMode, 10_000),
     retry: shouldRetryTemporalRequest,
   });
   const data = useMemo(
@@ -288,7 +307,7 @@ export function useTemporalWorkflowCounts(args: {
       "counts",
       sort ? `${sort.field}:${sort.direction}` : "",
     ],
-    refetchInterval: followMode === "paused" ? false : 10_000,
+    refetchInterval: pollEvery(followMode, 10_000),
     retry: shouldRetryTemporalRequest,
   });
 }
@@ -330,11 +349,12 @@ export function useTemporalWorkflowDetail(args: {
       runId,
     ],
     refetchInterval: (query) => {
-      if (followMode === "paused") return false;
+      if (followMode === "paused" || hasFailedFirstLoad(query)) return false;
       const status = query.state.data?.execution.status;
       if (status && status !== "Running" && status !== "Paused") return false;
       return 2_000;
     },
+    retry: shouldRetryTemporalRequest,
   });
 }
 
@@ -780,7 +800,8 @@ export function useTemporalSchedules(args: {
       );
     },
     queryKey: ["temporal", "schedules", temporalUrl, namespace, pageToken],
-    refetchInterval: followMode === "paused" ? false : 5_000,
+    refetchInterval: pollEvery(followMode, 5_000),
+    retry: shouldRetryTemporalRequest,
   });
 }
 
@@ -812,6 +833,7 @@ export function useTemporalScheduleDetail(args: {
       namespace,
       scheduleId,
     ],
+    retry: shouldRetryTemporalRequest,
   });
 }
 
@@ -1007,6 +1029,7 @@ export function useTemporalFacets(namespace: string) {
       ),
     queryKey: ["temporal", "facets", temporalUrl, namespace],
     staleTime: 30_000,
+    retry: shouldRetryTemporalRequest,
   });
 }
 
@@ -1034,6 +1057,7 @@ export function useTemporalTypeInputs(args: {
       ),
     queryKey: ["temporal", "type-inputs", temporalUrl, namespace, workflowType],
     staleTime: 30_000,
+    retry: shouldRetryTemporalRequest,
   });
 }
 
@@ -1068,7 +1092,8 @@ export function useTemporalTypeMap(args: {
       workflowType ?? "",
     ],
     // The BFF draws a type again at most once a minute.
-    refetchInterval: followMode === "paused" ? false : 30_000,
+    refetchInterval: pollEvery(followMode, 30_000),
+    retry: shouldRetryTemporalRequest,
   });
 }
 
@@ -1094,7 +1119,7 @@ export function useTemporalAttention(args: {
         `/v1/namespaces/${encodeURIComponent(namespace)}/attention`,
       ),
     queryKey: ["temporal", "attention", temporalUrl, namespace],
-    refetchInterval: followMode === "paused" ? false : 10_000,
+    refetchInterval: pollEvery(followMode, 10_000),
     retry: shouldRetryTemporalRequest,
   });
 }
@@ -1119,7 +1144,8 @@ export function useTemporalWorkers(args: {
         `/v1/namespaces/${encodeURIComponent(namespace)}/workers`,
       ),
     queryKey: ["temporal", "workers", temporalUrl, namespace],
-    refetchInterval: followMode === "paused" ? false : 10_000,
+    refetchInterval: pollEvery(followMode, 10_000),
+    retry: shouldRetryTemporalRequest,
   });
 }
 
@@ -1143,7 +1169,8 @@ export function useTemporalTaskQueues(args: {
         `/v1/namespaces/${encodeURIComponent(namespace)}/task-queues`,
       ),
     queryKey: ["temporal", "task-queues", temporalUrl, namespace],
-    refetchInterval: followMode === "paused" ? false : 4_000,
+    refetchInterval: pollEvery(followMode, 4_000),
+    retry: shouldRetryTemporalRequest,
   });
 }
 
@@ -1166,7 +1193,8 @@ export function useTemporalClusterOverview(args: {
         `/v1/cluster/overview?window=${encodeURIComponent(window)}`,
       ),
     queryKey: ["temporal", "cluster-overview", temporalUrl, window],
-    refetchInterval: followMode === "paused" ? false : 3_000,
+    refetchInterval: pollEvery(followMode, 3_000),
+    retry: shouldRetryTemporalRequest,
   });
 }
 
@@ -1188,7 +1216,8 @@ export function useTemporalClusterTraces(args: {
         `/v1/cluster/traces?drain=false`,
       ),
     queryKey: ["temporal", "cluster-traces", temporalUrl],
-    refetchInterval: followMode === "paused" ? false : 5_000,
+    refetchInterval: pollEvery(followMode, 5_000),
+    retry: shouldRetryTemporalRequest,
   });
 }
 

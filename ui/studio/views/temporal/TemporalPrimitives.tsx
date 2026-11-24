@@ -27,6 +27,7 @@ import {
   AlertDialogTitle,
 } from "@/ui/components/ui/alert-dialog";
 import { Badge, type BadgeProps } from "@/ui/components/ui/badge";
+import { Button } from "@/ui/components/ui/button";
 import { Input } from "@/ui/components/ui/input";
 import { Label } from "@/ui/components/ui/label";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/components/ui/toggle-group";
@@ -207,6 +208,79 @@ export function TemporalSectionLabel(props: {
       )}
     >
       {props.children}
+    </div>
+  );
+}
+
+/**
+ * The body of a screen whose first request failed: what could not load, the
+ * server's message as detail, and Retry. A screen that already shows data
+ * keeps it and uses `TemporalRefreshError` instead.
+ */
+export function TemporalLoadError(props: {
+  /** More actions beside Retry, such as a link to another screen. */
+  children?: React.ReactNode;
+  error: unknown;
+  onRetry: () => void;
+  /** One sentence, such as "Could not load the Task Queues of namespace default." */
+  title: React.ReactNode;
+}) {
+  const { children, error, onRetry, title } = props;
+
+  return (
+    <div
+      className="flex flex-col items-center justify-center gap-3 p-10 text-center text-sm text-muted-foreground"
+      data-testid="temporal-load-error"
+      role="alert"
+    >
+      <p className="font-medium text-foreground">{title}</p>
+      {error instanceof Error && error.message ? (
+        <p className="max-w-prose font-mono text-xs break-words">
+          {error.message}
+        </p>
+      ) : null}
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          Retry
+        </Button>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A strip above data that a later request failed to refresh. The data stays on
+ * screen, so what the user typed or opened is not lost.
+ */
+export function TemporalRefreshError(props: {
+  className?: string;
+  error: unknown;
+  onRetry: () => void;
+}) {
+  const { className, error, onRetry } = props;
+  const detail = error instanceof Error ? error.message : "";
+
+  return (
+    <div
+      className={cn(
+        "flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-border bg-amber-500/10 px-4 py-1.5 text-xs text-foreground",
+        className,
+      )}
+      data-testid="temporal-refresh-error"
+      role="status"
+    >
+      <span className="min-w-0">
+        Could not refresh. This is the last data that loaded.
+        {detail ? (
+          <span className="ml-2 font-mono text-2xs break-words text-muted-foreground">
+            {detail}
+          </span>
+        ) : null}
+      </span>
+      <Button variant="outline" size="xs" onClick={onRetry}>
+        Retry
+      </Button>
     </div>
   );
 }
