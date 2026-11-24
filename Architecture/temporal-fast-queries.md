@@ -432,6 +432,8 @@ These are the server repository's own rules, as its documents state them on 2026
 
 So the branches of 4.8.5 are prepared up to the gates. They reach `main` when the owner adds them to the server's plan and its orchestrator runs the gates and merges them, read-only calls first.
 
+The owner chose this route on 2026-11-24. The request to queue the items is the server repository's pull request 1 (`docs/scaling/studio-queries.md`, docs only). Each package gets a draft pull request as its hand-over when its branch is written.
+
 #### 4.8.7 Studio changes that need no server change
 
 These come from the same review and can be built now:
