@@ -159,6 +159,17 @@ The schedule form creates a schedule or edits one. `updateSchedule` reads the sc
 - **History files.** "Download Replay JSON" writes the history as the server stores it, in proto3 JSON (`toProto3Json` turns protobuf.js timestamps and durations into `…Z` and `…s` strings, and a zero duration, which protobuf.js leaves as `{}`, into `0s`; the TypeScript SDK's `Worker.runReplayHistory` accepts the file), which SDK replayers and `temporal workflow replay` read. The grid's "Open a history file" reads such a file, or one from the Temporal CLI or UI, and `buildExecutionDetailFromHistory` builds the page from it in the browser; that page offers no action, because the run may not exist on this server.
 - **Narrow pages.** The page and the Workflows grid are container-query containers (`@container`), because Studio is embedded and its sidebar opens and closes: the width of the page decides the layout, not the width of the window. Under 56rem the Workflow Type and Workflow Id move to a row under the header, the panels stack, and the page scrolls as one. The grid's header drops the namespace badge, the Live control and the history file button as it narrows.
 
+## Workflow IDs (`TemporalWorkflowIdsView.tsx`, `TemporalWorkflowChainView.tsx`)
+
+`temporalSection=workflow` is the level between a Workflow Type and a run. Without `temporalWf` it is the list of Workflow IDs; with it, it is the page of one ID.
+
+- **The list.** No server can list distinct Workflow IDs, so the list reads one page of 200 executions with no sort and no counts, and groups it by Workflow ID in the browser (`groupRunsByWorkflowId`). Its footer says which executions those are: the most recently started on a server that lists newest first, the first the server lists otherwise. The cost does not grow with the namespace.
+- **Search.** The field's text is kept in `search` and sent as `WorkflowId STARTS_WITH "…"`, which a server answers from the ID without a scan. Opening an ID or a run from the list clears `search` in the new history entry, so the Executions list never inherits it and Back returns to the search.
+- **The page of one ID.** It reads `WorkflowId = "…"` newest first, 100 runs a page. When the first page is the whole chain, the status counts, the status filter and the run numbers come from those rows. When it is not, `useTemporalWorkflowCounts` asks the server for the counts of the ID, and the status filter becomes part of the query (`AND ExecutionStatus = "…"`). A run's number counts from the oldest, so it shows only when the total is known and no server-side filter is on.
+- **Counts that fail.** A server that cannot count the ID returns no total. The page then shows the loaded count with a plus sign, no run numbers and no status filter.
+- **Run IDs.** The table shows the whole run ID on a wide page and the first 8 and last 4 characters on a narrow one. UUIDv7 run IDs made within about a minute share their first 8 characters.
+- **State per ID.** `TemporalView` gives the page a `key` of namespace and Workflow ID, so paging, the filter and the remembered latest run start fresh for each ID.
+
 ## Times
 
 `TemporalTime` writes every point in time in the format the user chose with `TemporalTimeFormatControl`: relative, local or UTC. The choice is persistent UI state (`temporal:time-format`), and the tooltip always holds all three.
@@ -236,9 +247,9 @@ All Temporal navigation state lives in the URL hash via `useNavigation()` (`view
 
 ## Sidebar
 
-Temporal is one of the sidebar's data services (see "Data Services" in [`Architecture/navigation-url-state.md`](navigation-url-state.md)). Its scope picker is the namespace, its views are Workflows, Attention, Schedules, Workflow Types, Task Queues, Workers (on servers that report pollers), and Cluster & Shards, and its object list holds the saved views (see "Saved Views") and the 20 newest workflow runs started in the last five minutes.
+Temporal is one of the sidebar's data services (see "Data Services" in [`Architecture/navigation-url-state.md`](navigation-url-state.md)). Its scope picker is the namespace, its views are Workflow Types, Workflow IDs, Executions, Attention, Schedules, Task Queues, Workers (on servers that report pollers), and Cluster & Shards, and its object list holds the saved views (see "Saved Views") and the newest workflow runs started in the last five minutes, at most 20 and one per Workflow ID.
 
 - Every Temporal sidebar entry is a link built with `createUrl`. A saved view is the Workflows list with its visibility query in `search`; a recent run is `temporalWf` plus `temporalRun`.
-- The sidebar marks one entry as open: the recent run when its workflow is open, else the saved view whose query equals `search`, else the view.
+- The sidebar marks one entry as open: the recent run when its run page is open, else the saved view whose query equals `search`, else the view. Workflow IDs is marked for the list of IDs and for the page of one ID. A run page with no `temporalRun` shows the newest run, so it marks the recent run of that Workflow ID.
 - The sidebar's workflow query polls while another service is open, because it feeds the failed-workflow dot on the service switcher. It stops polling only when the Temporal view is open and paused.
 - Links from a workflow to Streams and Tables are anchors with a full URL, never a series of `set*Param` calls.

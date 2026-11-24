@@ -14,7 +14,6 @@ const workflowsResult = {
     | {
         executions: TemporalWorkflowExecution[];
         nextPageToken?: string;
-        sorted?: { rowCount: number };
       }
     | undefined,
   error: null as Error | null,
@@ -24,6 +23,23 @@ const workflowsResult = {
   refetch: vi.fn(),
 };
 
+const countsResult = {
+  data: undefined as
+    | {
+        countsByStatus: Partial<Record<TemporalWorkflowStatus, number>>;
+        totalCount: number;
+      }
+    | undefined,
+  refetch: vi.fn(),
+};
+
+const useTemporalWorkflowsMock = vi.fn(
+  (_args: { query: string }) => workflowsResult,
+);
+const useTemporalWorkflowCountsMock = vi.fn(
+  (_args: { enabled?: boolean; query?: string }) => countsResult,
+);
+
 vi.mock("@/ui/hooks/use-navigation", () => ({
   useNavigation: () => ({
     createUrl: (values: Record<string, string>) =>
@@ -32,7 +48,10 @@ vi.mock("@/ui/hooks/use-navigation", () => ({
 }));
 
 vi.mock("@/ui/hooks/use-temporal", () => ({
-  useTemporalWorkflows: () => workflowsResult,
+  useTemporalWorkflowCounts: (args: { enabled?: boolean; query?: string }) =>
+    useTemporalWorkflowCountsMock(args),
+  useTemporalWorkflows: (args: { query: string }) =>
+    useTemporalWorkflowsMock(args),
 }));
 
 vi.mock("@/ui/hooks/use-ui-state", () => ({
@@ -100,8 +119,8 @@ describe("TemporalWorkflowChainView", () => {
           startTime: "2026-11-24T07:54:00.000Z",
         }),
       ],
-      sorted: { rowCount: 3 },
     };
+    countsResult.data = undefined;
     workflowsResult.error = null;
     workflowsResult.isError = false;
     workflowsResult.isFetching = false;
@@ -145,8 +164,97 @@ describe("TemporalWorkflowChainView", () => {
     expect(container.textContent).toContain("#3");
     expect(container.textContent).toContain("Latest");
     expect(container.textContent).toContain("#1");
-    expect(container.textContent).toContain("01a20d4c");
-    expect(container.textContent).toContain("692");
+    expect(container.textContent).toContain("01a20d4c-0003");
+    expect(
+      container.querySelector('[data-testid="temporal-chain-range"]')
+        ?.textContent,
+    ).toBe("3 runs");
+    expect(useTemporalWorkflowCountsMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ enabled: false }),
+    );
+  });
+
+  it("shows a dash for the history size of a run the server has not measured", () => {
+    workflowsResult.data = {
+      executions: [
+        makeRun("01a20d4c-0003", "Running", {
+          historyLength: 0,
+          historySizeBytes: 0,
+        }),
+      ],
+    };
+    render();
+
+    const cells = [
+      ...container.querySelectorAll(
+        '[data-testid="temporal-chain-row-01a20d4c-0003"] td',
+      ),
+    ].map((cell) => cell.textContent);
+
+    expect(cells).toContain("—");
+    expect(cells).not.toContain("0");
+    expect(cells).not.toContain("0 B");
+  });
+
+  it("counts and filters a chain of more than one page on the server", () => {
+    workflowsResult.data = {
+      executions: [
+        makeRun("01a20d4c-0130", "TimedOut"),
+        makeRun("01a20d4c-0129", "Terminated"),
+      ],
+      nextPageToken: "page-2",
+    };
+    countsResult.data = {
+      countsByStatus: { Terminated: 117, TimedOut: 13 },
+      totalCount: 130,
+    };
+    render();
+
+    expect(useTemporalWorkflowCountsMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        enabled: true,
+        query: 'WorkflowId = "sub-cus_4920"',
+      }),
+    );
+    expect(container.textContent).toContain("#130");
+    expect(container.textContent).toContain("#129");
+    expect(
+      container.querySelector('[data-testid="temporal-chain-range"]')
+        ?.textContent,
+    ).toBe("Runs 1–2 of 130");
+
+    const filterBar = container.querySelector(
+      '[data-testid="temporal-chain-status-filter"]',
+    )!;
+    const timedOutButton = [...filterBar.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Timed Out"),
+    )!;
+
+    expect(timedOutButton.textContent).toContain("13");
+
+    act(() => timedOutButton.click());
+
+    expect(useTemporalWorkflowsMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        query: 'WorkflowId = "sub-cus_4920" AND ExecutionStatus = "TimedOut"',
+      }),
+    );
+    expect(container.textContent).not.toContain("#130");
+  });
+
+  it("shows no run numbers when the server cannot count a long chain", () => {
+    workflowsResult.data = {
+      executions: [makeRun("01a20d4c-0130", "Terminated")],
+      nextPageToken: "page-2",
+    };
+    countsResult.data = { countsByStatus: {}, totalCount: 0 };
+    render();
+
+    expect(container.textContent).toContain("1+");
+    expect(container.textContent).not.toContain("#1");
+    expect(
+      container.querySelector('[data-testid="temporal-chain-status-filter"]'),
+    ).toBeNull();
   });
 
   it("filters runs by status scoped to this Workflow ID and opens a run on click", () => {
@@ -201,12 +309,12 @@ describe("TemporalWorkflowChainView", () => {
   });
 
   it("shows an actionable empty state when no runs match the Workflow ID", () => {
-    workflowsResult.data = { executions: [], sorted: { rowCount: 0 } };
+    workflowsResult.data = { executions: [] };
     render();
 
     expect(container.textContent).toContain(
       "No executions found for Workflow ID",
     );
-    expect(container.textContent).toContain("Open Executions");
+    expect(container.textContent).toContain("Find a Workflow ID");
   });
 });

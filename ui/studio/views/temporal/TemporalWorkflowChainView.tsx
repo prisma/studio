@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import type {
   TemporalFollowMode,
   TemporalWorkflowExecution,
+  TemporalWorkflowSort,
   TemporalWorkflowStatus,
 } from "@/data/temporal";
 import { Badge } from "@/ui/components/ui/badge";
@@ -27,7 +28,10 @@ import {
   TableRow,
 } from "@/ui/components/ui/table";
 import { useNavigation } from "@/ui/hooks/use-navigation";
-import { useTemporalWorkflows } from "@/ui/hooks/use-temporal";
+import {
+  useTemporalWorkflowCounts,
+  useTemporalWorkflows,
+} from "@/ui/hooks/use-temporal";
 import { cn } from "@/ui/lib/utils";
 
 import { StudioHeader } from "../../StudioHeader";
@@ -51,6 +55,11 @@ import { quoteFilterValue } from "./TemporalRunBreadcrumb";
 import type { TemporalStartPreset } from "./TemporalStartSheet";
 
 const PAGE_SIZE = 100;
+
+const NEWEST_FIRST: TemporalWorkflowSort = {
+  direction: "desc",
+  field: "StartTime",
+};
 
 const STATUS_ORDER: TemporalWorkflowStatus[] = [
   "Running",
@@ -78,6 +87,16 @@ const STATUS_DOT: Record<TemporalWorkflowStatus, string> = {
 const linkClassName =
   "rounded-sm hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none";
 
+const cellClassName = "px-2 py-2";
+
+/**
+ * A run ID that still tells runs apart when it is cut: run IDs made close in
+ * time start with the same characters and differ at the end.
+ */
+function compactRunId(runId: string): string {
+  return runId.length > 14 ? `${runId.slice(0, 8)}…${runId.slice(-4)}` : runId;
+}
+
 export interface TemporalWorkflowChainViewProps {
   followMode: TemporalFollowMode;
   namespace: string;
@@ -89,7 +108,8 @@ export interface TemporalWorkflowChainViewProps {
 
 /**
  * The middle level of the Temporal hierarchy: every Run sharing one Workflow ID
- * (its Workflow Execution Chain), ordered newest first.
+ * (its Workflow Execution Chain), ordered newest first. The caller gives it a
+ * key per Workflow ID, so its state starts fresh for each one.
  */
 export function TemporalWorkflowChainView(
   props: TemporalWorkflowChainViewProps,
@@ -107,59 +127,115 @@ export function TemporalWorkflowChainView(
   const [statusFilter, setStatusFilter] =
     useState<TemporalWorkflowStatus | null>(null);
   const [focusedIndex, setFocusedIndex] = useState(0);
-
-  useEffect(() => {
-    setPageTokens([""]);
-    setStatusFilter(null);
-    setFocusedIndex(0);
-  }, [namespace, workflowId]);
+  // True once the runs did not fit one page. The server then counts and filters them.
+  const [isLongChain, setIsLongChain] = useState(false);
+  const [rememberedLatestRun, setRememberedLatestRun] =
+    useState<TemporalWorkflowExecution>();
 
   const pageIndex = pageTokens.length - 1;
   const pageToken = pageTokens[pageIndex] ?? "";
   const idFilter = `WorkflowId = ${quoteFilterValue(workflowId)}`;
+  const serverStatusFilter = isLongChain ? statusFilter : null;
+  const queryFollowMode = followMode === "paused" ? "paused" : "live";
 
-  const { data, error, isError, isFetching, isLoading, refetch } =
-    useTemporalWorkflows({
-      followMode: followMode === "paused" ? "paused" : "live",
-      includeCounts: false,
-      namespace,
-      pageSize: PAGE_SIZE,
-      pageToken,
-      query: idFilter,
-      sort: { direction: "desc", field: "StartTime" },
-    });
+  const {
+    data,
+    error,
+    isError,
+    isFetching,
+    isLoading,
+    isPlaceholderData,
+    refetch,
+  } = useTemporalWorkflows({
+    followMode: queryFollowMode,
+    includeCounts: false,
+    namespace,
+    pageSize: PAGE_SIZE,
+    pageToken,
+    query: serverStatusFilter
+      ? `${idFilter} AND ExecutionStatus = "${serverStatusFilter}"`
+      : idFilter,
+    sort: NEWEST_FIRST,
+  });
+  const chainCounts = useTemporalWorkflowCounts({
+    enabled: isLongChain,
+    followMode: queryFollowMode,
+    namespace,
+    query: idFilter,
+    sort: NEWEST_FIRST,
+  });
 
   const runs = useMemo(() => data?.executions ?? [], [data?.executions]);
-  const totalRuns = Math.max(
-    data?.sorted?.rowCount ?? 0,
-    pageIndex * PAGE_SIZE + runs.length,
-  );
   const nextPageToken = data?.nextPageToken;
-  const isSinglePage = pageIndex === 0 && !nextPageToken;
-  const latestRun = pageIndex === 0 ? runs[0] : undefined;
-  const oldestLoadedRun = runs.at(-1);
-  const workflowType = runs[0]?.workflowType;
-  const taskQueue = runs[0]?.taskQueue;
 
+  if (!isLongChain && nextPageToken && !isPlaceholderData) {
+    setIsLongChain(true);
+  }
+
+  const newestLoadedRun =
+    pageIndex === 0 && !serverStatusFilter && !isPlaceholderData
+      ? runs[0]
+      : undefined;
+
+  if (
+    newestLoadedRun &&
+    (rememberedLatestRun?.runId !== newestLoadedRun.runId ||
+      rememberedLatestRun.status !== newestLoadedRun.status)
+  ) {
+    setRememberedLatestRun(newestLoadedRun);
+  }
+
+  const latestRun = newestLoadedRun ?? rememberedLatestRun;
+  const workflowType = latestRun?.workflowType;
+  const taskQueue = latestRun?.taskQueue;
+
+  // The counts of every run of the ID. Null when the server could not count a long chain.
   const statusCounts = useMemo(() => {
     const counts = new Map<TemporalWorkflowStatus, number>();
 
-    for (const run of runs) {
-      counts.set(run.status, (counts.get(run.status) ?? 0) + 1);
+    if (!isLongChain) {
+      for (const run of runs) {
+        counts.set(run.status, (counts.get(run.status) ?? 0) + 1);
+      }
+
+      return counts;
+    }
+
+    if (!chainCounts.data || chainCounts.data.totalCount === 0) {
+      return null;
+    }
+
+    for (const status of STATUS_ORDER) {
+      const count = chainCounts.data.countsByStatus[status] ?? 0;
+
+      if (count > 0) {
+        counts.set(status, count);
+      }
     }
 
     return counts;
-  }, [runs]);
+  }, [chainCounts.data, isLongChain, runs]);
 
-  const activeStatuses = useMemo(
-    () => STATUS_ORDER.filter((status) => (statusCounts.get(status) ?? 0) > 0),
-    [statusCounts],
+  const totalRuns = isLongChain
+    ? statusCounts
+      ? (chainCounts.data?.totalCount ?? null)
+      : null
+    : runs.length;
+  const loadedThrough = pageIndex * PAGE_SIZE + runs.length;
+
+  const filterStatuses = STATUS_ORDER.filter(
+    (status) => (statusCounts?.get(status) ?? 0) > 0 || status === statusFilter,
   );
 
   const visibleRuns = useMemo(
     () =>
-      statusFilter ? runs.filter((run) => run.status === statusFilter) : runs,
-    [runs, statusFilter],
+      runs
+        .map((run, indexInPage) => ({ indexInPage, run }))
+        .filter(
+          ({ run }) =>
+            isLongChain || !statusFilter || run.status === statusFilter,
+        ),
+    [isLongChain, runs, statusFilter],
   );
 
   useEffect(() => {
@@ -185,7 +261,7 @@ export function TemporalWorkflowChainView(
         event.preventDefault();
         setFocusedIndex((i) => Math.max(0, i - 1));
       } else if (event.key === "Enter") {
-        const current = visibleRuns[focusedIndex];
+        const current = visibleRuns[focusedIndex]?.run;
 
         if (current) {
           event.preventDefault();
@@ -198,11 +274,6 @@ export function TemporalWorkflowChainView(
 
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [focusedIndex, onOpenExecution, visibleRuns]);
-
-  const totalEventsLoaded = useMemo(
-    () => runs.reduce((sum, run) => sum + run.historyLength, 0),
-    [runs],
-  );
 
   const workflowsUrl = (filter: string) =>
     createUrl({
@@ -221,14 +292,20 @@ export function TemporalWorkflowChainView(
       })
     : null;
 
-  const executionsUrl = workflowsUrl(idFilter);
-
   const openStartForChain = () =>
     onOpenStart({
       ...(taskQueue ? { taskQueue } : {}),
       workflowId,
       ...(workflowType ? { workflowType } : {}),
     });
+
+  const applyStatusFilter = (status: TemporalWorkflowStatus | null) => {
+    setStatusFilter(status);
+
+    if (isLongChain) {
+      setPageTokens([""]);
+    }
+  };
 
   const breadcrumb = (
     <ChainBreadcrumb
@@ -252,8 +329,25 @@ export function TemporalWorkflowChainView(
       viewParam: "temporal",
     });
 
-  const pageStart = pageIndex * PAGE_SIZE + 1;
-  const pageEnd = pageIndex * PAGE_SIZE + runs.length;
+  // A run's number counts from the oldest, so it needs the place of the row among every run.
+  const showRunNumbers = totalRuns !== null && !serverStatusFilter;
+  const showChainRail = statusFilter === null;
+  const isSinglePage = pageIndex === 0 && !nextPageToken;
+  const pageStart = (pageIndex * PAGE_SIZE + 1).toLocaleString("en-US");
+  const pageEnd = loadedThrough.toLocaleString("en-US");
+  const filteredTotal = statusFilter
+    ? statusCounts?.get(statusFilter)
+    : undefined;
+  const footerText =
+    runs.length === 0
+      ? "0 runs"
+      : statusFilter && !isLongChain
+        ? `${visibleRuns.length.toLocaleString("en-US")} ${workflowStatusLabel(statusFilter).toLowerCase()} of ${pluralize(runs.length, "run")}`
+        : statusFilter
+          ? `${workflowStatusLabel(statusFilter)} runs ${pageStart}–${pageEnd}${filteredTotal ? ` of ${filteredTotal.toLocaleString("en-US")}` : ""}`
+          : isSinglePage
+            ? pluralize(runs.length, "run")
+            : `Runs ${pageStart}–${pageEnd}${totalRuns !== null ? ` of ${totalRuns.toLocaleString("en-US")}` : ""}`;
 
   return (
     <div
@@ -266,17 +360,23 @@ export function TemporalWorkflowChainView(
       <StudioHeader
         endContent={
           <>
-            <TemporalFollowControl
-              onChange={onFollowModeChange}
-              value={followMode}
-            />
+            {/* A narrow page keeps the two actions and drops the rare control. */}
+            <span className="contents @max-2xl:hidden">
+              <TemporalFollowControl
+                onChange={onFollowModeChange}
+                value={followMode}
+              />
+            </span>
             <Button
               variant="outline"
               size="sm"
               className="w-8 px-0"
               aria-label="Refresh runs"
               title="Refresh runs"
-              onClick={() => void refetch()}
+              onClick={() => {
+                void chainCounts.refetch();
+                void refetch();
+              }}
               disabled={isFetching}
             >
               <RefreshCw className={cn(isFetching && "animate-spin")} />
@@ -286,9 +386,10 @@ export function TemporalWorkflowChainView(
               size="sm"
               className="shrink-0 whitespace-nowrap"
               onClick={openStartForChain}
+              title="Start a new run of this Workflow ID"
             >
               <Play />
-              Start Execution
+              <span className="@max-3xl:sr-only">Start Execution</span>
             </Button>
             {latestRun ? (
               <Button
@@ -303,16 +404,12 @@ export function TemporalWorkflowChainView(
           </>
         }
       >
-        <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           <div className="min-w-0 @max-3xl:hidden">{breadcrumb}</div>
-          <span className="hidden min-w-0 truncate font-mono text-xs font-medium text-foreground @max-3xl:inline">
-            {workflowId}
-          </span>
           {latestRun ? (
-            <WorkflowStatusBadge
-              status={latestRun.status}
-              className="shrink-0"
-            />
+            <span className="shrink-0" title="Status of the latest run">
+              <WorkflowStatusBadge status={latestRun.status} />
+            </span>
           ) : null}
         </div>
       </StudioHeader>
@@ -334,81 +431,60 @@ export function TemporalWorkflowChainView(
             {taskQueue ? <SummaryFact label="Queue" value={taskQueue} /> : null}
             <SummaryFact
               label="Runs"
-              value={totalRuns.toLocaleString("en-US")}
+              value={
+                totalRuns !== null
+                  ? totalRuns.toLocaleString("en-US")
+                  : `${loadedThrough.toLocaleString("en-US")}+`
+              }
             />
-            {runs.length > 0 ? (
-              <SummaryFact
-                label={isSinglePage ? "Total events" : "Events on page"}
-                value={totalEventsLoaded.toLocaleString("en-US")}
-              />
-            ) : null}
-            {isSinglePage && oldestLoadedRun ? (
+            {!isLongChain && runs.length > 0 ? (
               <div className="flex items-baseline gap-1.5">
                 <dt>First run</dt>
                 <dd className="font-mono text-foreground">
-                  <TemporalTime iso={oldestLoadedRun.startTime} />
+                  <TemporalTime iso={runs.at(-1)?.startTime} />
                 </dd>
               </div>
             ) : null}
           </dl>
         )}
         <a
-          className="font-medium text-foreground underline underline-offset-2 hover:no-underline"
+          className={cn(
+            linkClassName,
+            "font-medium text-foreground underline underline-offset-2 hover:no-underline",
+          )}
           data-testid="temporal-chain-open-executions"
-          href={executionsUrl}
+          href={workflowsUrl(idFilter)}
+          title="Open these runs in Executions, to filter, sort or select them"
         >
           Open in Executions
         </a>
       </div>
 
-      {activeStatuses.length > 1 ? (
+      {filterStatuses.length > 1 || statusFilter ? (
         <div
           className="flex flex-wrap items-center gap-1.5 border-b border-border px-4 py-1.5 text-xs"
           data-testid="temporal-chain-status-filter"
           role="group"
           aria-label="Filter runs by status"
         >
-          <button
-            type="button"
-            aria-pressed={statusFilter === null}
-            onClick={() => setStatusFilter(null)}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-              statusFilter === null
-                ? "border-foreground/30 bg-muted font-medium text-foreground"
-                : "border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-            )}
-          >
-            All
-            <span className="font-mono text-2xs tabular-nums">
-              {runs.length.toLocaleString("en-US")}
-            </span>
-          </button>
-          {activeStatuses.map((status) => {
-            const count = statusCounts.get(status) ?? 0;
-            const isSelected = statusFilter === status;
-
-            return (
-              <button
-                key={status}
-                type="button"
-                aria-pressed={isSelected}
-                onClick={() => setStatusFilter(isSelected ? null : status)}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                  isSelected
-                    ? "border-foreground/30 bg-muted font-medium text-foreground"
-                    : "border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-                )}
-              >
-                <WorkflowStatusIcon status={status} />
-                {workflowStatusLabel(status)}
-                <span className="font-mono text-2xs tabular-nums">
-                  {count.toLocaleString("en-US")}
-                </span>
-              </button>
-            );
-          })}
+          <StatusFilterButton
+            count={totalRuns ?? undefined}
+            isSelected={statusFilter === null}
+            label="All"
+            onClick={() => applyStatusFilter(null)}
+          />
+          {filterStatuses.map((status) => (
+            <StatusFilterButton
+              key={status}
+              count={statusCounts?.get(status)}
+              isSelected={statusFilter === status}
+              label={workflowStatusLabel(status)}
+              onClick={() =>
+                applyStatusFilter(statusFilter === status ? null : status)
+              }
+              status={status}
+            />
+          ))}
         </div>
       ) : null}
 
@@ -430,7 +506,7 @@ export function TemporalWorkflowChainView(
               Retry
             </Button>
           </div>
-        ) : runs.length === 0 ? (
+        ) : runs.length === 0 && !statusFilter ? (
           <div className="flex flex-col items-center justify-center gap-3 p-12 text-center text-sm text-muted-foreground">
             <p>
               No executions found for Workflow ID{" "}
@@ -444,15 +520,37 @@ export function TemporalWorkflowChainView(
                 Start Execution
               </Button>
               <Button variant="outline" size="sm" asChild>
-                <a href={workflowsUrl("")}>Open Executions</a>
+                <a
+                  href={createUrl({
+                    temporalNsParam: namespace,
+                    temporalSectionParam: "workflow",
+                    viewParam: "temporal",
+                  })}
+                >
+                  Find a Workflow ID
+                </a>
               </Button>
             </div>
+          </div>
+        ) : visibleRuns.length === 0 && statusFilter ? (
+          <div className="flex flex-col items-center justify-center gap-3 p-12 text-center text-sm text-muted-foreground">
+            <p>
+              No run of this Workflow ID is{" "}
+              {workflowStatusLabel(statusFilter).toLowerCase()} now.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => applyStatusFilter(null)}
+            >
+              Show all runs
+            </Button>
           </div>
         ) : (
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-background">
-              <TableRow className="hover:bg-transparent">
-                <TableHead className={cn(temporalTableHeadClass, "w-28 pl-4")}>
+              <TableRow className="border-border/70 bg-muted/20 hover:bg-muted/20">
+                <TableHead className={cn(temporalTableHeadClass, "pl-4")}>
                   Run
                 </TableHead>
                 <TableHead className={temporalTableHeadClass}>Run ID</TableHead>
@@ -460,11 +558,23 @@ export function TemporalWorkflowChainView(
                 <TableHead className={temporalTableHeadClass}>
                   Started
                 </TableHead>
-                <TableHead className={temporalTableHeadClass}>Closed</TableHead>
+                <TableHead
+                  className={cn(
+                    temporalTableHeadClass,
+                    "hidden @3xl:table-cell",
+                  )}
+                >
+                  Closed
+                </TableHead>
                 <TableHead className={cn(temporalTableHeadClass, "text-right")}>
                   Duration
                 </TableHead>
-                <TableHead className={cn(temporalTableHeadClass, "text-right")}>
+                <TableHead
+                  className={cn(
+                    temporalTableHeadClass,
+                    "hidden text-right @2xl:table-cell",
+                  )}
+                >
                   Events
                 </TableHead>
                 <TableHead
@@ -475,35 +585,29 @@ export function TemporalWorkflowChainView(
                 >
                   Size
                 </TableHead>
-                <TableHead className="w-8 pr-3" />
+                <TableHead className="h-9 w-8 pr-3 pl-0" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {visibleRuns.map((run, visibleIndex) => {
-                const indexInPage = runs.indexOf(run);
-                const runNumber =
-                  totalRuns - (pageIndex * PAGE_SIZE + indexInPage);
-                const isLatest = pageIndex === 0 && indexInPage === 0;
-                const isFirstVisible = visibleIndex === 0;
-                const isLastVisible = visibleIndex === visibleRuns.length - 1;
-                const isFocused = focusedIndex === visibleIndex;
-
-                return (
-                  <ChainRunRow
-                    key={run.runId}
-                    isFirst={isFirstVisible}
-                    isFocused={isFocused}
-                    isLast={isLastVisible}
-                    isLatest={isLatest}
-                    onFocus={() => setFocusedIndex(visibleIndex)}
-                    onOpen={() => onOpenExecution(run.workflowId, run.runId)}
-                    run={run}
-                    runHref={runUrl(run.runId)}
-                    runNumber={runNumber}
-                    showChainRail={statusFilter === null}
-                  />
-                );
-              })}
+              {visibleRuns.map(({ indexInPage, run }, visibleIndex) => (
+                <ChainRunRow
+                  key={run.runId}
+                  isFirst={visibleIndex === 0}
+                  isFocused={focusedIndex === visibleIndex}
+                  isLast={visibleIndex === visibleRuns.length - 1}
+                  isLatest={run.runId === latestRun?.runId}
+                  onFocus={() => setFocusedIndex(visibleIndex)}
+                  onOpen={() => onOpenExecution(run.workflowId, run.runId)}
+                  run={run}
+                  runHref={runUrl(run.runId)}
+                  runNumber={
+                    showRunNumbers
+                      ? totalRuns - (pageIndex * PAGE_SIZE + indexInPage)
+                      : null
+                  }
+                  showChainRail={showChainRail}
+                />
+              ))}
             </TableBody>
           </Table>
         )}
@@ -511,17 +615,9 @@ export function TemporalWorkflowChainView(
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-muted/20 px-4 py-1.5 text-xs text-muted-foreground">
         <div className="flex items-center gap-2">
-          {runs.length > 0 ? (
-            <span className="tabular-nums">
-              {statusFilter
-                ? `Showing ${visibleRuns.length.toLocaleString("en-US")} ${workflowStatusLabel(statusFilter).toLowerCase()} of ${pluralize(runs.length, "loaded run")}`
-                : isSinglePage
-                  ? `${pluralize(runs.length, "run")} total`
-                  : `Runs ${pageStart.toLocaleString("en-US")}–${pageEnd.toLocaleString("en-US")} of ${totalRuns.toLocaleString("en-US")}`}
-            </span>
-          ) : (
-            <span>0 runs</span>
-          )}
+          <span className="tabular-nums" data-testid="temporal-chain-range">
+            {footerText}
+          </span>
           {!isSinglePage ? (
             <div className="flex items-center gap-1">
               <Button
@@ -529,10 +625,7 @@ export function TemporalWorkflowChainView(
                 size="xs"
                 aria-label="Previous page"
                 disabled={pageIndex === 0}
-                onClick={() => {
-                  setStatusFilter(null);
-                  setPageTokens((prev) => prev.slice(0, -1));
-                }}
+                onClick={() => setPageTokens((prev) => prev.slice(0, -1))}
               >
                 <ChevronLeft />
               </Button>
@@ -543,7 +636,6 @@ export function TemporalWorkflowChainView(
                 disabled={!nextPageToken}
                 onClick={() => {
                   if (nextPageToken) {
-                    setStatusFilter(null);
                     setPageTokens((prev) => [...prev, nextPageToken]);
                   }
                 }}
@@ -644,6 +736,39 @@ function SummaryFact(props: { label: string; value: string }) {
   );
 }
 
+function StatusFilterButton(props: {
+  /** Undefined when the server could not count the runs. */
+  count?: number;
+  isSelected: boolean;
+  label: string;
+  onClick: () => void;
+  status?: TemporalWorkflowStatus;
+}) {
+  const { count, isSelected, label, onClick, status } = props;
+
+  return (
+    <button
+      type="button"
+      aria-pressed={isSelected}
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+        isSelected
+          ? "border-foreground/30 bg-muted font-medium text-foreground"
+          : "border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+      )}
+    >
+      {status ? <WorkflowStatusIcon status={status} /> : null}
+      {label}
+      {count !== undefined ? (
+        <span className="font-mono text-2xs tabular-nums">
+          {count.toLocaleString("en-US")}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
 function ChainRunRow(props: {
   isFirst: boolean;
   isFocused: boolean;
@@ -653,7 +778,8 @@ function ChainRunRow(props: {
   onOpen: () => void;
   run: TemporalWorkflowExecution;
   runHref: string;
-  runNumber: number;
+  /** Null when the place of the run among every run of the ID is not known. */
+  runNumber: number | null;
   showChainRail: boolean;
 }) {
   const {
@@ -668,8 +794,9 @@ function ChainRunRow(props: {
     runNumber,
     showChainRail,
   } = props;
-  const shortRunId = run.runId.slice(0, 8);
   const isOpen = run.status === "Running" || run.status === "Paused";
+  // A server reports the size of a history when the run closes.
+  const hasHistorySize = run.historyLength > 0;
 
   return (
     <TableRow
@@ -678,11 +805,11 @@ function ChainRunRow(props: {
       onClick={onOpen}
       onMouseEnter={onFocus}
       className={cn(
-        "group cursor-pointer text-xs transition-colors",
-        isFocused && "bg-muted/40",
+        "group cursor-pointer border-border/60 text-xs hover:bg-muted/30",
+        isFocused && "bg-muted/30",
       )}
     >
-      <TableCell className="relative py-2 pl-4">
+      <TableCell className={cn(cellClassName, "relative pl-4")}>
         {showChainRail && !isFirst ? (
           <span
             aria-hidden
@@ -697,7 +824,7 @@ function ChainRunRow(props: {
             className="pointer-events-none absolute top-1/2 bottom-0 left-[22px] w-px -translate-x-1/2 bg-border"
           />
         ) : null}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 whitespace-nowrap">
           <span
             aria-hidden
             className="relative flex h-5 w-3 shrink-0 items-center justify-center"
@@ -709,9 +836,11 @@ function ChainRunRow(props: {
               )}
             />
           </span>
-          <span className="font-mono font-medium tabular-nums text-foreground">
-            #{runNumber.toLocaleString("en-US")}
-          </span>
+          {runNumber !== null ? (
+            <span className="font-mono font-medium tabular-nums text-foreground">
+              #{runNumber.toLocaleString("en-US")}
+            </span>
+          ) : null}
           {isLatest ? (
             <Badge
               variant="secondary"
@@ -722,11 +851,14 @@ function ChainRunRow(props: {
           ) : null}
         </div>
       </TableCell>
-      <TableCell className="py-2">
+      <TableCell className={cellClassName}>
         <div className="flex items-center gap-1">
           <a
             href={runHref}
-            className={cn(linkClassName, "font-mono text-foreground")}
+            className={cn(
+              linkClassName,
+              "font-mono whitespace-nowrap text-foreground",
+            )}
             title={run.runId}
             onClick={(event) => {
               event.stopPropagation();
@@ -742,7 +874,8 @@ function ChainRunRow(props: {
               }
             }}
           >
-            {shortRunId}
+            <span className="@5xl:hidden">{compactRunId(run.runId)}</span>
+            <span className="hidden @5xl:inline">{run.runId}</span>
           </a>
           <Button
             variant="ghost"
@@ -760,13 +893,20 @@ function ChainRunRow(props: {
           </Button>
         </div>
       </TableCell>
-      <TableCell className="py-2">
+      <TableCell className={cellClassName}>
         <WorkflowStatusBadge status={run.status} />
       </TableCell>
-      <TableCell className="py-2 text-muted-foreground">
+      <TableCell
+        className={cn(cellClassName, "whitespace-nowrap text-muted-foreground")}
+      >
         <TemporalTime iso={run.startTime} />
       </TableCell>
-      <TableCell className="py-2 text-muted-foreground">
+      <TableCell
+        className={cn(
+          cellClassName,
+          "hidden whitespace-nowrap text-muted-foreground @3xl:table-cell",
+        )}
+      >
         {run.closeTime ? (
           <TemporalTime iso={run.closeTime} />
         ) : isOpen ? (
@@ -775,16 +915,31 @@ function ChainRunRow(props: {
           <span>—</span>
         )}
       </TableCell>
-      <TableCell className="py-2 text-right font-mono tabular-nums text-muted-foreground">
+      <TableCell
+        className={cn(
+          cellClassName,
+          "text-right font-mono whitespace-nowrap tabular-nums text-muted-foreground",
+        )}
+      >
         {formatDuration(run.durationMs)}
       </TableCell>
-      <TableCell className="py-2 text-right font-mono tabular-nums text-muted-foreground">
-        {run.historyLength.toLocaleString("en-US")}
+      <TableCell
+        className={cn(
+          cellClassName,
+          "hidden text-right font-mono tabular-nums text-muted-foreground @2xl:table-cell",
+        )}
+      >
+        {hasHistorySize ? run.historyLength.toLocaleString("en-US") : "—"}
       </TableCell>
-      <TableCell className="hidden py-2 text-right font-mono tabular-nums text-muted-foreground @3xl:table-cell">
-        {formatBytes(run.historySizeBytes)}
+      <TableCell
+        className={cn(
+          cellClassName,
+          "hidden text-right font-mono whitespace-nowrap tabular-nums text-muted-foreground @3xl:table-cell",
+        )}
+      >
+        {hasHistorySize ? formatBytes(run.historySizeBytes) : "—"}
       </TableCell>
-      <TableCell className="py-2 pr-3 text-right">
+      <TableCell className="py-2 pr-3 pl-0 text-right">
         <ChevronRight
           aria-hidden
           className="ml-auto size-3.5 text-muted-foreground opacity-40 transition-opacity group-hover:opacity-100"

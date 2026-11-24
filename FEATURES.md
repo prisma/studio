@@ -83,6 +83,12 @@ Cmd+Enter or Ctrl+Enter starts the run. A field the user changed is never filled
 The header of a run is a path with working parts: the Workflow Type opens the runs of that type, the Workflow ID opens every run of that ID, and the run opens a list of the runs of the ID to move to another one. It says "2 of 3" for a run of several and "the only run" otherwise.
 The Related tab shows the parent, this run and its Child Workflows as a tree, and the other runs of the Workflow ID as a list. Where there is nothing, it says so in a sentence.
 
+## Temporal Workflow IDs
+
+A Workflow ID names one business object, such as an order or a subscription, and can have many runs: one per retry, cron tick or continue-as-new. The Workflow IDs entry in the sidebar lists the IDs among the 200 executions the server returns first, each with its latest run, its start time and the statuses of its recent runs. A search field finds any other ID by how it starts.
+Opening an ID shows every run of it, newest first, numbered from the oldest, with a filter by status. A chain of more than 100 runs is counted and filtered by the server and shown in pages.
+The page of an ID links to its latest run, starts a new run with the same ID, and opens the same runs in Executions.
+
 ## Temporal Timers and the Run Diagram
 
 A Timer is named by its length ("Timer 5m 50s") in the timeline, the span list and the diagrams. An open Timer's row counts down the time it has left, and its details show the length, the time it fires, a progress bar, and what recent runs of the type do before and after it.

@@ -23,6 +23,7 @@ import { TemporalTaskQueuesView } from "./TemporalTaskQueuesView";
 import { TemporalTypesView } from "./TemporalTypesView";
 import { TemporalWorkersView } from "./TemporalWorkersView";
 import { TemporalWorkflowChainView } from "./TemporalWorkflowChainView";
+import { TemporalWorkflowIdsView } from "./TemporalWorkflowIdsView";
 import { TemporalWorkflowsGrid } from "./TemporalWorkflowsGrid";
 
 function normalizeFollowMode(
@@ -109,6 +110,14 @@ export function TemporalView() {
     void setTemporalRunParam(runId ?? null, { history: "push" });
   };
 
+  // The search of the Workflow IDs list stays in the entry the Back button returns to.
+  const openWorkflowId = (workflowId: string) => {
+    void setSearchParam(null, { history: "push" });
+    void setTemporalSectionParam("workflow", { history: "push" });
+    void setTemporalWfParam(workflowId, { history: "push" });
+    void setTemporalRunParam(null, { history: "push" });
+  };
+
   useEffect(() => {
     setImportedDetail(null);
   }, [
@@ -134,12 +143,26 @@ export function TemporalView() {
         />
       ) : temporalWfParam && section === "workflow" ? (
         <TemporalWorkflowChainView
+          key={`${namespace}\n${temporalWfParam}`}
           followMode={followMode}
           namespace={namespace}
           onFollowModeChange={(m) => void setTemporalFollowParam(m)}
           onOpenExecution={openExecution}
           onOpenStart={openStartSheet}
           workflowId={temporalWfParam}
+        />
+      ) : section === "workflow" ? (
+        <TemporalWorkflowIdsView
+          followMode={followMode}
+          namespace={namespace}
+          onFollowModeChange={(m) => void setTemporalFollowParam(m)}
+          onOpenExecution={(workflowId, runId) => {
+            void setSearchParam(null, { history: "push" });
+            openExecution(workflowId, runId);
+          }}
+          onOpenWorkflowId={openWorkflowId}
+          onSearchChange={(text) => void setSearchParam(text || null)}
+          search={visibilityQuery}
         />
       ) : temporalWfParam ? (
         <TemporalExecutionDebugger

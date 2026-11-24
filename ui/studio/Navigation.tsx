@@ -9,6 +9,7 @@ import {
   Database,
   History,
   Layers,
+  ListTree,
   type LucideIcon,
   Network,
   RefreshCw,
@@ -1460,15 +1461,27 @@ function useTemporalNavigation() {
     pageSize: RECENT_RUN_PAGE_SIZE,
     query: `StartTime > "${recentSince}"`,
   });
-  const recentRuns = useMemo(
-    () =>
-      recentList
-        ? [...recentList.executions]
-            .sort((a, b) => b.startTime.localeCompare(a.startTime))
-            .slice(0, RECENT_RUN_COUNT)
-        : undefined,
-    [recentList],
-  );
+  // The rows show the Workflow ID, so an ID with several recent runs shows once, as its newest run.
+  const recentRuns = useMemo(() => {
+    if (!recentList) {
+      return undefined;
+    }
+
+    const listedIds = new Set<string>();
+
+    return [...recentList.executions]
+      .sort((a, b) => b.startTime.localeCompare(a.startTime))
+      .filter((run) => {
+        if (listedIds.has(run.workflowId)) {
+          return false;
+        }
+
+        listedIds.add(run.workflowId);
+
+        return true;
+      })
+      .slice(0, RECENT_RUN_COUNT);
+  }, [recentList]);
 
   return {
     activeNamespace,
@@ -1499,6 +1512,7 @@ const TemporalSection = (props: {
     setTemporalWfParam,
     setViewParam,
     temporalFollowParam,
+    temporalRunParam,
     temporalSectionParam,
     temporalWfParam,
     viewParam,
@@ -1518,6 +1532,7 @@ const TemporalSection = (props: {
     temporalSectionParam === "queues" ||
     temporalSectionParam === "types" ||
     temporalSectionParam === "workers" ||
+    temporalSectionParam === "workflow" ||
     temporalSectionParam === "cluster"
       ? temporalSectionParam
       : "workflows";
@@ -1534,13 +1549,19 @@ const TemporalSection = (props: {
   const failedCount = workflowList?.countsByStatus.Failed ?? 0;
   const runningCount = workflowList?.countsByStatus.Running ?? 0;
   const recentRuns = temporal.recentRuns ?? [];
+  // The run page that is open. Without a run ID in the URL it shows the newest run of the ID.
+  const openRecentRun =
+    isTemporalOpen && activeSection === "workflows" && temporalWfParam
+      ? recentRuns.find(
+          (run) =>
+            run.workflowId === temporalWfParam &&
+            (!temporalRunParam || run.runId === temporalRunParam),
+        )
+      : undefined;
   const namespaceOptions =
     namespaces.length > 0
       ? namespaces.map((namespace) => namespace.name)
       : [activeNamespace];
-  const isRecentRunOpen =
-    isTemporalOpen &&
-    recentRuns.some((run) => run.workflowId === temporalWfParam);
   const openSavedViewQuery =
     isTemporalOpen && activeSection === "workflows" && !temporalWfParam
       ? savedViews.find((view) => view.query === (searchParam ?? "").trim())
@@ -1612,11 +1633,29 @@ const TemporalSection = (props: {
         <Navigation.Item
           asChild
           className={itemClassName}
+          isActive={isTemporalOpen && activeSection === "workflow"}
+        >
+          <a
+            className="w-full"
+            data-testid="navigation-temporal-workflow-ids"
+            href={createUrl({
+              ...temporalUrlBase,
+              temporalSectionParam: "workflow",
+            })}
+          >
+            <ListTree aria-hidden />
+            Workflow IDs
+          </a>
+        </Navigation.Item>
+
+        <Navigation.Item
+          asChild
+          className={itemClassName}
           isActive={
             isTemporalOpen &&
             activeSection === "workflows" &&
             openSavedViewQuery === undefined &&
-            !isRecentRunOpen
+            !openRecentRun
           }
         >
           <a
@@ -1814,7 +1853,7 @@ const TemporalSection = (props: {
               key={`${run.workflowId}:${run.runId}`}
               asChild
               className={runItemClassName}
-              isActive={isTemporalOpen && temporalWfParam === run.workflowId}
+              isActive={run === openRecentRun}
             >
               <a
                 className="w-full"

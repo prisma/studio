@@ -9,6 +9,7 @@ import {
   GalleryVerticalEnd,
   Laptop,
   Layers,
+  ListTree,
   Moon,
   Search,
   Server,
@@ -566,6 +567,30 @@ function StudioCommandPalette() {
             window.location.hash = createUrl({
               temporalNsParam: ns,
               temporalSectionParam: "types",
+              viewParam: "temporal",
+            });
+          },
+          section: "views",
+        },
+        {
+          disabled: false,
+          icon: ListTree,
+          id: "view:temporal:workflow-ids",
+          keywords: [
+            "temporal",
+            "workflow id",
+            "workflow ids",
+            "chain",
+            "runs",
+            "continue as new",
+            "cron",
+            "retry",
+          ],
+          label: temporalLabel("Workflow IDs"),
+          onSelect: () => {
+            window.location.hash = createUrl({
+              temporalNsParam: ns,
+              temporalSectionParam: "workflow",
               viewParam: "temporal",
             });
           },

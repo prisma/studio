@@ -237,36 +237,56 @@ export function useTemporalWorkflows(args: {
 }
 
 /**
- * How many runs the namespace has in each status, with no filter. The same
+ * How many runs match a filter, in each status. With no filter it is the same
  * request as the counts of the unfiltered Workflows list, so they share one
  * response.
  */
 export function useTemporalWorkflowCounts(args: {
+  /** False sends no request, for a caller that does not need the counts yet. */
+  enabled?: boolean;
   followMode: TemporalFollowMode;
   namespace: string;
+  query?: string;
+  /** A server that lists by Workflow Id counts a sorted filter from its copy of the matching runs. */
+  sort?: TemporalWorkflowSort;
 }) {
   const { temporalUrl } = useStudio();
   const { followMode, namespace } = args;
+  const query = args.query?.trim() ?? "";
+  const sort = args.sort;
 
   return useQuery<TemporalListWorkflowsResponse>({
     enabled:
+      args.enabled !== false &&
       typeof temporalUrl === "string" &&
       temporalUrl.length > 0 &&
       namespace.length > 0,
-    queryFn: () =>
-      temporalFetch<TemporalListWorkflowsResponse>(
+    queryFn: () => {
+      const params = new URLSearchParams({ list: "0" });
+
+      if (query.length > 0) {
+        params.set("query", query);
+      }
+
+      if (sort) {
+        params.set("sort", sort.field);
+        params.set("dir", sort.direction);
+      }
+
+      return temporalFetch<TemporalListWorkflowsResponse>(
         temporalUrl!,
-        `/v1/namespaces/${encodeURIComponent(namespace)}/workflows?list=0`,
-      ),
+        `/v1/namespaces/${encodeURIComponent(namespace)}/workflows?${params.toString()}`,
+      );
+    },
     queryKey: [
       "temporal",
       "workflows",
       temporalUrl,
       namespace,
-      "",
+      query,
       0,
       "counts",
-      "",
+      sort ? `${sort.field}:${sort.direction}` : "",
     ],
     refetchInterval: followMode === "paused" ? false : 10_000,
     retry: shouldRetryTemporalRequest,
