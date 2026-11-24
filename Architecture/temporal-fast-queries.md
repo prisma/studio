@@ -1,6 +1,6 @@
 # Temporal: the queries Studio needs to be fast
 
-Written 2026-11-23, updated 2026-11-24. It has three parts:
+Written 2026-11-23, updated 2026-11-24 (twice). It has three parts:
 
 1. The read queries the Temporal screens of Studio send, how long each takes today, and how fast each must be.
 2. How Temporal's own product answers the same queries, from its public documentation and source code.
@@ -8,7 +8,9 @@ Written 2026-11-23, updated 2026-11-24. It has three parts:
 
 Facts about `slate-temporal-next` are from its `origin/main` at `264fb3e4` (2026-11-24). The hosted demo runs `3eed2002`, which is 174 commits older and still answers lists and counts with a scan. Every time in section 2 is from that older build. Section 5 lists what I did not verify.
 
-The update of 2026-11-24 adds: a second round of measurements on a larger namespace (section 2.5), three more queries (20 to 22), what Temporal offers on Workflow Types and code versions (section 3.7), the new state of the server (section 4.1), and proposals H to J for Workflow Types and their versions as metadata (section 4.3).
+The second update of 2026-11-24 adds section 4.8: every proposal checked against the server's `origin/main` at `c2bfee8a`, the changes that check forced, four gaps the earlier text did not cover, what Studio does on each kind of server, and the work packages with their state. Where 4.8 and an earlier section disagree, 4.8 is right.
+
+The first update of 2026-11-24 adds: a second round of measurements on a larger namespace (section 2.5), three more queries (20 to 22), what Temporal offers on Workflow Types and code versions (section 3.7), the new state of the server (section 4.1), and proposals H to J for Workflow Types and their versions as metadata (section 4.3).
 
 ## 1. Summary
 
@@ -18,6 +20,7 @@ The update of 2026-11-24 adds: a second round of measurements on a larger namesp
 - `slate-temporal-next` has a plan with the same shape (`docs/scaling/visibility-records.md`, "P2-10"): one record per run in Temporal's order, counters per status, filled by a feed after the state change. On 2026-11-23 its readers and the switch merged to `main`, so `main` no longer scans. Its cost check has missed twice, and the hosted demo does not run it yet.
 - That plan fixes the count per status and the order of the rows. The other slow queries need additions that the plan does not have: closed runs grouped by status, counters and index rows by Workflow Type and Task Queue, a Workflow ID prefix index, and an index of runs with problems.
 - Temporal has no call that lists the Workflow Types of a namespace or describes what a type does. Studio now draws a diagram of each type and fills the Start Workflow form from the histories of sampled runs. A small catalogue of types, and the code version of each run, would make both exact and cheap (proposals H and I).
+- **At 10 million runs** the default Executions list, one run, the runs of one Workflow ID and the Cluster screen stay fast. Text search, a filter on a Workflow Type, a Task Queue or a rare status, the count of such a filter, the lists of types and queues, and Attention do not: each stops at the server's limit of examined records and then shows too little or fails. Section 4.8 is the plan that fixes them, with its write cost.
 - Studio offers four things that Temporal's product does not: sorting by any column, lists of the values in use, a list of Task Queues, and the Needs Attention screen. There is no upstream design to copy for these. Section 4 proposes one for each.
 
 ## 2. The queries
@@ -312,7 +315,7 @@ These follow from the server changes and belong in this repository:
 | H: catalogue of Workflow Types                  | 10, 14, 20, 21                | B, and an admin API call   |
 | I: code version of each run                     | 20, per version               | H for the per-version rows |
 
-E, F and G do not depend on the Visibility plan and can start now. `main` is frozen for code until the plan's cost gate is decided, so none of these can merge before that.
+E, F and G do not depend on the Visibility plan. Section 4.8.5 replaces this table: it has the packages as they are built, and 4.8.6 says what must happen before one can merge.
 
 ### 4.7 Additional Temporal-side improvements from the Studio review
 
@@ -333,6 +336,111 @@ The review of Studio's Temporal Workbench identified five capabilities that are 
 5. **Operational workflow and activity RPCs in `slate-temporal-next`.**
    Studio already wires `ResetWorkflowExecution`, `PauseWorkflowExecution`, `UnpauseWorkflowExecution`, `PauseActivity`, `UnpauseActivity`, `ResetActivity`, and `StartBatchOperation` behind capability flags. Implementing them in `slate-temporal-next` unlocks inline remediation in Needs Attention, activity controls in the Debugger, and server-side batch jobs without client-side fan-out.
 
+### 4.8 The plan for 10 million runs, checked against `main` (2026-11-24)
+
+Two readers checked sections 4.3 to 4.7 against the server's `origin/main` at `c2bfee8a` and its active branches. This section holds what changed, the four gaps, the work packages and what Studio does on each server. File names are in the server repository; `M` is `crates/model/src`, `S` is `crates/server/src`.
+
+#### 4.8.1 What the server does today
+
+- **Keys.** `vis_due` is the feed's queue. `vis` holds the counters, then open runs newest first, then closed runs by close time. `vis_run` holds one row per run in Workflow ID order (`M/keys.rs`). These layouts are frozen: only additive proto fields and new key spaces are allowed without a migration or a reset.
+- **Writes per run.** The run's own batch adds one `vis_due` row on a visible change. A job on the partition's home shard then writes the rows and the counters. Per run that is 2 puts and 2 deletes at the source and 4 row puts, 1 delete and up to 3 counter puts at the home: about 2 KB, 6% more process CPU and 0.38 ms more CPU a start.
+- **The cost gate is already missed.** The gate allows 1% of starts refused at 150 starts a second. `main` measures 1.651%, and the priced month is 7.06% higher. Any proposal that adds writes per run starts from there.
+- **Counters.** By status only. Open runs have one row; closed runs have one row per hour of their retention end, so they expire.
+- **Limits.** 8 Visibility calls at once per server and 4 per project. A page examines 10,000 records, a count 100,000. One read partition per namespace.
+- **What narrows a read.** A status picks the section, `CloseTime` bounds the closed range, and `WorkflowId =` or `IN` reads the `vis_run` rows. Nothing else narrows.
+- **Cold tier.** A closed row and its `vis_run` row move to the cold tier 10 minutes after the close. Every new row kind for closed runs needs the same move and the same deletion at the end of retention.
+
+#### 4.8.2 Changes to proposals A to J
+
+| Proposal                      | Verdict                 | What changes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A, status in the closed key   | Changed                 | The closed key is frozen, and the mover, the hourly job, the cold merge and the page token all read it. Build A as index rows in C's key space for closes that are not Completed. A Completed run then costs no extra write, and Failed, Timed Out, Canceled, Terminated and Continued as New each become one range.                                                                                                                                                                                                                                                     |
+| B, counters by type and queue | Changed                 | Key the counter by the pair (Workflow Type, Task Queue), not once by type and once by queue. That is 1 counter update at a start and 2 at a close, where two separate counters cost 2 and 4. A count for one type or one queue sums a few rows. Closed counters are per hour, like the status counters, so they expire. Runs applied before B are not counted: the `vis_run` row gets an additive "counted" mark, and the counts are short for one Retention Period after the deploy. Stop at 1,000 distinct pairs per namespace and report that the list is incomplete. |
+| C, index by type and queue    | Changed, larger         | Index open runs too (gap 1 below). One new key space under the namespace and partition: attribute, value, then the same tail as the `vis` row, so the page token and the point read of the record work unchanged. Rows hold no value, only the key. The mover, the hourly job and the cold tier's prefix rule must each learn the key space. This is the largest package.                                                                                                                                                                                                |
+| D, Workflow ID prefix         | Kept                    | One key-only row per run, lower-case Workflow ID then run ID, with the lifecycle of the `vis_run` row. A full Run ID needs no row: Studio finds a run by ID through `DescribeWorkflowExecution` when the text is a UUID. A Workflow Type prefix is answered from B's counters.                                                                                                                                                                                                                                                                                           |
+| E, problems index             | Changed                 | The feed reads only the run record, so the record gets a small summary: has a retrying Activity, has a failing Workflow Task. Only a change of that summary is a visible change, so a run without problems pays nothing. Listing uses an index row for open runs in C's key space. `TemporalReportedProblems` becomes a reserved attribute that a Workflow can no longer set.                                                                                                                                                                                            |
+| F, `DescribeTaskQueue`        | Kept                    | The matcher keeps the latest poll time and the oldest task age per queue. Add poller identities and add and dispatch rates, in memory only. In a cell of several servers the call asks each server.                                                                                                                                                                                                                                                                                                                                                                      |
+| G, reverse history            | Kept, small             | Events are keyed by event ID, so the last page is a range read. No write.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| H, catalogue of types         | Dropped as a stored row | A stored row per type would be rewritten twice per run. Serve the same facts from B and C: `CountWorkflowExecutions` with `GROUP BY WorkflowType` (and `TaskQueue`) for the values and counts, and one page of C's index for the newest runs of a type and status. Both stay inside the Temporal API and the project's API key, so Studio needs no admin route.                                                                                                                                                                                                          |
+| I, code version               | Changed                 | The run record already holds the Build IDs (`auto_reset_points`), and `DescribeWorkflowExecution` returns them; the earlier text was wrong. Copy them into the Visibility record without making that a visible change, so a run pays nothing extra and an open run shows a new Build ID at its next visible change. Add the filter to the parser.                                                                                                                                                                                                                        |
+| J, step counts                | Still not proposed      | No change.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+
+The items of section 4.7:
+
+- **Task Queue and Overlap Policy on `ListSchedules`**: not possible inside the Temporal API. `ScheduleListInfo` has no such fields. Studio keeps its `DescribeSchedule` per row, 8 at a time.
+- **Incremental history**: the server already supports `wait_new_event` and returns a token that continues an open run's history. Upstream has no "after event" field. This is a Studio change: keep the token and read only the new events.
+- **Operational calls** (Reset, Pause and Unpause of a Workflow, Pause, Unpause and Reset of an Activity, batch operations): all unimplemented, and the server's plan leaves them out on purpose. They do not affect scale. Order when built: Activity controls, Reset, then Workflow pause (after B, because the counters treat every open run as Running) and batch.
+
+#### 4.8.3 The four gaps
+
+1. **Namespaces with many open runs.** A Workflow that models an entity, such as a subscription, stays open. A namespace of 10 million runs can hold 100,000 to 500,000 open ones. A type filter then reads the open section 10,000 records a page, and a count fails above 100,000. B answers the count. C must write its index row at the start of a run and delete it at the close: 2 puts at the start and 2 deletes at the close for type and queue, with keys taken from the feed's operation and no read.
+2. **Write cost, and a second store.**
+   - As first proposed, A to I take a run's Visibility writes from about 12 to about 35 and its bytes from about 2 KB to 6 to 10 KB. That is 7 to 14% more write-ahead log per run and about twice the point reads at the home shard, on a gate that already misses. These figures are estimates from row sizes.
+   - The lean form of 4.8.2 (pair counters, key-only index rows, no stored catalogue, Build IDs without a visible change) is about 8 puts, 5 deletes and 3 reads per run, about 1.3 KB.
+   - A second store on the same machine saves no CPU, and the rows need the `vis_run` row's version to stay idempotent. Keep them in the home's apply job. A separate store pays off only when it runs on other machines; that is a later decision, not part of this plan.
+   - The index needs its own cost measurement before its readers are built. If the lean form still fails the gate, build B and D first: they answer the counts, the lists of types and queues and the text search, and leave the type filter on rare types slow.
+3. **One Visibility partition.** More partitions do not make a Studio query faster: a list merges them and splits its budget of examined records between them. They raise how fast the home applies changes in a cell of several servers. The other agent's branch `p2-10-step-9` builds them. Every new row of this plan sits under the namespace and the partition, so it follows that work with no change of design.
+4. **Many users polling.** A page holds one of 8 places for up to 10 seconds and a count for up to 30, so eight slow counts block every project. Two changes:
+   - Server: a separate, larger pool for calls with a known small cost (counter reads, one index range, a read by Workflow ID), so they do not wait behind scans.
+   - Studio: its server answers identical polls from one request. With N browsers on the same list, the Temporal server sees one call per interval, not N. This also keeps Studio under Temporal Cloud's limit of 30 calls a second per namespace.
+
+#### 4.8.4 What Studio does on each server
+
+Studio must work on a standard Temporal server, on Temporal Cloud, and on `slate-temporal-next` with and without these additions. It asks the server what it can do and never assumes.
+
+| Studio need                          | Standard server and Temporal Cloud                                                                         | `slate-temporal-next` today                    | `slate-temporal-next` with this plan                          | How Studio finds out                                                                                                                                   |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Filter by type, queue or status      | Fast: every attribute is indexed                                                                           | Stops at 10,000 examined records a page        | Fast (A, C)                                                   | It does not need to: the same filter is sent. A short page with a token is shown as "more may exist", not as empty                                     |
+| Count for a filter                   | Works; approximate on Elasticsearch                                                                        | Fails above 100,000 examined records           | Exact for type, queue, status (B); other filters still capped | A failed count shows "more than 100,000", never 0                                                                                                      |
+| Types and queues in use, with counts | No call exists: Studio samples runs                                                                        | Samples runs                                   | `GROUP BY WorkflowType` and `TaskQueue` on Count              | One probe per connection. A refusal selects the sample, and the screen says the list comes from a sample                                               |
+| Text search on the Workflow ID       | Fast                                                                                                       | Narrows nothing                                | Fast (D)                                                      | Same filter. Studio sends the three `STARTS_WITH` conditions as three calls and merges them                                                            |
+| Runs with problems                   | `TemporalReportedProblems` finds failing Workflow Tasks on recent servers; no call for retrying Activities | A describe call per running run, 1,500 at most | One list filter (E)                                           | One probe. Without it Studio keeps the check of at most 1,500 runs, runs it only while the Attention screen is open, and says how many runs it checked |
+| Pollers and backlog of a queue       | `DescribeTaskQueue`                                                                                        | Unimplemented                                  | `DescribeTaskQueue` (F)                                       | `supportsDescribeTaskQueue`, from the first call                                                                                                       |
+| Newest events of a long history      | `GetWorkflowExecutionHistoryReverse`                                                                       | Unimplemented                                  | Implemented (G)                                               | The call is tried once and remembered                                                                                                                  |
+| Runs of one code version             | Search Attribute filter                                                                                    | Not filterable                                 | Filter on Build IDs (I)                                       | One probe; without it Studio groups its sample                                                                                                         |
+| Sort by a column                     | Refused                                                                                                    | Refused                                        | Refused (4.4)                                                 | Studio sorts its own copy of up to 10,000 matches and says when it cannot                                                                              |
+
+Rules that hold on every server:
+
+- A capability is found by one cheap call per connection and kept in `TemporalCapabilities`. A refusal (`UNIMPLEMENTED` or `INVALID_ARGUMENT`) selects the fallback. It is never shown as an error.
+- A fallback that reads a sample says so on the screen, with the size of the sample.
+- No screen polls a call that costs the server a scan while that screen is not open.
+
+#### 4.8.5 Work packages
+
+One package is one branch and one implementer. Packages that share files run in order.
+
+| Package | Holds                                                                                                                                                                          | Depends on                                                           | Write cost                                | State on 2026-11-24               |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- | ----------------------------------------- | --------------------------------- |
+| P-G     | G, reverse history                                                                                                                                                             | Nothing                                                              | None                                      | Started                           |
+| P-F     | F, `DescribeTaskQueue` with statistics                                                                                                                                         | Nothing                                                              | None (memory only)                        | Started                           |
+| P-V1    | B, C with open rows, A as index rows, D: the model crate first (keys, apply operations, read plans, `GROUP BY`), then the server (feed, readers, mover, hourly job, cold tier) | The server part waits for `p2-10-step-9`, which rewrites the readers | The lean form of gap 2; its own cost legs | Model part started                |
+| P-V2    | I, then E: the record's Build IDs and problem summary, their index rows and filters                                                                                            | P-V1's write side                                                    | None on the normal path                   | Not started                       |
+| P-Q     | The separate pool for cheap Visibility calls (gap 4)                                                                                                                           | `p2-10-step-9`                                                       | None                                      | Not started                       |
+| P-O     | Activity controls, Reset, Workflow pause, batch                                                                                                                                | Workflow pause waits for B                                           | None                                      | Not started; not needed for scale |
+
+#### 4.8.6 What stands between a branch and `main`
+
+These are the server repository's own rules, as its documents state them on 2026-11-24.
+
+- `main` is frozen for code while the cost campaign C3 runs. After it, the one build slot is booked until 2026-11-26 22:00 UTC, and the plan closes on 2026-11-27.
+- One agent, the plan's orchestrator, makes every merge, by direct push and never by pull request. It works on another machine.
+- A code change must pass four gates there: `./dev check` (about 34 minutes), `./dev test-storage`, `./dev test-one-shard` and `./dev test-two-shard`. A change to a write path must also pass cost legs on a 1 vCPU machine, before and after, at 150 starts a second.
+- The gates need a full build of the workspace and 150 GiB of free disk. The machine this plan was written on has 42 GiB, so here a package can compile and test the model crate and type-check the server, and no more.
+- Each item needs its own record (`docs/cost/<item>/steps.md`), a row in the plan, tests whose guarded lines are reverted to show the test fails, and its design decisions recorded with ids.
+- The plan leaves the unimplemented calls of the compatibility inventory out on purpose, and says a prefix index "is not planned". Adding these packages to the plan is the owner's decision.
+
+So the branches of 4.8.5 are prepared up to the gates. They reach `main` when the owner adds them to the server's plan and its orchestrator runs the gates and merges them, read-only calls first.
+
+#### 4.8.7 Studio changes that need no server change
+
+These come from the same review and can be built now:
+
+- Answer identical polls from one request in Studio's server (gap 4).
+- Run the Attention check only while its screen is open, and take the sidebar badge from the last result.
+- Keep the history token of an open run and read only new events (4.8.2).
+- Show a short page that has a token as "more may exist", and a failed count as "more than 100,000".
+
 ## 5. Not verified
 
 - I measured through the Studio server, not at the Temporal server. The times include the Studio server's own work.
@@ -346,6 +454,10 @@ The review of Studio's Temporal Workbench identified five capabilities that are 
 - The facts in section 3.7 about Temporal's API come from its proto files and documentation as a fetch tool read them for me on 2026-11-24. I did not read those pages myself. The last part of the Workflow service file was read as a summary, not word for word.
 - I did not check that the histories on the hosted demo carry a Build ID. The server's code keeps the stamp a Worker sends; whether the demo's Workers send one is not checked.
 - The costs of H and I are estimates, like those of A to E.
+- Section 4.8 rests on two readers' reports of the server's code at `c2bfee8a`, with file and line for each claim. I did not read those lines myself. The write counts and sizes of the lean form are estimates from row sizes, not measurements.
+- Whether the lean form passes the server's cost gate is not known. `main` misses that gate before any of this is added.
+- I did not check which key-space bytes and proto field numbers are free on `main` and on `p2-10-step-9`. The implementer of P-V1 claims them and records the claim.
+- What a standard server's `TemporalReportedProblems` holds, and from which version, is taken from its documentation, not tested.
 
 ## 6. Sources
 
@@ -379,6 +491,13 @@ Temporal source code:
 - [Worker messages, with the heartbeat](https://github.com/temporalio/api/blob/master/temporal/api/worker/v1/message.proto)
 - [Workflow messages, with the versioning info](https://github.com/temporalio/api/blob/master/temporal/api/workflow/v1/message.proto)
 - [Release notes of server 1.29](https://github.com/temporalio/temporal/releases/tag/v1.29.0)
+
+`slate-temporal-next` at `c2bfee8a`, for section 4.8:
+
+- `crates/model/src/keys.rs`, `crates/model/src/visibility/{apply,read,parse,moves}.rs`, `crates/server/src/visibility.rs`, `crates/server/src/visibility/{feed,reader,moves}.rs`: the keys, the feed, the readers, the limits and the move to the cold tier.
+- `crates/server/src/matcher.rs`, `crates/server/src/reads.rs`, `crates/model/src/{activity,workflow_task}.rs`: pollers and task ages, history reads, and where a retry and a failed Workflow Task are recorded.
+- `docs/scaling/five-day-plan.md`, `docs/cost/p2-10/steps.md`, `docs/testing.md`, `HANDOFF.md`: the freeze, the gates, the cost results and who merges.
+- Branch `p2-10-step-9`: Visibility partitions.
 
 `slate-temporal-next` at `264fb3e4`:
 
