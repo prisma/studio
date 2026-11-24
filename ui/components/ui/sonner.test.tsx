@@ -29,13 +29,23 @@ afterEach(() => {
   container.remove();
 });
 
-async function renderErrorToast() {
+async function wait(milliseconds: number) {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, milliseconds));
+  });
+}
+
+async function renderErrorToast(options: { duration?: number } = {}) {
   act(() => {
     root.render(<Toaster />);
   });
 
   await act(async () => {
-    toast.error("operation failed", { description: "message", id: "error" });
+    toast.error("operation failed", {
+      description: "message",
+      id: "error",
+      ...options,
+    });
     await new Promise((resolve) => setTimeout(resolve, 20));
   });
 
@@ -57,12 +67,33 @@ function setContentHeight(
   }
 }
 
-function pressPointer(element: HTMLElement) {
+function firePointer(
+  element: HTMLElement,
+  type: "pointerdown" | "pointermove" | "pointerup",
+  init: PointerEventInit = {},
+) {
   act(() => {
     element.dispatchEvent(
-      new PointerEvent("pointerdown", { bubbles: true, button: 0 }),
+      new PointerEvent(type, {
+        bubbles: true,
+        button: 0,
+        pointerType: "mouse",
+        buttons: type === "pointerup" ? 0 : 1,
+        ...init,
+      }),
     );
   });
+}
+
+function dragDown(element: HTMLElement, pointerType = "mouse") {
+  firePointer(element, "pointerdown", { clientY: 0, pointerType });
+  // Sonner locks the swipe direction on the first move and applies it next.
+  firePointer(element, "pointermove", { clientY: 10, pointerType });
+  firePointer(element, "pointermove", { clientY: 30, pointerType });
+}
+
+function getSwipeAmount(toastElement: HTMLElement) {
+  return toastElement.style.getPropertyValue("--swipe-amount-y");
 }
 
 describe("Toaster", () => {
@@ -75,30 +106,83 @@ describe("Toaster", () => {
     expect(description.closest(".ps")).not.toBeNull();
   });
 
-  it("does not start a swipe from a description that overflows", async () => {
+  it("does not swipe when dragging a description that overflows", async () => {
     const { description, toastElement } = await renderErrorToast();
     setContentHeight(description, { clientHeight: 100, scrollHeight: 500 });
 
-    pressPointer(description);
+    dragDown(description);
 
-    expect(toastElement.dataset.swiping).toBe("false");
+    expect(getSwipeAmount(toastElement)).toBe("");
   });
 
-  it("keeps swipe-to-dismiss on a description that fits", async () => {
+  it("swipes when dragging a description that fits", async () => {
     const { description, toastElement } = await renderErrorToast();
     setContentHeight(description, { clientHeight: 100, scrollHeight: 100 });
 
-    pressPointer(description);
+    dragDown(description, "touch");
 
-    expect(toastElement.dataset.swiping).toBe("true");
+    expect(getSwipeAmount(toastElement)).toBe("30px");
   });
 
-  it("keeps swipe-to-dismiss on the title of an overflowing toast", async () => {
+  it("leaves touch panning to the toast so presses are never cancelled", async () => {
+    const { description } = await renderErrorToast();
+
+    // A native pan would end the press with `pointercancel`, which Sonner
+    // ignores: the toast would stay in its pressed state and never close.
+    expect(description.classList).toContain("touch-none");
+  });
+
+  it("swipes when dragging the title of an overflowing toast", async () => {
     const { description, toastElement } = await renderErrorToast();
     setContentHeight(description, { clientHeight: 100, scrollHeight: 500 });
 
-    pressPointer(toastElement.querySelector<HTMLElement>("[data-title]")!);
+    dragDown(toastElement.querySelector<HTMLElement>("[data-title]")!);
 
-    expect(toastElement.dataset.swiping).toBe("true");
+    expect(getSwipeAmount(toastElement)).toBe("30px");
+  });
+
+  it("scrolls an overflowing description by touch", async () => {
+    const { description } = await renderErrorToast();
+    setContentHeight(description, { clientHeight: 100, scrollHeight: 500 });
+
+    firePointer(description, "pointerdown", {
+      clientY: 90,
+      pointerType: "touch",
+    });
+    firePointer(description, "pointermove", {
+      clientY: 70,
+      pointerType: "touch",
+    });
+    firePointer(description, "pointermove", {
+      clientY: 40,
+      pointerType: "touch",
+    });
+
+    expect(description.scrollTop).toBe(50);
+  });
+
+  it("does not drag-scroll with a mouse, so text stays selectable", async () => {
+    const { description } = await renderErrorToast();
+    setContentHeight(description, { clientHeight: 100, scrollHeight: 500 });
+
+    firePointer(description, "pointerdown", { clientY: 90 });
+    firePointer(description, "pointermove", { clientY: 40 });
+
+    expect(description.scrollTop).toBe(0);
+  });
+
+  it("stays open while an overflowing description is pressed", async () => {
+    const { description, toastElement } = await renderErrorToast({
+      duration: 150,
+    });
+    setContentHeight(description, { clientHeight: 100, scrollHeight: 500 });
+
+    firePointer(description, "pointerdown", { pointerType: "touch" });
+    await wait(400);
+    expect(toastElement.isConnected).toBe(true);
+
+    firePointer(description, "pointerup", { pointerType: "touch" });
+    await wait(400);
+    expect(toastElement.isConnected).toBe(false);
   });
 });

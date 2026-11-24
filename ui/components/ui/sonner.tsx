@@ -1,26 +1,47 @@
+import { useRef } from "react";
 import { Toaster as Sonner } from "sonner";
 
 // import { useTheme } from "@/ui/studio/util/theme-provider";
 
 type ToasterProps = React.ComponentProps<typeof Sonner>;
 
-/**
- * Sonner treats every pointer drag inside a toast as a swipe-to-dismiss. Keep
- * the gesture away from descriptions that overflow, so dragging their scrollbar,
- * touch-scrolling or selecting text doesn't dismiss the toast.
- */
-function preventSwipeOnScrollableDescription(
-  event: React.PointerEvent<HTMLElement>,
-) {
-  const description = (event.target as Element).closest("[data-description]");
+function getScrollableDescription(target: EventTarget) {
+  const description = (target as Element).closest("[data-description]");
 
-  if (description && description.scrollHeight > description.clientHeight) {
-    event.stopPropagation();
-  }
+  return description && description.scrollHeight > description.clientHeight
+    ? description
+    : null;
 }
 
 const Toaster = ({ ...props }: ToasterProps) => {
   // const { theme = "system" } = useTheme();
+  const lastPointerY = useRef(0);
+
+  function trackPointer(event: React.PointerEvent) {
+    lastPointerY.current = event.clientY;
+  }
+
+  /**
+   * Sonner swipes the toast on every drag. Drags on a description that overflows
+   * scroll it (touch, pen) or use its scrollbar and text (mouse) instead. Only
+   * moves are kept from Sonner: it pauses the close timer between press and
+   * release.
+   */
+  function scrollInsteadOfSwipe(event: React.PointerEvent) {
+    const description = getScrollableDescription(event.target);
+
+    if (!description) {
+      return;
+    }
+
+    event.stopPropagation();
+
+    if (event.pointerType !== "mouse" && event.buttons > 0) {
+      description.scrollTop += lastPointerY.current - event.clientY;
+    }
+
+    trackPointer(event);
+  }
 
   return (
     // The toaster renders outside the Studio root, so it needs its own `.ps`
@@ -28,7 +49,8 @@ const Toaster = ({ ...props }: ToasterProps) => {
     // own selectors are as specific as the scoped utilities.
     <div
       className="ps"
-      onPointerDownCapture={preventSwipeOnScrollableDescription}
+      onPointerDownCapture={trackPointer}
+      onPointerMoveCapture={scrollInsteadOfSwipe}
     >
       <Sonner
         // theme={theme as ToasterProps["theme"]}
@@ -38,7 +60,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
             toast:
               "group toast group-[.toaster]:bg-background group-[.toaster]:text-foreground group-[.toaster]:border-border group-[.toaster]:shadow-lg",
             description:
-              "group-[.toast]:text-muted-foreground! max-h-[20dvh] overflow-y-auto overscroll-contain touch-pan-y",
+              "group-[.toast]:text-muted-foreground! max-h-[20dvh] overflow-y-auto overscroll-contain touch-none",
             actionButton:
               "group-[.toast]:bg-primary! group-[.toast]:text-primary-foreground!",
             cancelButton:
