@@ -10,6 +10,7 @@ import {
   runPathOnTypeMap,
   timerProgress,
   typeMapNeighbours,
+  typeMapNodeIdOfSpan,
   typeMapStepId,
 } from "./type-map";
 import type {
@@ -96,24 +97,174 @@ describe("buildTypeMap", () => {
     ]);
   });
 
-  it("gives a step the summary the Workflow code gave it most often", () => {
+  it("makes a node per summary when one Activity is several business steps, named by the summary", () => {
     const charged = (id: string, userSummary?: string) =>
       run(id, "Completed", [
         step("chargePayment", 5, 7, userSummary ? { userSummary } : {}),
       ]);
     const map = buildTypeMap([
       charged("order-1", "Charge the card on file"),
-      charged("order-2", "Charge the card on file"),
+      charged("order-2", "Charge  the card\non file"),
       charged("order-3", "Charge a saved wallet"),
       charged("order-4"),
     ]);
+    const node = (id: string) => map.nodes.find((each) => each.id === id);
+
+    // Whitespace is one space, so a line break in a summary is the same step.
+    expect(
+      node("activity:chargePayment:Charge the card on file"),
+    ).toMatchObject({
+      implementation: "chargePayment",
+      label: "Charge the card on file",
+      runCount: 2,
+    });
+    expect(node("activity:chargePayment:Charge a saved wallet")?.runCount).toBe(
+      1,
+    );
+    // An execution with no summary keeps the Activity Type as its name.
+    expect(node("activity:chargePayment")).toMatchObject({
+      label: "chargePayment",
+      runCount: 1,
+    });
+    expect(map.splitSteps).toEqual(["activity:chargePayment"]);
+  });
+
+  it("keeps one node when an Activity's summaries name single executions, not steps", () => {
+    const map = buildTypeMap(
+      Array.from({ length: 8 }, (_, index) =>
+        run(`order-${index}`, "Completed", [
+          step("chargePayment", 5, 7, {
+            userSummary: `Charge order ${index}`,
+          }),
+        ]),
+      ),
+    );
+
+    expect(map.nodes.map((node) => node.id)).toEqual([
+      "start",
+      "activity:chargePayment",
+      "end:Completed",
+    ]);
+    expect(map.splitSteps).toEqual([]);
+  });
+
+  it("names a Timer by its summary, whatever it waits, and never merges a named Timer", () => {
+    const map = buildTypeMap(
+      [3_000, 7_000, 11_000, 13_000, 17_000].map((timerMs, index) =>
+        run(`invoice-${index}`, "Completed", [
+          step("Timer: 1", 5, 7, {
+            kind: "timer",
+            timerMs,
+            userSummary: "Wait for payment until the block date",
+          }),
+          step("Timer: 2", 9, 11, { kind: "timer", timerMs }),
+        ]),
+      ),
+    );
+
+    expect(map.nodes.map((node) => node.id)).toEqual([
+      "start",
+      "timer:Wait for payment until the block date",
+      "timer:Timer",
+      "end:Completed",
+    ]);
+  });
+
+  it("lists Signals and Updates as inputs on the step the run was at, not as steps", () => {
+    const paidWhileWaiting = run("invoice-1", "Completed", [
+      step("Timer: 1", 5, 9, {
+        kind: "timer",
+        userSummary: "Wait for payment",
+      }),
+      step("Signal: invoicePaid", 7, 7, { kind: "signal" }),
+      step("markResolved", 11, 13),
+    ]);
+    const paidLate = run("invoice-2", "Completed", [
+      step("Timer: 1", 5, 9, {
+        kind: "timer",
+        userSummary: "Wait for payment",
+      }),
+      step("Signal: invoicePaid", 10, 10, { kind: "signal" }),
+      step("Update: extendGracePeriod", 4, 4, { kind: "update" }),
+      step("markResolved", 11, 13),
+    ]);
+    const map = buildTypeMap([paidWhileWaiting, paidLate]);
+
+    expect(map.nodes.map((node) => node.kind)).not.toContain("signal");
+    expect(edgesOf(map)).toEqual([
+      "activity:markResolved > end:Completed (2)",
+      "start > timer:Wait for payment (2)",
+      "timer:Wait for payment > activity:markResolved (2)",
+    ]);
+    expect(map.messages).toEqual([
+      { kind: "signal", name: "invoicePaid", runCount: 2 },
+      { kind: "update", name: "extendGracePeriod", runCount: 1 },
+    ]);
+    // Paid during the wait, or after it ended: both at the wait. The Update came before any step.
+    expect(
+      map.nodes.find((node) => node.id === "timer:Wait for payment")?.messages,
+    ).toEqual([{ kind: "signal", name: "invoicePaid", runCount: 2 }]);
+  });
+
+  it("splits Completed by the business outcome in the result, and keeps a run without one apart", () => {
+    const closed = (id: string, result?: unknown) => ({
+      ...run(id, "Completed", [step("settle", 5, 7)]),
+      ...(result === undefined ? {} : { result }),
+    });
+    const map = buildTypeMap([
+      closed("invoice-1", { status: "resolved" }),
+      closed("invoice-2", { status: "resolved" }),
+      closed("invoice-3", { status: "abandoned" }),
+      // A history longer than the server reads has no result.
+      closed("invoice-4"),
+    ]);
+    const ends = map.nodes
+      .filter((node) => node.kind === "end")
+      .map((node) => [node.id, node.outcome ?? null, node.runCount]);
+
+    expect(map.outcomeField).toBe("status");
+    expect(ends).toEqual([
+      ["end:Completed", null, 1],
+      ["end:Completed:abandoned", "abandoned", 1],
+      ["end:Completed:resolved", "resolved", 2],
+    ]);
+
+    // With one outcome only there is nothing to tell apart.
+    const same = buildTypeMap([
+      closed("invoice-1", { status: "resolved" }),
+      closed("invoice-2", { status: "resolved" }),
+    ]);
+
+    expect(same.outcomeField).toBeUndefined();
+    expect(same.nodes.at(-1)?.id).toBe("end:Completed");
+  });
+
+  it("draws one run with the rules of the diagram it is merged into", () => {
+    const sampled = buildTypeMap([
+      run("invoice-1", "Completed", [
+        step("notify", 5, 7, { userSummary: "Send the first warning" }),
+        step("notify", 9, 11, { userSummary: "Send the resolved notice" }),
+      ]),
+    ]);
+    const one = run("invoice-2", "Running", [
+      step("notify", 5, 7, { userSummary: "Send the first warning" }),
+      step("notify", 9, 11, { userSummary: "Send the blocked notice" }),
+    ]);
+    const merged = mergeRunIntoTypeMap(sampled, one);
 
     expect(
-      map.nodes.find((node) => node.id === "activity:chargePayment")?.summary,
-    ).toBe("Charge the card on file");
-    expect(
-      map.nodes.find((node) => node.id === "end:Completed")?.summary,
-    ).toBeUndefined();
+      merged.nodes
+        .filter((node) => node.kind === "activity")
+        .map((node) => [node.label, node.runCount]),
+    ).toEqual([
+      ["Send the first warning", 1],
+      ["Send the resolved notice", 1],
+      ["Send the blocked notice", 0],
+    ]);
+    // A diagram from a server that did not split keeps one node per Activity.
+    const { splitSteps: _split, ...older } = sampled;
+
+    expect(typeMapStepId(one.spans[1]!, older)).toBe("activity:notify");
   });
 
   it("counts on each arrow the runs that took it, and shows where a failed run left the others", () => {
@@ -341,7 +492,7 @@ describe("runMomentOnTypeMap", () => {
     expect(end.later).toEqual([]);
   });
 
-  it("offers a step that other runs started while the current step was open", () => {
+  it("offers what other runs did next while the current step was open, with no step for a Signal", () => {
     // In one run the approval arrives while the Timer runs; in the other the Timer fires.
     const approved = run("order-5", "Completed", [
       step("Timer: 1", 5, 9, { kind: "timer", timerMs: 1_800_000 }),
@@ -356,20 +507,15 @@ describe("runMomentOnTypeMap", () => {
     ]);
     const approvalMap = buildTypeMap([approved, timedOut]);
 
-    expect(approvalMap.during).toEqual([
-      {
-        at: "timer:Timer 30m",
-        runCount: 1,
-        starts: "signal:Signal: approveOrder",
-      },
-    ]);
+    expect(approvalMap.during).toEqual([]);
     expect(
       Object.keys(runMomentOnTypeMap(waiting, approvalMap, null).next).sort(),
-    ).toEqual([
-      "activity:chargePayment",
-      "end:Canceled",
-      "signal:Signal: approveOrder",
-    ]);
+    ).toEqual(["activity:chargePayment", "end:Canceled"]);
+    // At the Signal, the diagram shows the step the run was at.
+    expect(typeMapNodeIdOfSpan(approved, approved.spans[1]!, approvalMap)).toBe(
+      "timer:Timer 30m",
+    );
+    expect(typeMapStepId(approved.spans[1]!, approvalMap)).toBeNull();
   });
 
   it("offers the possible next steps of an open run", () => {
@@ -565,5 +711,19 @@ describe("extractRunBuildId", () => {
     ).toBe("billing:v2");
 
     expect(extractRunBuildId([])).toBeUndefined();
+  });
+
+  it("reads the Build ID that SDK Workers without Worker Versioning report", () => {
+    expect(
+      extractRunBuildId([
+        {
+          attributes: { workerVersion: { buildId: "929c37c5df16" } },
+          eventId: 4,
+          eventTime: "2026-11-23T10:00:00.000Z",
+          eventType: "WorkflowTaskCompleted",
+          offsetMs: 0,
+        },
+      ]),
+    ).toBe("929c37c5df16");
   });
 });

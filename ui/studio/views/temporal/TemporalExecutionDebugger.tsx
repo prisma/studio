@@ -33,9 +33,11 @@ import type {
   TemporalTypeMapResponse,
 } from "@/data/temporal";
 import {
+  extractRunBuildId,
   mergeRunIntoTypeMap,
   runSteps,
   timerProgress,
+  typeMapNodeIdOfSpan,
   typeMapStepId,
 } from "@/data/temporal/type-map";
 import { Badge } from "@/ui/components/ui/badge";
@@ -254,11 +256,26 @@ export function TemporalExecutionDebugger(
     sampleSize: typeMapDraw.sampleSize,
     workflowType: needsTypeMap ? (data?.execution.workflowType ?? null) : null,
   });
+  // The diagram of the code version this run ran on, when the sample spans several.
+  const versionTypeMap = useMemo(() => {
+    const version =
+      typeMap.data && data
+        ? typeMap.data.versions?.find(
+            (item) =>
+              item.buildId ===
+              (extractRunBuildId(data.rawEvents) ?? "unversioned"),
+          )
+        : undefined;
+
+    return version && typeMap.data
+      ? { ...typeMap.data, ...version.map }
+      : typeMap.data;
+  }, [data, typeMap.data]);
   // The type's diagram with this run's own steps added, so every step of the run has a node.
   const runTypeMap = useMemo(
     () =>
-      typeMap.data && data ? mergeRunIntoTypeMap(typeMap.data, data) : null,
-    [data, typeMap.data],
+      versionTypeMap && data ? mergeRunIntoTypeMap(versionTypeMap, data) : null,
+    [data, versionTypeMap],
   );
   const steps = useMemo(() => (data ? runSteps(data) : []), [data]);
   const stepIndex = selectedSpanId
@@ -270,7 +287,11 @@ export function TemporalExecutionDebugger(
     setSelectedSpanId(spanId);
 
     const span = spanId ? spans.find((item) => item.id === spanId) : undefined;
-    const nodeId = span && runTypeMap ? typeMapStepId(span, runTypeMap) : null;
+    // A Signal or Update has no node; the diagram shows the step the run was at.
+    const nodeId =
+      span && runTypeMap && data
+        ? typeMapNodeIdOfSpan(data, span, runTypeMap)
+        : null;
 
     if (nodeId) {
       setDiagramNodeId(nodeId);
@@ -1078,11 +1099,11 @@ export function TemporalExecutionDebugger(
                     ]}
                     value={historyTab}
                   />
-                  {historyTab === "diagram" && runTypeMap && typeMap.data ? (
+                  {historyTab === "diagram" && runTypeMap && versionTypeMap ? (
                     <TemporalRunDiagramInfo
                       detail={data}
                       isRedrawing={typeMap.isFetching && typeMapDraw.redraw > 0}
-                      map={typeMap.data}
+                      map={versionTypeMap}
                       onRedraw={(sampleSize) =>
                         setTypeMapDraw((draw) => ({
                           redraw: draw.redraw + 1,
@@ -1217,7 +1238,7 @@ export function TemporalExecutionDebugger(
                   <TemporalRunDiagram
                     detail={data}
                     isError={typeMap.isError}
-                    map={typeMap.data}
+                    map={versionTypeMap}
                     onActiveSpanIdsChange={setDiagramSpanIds}
                     onRetry={() => void typeMap.refetch()}
                     onSelectNode={(nodeId) => {
@@ -1286,7 +1307,7 @@ export function TemporalExecutionDebugger(
                             supportsActivityOperations={
                               capabilities?.supportsActivityOperations === true
                             }
-                            typeMap={imported ? null : typeMap.data}
+                            typeMap={imported ? null : versionTypeMap}
                           />
                         );
                       })}

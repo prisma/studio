@@ -6,6 +6,7 @@ import type {
   TemporalRunRef,
   TemporalTypeMap,
   TemporalTypeMapEdge,
+  TemporalTypeMapMessage,
   TemporalTypeMapNode,
   TemporalTypeMapResponse,
   TemporalWorkflowExecution,
@@ -27,6 +28,7 @@ export function extractRunBuildId(
     const attrs = event.attributes as {
       deployment?: { buildId?: unknown; seriesName?: unknown };
       deploymentVersion?: { buildId?: unknown; deploymentName?: unknown };
+      workerVersion?: { buildId?: unknown };
       workerVersionStamp?: { buildId?: unknown };
     };
     const depVersion = attrs.deploymentVersion;
@@ -44,7 +46,7 @@ export function extractRunBuildId(
         : dep.buildId;
     }
 
-    const stamp = attrs.workerVersionStamp;
+    const stamp = attrs.workerVersion ?? attrs.workerVersionStamp;
     if (typeof stamp?.buildId === "string" && stamp.buildId) {
       return stamp.buildId;
     }
@@ -57,14 +59,58 @@ export { formatTimerLength };
 
 export const TYPE_MAP_START_ID = "start";
 
-/** With more distinct Timers than this, a type's Timers are one step. */
+/** With more distinct unnamed Timers than this, a type's unnamed Timers are one step. */
 const MAX_TIMER_STEPS = 4;
 const MAX_EXAMPLE_RUNS = 5;
+/**
+ * An Activity with more distinct summaries than this in the sample is one
+ * node: its summaries name single executions (an order ID), not business steps.
+ */
+const MAX_SUMMARIES_PER_STEP = 6;
+/** The result fields that can name a business outcome, in the order they are tried. */
+const OUTCOME_FIELDS = ["outcome", "status", "stage"] as const;
+const MAX_OUTCOMES = 5;
+const MAX_OUTCOME_LENGTH = 40;
 
-type RunForTypeMap = Pick<TemporalExecutionDetail, "execution" | "spans">;
+type RunForTypeMap = Pick<TemporalExecutionDetail, "execution" | "spans"> &
+  Partial<Pick<TemporalExecutionDetail, "result">>;
+
+/** How the spans of runs become nodes; stored on a diagram, so one run is drawn the same way. */
+interface TypeMapRules {
+  outcomeField?: string;
+  splitSteps: Set<string>;
+  timersMerged: boolean;
+}
+
+function rulesOf(
+  map: Pick<TemporalTypeMap, "outcomeField" | "splitSteps" | "timersMerged">,
+): TypeMapRules {
+  return {
+    ...(map.outcomeField ? { outcomeField: map.outcomeField } : {}),
+    // A diagram from an older server has no split steps.
+    splitSteps: new Set(map.splitSteps ?? []),
+    timersMerged: map.timersMerged,
+  };
+}
 
 function isStep(span: TemporalGroupedSpan): boolean {
   return span.kind !== "workflow" && span.kind !== "workflow-task";
+}
+
+/** A Signal or an Update: something a run receives, not a step it takes. */
+function isMessage(span: TemporalGroupedSpan): boolean {
+  return span.kind === "signal" || span.kind === "update";
+}
+
+function isFlowStep(span: TemporalGroupedSpan): boolean {
+  return isStep(span) && !isMessage(span);
+}
+
+/** A summary on one line, so it can be part of an ID. */
+function summaryOf(span: TemporalGroupedSpan): string | undefined {
+  const text = span.userSummary?.replace(/\s+/g, " ").trim();
+
+  return text ? text : undefined;
 }
 
 /**
@@ -73,24 +119,123 @@ function isStep(span: TemporalGroupedSpan): boolean {
  */
 function timerLabel(span: TemporalGroupedSpan): string {
   return (
-    span.userSummary ??
+    summaryOf(span) ??
     (span.timerMs ? `Timer ${formatTimerLength(span.timerMs)}` : "Timer")
   );
+}
+
+/** The node of an Activity or Child Workflow before any split by summary. */
+function baseStepId(span: TemporalGroupedSpan): string {
+  return `${span.kind}:${span.label}`;
 }
 
 /** The step of a diagram that a span of a run belongs to. */
 function stepOf(
   span: TemporalGroupedSpan,
-  timersMerged: boolean,
-): { id: string; label: string } {
-  const label =
-    span.kind !== "timer"
-      ? span.label
-      : timersMerged
-        ? "Timer"
-        : timerLabel(span);
+  rules: TypeMapRules,
+): { id: string; implementation?: string; label: string } {
+  if (span.kind === "timer") {
+    // A named Timer is a business step; unnamed ones merge when there are many lengths.
+    const label =
+      summaryOf(span) ?? (rules.timersMerged ? "Timer" : timerLabel(span));
 
-  return { id: `${span.kind}:${label}`, label };
+    return { id: `timer:${label}`, label };
+  }
+
+  const summary = summaryOf(span);
+  const base = baseStepId(span);
+
+  if (summary && rules.splitSteps.has(base)) {
+    return {
+      id: `${base}:${summary}`,
+      implementation: span.label,
+      label: summary,
+    };
+  }
+
+  return { id: base, label: span.label };
+}
+
+/** The end node of a closed run: its status, and its business outcome when the diagram splits by one. */
+function endOf(
+  run: RunForTypeMap,
+  rules: TypeMapRules,
+): { id: string; outcome?: string } {
+  const { status } = run.execution;
+  const outcome =
+    status === "Completed" && rules.outcomeField
+      ? outcomeValue(run.result, rules.outcomeField)
+      : undefined;
+
+  return outcome
+    ? { id: `end:${status}:${outcome}`, outcome }
+    : { id: `end:${status}` };
+}
+
+function outcomeValue(result: unknown, field: string): string | undefined {
+  if (typeof result !== "object" || result === null || Array.isArray(result)) {
+    return undefined;
+  }
+
+  const value = (result as Record<string, unknown>)[field];
+
+  return typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= MAX_OUTCOME_LENGTH &&
+    !/\s{2,}|\n/.test(value)
+    ? value
+    : undefined;
+}
+
+/** The rules a sample of runs is drawn with. */
+function rulesFor(runs: RunForTypeMap[]): TypeMapRules {
+  const unnamedTimers = new Set<string>();
+  const summaries = new Map<string, Set<string>>();
+
+  for (const run of runs) {
+    for (const span of run.spans) {
+      if (span.kind === "timer") {
+        if (!summaryOf(span)) {
+          unnamedTimers.add(timerLabel(span));
+        }
+      } else if (isFlowStep(span)) {
+        const summary = summaryOf(span);
+
+        if (summary) {
+          const base = baseStepId(span);
+          const set = summaries.get(base) ?? new Set<string>();
+
+          set.add(summary);
+          summaries.set(base, set);
+        }
+      }
+    }
+  }
+
+  const completed = runs.filter((run) => run.execution.status === "Completed");
+  const outcomeField = OUTCOME_FIELDS.find((field) => {
+    const values = completed
+      .map((run) => outcomeValue(run.result, field))
+      .filter((value): value is string => value !== undefined);
+    const distinct = new Set(values).size;
+
+    // Most completed runs name an outcome, and there are a few outcomes to tell apart.
+    return (
+      values.length * 2 >= completed.length &&
+      distinct >= 2 &&
+      distinct <= MAX_OUTCOMES
+    );
+  });
+
+  return {
+    ...(outcomeField ? { outcomeField } : {}),
+    splitSteps: new Set(
+      [...summaries]
+        .filter(([, set]) => set.size <= MAX_SUMMARIES_PER_STEP)
+        .map(([base]) => base),
+    ),
+    timersMerged: unnamedTimers.size > MAX_TIMER_STEPS,
+  };
 }
 
 function median(values: number[]): number | undefined {
@@ -107,13 +252,31 @@ function median(values: number[]): number | undefined {
 }
 
 /**
+ * The step a run was at when a span started: the step open then (the latest
+ * to start), or else the last one that had ended. Null before the first step.
+ */
+function stepAtStart(
+  steps: Array<{ end: number; id: string; start: number }>,
+  start: number,
+): string | null {
+  const open = steps.filter((step) => step.start < start && step.end > start);
+  const at =
+    open.at(-1) ?? steps.filter((step) => step.end < start).at(-1) ?? null;
+
+  return at?.id ?? null;
+}
+
+/**
  * Draws one diagram of a Workflow Type from the histories of several of its
  * runs. Temporal stores no definition of a Workflow, so the steps and their
  * order are the ones these runs took.
  *
- * A step is every execution of one Activity Type, Child Workflow Type, Signal,
- * Update or Timer. Step B follows step A when A ended before B started and no
- * other step ran wholly between them. Two steps that ran at the same time
+ * A step is every execution of one Activity Type, Child Workflow Type or
+ * Timer, or of one summary of it: an Activity called for several business
+ * steps, such as four different emails, is a node per summary. Signals and
+ * Updates are inputs, not steps: they are listed on the step the run was at
+ * when they arrived. Step B follows step A when A ended before B started and
+ * no other step ran wholly between them. Two steps that ran at the same time
  * therefore both follow the step before them, and neither follows the other.
  * The order is that of the history's event IDs, which is exact where clock
  * times of the same millisecond are not.
@@ -121,26 +284,17 @@ function median(values: number[]): number | undefined {
 export function buildTypeMap(
   runs: RunForTypeMap[],
   options: {
-    /** Set to draw one run with the steps of a diagram that exists already. */
-    timersMerged?: boolean;
+    /** The rules of a diagram that exists already, to draw one run the same way. */
+    rules?: TypeMapRules;
   } = {},
 ): TemporalTypeMap {
-  const timerLabels = new Set<string>();
-
-  for (const run of runs) {
-    for (const span of run.spans) {
-      if (span.kind === "timer") {
-        timerLabels.add(timerLabel(span));
-      }
-    }
-  }
-
-  const mergeTimers =
-    options.timersMerged ?? timerLabels.size > MAX_TIMER_STEPS;
+  const rules = options.rules ?? rulesFor(runs);
   const nodes = new Map<
     string,
     TemporalTypeMapNode & {
       durations: number[];
+      /** Runs that received each Signal or Update while at this step. */
+      messageRuns: Map<string, TemporalTypeMapMessage>;
       order: number;
       /** How often each summary text was given to the step. */
       summaries: Map<string, number>;
@@ -148,6 +302,7 @@ export function buildTypeMap(
   >();
   const edges = new Map<string, TemporalTypeMapEdge>();
   const during = new Map<string, number>();
+  const messages = new Map<string, TemporalTypeMapMessage>();
   const statusCounts: TemporalTypeMap["statusCounts"] = {};
   const nodeOf = (
     id: string,
@@ -165,6 +320,7 @@ export function buildTypeMap(
         id,
         kind,
         label,
+        messageRuns: new Map(),
         order,
         retriedRunCount: 0,
         runCount: 0,
@@ -196,9 +352,9 @@ export function buildTypeMap(
     };
     const isOpen = status === "Running" || status === "Paused";
     const steps = run.spans
-      .filter(isStep)
+      .filter(isFlowStep)
       .map((span) => ({
-        ...stepOf(span, mergeTimers),
+        ...stepOf(span, rules),
         end: span.closedEventId ?? Number.POSITIVE_INFINITY,
         span,
         start: span.startedEventId,
@@ -206,6 +362,8 @@ export function buildTypeMap(
       .sort((a, b) => a.start - b.start);
     const runEdges = new Set<string>();
     const runDuring = new Set<string>();
+    const runMessages = new Set<string>();
+    const runMessagesAt = new Set<string>();
     const followed = new Set<number>();
     const seen = new Set<string>();
     const failed = new Set<string>();
@@ -222,14 +380,17 @@ export function buildTypeMap(
     steps.forEach((step, index) => {
       const node = nodeOf(step.id, step.span.kind as never, step.label, index);
 
+      if (step.implementation) {
+        node.implementation = step.implementation;
+      }
+
       node.spanCount++;
       seen.add(step.id);
 
-      if (step.span.kind !== "timer" && step.span.userSummary) {
-        node.summaries.set(
-          step.span.userSummary,
-          (node.summaries.get(step.span.userSummary) ?? 0) + 1,
-        );
+      const summary = summaryOf(step.span);
+
+      if (step.span.kind !== "timer" && summary) {
+        node.summaries.set(summary, (node.summaries.get(summary) ?? 0) + 1);
       }
 
       if (step.span.closedEventId !== undefined) {
@@ -271,6 +432,38 @@ export function buildTypeMap(
       }
     });
 
+    // Signals and Updates: counted once per run, and on the step the run was at.
+    for (const span of run.spans.filter(isMessage)) {
+      const kind = span.kind as TemporalTypeMapMessage["kind"];
+      const name = span.label.replace(/^(?:Signal|Update): /, "");
+      const key = `${kind}:${name}`;
+      const at = stepAtStart(steps, span.startedEventId) ?? TYPE_MAP_START_ID;
+
+      if (!runMessages.has(key)) {
+        runMessages.add(key);
+        const total = messages.get(key) ?? { kind, name, runCount: 0 };
+
+        total.runCount++;
+        messages.set(key, total);
+      }
+
+      if (!runMessagesAt.has(`${at}\n${key}`)) {
+        runMessagesAt.add(`${at}\n${key}`);
+        const node = nodes.get(at);
+
+        if (node) {
+          const onNode = node.messageRuns.get(key) ?? {
+            kind,
+            name,
+            runCount: 0,
+          };
+
+          onNode.runCount++;
+          node.messageRuns.set(key, onNode);
+        }
+      }
+    }
+
     const last = steps.filter((_, index) => !followed.has(index));
 
     if (isOpen) {
@@ -287,18 +480,23 @@ export function buildTypeMap(
         addExample(node.waitingRuns, ref);
       }
     } else {
-      const endId = `end:${status}`;
-      const end = nodeOf(endId, "end", status, Number.MAX_SAFE_INTEGER);
+      const endAt = endOf(run, rules);
+      const end = nodeOf(endAt.id, "end", status, Number.MAX_SAFE_INTEGER);
 
       end.status = status;
+
+      if (endAt.outcome) {
+        end.outcome = endAt.outcome;
+      }
+
       end.runCount++;
 
       for (const step of last) {
-        addEdge(step.id, endId);
+        addEdge(step.id, endAt.id);
       }
 
       if (steps.length === 0) {
-        addEdge(TYPE_MAP_START_ID, endId);
+        addEdge(TYPE_MAP_START_ID, endAt.id);
       }
     }
 
@@ -330,6 +528,9 @@ export function buildTypeMap(
     }
   }
 
+  const byRuns = (a: TemporalTypeMapMessage, b: TemporalTypeMapMessage) =>
+    b.runCount - a.runCount || a.name.localeCompare(b.name);
+
   return {
     during: [...during].map(([pair, runCount]) => {
       const [at, starts] = pair.split("\n") as [string, string];
@@ -337,10 +538,16 @@ export function buildTypeMap(
       return { at, runCount, starts };
     }),
     edges: [...edges.values()],
+    ...(messages.size > 0
+      ? { messages: [...messages.values()].sort(byRuns) }
+      : {}),
     nodes: [...nodes.values()]
       .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
-      .map(({ durations, order: _order, summaries, ...node }) => ({
+      .map(({ durations, messageRuns, order: _order, summaries, ...node }) => ({
         ...node,
+        ...(messageRuns.size > 0
+          ? { messages: [...messageRuns.values()].sort(byRuns) }
+          : {}),
         ...(summaries.size > 0
           ? {
               summary: [...summaries].sort(
@@ -352,9 +559,11 @@ export function buildTypeMap(
           ? { medianDurationMs: median(durations) }
           : {}),
       })),
+    ...(rules.outcomeField ? { outcomeField: rules.outcomeField } : {}),
     runCount: runs.length,
+    splitSteps: [...rules.splitSteps].sort(),
     statusCounts,
-    timersMerged: mergeTimers,
+    timersMerged: rules.timersMerged,
   };
 }
 
@@ -383,9 +592,13 @@ export interface TypeMapRunPath {
  */
 export function runPathOnTypeMap(
   run: RunForTypeMap,
-  map: Pick<TemporalTypeMap, "nodes" | "timersMerged">,
+  map: Pick<
+    TemporalTypeMap,
+    "nodes" | "outcomeField" | "splitSteps" | "timersMerged"
+  >,
 ): TypeMapRunPath {
-  const own = buildTypeMap([run], { timersMerged: map.timersMerged });
+  const rules = rulesOf(map);
+  const own = buildTypeMap([run], { rules });
   const known = new Set(map.nodes.map((node) => node.id));
   const path: TypeMapRunPath = { edgeIds: [], steps: {}, unknownStepCount: 0 };
 
@@ -401,8 +614,8 @@ export function runPathOnTypeMap(
           ? run.spans.find(
               (span) =>
                 span.closedEventId === undefined &&
-                isStep(span) &&
-                stepOf(span, map.timersMerged).id === node.id,
+                isFlowStep(span) &&
+                stepOf(span, rules).id === node.id,
             )
           : undefined,
       state:
@@ -420,7 +633,10 @@ export function runPathOnTypeMap(
   return path;
 }
 
-/** The spans of a run that are steps, in the order they started. */
+/**
+ * The spans of a run that are steps of its history, in the order they started:
+ * the run page steps through these, Signals and Updates included.
+ */
 export function runSteps(run: RunForTypeMap): TemporalGroupedSpan[] {
   return run.spans
     .filter(isStep)
@@ -458,7 +674,15 @@ export interface TypeMapRunMoment extends TypeMapRunPath {
  */
 export function runMomentOnTypeMap(
   run: RunForTypeMap,
-  map: Pick<TemporalTypeMap, "during" | "edges" | "nodes" | "timersMerged">,
+  map: Pick<
+    TemporalTypeMap,
+    | "during"
+    | "edges"
+    | "nodes"
+    | "outcomeField"
+    | "splitSteps"
+    | "timersMerged"
+  >,
   position: number | null,
 ): TypeMapRunMoment {
   const steps = runSteps(run);
@@ -489,14 +713,17 @@ export function runMomentOnTypeMap(
         );
   const isOpen =
     run.execution.status === "Running" || run.execution.status === "Paused";
-  // What the run did next: the step that started next, or the status it closed with.
+  // What the run did next: the next real step (not a Signal or an Update), or how it closed.
+  const nextStep = isAtEnd
+    ? undefined
+    : steps.slice(position + 1).find(isFlowStep);
   const takenNextId = isAtEnd
     ? undefined
-    : position + 1 < steps.length
-      ? (typeMapStepId(steps[position + 1]!, map) ?? undefined)
+    : nextStep
+      ? typeMapStepId(nextStep, map)!
       : isOpen
         ? undefined
-        : `end:${run.execution.status}`;
+        : endOf(run, rulesOf(map)).id;
   const nodes = new Map(map.nodes.map((node) => [node.id, node]));
   const nowIds = Object.entries(path.steps)
     .filter(([, step]) => step.state === "now")
@@ -549,12 +776,41 @@ export function runMomentOnTypeMap(
   };
 }
 
-/** The step of a diagram that a span of a run belongs to, or null for a span that is no step. */
+/**
+ * The step of a diagram that a span of a run belongs to, or null for a span
+ * that is no step: a Signal or Update is an input, and has no node.
+ */
 export function typeMapStepId(
   span: TemporalGroupedSpan,
-  map: Pick<TemporalTypeMap, "timersMerged">,
+  map: Pick<TemporalTypeMap, "outcomeField" | "splitSteps" | "timersMerged">,
 ): string | null {
-  return isStep(span) ? stepOf(span, map.timersMerged).id : null;
+  return isFlowStep(span) ? stepOf(span, rulesOf(map)).id : null;
+}
+
+/**
+ * The node to show for a span of a run: its own step, or for a Signal or an
+ * Update the step the run was at when it arrived.
+ */
+export function typeMapNodeIdOfSpan(
+  run: RunForTypeMap,
+  span: TemporalGroupedSpan,
+  map: Pick<TemporalTypeMap, "outcomeField" | "splitSteps" | "timersMerged">,
+): string | null {
+  if (!isMessage(span)) {
+    return typeMapStepId(span, map);
+  }
+
+  const rules = rulesOf(map);
+  const steps = run.spans
+    .filter(isFlowStep)
+    .map((step) => ({
+      end: step.closedEventId ?? Number.POSITIVE_INFINITY,
+      id: stepOf(step, rules).id,
+      start: step.startedEventId,
+    }))
+    .sort((a, b) => a.start - b.start);
+
+  return stepAtStart(steps, span.startedEventId);
 }
 
 /**
@@ -616,7 +872,7 @@ export function mergeRunIntoTypeMap<T extends TemporalTypeMap>(
   map: T,
   run: RunForTypeMap,
 ): T {
-  const own = buildTypeMap([run], { timersMerged: map.timersMerged });
+  const own = buildTypeMap([run], { rules: rulesOf(map) });
   const knownNodes = new Set(map.nodes.map((node) => node.id));
   const knownEdges = new Set(map.edges.map((edge) => edge.id));
   const missingNodes = own.nodes

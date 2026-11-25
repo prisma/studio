@@ -232,6 +232,63 @@ describe("TemporalTypesView", () => {
     );
   });
 
+  it("draws the newest code version, and draws the others from the sample details", () => {
+    const versionMap = (id: string, runCount: number) => ({
+      ...map,
+      nodes: [step({ id, label: id, runCount })],
+      runCount,
+    });
+    queries.map = {
+      ...loadedMap,
+      data: {
+        ...map,
+        versions: [
+          {
+            buildId: "new",
+            map: versionMap("activity:new", 12),
+            runCount: 12,
+          },
+          {
+            buildId: "unversioned",
+            map: versionMap("activity:old", 28),
+            runCount: 28,
+          },
+        ],
+      },
+    };
+    const container = render();
+
+    expect(
+      container.querySelector('[data-testid="node-activity:new"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="node-activity:old"]'),
+    ).toBeNull();
+
+    click(container, "temporal-type-sample-info");
+    const versions = document.querySelector<HTMLElement>(
+      '[data-testid="temporal-type-versions"]',
+    )!;
+
+    expect(versions.textContent).toContain("new12 · newest");
+    expect(versions.textContent).toContain("No Build ID28");
+
+    const button = (label: string) =>
+      [...versions.querySelectorAll<HTMLButtonElement>("button")].find((item) =>
+        item.textContent!.startsWith(label),
+      )!;
+
+    act(() => button("No Build ID").click());
+    expect(
+      container.querySelector('[data-testid="node-activity:old"]'),
+    ).not.toBeNull();
+
+    act(() => button("All versions").click());
+    expect(
+      container.querySelector('[data-testid="node-activity:chargePayment"]'),
+    ).not.toBeNull();
+  });
+
   it("lists the runs in which the selected step failed, and opens one", () => {
     const container = render();
 

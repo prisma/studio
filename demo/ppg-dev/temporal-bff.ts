@@ -1329,9 +1329,15 @@ export class TemporalGrpcBffClient {
                 .map(([buildId, group]) => ({
                   buildId,
                   map: buildTypeMap(group),
+                  newestStartTime: group
+                    .map((detail) => detail.execution.startTime)
+                    .reduce((a, b) => (a > b ? a : b)),
                   runCount: group.length,
                 }))
-                .sort((a, b) => b.runCount - a.runCount)
+                .sort((a, b) =>
+                  b.newestStartTime.localeCompare(a.newestStartTime),
+                )
+                .map(({ newestStartTime: _, ...version }) => version)
             : undefined;
 
         return {

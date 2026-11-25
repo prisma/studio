@@ -101,11 +101,27 @@ export function typeMapNodeSize(
   }
 
   if (node.kind === "end") {
-    // "Continued as New" is the one status whose badge and run count need more room.
-    return { height: 34, width: node.status === "ContinuedAsNew" ? 240 : 190 };
+    // "Continued as New" and an outcome beside the status need more room.
+    return {
+      height: 34,
+      width: node.status === "ContinuedAsNew" || node.outcome ? 240 : 190,
+    };
   }
 
-  return { height: hasThirdLine ? 82 : 56, width: 240 };
+  // A line for the run's marks, a second line for a long summary, and a line
+  // per Signal or Update that arrived at the step.
+  return {
+    height:
+      (hasThirdLine ? 82 : 56) +
+      (typeMapTitleWraps(node) ? 16 : 0) +
+      (node.messages?.length ?? 0) * 16,
+    width: 240,
+  };
+}
+
+/** Whether a step's title is a summary too long for one line of its node, which shows it on two. */
+export function typeMapTitleWraps(node: TemporalTypeMapNode): boolean {
+  return /\s/.test(node.label) && node.label.length > 28;
 }
 
 /**

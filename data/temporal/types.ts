@@ -606,11 +606,28 @@ export interface TemporalTypeMapNode {
   /** A few of those runs. */
   failedRuns: TemporalRunRef[];
   id: string;
+  /**
+   * The Activity or Child Workflow Type behind a step that is named by its
+   * summary, as one Activity can be several business steps.
+   */
+  implementation?: string;
   kind:
-    "start" | "end" | Exclude<TemporalSpanKind, "workflow" | "workflow-task">;
+    | "start"
+    | "end"
+    | Exclude<
+        TemporalSpanKind,
+        "signal" | "update" | "workflow" | "workflow-task"
+      >;
   label: string;
   /** Half of the finished executions of this step took at most this long. */
   medianDurationMs?: number;
+  /** The Signals and Updates that runs received while they were at this step, the most frequent first. */
+  messages?: TemporalTypeMapMessage[];
+  /**
+   * For an `end` node: the business outcome the runs completed with, the value
+   * of the result field `TemporalTypeMap.outcomeField`, such as "resolved".
+   */
+  outcome?: string;
   /** Sampled runs in which this step needed more than one attempt. */
   retriedRunCount: number;
   /** Sampled runs that took this step, or closed with this status. */
@@ -630,6 +647,14 @@ export interface TemporalTypeMapNode {
   waitingRuns: TemporalRunRef[];
 }
 
+/** A Signal or Update: an input that runs receive, not a step they take. */
+export interface TemporalTypeMapMessage {
+  kind: "signal" | "update";
+  name: string;
+  /** Sampled runs that received it (at this step, on a node). */
+  runCount: number;
+}
+
 /** Sampled runs went from the step `from` to the step `to`. */
 export interface TemporalTypeMapEdge {
   from: string;
@@ -646,9 +671,21 @@ export interface TemporalTypeMap {
    */
   during: Array<{ at: string; runCount: number; starts: string }>;
   edges: TemporalTypeMapEdge[];
+  /** Every Signal and Update the sampled runs received. */
+  messages?: TemporalTypeMapMessage[];
   nodes: TemporalTypeMapNode[];
+  /**
+   * The result field whose value splits the Completed end, such as "status".
+   * Absent when the runs' results give no such split.
+   */
+  outcomeField?: string;
   /** How many runs the diagram is drawn from. */
   runCount: number;
+  /**
+   * The steps (`kind:Type`) whose executions are one node per summary, because
+   * one Activity serves several business steps. Absent means none are split.
+   */
+  splitSteps?: string[];
   statusCounts: Partial<Record<TemporalWorkflowStatus, number>>;
   /** True when the type has too many distinct Timers and they are one step. */
   timersMerged: boolean;
@@ -673,7 +710,7 @@ export interface TemporalTypeMapResponse extends TemporalTypeMap {
   sampleSize?: number;
   /** Sampled runs whose history is longer than the BFF reads. */
   truncatedRunCount: number;
-  /** Per-Build-ID diagrams when the sampled runs span more than one Worker version. */
+  /** Per-Build-ID diagrams when the sampled runs span more than one Worker version, the version of the newest run first. */
   versions?: TemporalTypeMapVersion[];
   workflowType: string;
 }

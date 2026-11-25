@@ -44,6 +44,7 @@ import {
   type TypeMapLayout,
   typeMapNodeHasMarks,
   typeMapNodeSize,
+  typeMapTitleWraps,
   type TypeMapPoint,
 } from "./temporal-type-map-layout";
 import { formatDuration } from "./temporal-utils";
@@ -61,9 +62,7 @@ export const TYPE_MAP_STEP_KINDS: Record<
     name: "Child Workflow",
     prefix: "Child: ",
   },
-  signal: { icon: Mail, name: "Signal", prefix: "Signal: " },
   timer: { icon: Timer, name: "Timer" },
-  update: { icon: PenLine, name: "Update", prefix: "Update: " },
 };
 
 /** The name of a step without the kind in front of it, which the node shows on its own line. */
@@ -169,7 +168,18 @@ const EndNode = memo(function EndNode(props: NodeProps<TypeMapNodeData>) {
       )}
     >
       <Handles source={false} />
-      <WorkflowStatusBadge status={node.status ?? "Completed"} />
+      <span className="flex min-w-0 items-center gap-1.5">
+        <WorkflowStatusBadge status={node.status ?? "Completed"} />
+        {/* The business outcome, from the result: Completed is not always resolved. */}
+        {node.outcome ? (
+          <span
+            className="truncate font-medium text-foreground"
+            title={`The result says ${node.outcome}`}
+          >
+            {node.outcome}
+          </span>
+        ) : null}
+      </span>
       <span className="font-mono whitespace-nowrap tabular-nums text-muted-foreground">
         {node.runCount === 0 && run !== undefined
           ? "this run"
@@ -200,9 +210,20 @@ const StepNode = memo(function StepNode(props: NodeProps<TypeMapNodeData>) {
       data-testid={`temporal-type-map-node-${node.id}`}
     >
       <Handles />
-      <div className="flex min-w-0 items-center gap-2">
-        <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate font-mono text-xs font-medium text-foreground">
+      <div className="flex min-w-0 items-start gap-2">
+        <Icon
+          aria-hidden
+          className="mt-px size-3.5 shrink-0 text-muted-foreground"
+        />
+        {/* A summary is prose; an Activity Type is code. */}
+        <span
+          className={cn(
+            "min-w-0 flex-1 text-xs font-medium text-foreground",
+            typeMapTitleWraps(node) ? "line-clamp-2" : "truncate",
+            !/\s/.test(typeMapStepName(node)) && "font-mono",
+          )}
+          title={typeMapStepName(node)}
+        >
           {typeMapStepName(node)}
         </span>
         {node.medianDurationMs === undefined ? null : (
@@ -213,16 +234,56 @@ const StepNode = memo(function StepNode(props: NodeProps<TypeMapNodeData>) {
       </div>
       <div className="truncate text-2xs text-muted-foreground">
         {node.runCount === 0 && run !== undefined ? (
-          `${kind.name} · Only in this run`
+          `${node.implementation ?? kind.name} · Only in this run`
         ) : (
           <>
-            {kind.name} · {node.runCount} of {totalRuns} runs
+            {node.implementation ? (
+              <span
+                className="font-mono"
+                title={`${kind.name} ${node.implementation}`}
+              >
+                {node.implementation}
+              </span>
+            ) : (
+              kind.name
+            )}{" "}
+            · {node.runCount} of {totalRuns} runs
             {node.spanCount > node.runCount
               ? ` · ${node.spanCount.toLocaleString("en-US")} times`
               : ""}
           </>
         )}
       </div>
+      {node.messages && node.messages.length > 0 ? (
+        <div
+          className="flex min-w-0 flex-col text-2xs text-muted-foreground"
+          data-testid="temporal-type-map-node-messages"
+          title={node.messages
+            .map(
+              (message) =>
+                `${message.kind === "signal" ? "Signal" : "Update"} ${message.name} arrived here in ${message.runCount} ${message.runCount === 1 ? "run" : "runs"}`,
+            )
+            .join("\n")}
+        >
+          {node.messages.map((message) => {
+            const MessageIcon = message.kind === "signal" ? Mail : PenLine;
+
+            return (
+              <span
+                key={`${message.kind}:${message.name}`}
+                className="flex h-4 min-w-0 items-center gap-1"
+              >
+                <MessageIcon aria-hidden className="size-3 shrink-0" />
+                <span className="truncate font-mono">{message.name}</span>
+                <span className="shrink-0">
+                  arrived in {message.runCount}{" "}
+                  {message.runCount === 1 ? "run" : "runs"}
+                </span>
+              </span>
+            );
+          })}
+        </div>
+      ) : null}
       {run !== undefined ? (
         <div className="flex items-center gap-1 truncate text-2xs font-medium text-foreground">
           {run.state === "now" ? (
@@ -320,16 +381,13 @@ export interface TypeMapEdgeAnnotation {
   /** The text while the pointer is on any arrow: the words and the share. */
   hoverLabel: string;
   /**
-   * The words on the arrow: the summary the Workflow code gave the step it
-   * leads to, or what kind of transition it is. Null for an arrow that needs
-   * no words, because the steps at its ends say it all.
+   * The words on the arrow: "↻ loop" for an arrow back to an earlier step, or
+   * the status of an end that is one of several. Null for any other arrow,
+   * because the steps at its ends say what it does.
    */
   label: string | null;
   tooltip: string;
 }
-
-/** A summary longer than this is cut on the arrow; the tooltip has all of it. */
-const MAX_EDGE_TEXT_LENGTH = 36;
 
 /**
  * Builds the visible edge annotation and hover title for a transition between
@@ -339,11 +397,6 @@ export function describeTypeMapEdge(params: {
   edgeRunCount: number;
   from?: TemporalTypeMapNode;
   isLoop: boolean;
-  /**
-   * False for an arrow that is not the one most runs took into its step. Only
-   * the main arrow carries the step's summary, so the text shows once.
-   */
-  isMainIncoming?: boolean;
   isNext?: boolean;
   isTaken?: boolean;
   isTakenNext?: boolean;
@@ -355,7 +408,6 @@ export function describeTypeMapEdge(params: {
     edgeRunCount,
     from,
     isLoop,
-    isMainIncoming = true,
     isNext,
     isTaken,
     isTakenNext,
@@ -380,12 +432,6 @@ export function describeTypeMapEdge(params: {
   if (isLoop) {
     role = "↻ loop";
     roleDescription = "Loops back to an earlier step";
-  } else if (to?.kind === "signal") {
-    role = "on signal";
-    roleDescription = "Triggered by a Signal";
-  } else if (to?.kind === "update") {
-    role = "on update";
-    roleDescription = "Triggered by an Update";
   } else if (to?.kind === "end") {
     const endLabel = workflowStatusLabel(to.status ?? "Completed");
 
@@ -395,7 +441,6 @@ export function describeTypeMapEdge(params: {
   } else if (from?.kind === "start") {
     roleDescription = "First step of the workflow";
   } else if (from?.kind === "timer") {
-    role = "after timer";
     roleDescription = "Continues after the Timer";
   } else if (to?.kind === "timer") {
     roleDescription = "Starts a Timer";
@@ -403,13 +448,8 @@ export function describeTypeMapEdge(params: {
     roleDescription = "Starts a Child Workflow";
   }
 
-  // The developer's own words for the step win over ours.
-  const summary = !isLoop && isMainIncoming ? to?.summary : undefined;
-  const words = summary
-    ? summary.length > MAX_EDGE_TEXT_LENGTH
-      ? `${summary.slice(0, MAX_EDGE_TEXT_LENGTH - 1).trimEnd()}…`
-      : summary
-    : role;
+  // The steps say what they do; an arrow has words only for a loop or a choice of ends.
+  const words = role;
   const isRunOnly = edgeRunCount === 0;
   const prefix = isTakenNext ? "next" : null;
   const join = (...parts: Array<string | null>) =>
@@ -455,7 +495,6 @@ export function describeTypeMapEdge(params: {
         ? `${countText} of ${totalRuns.toLocaleString("en-US")} sampled runs${shareText}`
         : `${countText} of the ${sourceRuns.toLocaleString("en-US")} sampled runs that reached ${fromName}${shareText}`,
     roleDescription,
-    ...(summary ? [`Summary in the code: ${summary}`] : []),
     ...(runNote ? [runNote] : []),
   ];
 
@@ -617,6 +656,7 @@ export function TemporalTypeMapCanvas(props: {
         map.nodes.map((node) => [
           node.id,
           isRunDiagram || typeMapNodeHasMarks(node),
+          (node.messages?.length ?? 0) > 0,
         ]),
         map.edges.map((edge) => edge.id),
       ]),
@@ -647,20 +687,6 @@ export function TemporalTypeMapCanvas(props: {
 
     return counts;
   }, [map.edges]);
-  // The arrow most runs took into each step: the one that carries the step's summary.
-  const mainIncoming = useMemo(() => {
-    const main = new Map<string, { id: string; runCount: number }>();
-
-    for (const edge of map.edges) {
-      const current = main.get(edge.to);
-
-      if (!current || edge.runCount > current.runCount) {
-        main.set(edge.to, { id: edge.id, runCount: edge.runCount });
-      }
-    }
-
-    return new Set([...main.values()].map((edge) => edge.id));
-  }, [map.edges]);
   const describeEdge = (
     edge: TemporalTypeMap["edges"][number],
     runState: { isNext?: boolean; isTaken?: boolean; isTakenNext?: boolean },
@@ -673,7 +699,6 @@ export function TemporalTypeMapCanvas(props: {
       from: nodeById.get(edge.from),
       isLoop:
         fromIndex !== undefined && toIndex !== undefined && toIndex < fromIndex,
-      isMainIncoming: mainIncoming.has(edge.id),
       outgoingEdgeCount: outgoingCounts.get(edge.from) ?? 1,
       to: nodeById.get(edge.to),
       totalRuns: map.runCount,
@@ -836,7 +861,6 @@ export function TemporalTypeMapCanvas(props: {
     [
       isArrowHovered,
       layout,
-      mainIncoming,
       map,
       nextEdges,
       nodeById,

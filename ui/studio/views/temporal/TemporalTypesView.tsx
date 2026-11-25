@@ -13,6 +13,7 @@ import type {
   TemporalRunRef,
   TemporalTypeMapNode,
   TemporalTypeMapResponse,
+  TemporalTypeMapVersion,
   TemporalWorkflowStatus,
 } from "@/data/temporal";
 import {
@@ -121,11 +122,16 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
     workflowType: activeType,
   });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Null draws the newest code version; ALL_VERSIONS draws every sampled run.
   const [selectedBuildId, setSelectedBuildId] = useState<string | null>(null);
   const activeVersion =
-    selectedBuildId && map.data?.versions
-      ? (map.data.versions.find((v) => v.buildId === selectedBuildId) ?? null)
-      : null;
+    selectedBuildId === ALL_VERSIONS
+      ? null
+      : (map.data?.versions?.find(
+          (version) => version.buildId === selectedBuildId,
+        ) ??
+        map.data?.versions?.[0] ??
+        null);
   const shownMap = useMemo(
     () =>
       map.data && activeVersion
@@ -233,10 +239,16 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
             </span>
             {shownMap ? (
               <SampleInfo
+                activeBuildId={activeVersion?.buildId ?? null}
                 drawnAt={drawnAt}
                 isRedrawing={map.isFetching && ownDraw.redraw > 0}
                 map={shownMap}
                 onRedraw={redraw}
+                onSelectVersion={(buildId) => {
+                  setSelectedBuildId(buildId ?? ALL_VERSIONS);
+                  setSelectedId(null);
+                }}
+                versions={map.data?.versions}
               />
             ) : null}
           </span>
@@ -379,45 +391,6 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
                   onRetry={() => void map.refetch()}
                 />
               ) : null}
-              {map.data?.versions && map.data.versions.length > 1 ? (
-                <div
-                  className="flex flex-wrap items-center gap-1.5 border-b border-border bg-muted/20 px-4 py-1.5 text-xs"
-                  data-testid="temporal-type-versions"
-                >
-                  <span className="text-muted-foreground">Worker version:</span>
-                  <Button
-                    variant={selectedBuildId === null ? "secondary" : "ghost"}
-                    size="xs"
-                    onClick={() => {
-                      setSelectedBuildId(null);
-                      setSelectedId(null);
-                    }}
-                  >
-                    All ({map.data.runCount})
-                  </Button>
-                  {map.data.versions.map((version) => (
-                    <Button
-                      key={version.buildId}
-                      variant={
-                        selectedBuildId === version.buildId
-                          ? "secondary"
-                          : "ghost"
-                      }
-                      size="xs"
-                      className="font-mono"
-                      onClick={() => {
-                        setSelectedBuildId(version.buildId);
-                        setSelectedId(null);
-                      }}
-                    >
-                      {version.buildId}{" "}
-                      <span className="font-sans text-muted-foreground">
-                        ({version.runCount})
-                      </span>
-                    </Button>
-                  ))}
-                </div>
-              ) : null}
               <div className="min-h-0 flex-1">
                 {shownMap.runCount === 0 ? (
                   <p className="p-10 text-center text-sm text-muted-foreground">
@@ -460,13 +433,32 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
  * why Studio samples runs, which runs and how many of each status, when it was
  * drawn, and a redraw from more runs.
  */
+const ALL_VERSIONS = "\u0000all";
+
 function SampleInfo(props: {
+  /** The code version the diagram draws; null draws every version. */
+  activeBuildId: string | null;
   drawnAt?: string;
   isRedrawing: boolean;
   map: TemporalTypeMapResponse;
+  /** Null draws every version. */
+  onSelectVersion: (buildId: string | null) => void;
   onRedraw: (sampleSize: number) => void;
+  versions?: TemporalTypeMapVersion[];
 }) {
-  const { drawnAt, isRedrawing, map, onRedraw } = props;
+  const {
+    activeBuildId,
+    drawnAt,
+    isRedrawing,
+    map,
+    onRedraw,
+    onSelectVersion,
+    versions,
+  } = props;
+  const allRunCount = versions?.reduce(
+    (sum, version) => sum + version.runCount,
+    0,
+  );
   const nextSize = nextTypeMapSampleSize(map);
   const grows = nextSize > (map.sampleSize ?? TYPE_MAP_SAMPLE_STEPS[0]!);
 
@@ -527,6 +519,50 @@ function SampleInfo(props: {
             ),
           )}
         </ul>
+        {versions && versions.length > 1 ? (
+          <div
+            className="flex flex-col gap-1.5 border-t border-border pt-2"
+            data-testid="temporal-type-versions"
+          >
+            <p className="text-muted-foreground">
+              The sample ran on {versions.length} versions of the Workflow code
+              (Worker Build IDs). Older runs can take steps the code no longer
+              has, so the diagram draws the newest version.
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {versions.map((version, index) => (
+                <Button
+                  key={version.buildId}
+                  variant={
+                    activeBuildId === version.buildId ? "secondary" : "ghost"
+                  }
+                  size="xs"
+                  aria-pressed={activeBuildId === version.buildId}
+                  onClick={() => onSelectVersion(version.buildId)}
+                >
+                  <span className="font-mono">
+                    {version.buildId === "unversioned"
+                      ? "No Build ID"
+                      : version.buildId}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {version.runCount}
+                    {index === 0 ? " · newest" : ""}
+                  </span>
+                </Button>
+              ))}
+              <Button
+                variant={activeBuildId === null ? "secondary" : "ghost"}
+                size="xs"
+                aria-pressed={activeBuildId === null}
+                onClick={() => onSelectVersion(null)}
+              >
+                All versions
+                <span className="text-muted-foreground">{allRunCount}</span>
+              </Button>
+            </div>
+          </div>
+        ) : null}
         {map.truncatedRunCount > 0 ? (
           <p className="text-muted-foreground">
             {map.truncatedRunCount} of them have a history longer than Studio
