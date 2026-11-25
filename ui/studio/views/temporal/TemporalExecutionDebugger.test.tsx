@@ -46,9 +46,17 @@ vi.mock("@/ui/hooks/use-streams", () => ({
   useStreams: () => ({ streams: [] }),
 }));
 
-vi.mock("@/ui/hooks/use-ui-state", () => ({
-  useUiState: <T,>(_key: string, initial: T) => [initial, vi.fn(), vi.fn()],
-}));
+vi.mock("@/ui/hooks/use-ui-state", async () => {
+  const { useState } = await import("react");
+
+  return {
+    useUiState: <T,>(_key: string, initial: T) => {
+      const [value, setValue] = useState(initial);
+
+      return [value, setValue, vi.fn()];
+    },
+  };
+});
 
 vi.mock("../../context", () => ({
   useStudio: () => ({
@@ -301,5 +309,25 @@ describe("TemporalExecutionDebugger", () => {
     expect(marked("[data-temporal-event]")).toEqual(["5", "6", "7"]);
     unmount();
     vi.unstubAllGlobals();
+  });
+  it("closes and opens the side panel from the header", () => {
+    detailMock.mockReturnValue({ data: detailOf("order-2", "run-2") });
+
+    const { container, unmount } = render("order-2");
+    const toggle = () =>
+      container.querySelector<HTMLButtonElement>(
+        '[data-testid="temporal-inspector-toggle"]',
+      )!;
+
+    expect(container.querySelector("#temporal-inspector")).not.toBeNull();
+    expect(toggle().getAttribute("aria-label")).toBe("Close the side panel");
+
+    act(() => toggle().click());
+    expect(container.querySelector("#temporal-inspector")).toBeNull();
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+
+    act(() => toggle().click());
+    expect(container.querySelector("#temporal-inspector")).not.toBeNull();
+    unmount();
   });
 });

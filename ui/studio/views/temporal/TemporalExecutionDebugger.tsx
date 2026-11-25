@@ -10,6 +10,8 @@ import {
   Link2,
   ListFilter,
   MoreHorizontal,
+  PanelRightClose,
+  PanelRightOpen,
   Pause,
   Play,
   RefreshCw,
@@ -61,6 +63,7 @@ import {
   useTemporalWorkflows,
   useTemporalWorkflowStack,
 } from "@/ui/hooks/use-temporal";
+import { useUiState } from "@/ui/hooks/use-ui-state";
 import { cn } from "@/ui/lib/utils";
 
 import { useStudio } from "../../context";
@@ -279,6 +282,12 @@ export function TemporalExecutionDebugger(
     });
 
   const [chosenTab, setInspectorTab] = useState<InspectorTab | null>(null);
+  // The side panel of Interact, Related and Input & Result; the browser remembers whether it is open.
+  const [isInspectorOpen, setIsInspectorOpen] = useUiState(
+    "temporal:inspector-open",
+    true,
+    { persistent: true },
+  );
 
   const execution = data?.execution;
   const spans = useMemo(() => data?.spans ?? [], [data?.spans]);
@@ -728,6 +737,23 @@ export function TemporalExecutionDebugger(
                 ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
+              aria-label={
+                isInspectorOpen ? "Close the side panel" : "Open the side panel"
+              }
+              aria-controls="temporal-inspector"
+              aria-expanded={isInspectorOpen}
+              title={
+                isInspectorOpen ? "Close the side panel" : "Open the side panel"
+              }
+              onClick={() => setIsInspectorOpen(!isInspectorOpen)}
+              data-testid="temporal-inspector-toggle"
+            >
+              {isInspectorOpen ? <PanelRightClose /> : <PanelRightOpen />}
+            </Button>
           </>
         }
       >
@@ -930,7 +956,14 @@ export function TemporalExecutionDebugger(
           ) : null}
 
           {/* On a narrow page the panels stack and the page scrolls as one. */}
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto @4xl:grid @4xl:grid-cols-[minmax(0,1fr)_340px] @4xl:overflow-visible">
+          <div
+            className={cn(
+              "flex min-h-0 flex-1 flex-col overflow-y-auto @4xl:grid @4xl:overflow-visible",
+              isInspectorOpen
+                ? "@4xl:grid-cols-[minmax(0,1fr)_340px]"
+                : "@4xl:grid-cols-[minmax(0,1fr)]",
+            )}
+          >
             <div className="flex min-h-0 min-w-0 flex-col @max-4xl:shrink-0">
               {spans.length > 0 ? (
                 <TemporalTimeline
@@ -1340,167 +1373,173 @@ export function TemporalExecutionDebugger(
               </div>
             </div>
 
-            <aside className="flex min-h-0 min-w-0 flex-col border-t border-border bg-card @max-4xl:min-h-80 @max-4xl:shrink-0 @4xl:border-t-0 @4xl:border-l">
-              <div
-                role="tablist"
-                aria-label="Execution inspector"
-                className="flex border-b border-border text-xs"
+            {isInspectorOpen ? (
+              <aside
+                id="temporal-inspector"
+                className="flex min-h-0 min-w-0 flex-col border-t border-border bg-card @max-4xl:min-h-80 @max-4xl:shrink-0 @4xl:border-t-0 @4xl:border-l"
               >
-                {inspectorTabs.map((tab, index) => {
-                  const isActive = inspectorTab === tab.id;
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      role="tab"
-                      id={`temporal-inspector-tab-${tab.id}`}
-                      aria-controls="temporal-inspector-panel"
-                      aria-selected={isActive}
-                      tabIndex={isActive ? 0 : -1}
-                      onClick={() => setInspectorTab(tab.id)}
-                      onKeyDown={(e) => {
-                        if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") {
-                          return;
-                        }
-                        e.preventDefault();
-                        const step = e.key === "ArrowRight" ? 1 : -1;
-                        const next =
-                          inspectorTabs[
-                            (index + step + inspectorTabs.length) %
-                              inspectorTabs.length
-                          ]!;
-                        setInspectorTab(next.id);
-                        document
-                          .getElementById(`temporal-inspector-tab-${next.id}`)
-                          ?.focus();
-                      }}
-                      className={cn(
-                        "-mb-px h-10 flex-1 whitespace-nowrap border-b-2 px-1 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                        isActive
-                          ? "border-foreground font-medium text-foreground"
-                          : "border-transparent text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      {tab.label}
-                    </button>
-                  );
-                })}
-              </div>
+                <div
+                  role="tablist"
+                  aria-label="Execution inspector"
+                  className="flex border-b border-border text-xs"
+                >
+                  {inspectorTabs.map((tab, index) => {
+                    const isActive = inspectorTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        role="tab"
+                        id={`temporal-inspector-tab-${tab.id}`}
+                        aria-controls="temporal-inspector-panel"
+                        aria-selected={isActive}
+                        tabIndex={isActive ? 0 : -1}
+                        onClick={() => setInspectorTab(tab.id)}
+                        onKeyDown={(e) => {
+                          if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") {
+                            return;
+                          }
+                          e.preventDefault();
+                          const step = e.key === "ArrowRight" ? 1 : -1;
+                          const next =
+                            inspectorTabs[
+                              (index + step + inspectorTabs.length) %
+                                inspectorTabs.length
+                            ]!;
+                          setInspectorTab(next.id);
+                          document
+                            .getElementById(`temporal-inspector-tab-${next.id}`)
+                            ?.focus();
+                        }}
+                        className={cn(
+                          "-mb-px h-10 flex-1 whitespace-nowrap border-b-2 px-1 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                          isActive
+                            ? "border-foreground font-medium text-foreground"
+                            : "border-transparent text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
 
-              <div
-                role="tabpanel"
-                id="temporal-inspector-panel"
-                aria-labelledby={`temporal-inspector-tab-${inspectorTab}`}
-                className="min-h-0 flex-1 overflow-y-auto p-4"
-              >
-                {imported && inspectorTab !== "meta" ? (
-                  <p className="text-xs text-muted-foreground">
-                    This run comes from a history file. Queries, Signals and
-                    related runs need the server it ran on. The Input &amp;
-                    Result tab shows what the file holds.
-                  </p>
-                ) : inspectorTab === "interact" ? (
-                  <TemporalInteractPanel
-                    isRunning={isRunning}
-                    namespace={namespace}
-                    runId={execution.runId}
-                    spans={spans}
-                    workflowId={workflowId}
-                    workflowType={execution.workflowType}
-                  />
-                ) : inspectorTab === "pending" ? (
-                  pendingActivities.length === 0 ? (
+                <div
+                  role="tabpanel"
+                  id="temporal-inspector-panel"
+                  aria-labelledby={`temporal-inspector-tab-${inspectorTab}`}
+                  className="min-h-0 flex-1 overflow-y-auto p-4"
+                >
+                  {imported && inspectorTab !== "meta" ? (
                     <p className="text-xs text-muted-foreground">
-                      No pending activities.
+                      This run comes from a history file. Queries, Signals and
+                      related runs need the server it ran on. The Input &amp;
+                      Result tab shows what the file holds.
                     </p>
-                  ) : (
-                    <div className="flex flex-col gap-3">
-                      {pendingActivities.map((pa) => {
-                        const matchingSpan = spans.find(
-                          (span) =>
-                            span.kind === "activity" &&
-                            span.activityId === pa.activityId &&
-                            span.closedEventId === undefined,
-                        );
-                        return (
-                          <TemporalPendingActivityCard
-                            key={pa.activityId}
-                            canAct={canAct}
-                            isPendingAction={activityOperation.isPending}
-                            onActivityOperation={runActivityOperation}
-                            pending={pa}
-                            policy={matchingSpan?.activityPolicy}
-                            scheduledTimestamp={matchingSpan?.timestamp}
-                            supportsActivityOperations={
-                              capabilities?.supportsActivityOperations === true
-                            }
-                          />
-                        );
-                      })}
-                    </div>
-                  )
-                ) : inspectorTab === "related" ? (
-                  <TemporalRelatedPanel
-                    execution={execution}
-                    hasMoreRuns={hasMoreRuns}
-                    isLoadingRuns={runsQuery.isLoading}
-                    onOpenExecution={onOpenExecution}
-                    runCount={runCount}
-                    runs={runsOfId}
-                    spans={spans}
-                    workflowIdUrl={createUrl({
-                      temporalNsParam: namespace,
-                      temporalSectionParam: "workflow",
-                      temporalWfParam: workflowId,
-                      viewParam: "temporal",
-                    })}
-                  />
-                ) : inspectorTab === "stack" ? (
-                  <StackPanel
-                    namespace={namespace}
-                    runId={execution.runId}
-                    workflowId={workflowId}
-                  />
-                ) : (
-                  <div className="flex flex-col gap-4">
-                    {data.details ? (
-                      <MetaBlock label="Details">{data.details}</MetaBlock>
-                    ) : null}
-                    <PayloadBlock
-                      emptyText="This run was started with no input."
-                      label="Workflow Input"
-                      name="the Workflow input"
-                      viewClassName={META_VIEW_CLASS}
-                      value={data.input}
+                  ) : inspectorTab === "interact" ? (
+                    <TemporalInteractPanel
+                      isRunning={isRunning}
+                      namespace={namespace}
+                      runId={execution.runId}
+                      spans={spans}
+                      workflowId={workflowId}
+                      workflowType={execution.workflowType}
                     />
-                    {data.result !== undefined ? (
-                      <PayloadBlock
-                        emptyText=""
-                        label="Workflow Result"
-                        name="the Workflow result"
-                        viewClassName={META_VIEW_CLASS}
-                        value={data.result}
-                      />
-                    ) : null}
-                    {data.failure ? (
-                      <div className="flex min-w-0 flex-col gap-1.5">
-                        <TemporalSectionLabel>Failure</TemporalSectionLabel>
-                        <TemporalFailurePanel failure={data.failure} />
+                  ) : inspectorTab === "pending" ? (
+                    pendingActivities.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        No pending activities.
+                      </p>
+                    ) : (
+                      <div className="flex flex-col gap-3">
+                        {pendingActivities.map((pa) => {
+                          const matchingSpan = spans.find(
+                            (span) =>
+                              span.kind === "activity" &&
+                              span.activityId === pa.activityId &&
+                              span.closedEventId === undefined,
+                          );
+                          return (
+                            <TemporalPendingActivityCard
+                              key={pa.activityId}
+                              canAct={canAct}
+                              isPendingAction={activityOperation.isPending}
+                              onActivityOperation={runActivityOperation}
+                              pending={pa}
+                              policy={matchingSpan?.activityPolicy}
+                              scheduledTimestamp={matchingSpan?.timestamp}
+                              supportsActivityOperations={
+                                capabilities?.supportsActivityOperations ===
+                                true
+                              }
+                            />
+                          );
+                        })}
                       </div>
-                    ) : null}
-                    {Object.keys(execution.memo).length > 0 ? (
+                    )
+                  ) : inspectorTab === "related" ? (
+                    <TemporalRelatedPanel
+                      execution={execution}
+                      hasMoreRuns={hasMoreRuns}
+                      isLoadingRuns={runsQuery.isLoading}
+                      onOpenExecution={onOpenExecution}
+                      runCount={runCount}
+                      runs={runsOfId}
+                      spans={spans}
+                      workflowIdUrl={createUrl({
+                        temporalNsParam: namespace,
+                        temporalSectionParam: "workflow",
+                        temporalWfParam: workflowId,
+                        viewParam: "temporal",
+                      })}
+                    />
+                  ) : inspectorTab === "stack" ? (
+                    <StackPanel
+                      namespace={namespace}
+                      runId={execution.runId}
+                      workflowId={workflowId}
+                    />
+                  ) : (
+                    <div className="flex flex-col gap-4">
+                      {data.details ? (
+                        <MetaBlock label="Details">{data.details}</MetaBlock>
+                      ) : null}
                       <PayloadBlock
-                        emptyText=""
-                        label="Memo"
-                        name="the memo"
+                        emptyText="This run was started with no input."
+                        label="Workflow Input"
+                        name="the Workflow input"
                         viewClassName={META_VIEW_CLASS}
-                        value={execution.memo}
+                        value={data.input}
                       />
-                    ) : null}
-                  </div>
-                )}
-              </div>
-            </aside>
+                      {data.result !== undefined ? (
+                        <PayloadBlock
+                          emptyText=""
+                          label="Workflow Result"
+                          name="the Workflow result"
+                          viewClassName={META_VIEW_CLASS}
+                          value={data.result}
+                        />
+                      ) : null}
+                      {data.failure ? (
+                        <div className="flex min-w-0 flex-col gap-1.5">
+                          <TemporalSectionLabel>Failure</TemporalSectionLabel>
+                          <TemporalFailurePanel failure={data.failure} />
+                        </div>
+                      ) : null}
+                      {Object.keys(execution.memo).length > 0 ? (
+                        <PayloadBlock
+                          emptyText=""
+                          label="Memo"
+                          name="the memo"
+                          viewClassName={META_VIEW_CLASS}
+                          value={execution.memo}
+                        />
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+              </aside>
+            ) : null}
           </div>
         </div>
       )}
