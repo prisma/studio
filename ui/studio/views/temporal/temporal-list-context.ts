@@ -1,14 +1,12 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * The list a workflow was opened from: its name, its URL, and its rows as they
- * were when the row was opened. It lives in memory only, so a shared link or a
+ * The list a workflow was opened from: its name and its rows as they were when
+ * the row was opened. It lives in memory only, so a shared link or a
  * reload shows the workflow without it. A row that changes state afterwards
  * stays in its place, so "next" means the row the user saw next.
  */
 export interface TemporalListContext {
-  /** The list's URL hash, which brings the list back with its filter. */
-  href: string;
   items: Array<{ runId?: string; workflowId: string }>;
   label: string;
 }

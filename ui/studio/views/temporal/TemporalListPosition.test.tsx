@@ -13,7 +13,6 @@ import { TemporalListPosition } from "./TemporalListPosition";
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
 const context: TemporalListContext = {
-  href: "#temporalSectionParam=workflows&searchParam=failed",
   items: [
     { runId: "run-a", workflowId: "order-1" },
     { runId: "run-b", workflowId: "order-2" },
@@ -65,19 +64,12 @@ describe("TemporalListPosition", () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: name }));
     });
 
-  it("names the list, links back to it with its filter, and says where the workflow is", () => {
+  it("shows only the previous and next arrows, with no link back and no count", () => {
     render(1);
 
-    const back = container.querySelector<HTMLAnchorElement>(
-      '[data-testid="temporal-list-back"]',
-    )!;
-
-    expect(back.textContent).toBe("Failed");
-    expect(back.getAttribute("href")).toBe(context.href);
-    expect(
-      container.querySelector('[data-testid="temporal-list-place"]')!
-        .textContent,
-    ).toBe("2 of 3");
+    expect(container.querySelector("a")).toBeNull();
+    expect(container.textContent).toBe("");
+    expect(container.querySelectorAll("button")).toHaveLength(2);
   });
 
   it("opens the next and previous rows with the arrows and with j and k", () => {

@@ -191,7 +191,6 @@ export function TemporalAttentionView(props: {
     const seen = new Set<string>();
 
     setTemporalListContext({
-      href: window.location.hash,
       // One run can be in several groups; the list visits it once.
       items: shown
         .filter((item) => {

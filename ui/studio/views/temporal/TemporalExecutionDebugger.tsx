@@ -575,21 +575,11 @@ export function TemporalExecutionDebugger(
               size="sm"
               className={cn("w-8 px-0", imported && "hidden")}
               onClick={() => void refetch()}
-              aria-label="Refresh execution"
+              aria-label="Refresh workflow"
             >
               <RefreshCw
                 className={cn(isFetching && "motion-safe:animate-spin")}
               />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleClone}
-              disabled={!execution}
-              data-testid="temporal-clone-btn"
-            >
-              <Play />
-              <span className="@max-4xl:sr-only">Clone &amp; Start</span>
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -598,7 +588,7 @@ export function TemporalExecutionDebugger(
                   variant="outline"
                   size="sm"
                   className="w-8 px-0"
-                  aria-label="Execution actions"
+                  aria-label="Workflow actions"
                   data-testid="temporal-debugger-actions"
                 >
                   <MoreHorizontal />
@@ -608,6 +598,16 @@ export function TemporalExecutionDebugger(
                 align="end"
                 className="w-60 [&_[role=menuitem]]:text-xs"
               >
+                {/* Rare, so it is in the menu rather than a button of its own. */}
+                <DropdownMenuItem
+                  disabled={!execution}
+                  onClick={handleClone}
+                  data-testid="temporal-clone-btn"
+                >
+                  <Play />
+                  Clone &amp; Start…
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem
                   disabled={!data}
                   onClick={handleDownloadReplayJson}

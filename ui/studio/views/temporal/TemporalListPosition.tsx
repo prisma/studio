@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { useEffect } from "react";
 
 import { Button } from "@/ui/components/ui/button";
@@ -7,9 +7,9 @@ import type { TemporalListContext } from "./temporal-list-context";
 import { isShortcutBlockedTarget } from "./temporal-utils";
 
 /**
- * Where the workflow on screen is in the list it was opened from, in the
- * header before its path: the list's name goes back to the list with its
- * filter, and the arrows (or j and k) open the next and previous row.
+ * The previous and next rows of the list the workflow on screen was opened
+ * from, as two arrows before its path, and as the j and k keys. The list
+ * itself is in the left menu, and the browser's Back button returns to it.
  */
 export function TemporalListPosition(props: {
   context: TemporalListContext;
@@ -50,31 +50,10 @@ export function TemporalListPosition(props: {
 
   return (
     <nav
-      aria-label={`Position in ${context.label}`}
-      className="flex shrink-0 items-center gap-0.5 border-r border-border pr-2 text-xs"
+      aria-label={`Previous and next in ${context.label}`}
+      className="flex shrink-0 items-center"
       data-testid="temporal-list-position"
     >
-      <Button
-        asChild
-        variant="ghost"
-        size="xs"
-        className="gap-1 px-1.5 text-muted-foreground hover:text-foreground"
-      >
-        <a
-          href={context.href}
-          title={`Back to ${context.label}`}
-          data-testid="temporal-list-back"
-        >
-          <ArrowLeft />
-          <span className="max-w-32 truncate">{context.label}</span>
-        </a>
-      </Button>
-      <span
-        className="px-1 font-mono text-2xs tabular-nums text-muted-foreground"
-        data-testid="temporal-list-place"
-      >
-        {position + 1} of {count}
-      </span>
       <Button
         variant="ghost"
         size="xs"

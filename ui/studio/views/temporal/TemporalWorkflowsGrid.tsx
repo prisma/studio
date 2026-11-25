@@ -370,7 +370,6 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
       );
 
       setTemporalListContext({
-        href: window.location.hash,
         items: executions.map((run) => ({
           runId: run.runId,
           workflowId: run.workflowId,
