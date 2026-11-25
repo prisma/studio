@@ -118,10 +118,54 @@ describe("TemporalExecutionDebugger", () => {
 
     const { container, unmount } = render("order-2");
 
-    expect(container.textContent).toContain("typeOf-order-2");
+    expect(container.textContent).toContain("Run run-2");
     expect(
       container.querySelector('[data-testid="temporal-back-to-grid"]'),
     ).toBeNull();
+    unmount();
+  });
+
+  it("shows the summary, the last details, the outcome and the facts only on the status, not as bars", () => {
+    const detail = detailOf("order-2", "run-2");
+
+    detail.execution.status = "Completed";
+    detail.execution.closeTime = "2026-11-22T10:00:01.000Z";
+    detail.summary = "Charge the order";
+    detail.result = { charged: true };
+    detailMock.mockReturnValue({ data: detail });
+    metadataMock.mockReturnValue({
+      data: { currentDetails: "Charged 3 items" },
+    });
+
+    const { container, unmount } = render("order-2");
+
+    expect(container.textContent).not.toContain("Charge the order");
+    expect(container.textContent).not.toContain("Namespace");
+    expect(
+      container.querySelector('[data-testid="temporal-debugger-summary"]'),
+    ).toBeNull();
+
+    const status = container.querySelector<HTMLButtonElement>(
+      '[data-testid="temporal-run-status"]',
+    )!;
+
+    expect(status.textContent).toContain("Completed");
+    expect(status.textContent).toContain("1.00s");
+
+    act(() => {
+      status.focus();
+    });
+
+    const card = document.querySelector(
+      '[data-testid="temporal-run-status-card"]',
+    )!;
+
+    expect(card.textContent).toContain("Charge the order");
+    expect(card.textContent).toContain("Last reported: Charged 3 items");
+    expect(card.textContent).toContain('Result: {"charged":true}');
+    expect(card.textContent).toContain("typeOf-order-2");
+    expect(card.textContent).toContain("billing");
+    expect(card.textContent).toContain("3 events");
     unmount();
   });
 
@@ -134,7 +178,7 @@ describe("TemporalExecutionDebugger", () => {
 
     const { container, unmount } = render("order-2");
 
-    expect(container.textContent).toContain("typeOf-order-2");
+    expect(container.textContent).toContain("Run run-2");
     expect(
       container.querySelector('[data-testid="temporal-refresh-error"]')!
         .textContent,

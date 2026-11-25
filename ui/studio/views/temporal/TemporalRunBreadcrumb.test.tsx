@@ -137,7 +137,9 @@ describe("TemporalRunBreadcrumb", () => {
     const container = render({ runs: [run("01a20953-aaaa", "Running")] });
 
     expect(container.textContent).toContain("Run 01a20953");
-    expect(container.textContent).toContain("the only run");
+    expect(
+      container.querySelector('[aria-current="page"]')!.getAttribute("title"),
+    ).toContain("the only run of");
     expect(
       container.querySelector('[data-testid="temporal-run-switcher"]'),
     ).toBeNull();

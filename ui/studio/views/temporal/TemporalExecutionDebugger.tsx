@@ -1,7 +1,6 @@
 import {
   AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
+  ArrowUpLeft,
   ChevronDown,
   ChevronRight,
   Copy,
@@ -18,6 +17,7 @@ import {
   StopCircle,
   Terminal,
   Waves,
+  Waypoints,
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -45,6 +45,12 @@ import {
 } from "@/ui/components/ui/dropdown-menu";
 import { Input } from "@/ui/components/ui/input";
 import { Skeleton } from "@/ui/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/ui/components/ui/tooltip";
 import { useNavigation } from "@/ui/hooks/use-navigation";
 import { useStreams } from "@/ui/hooks/use-streams";
 import {
@@ -65,6 +71,7 @@ import {
   formatBytes,
   formatDuration,
   formatFailureMessage,
+  formatRelativeTime,
   formatTimeLeft,
   safeJsonPretty,
 } from "./temporal-utils";
@@ -72,13 +79,13 @@ import { TemporalFailurePanel } from "./TemporalFailurePanel";
 import { TemporalInteractPanel } from "./TemporalInteractPanel";
 import { TemporalPendingActivityCard } from "./TemporalPendingActivityCard";
 import {
+  TEMPORAL_SECTION_NAMES,
   TEMPORAL_SPAN_STATUS,
   TemporalConfirmDialog,
   TemporalFollowControl,
   temporalIconScale,
   TemporalLoadError,
   TemporalRefreshError,
-  TEMPORAL_SECTION_NAMES,
   TemporalSectionLabel,
   TemporalSegmentedControl,
   TemporalStatusBadge,
@@ -88,10 +95,10 @@ import {
 } from "./TemporalPrimitives";
 import { relatedRunCount, TemporalRelatedPanel } from "./TemporalRelatedPanel";
 import {
+  compactRunId,
   quoteFilterValue,
   TemporalCopyButton,
   TemporalRunBreadcrumb,
-  TemporalWorkflowTypeLink,
 } from "./TemporalRunBreadcrumb";
 import { TemporalRunCompare } from "./TemporalRunCompare";
 import { TemporalRunDiagram, TemporalTimerDetail } from "./TemporalRunDiagram";
@@ -554,6 +561,63 @@ export function TemporalExecutionDebugger(
                   <Terminal />
                   Copy Temporal CLI Command
                 </DropdownMenuItem>
+                {execution && !imported ? (
+                  <DropdownMenuItem asChild>
+                    <a
+                      href={createUrl({
+                        temporalNsParam: namespace,
+                        temporalSectionParam: "types",
+                        temporalTypeParam: execution.workflowType,
+                        viewParam: "temporal",
+                      })}
+                    >
+                      <Waypoints />
+                      Open Workflow Type
+                    </a>
+                  </DropdownMenuItem>
+                ) : null}
+                {execution?.parentWorkflowId ? (
+                  <DropdownMenuItem
+                    onClick={() =>
+                      onOpenExecution(
+                        execution.parentWorkflowId!,
+                        execution.parentRunId,
+                      )
+                    }
+                  >
+                    <ArrowUpLeft />
+                    Open Parent Run
+                  </DropdownMenuItem>
+                ) : null}
+                {execution && typeof streamsUrl === "string" ? (
+                  <DropdownMenuItem asChild>
+                    <a
+                      href={createUrl({
+                        searchParam: execution.workflowId,
+                        ...(targetStream ? { streamParam: targetStream } : {}),
+                        viewParam: "stream",
+                      })}
+                    >
+                      <Waves />
+                      Search Streams
+                    </a>
+                  </DropdownMenuItem>
+                ) : null}
+                {execution && hasDatabase ? (
+                  <DropdownMenuItem asChild>
+                    <a
+                      href={createUrl({
+                        schemaParam,
+                        searchParam: execution.workflowId,
+                        tableParam,
+                        viewParam: "table",
+                      })}
+                    >
+                      <Database />
+                      Search Tables
+                    </a>
+                  </DropdownMenuItem>
+                ) : null}
                 {canReset ? (
                   <>
                     <DropdownMenuItem
@@ -669,9 +733,11 @@ export function TemporalExecutionDebugger(
                 runs={runsOfId}
               />
               {/* A narrow header has no room for the status either; the row under it shows it. */}
-              <WorkflowStatusBadge
-                status={execution.status}
-                className="shrink-0 @max-4xl:hidden"
+              <RunStatus
+                className="@max-4xl:hidden"
+                currentDetails={metadata.data?.currentDetails}
+                detail={data}
+                isImported={Boolean(imported)}
               />
             </>
           ) : (
@@ -741,153 +807,11 @@ export function TemporalExecutionDebugger(
               runCount={runCount}
               runs={runsOfId}
             />
-            <WorkflowStatusBadge
-              status={execution.status}
-              className="shrink-0"
+            <RunStatus
+              currentDetails={metadata.data?.currentDetails}
+              detail={data}
+              isImported={Boolean(imported)}
             />
-          </div>
-
-          {data.summary || metadata.data?.currentDetails ? (
-            <div
-              className="flex flex-col gap-0.5 border-b border-border px-4 py-2 text-xs"
-              data-testid="temporal-debugger-summary"
-            >
-              {data.summary ? (
-                <p className="font-medium text-foreground">{data.summary}</p>
-              ) : null}
-              {metadata.data?.currentDetails ? (
-                <p className="whitespace-pre-wrap text-muted-foreground">
-                  {metadata.data.currentDetails}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
-            <dl className="flex flex-wrap items-center gap-x-5 gap-y-1">
-              <MetadataItem
-                label="Type"
-                value={
-                  <TemporalWorkflowTypeLink
-                    isImported={Boolean(imported)}
-                    namespace={namespace}
-                    workflowType={execution.workflowType}
-                  />
-                }
-              />
-              <MetadataItem label="Namespace" value={namespace} />
-              <MetadataItem label="Queue" value={execution.taskQueue} />
-              <MetadataItem
-                label="Duration"
-                value={formatDuration(execution.durationMs)}
-              />
-              <MetadataItem
-                label="History"
-                value={`${execution.historyLength} events · ${formatBytes(execution.historySizeBytes)}`}
-              />
-              <MetadataItem
-                label="Started"
-                value={<TemporalTime iso={execution.startTime} />}
-              />
-              {data.codec && data.codec.decoded > 0 ? (
-                <MetadataItem
-                  label="Codec"
-                  value={`${data.codec.decoded} payloads decoded`}
-                />
-              ) : null}
-              {execution.closeTime ? (
-                <MetadataItem
-                  label="Closed"
-                  value={<TemporalTime iso={execution.closeTime} />}
-                />
-              ) : null}
-            </dl>
-            <div className="flex flex-wrap items-center gap-1">
-              {data.chain.previousRunId ? (
-                <Button
-                  variant="outline"
-                  size="xs"
-                  title={`This run continues run ${data.chain.previousRunId}`}
-                  onClick={() =>
-                    onOpenExecution(workflowId, data.chain.previousRunId)
-                  }
-                  data-testid="temporal-previous-run"
-                >
-                  <ArrowLeft />
-                  Previous Run
-                </Button>
-              ) : null}
-              {data.chain.nextRunId ? (
-                <Button
-                  variant="outline"
-                  size="xs"
-                  title={`Run ${data.chain.nextRunId} continues this run`}
-                  onClick={() =>
-                    onOpenExecution(workflowId, data.chain.nextRunId)
-                  }
-                  data-testid="temporal-next-run"
-                >
-                  Next Run
-                  <ArrowRight />
-                </Button>
-              ) : null}
-              {execution.parentWorkflowId ? (
-                <Button
-                  variant="outline"
-                  size="xs"
-                  className="font-mono font-normal"
-                  onClick={() => {
-                    if (execution.parentWorkflowId) {
-                      onOpenExecution(
-                        execution.parentWorkflowId,
-                        execution.parentRunId,
-                      );
-                    }
-                  }}
-                >
-                  Parent: {execution.parentWorkflowId}
-                </Button>
-              ) : null}
-              {typeof streamsUrl === "string" ? (
-                <Button
-                  asChild
-                  variant="ghost"
-                  size="xs"
-                  className="text-muted-foreground"
-                >
-                  <a
-                    href={createUrl({
-                      searchParam: execution.workflowId,
-                      ...(targetStream ? { streamParam: targetStream } : {}),
-                      viewParam: "stream",
-                    })}
-                  >
-                    <Waves />
-                    Search Streams
-                  </a>
-                </Button>
-              ) : null}
-              {hasDatabase ? (
-                <Button
-                  asChild
-                  variant="ghost"
-                  size="xs"
-                  className="text-muted-foreground"
-                >
-                  <a
-                    href={createUrl({
-                      schemaParam,
-                      searchParam: execution.workflowId,
-                      tableParam,
-                      viewParam: "table",
-                    })}
-                  >
-                    <Database />
-                    Search Tables
-                  </a>
-                </Button>
-              ) : null}
-            </div>
           </div>
 
           {data.codec && (data.codec.encoded > 0 || data.codec.error) ? (
@@ -1702,12 +1626,124 @@ function describeRawEvents(
   return details;
 }
 
-function MetadataItem(props: { label: string; value: React.ReactNode }) {
+/** What a closed run ended with, in one line: its failure, its next run, or the start of its result. */
+function runOutcome(detail: TemporalExecutionDetail): string | null {
+  if (detail.failure) {
+    return formatFailureMessage(detail.failure);
+  }
+
+  if (detail.execution.status === "ContinuedAsNew" && detail.chain.nextRunId) {
+    return `Continued as run ${compactRunId(detail.chain.nextRunId)}`;
+  }
+
+  if (detail.result === undefined) {
+    return null;
+  }
+
+  const text = JSON.stringify(detail.result) ?? String(detail.result);
+
+  return `Result: ${text.length > 200 ? `${text.slice(0, 200)}…` : text}`;
+}
+
+/**
+ * The run's status, how long it ran and when it closed. Hovering or focusing it
+ * shows what the run was started for, what it last reported, how it ended, and
+ * the facts about it.
+ */
+function RunStatus(props: {
+  className?: string;
+  currentDetails?: string;
+  detail: TemporalExecutionDetail;
+  isImported: boolean;
+}) {
+  const { className, currentDetails, detail, isImported } = props;
+  const { codec, execution, summary } = detail;
+  const outcome = runOutcome(detail);
+  const facts: Array<[string, React.ReactNode]> = [
+    ["Type", execution.workflowType],
+    ["Queue", execution.taskQueue],
+    ["Started", <TemporalTime key="started" iso={execution.startTime} />],
+    ...(execution.closeTime
+      ? ([
+          ["Closed", <TemporalTime key="closed" iso={execution.closeTime} />],
+        ] as Array<[string, React.ReactNode]>)
+      : []),
+    ["Duration", formatDuration(execution.durationMs)],
+    [
+      "History",
+      `${execution.historyLength} events · ${formatBytes(execution.historySizeBytes)}`,
+    ],
+    ...(codec && codec.decoded > 0
+      ? ([["Codec", `${codec.decoded} payloads decoded`]] as Array<
+          [string, React.ReactNode]
+        >)
+      : []),
+    ...(execution.parentWorkflowId
+      ? ([["Parent", execution.parentWorkflowId]] as Array<
+          [string, React.ReactNode]
+        >)
+      : []),
+    ...(isImported
+      ? ([["Source", "Imported history"]] as Array<[string, React.ReactNode]>)
+      : []),
+  ];
+
   return (
-    <div className="flex items-baseline gap-1.5">
-      <dt>{props.label}</dt>
-      <dd className="font-mono text-foreground">{props.value}</dd>
-    </div>
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className={cn(
+              "inline-flex shrink-0 cursor-help items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              className,
+            )}
+            data-testid="temporal-run-status"
+          >
+            <WorkflowStatusBadge status={execution.status} />
+            <span className="font-mono text-2xs text-muted-foreground tabular-nums">
+              {formatDuration(execution.durationMs)}
+              {execution.closeTime
+                ? ` · ${formatRelativeTime(execution.closeTime)}`
+                : null}
+            </span>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent
+          align="end"
+          side="bottom"
+          className="w-[min(28rem,calc(100vw-2rem))] p-3"
+          data-testid="temporal-run-status-card"
+        >
+          <div className="flex flex-col gap-2">
+            {summary ? (
+              <p className="font-medium text-foreground">{summary}</p>
+            ) : null}
+            {currentDetails ? (
+              <p className="whitespace-pre-wrap text-muted-foreground">
+                <span className="text-foreground">Last reported: </span>
+                {currentDetails}
+              </p>
+            ) : null}
+            {outcome ? (
+              <p className="break-words font-mono text-2xs text-foreground">
+                {outcome}
+              </p>
+            ) : null}
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-2xs text-muted-foreground">
+              {facts.map(([label, value]) => (
+                <div key={label} className="contents">
+                  <dt>{label}</dt>
+                  <dd className="truncate font-mono text-foreground">
+                    {value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 

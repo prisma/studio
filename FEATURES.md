@@ -53,7 +53,7 @@ No Temporal filter can find these, so the BFF describes every running workflow a
 ## Temporal One-Click Queries, Signals and Updates
 
 The workflow page asks the Worker which Queries, Signals and Updates the workflow handles, and shows each as a row with its description. A Query runs in one click and shows its result inline; a Signal or an Update asks for its arguments first.
-It also shows the workflow's summary and current details text, a Stack tab with the call stack, and falls back to a name field when no Worker answers.
+The status in the header shows the workflow's summary and current details text when hovered. The panel also has a Stack tab with the call stack, and falls back to a name field when no Worker answers.
 
 ## Temporal Timeline
 
@@ -80,7 +80,7 @@ Cmd+Enter or Ctrl+Enter starts the run. A field the user changed is never filled
 
 ## Temporal Run Path
 
-The header of a run is a path that matches the left menu: the screen the run was opened from, the Workflow ID, and the run. The screen goes back to it, the Workflow ID opens every run of that ID, and the run opens a list of the runs of the ID to move to another one. Opening a run never moves the mark in the left menu, so a run opened from Workflow IDs stays under Workflow IDs. The Workflow Type is shown beside the namespace, with a link to its executions and its diagram. It says "2 of 3" for a run of several and "the only run" otherwise.
+The header of a run is a path that matches the left menu: the screen the run was opened from, the Workflow ID, and the run. The screen goes back to it, the Workflow ID opens every run of that ID, and the run opens a list of the runs of the ID to move to another one. Opening a run never moves the mark in the left menu, so a run opened from Workflow IDs stays under Workflow IDs. It says "2 of 3" for a run of several. Beside the path, the status shows how long the run took and when it closed; hovering it shows how the run ended (the start of its result, or its failure), its Type, Queue, times and history size. The actions menu opens the Workflow Type's diagram, the parent run, and searches in Streams and Tables.
 The Related tab shows the parent, this run and its Child Workflows as a tree, and the other runs of the Workflow ID as a list. Where there is nothing, it says so in a sentence.
 
 ## Temporal Workflow IDs
@@ -112,7 +112,7 @@ An Activity that a loop ran 20 times is one step with its count and 20 marks. Th
 
 ## Temporal Run Chains and Related Workflows
 
-A workflow that continued as new, was retried or runs on a cron links to its previous and next run in the header. The Related tab lists the parent and root workflow, the Child Workflows this run started with their status, and every run of the same Workflow ID.
+A workflow that continued as new, was retried or runs on a cron lists its previous and next run in the run menu of the header. The Related tab lists the parent and root workflow, the Child Workflows this run started with their status, and every run of the same Workflow ID.
 
 ## Temporal Codec Server Support
 

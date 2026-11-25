@@ -335,14 +335,13 @@ export function TemporalRunBreadcrumb(props: {
           <span
             aria-current="page"
             className="px-1 text-foreground"
-            title={`Run ID: ${runId}`}
+            title={
+              !isImported && runs?.length === 1
+                ? `Run ID: ${runId}, the only run of ${workflowId}`
+                : `Run ID: ${runId}`
+            }
           >
             Run {shortRunId}
-            {!isImported && runs?.length === 1 ? (
-              <span className="ml-1.5 font-sans text-muted-foreground">
-                the only run
-              </span>
-            ) : null}
           </span>
         )}
         <TemporalCopyButton
