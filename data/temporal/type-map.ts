@@ -148,7 +148,7 @@ function stepOf(
   if (summary && rules.splitSteps.has(base)) {
     return {
       id: `${base}:${summary}`,
-      implementation: span.label,
+      implementation: span.label.replace(/^Child: /, ""),
       label: summary,
     };
   }

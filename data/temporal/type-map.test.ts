@@ -129,6 +129,21 @@ describe("buildTypeMap", () => {
     expect(map.splitSteps).toEqual(["activity:chargePayment"]);
   });
 
+  it("names a Child Workflow step by its summary, with its Workflow Type as the implementation", () => {
+    const map = buildTypeMap([
+      run("order-1", "Completed", [
+        step("Child: shipment", 5, 7, {
+          kind: "child-workflow",
+          userSummary: "Ship the order",
+        }),
+      ]),
+    ]);
+
+    expect(
+      map.nodes.find((node) => node.label === "Ship the order"),
+    ).toMatchObject({ implementation: "shipment", kind: "child-workflow" });
+  });
+
   it("keeps one node when an Activity's summaries name single executions, not steps", () => {
     const map = buildTypeMap(
       Array.from({ length: 8 }, (_, index) =>

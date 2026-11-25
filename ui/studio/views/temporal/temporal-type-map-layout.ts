@@ -121,7 +121,7 @@ export function typeMapNodeSize(
 
 /** Whether a step's title is a summary too long for one line of its node, which shows it on two. */
 export function typeMapTitleWraps(node: TemporalTypeMapNode): boolean {
-  return /\s/.test(node.label) && node.label.length > 28;
+  return /\s/.test(node.label) && node.label.length > 24;
 }
 
 /**
