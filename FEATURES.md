@@ -140,7 +140,7 @@ In a namespace with more runs than Studio copies, it counts the running runs onl
 
 ## Temporal Workflow Type Diagrams
 
-Workflow Types draws one diagram per Workflow Type: the Activities, Timers, Child Workflows, Signals and Updates that its runs take, top to bottom, with an arrow where one step followed another and the number of runs that went that way. Temporal stores no definition of a Workflow, so Studio draws the diagram from the histories of the 40 newest runs, with a few runs of every status.
+Workflow Types draws one diagram per Workflow Type: the Activities, Timers, Child Workflows, Signals and Updates that its runs take, top to bottom, with an arrow where one step followed another and the number of runs that went that way. Temporal stores no definition of a Workflow, so Studio draws the diagram from the histories of the 40 newest runs, with a few runs of every status. An info button beside the type's name explains this and says when the diagram was drawn. Redraw draws it again now from more runs: 100, then 200. "View All N Runs" opens the type's runs in Executions.
 An arrow carries words, not a box: the summary the Workflow code gave the step it leads to (the SDK's `summary` option), or what kind of transition it is, such as "after timer" or "on signal". Pointing at any arrow shows on every arrow the share of runs that took it.
 Each step shows how many runs are at it now, in how many it failed or was retried, and its median duration. Selecting a step lists those runs; a run's Workflow Type name links to its diagram.
 

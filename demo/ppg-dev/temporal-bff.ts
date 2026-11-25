@@ -391,6 +391,8 @@ const MAX_ATTENTION_RUNS = 1_500;
 const ATTENTION_MIN_AGE_MS = 15_000;
 /** How many runs a Workflow Type's diagram is drawn from, and how much of each the BFF reads. */
 const TYPE_MAP_SAMPLE_RUNS = 40;
+/** The largest sample a redraw may ask for: each run costs one or two history reads. */
+const TYPE_MAP_MAX_SAMPLE_RUNS = 200;
 const TYPE_MAP_CANDIDATE_RUNS = 300;
 const TYPE_MAP_HISTORY_PAGES = 2;
 const TYPE_MAP_HISTORY_PAGE_SIZE = 500;
@@ -1222,16 +1224,25 @@ export class TemporalGrpcBffClient {
   async getTypeMap(
     namespace: string,
     workflowType: string,
+    options: {
+      /** Draw again now instead of returning a diagram up to a minute old. */
+      fresh?: boolean;
+      sampleSize?: number;
+    } = {},
   ): Promise<TemporalTypeMapResponse> {
+    const sampleSize = Math.min(
+      TYPE_MAP_MAX_SAMPLE_RUNS,
+      Math.max(1, Math.round(options.sampleSize ?? TYPE_MAP_SAMPLE_RUNS)),
+    );
     const remembered = await this.#remember(
-      `type-map\n${namespace}\n${workflowType}`,
-      TYPE_MAP_MIN_AGE_MS,
+      `type-map\n${namespace}\n${workflowType}\n${sampleSize}`,
+      options.fresh ? 0 : TYPE_MAP_MIN_AGE_MS,
       async () => {
         const { complete, runs: candidates } = await this.#runsOfType(
           namespace,
           workflowType,
         );
-        const sample = pickTypeMapSample(candidates, TYPE_MAP_SAMPLE_RUNS);
+        const sample = pickTypeMapSample(candidates, sampleSize);
         const details = new Array<TemporalExecutionDetail | null>(
           sample.length,
         ).fill(null);
@@ -1327,6 +1338,7 @@ export class TemporalGrpcBffClient {
           ...buildTypeMap(validDetails),
           candidateCount: candidates.length,
           candidatesComplete: complete,
+          sampleSize,
           truncatedRunCount,
           ...(versions ? { versions } : {}),
           workflowType,

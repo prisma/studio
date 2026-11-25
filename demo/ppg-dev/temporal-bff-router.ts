@@ -397,6 +397,10 @@ export async function handleTemporalBffRequest(
         await client.getTypeMap(
           decodeURIComponent(typeMapMatch[1]!),
           decodeURIComponent(typeMapMatch[2]!),
+          {
+            fresh: url.searchParams.get("fresh") === "1",
+            sampleSize: Number(url.searchParams.get("sample")) || undefined,
+          },
         ),
       );
     }

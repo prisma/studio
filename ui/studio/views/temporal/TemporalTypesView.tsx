@@ -1,4 +1,4 @@
-import { RefreshCw, Search, Waypoints } from "lucide-react";
+import { ArrowRight, Info, RefreshCw, Search, Waypoints } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import type {
@@ -10,6 +10,11 @@ import type {
 } from "@/data/temporal";
 import { Button } from "@/ui/components/ui/button";
 import { Input } from "@/ui/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/ui/components/ui/popover";
 import { Skeleton } from "@/ui/components/ui/skeleton";
 import { useNavigation } from "@/ui/hooks/use-navigation";
 import { useTemporalFacets, useTemporalTypeMap } from "@/ui/hooks/use-temporal";
@@ -88,9 +93,21 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
     temporalTypeParam ??
     (isFirstTypeListed ? firstListedType : types[0]?.name) ??
     null;
+  // The user's redraws of the type on screen; a new type starts from the default sample.
+  const [draw, setDraw] = useState<{
+    redraw: number;
+    sampleSize?: number;
+    workflowType: string | null;
+  }>({ redraw: 0, workflowType: activeType });
+  const ownDraw =
+    draw.workflowType === activeType
+      ? draw
+      : { redraw: 0, sampleSize: undefined };
   const map = useTemporalTypeMap({
     followMode,
     namespace,
+    redraw: ownDraw.redraw,
+    sampleSize: ownDraw.sampleSize,
     workflowType: activeType,
   });
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -311,7 +328,20 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
               ) : null}
               <SampleLine
                 drawnAt={drawnAt}
+                isRedrawing={map.isFetching && ownDraw.redraw > 0}
                 map={shownMap}
+                onRedraw={(sampleSize) =>
+                  setDraw({
+                    redraw: ownDraw.redraw + 1,
+                    sampleSize,
+                    workflowType: activeType,
+                  })
+                }
+                runCount={
+                  facets.data?.complete
+                    ? types.find((type) => type.name === activeType)?.count
+                    : undefined
+                }
                 workflowsUrl={workflowsUrl(typeFilter)}
               />
               {map.data?.versions && map.data.versions.length > 1 ? (
@@ -390,39 +420,118 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
   );
 }
 
-/** Which runs the diagram is drawn from, so its counts are not read as counts of all runs. */
+/** The sample sizes a redraw steps through: each run costs one or two history reads. */
+const SAMPLE_STEPS = [40, 100, 200];
+
+/** How many runs the next redraw reads: the next step, or the same number when no more runs exist. */
+export function nextSampleSize(map: TemporalTypeMapResponse): number {
+  const current = map.sampleSize ?? SAMPLE_STEPS[0]!;
+  const hasMoreRuns =
+    !map.candidatesComplete || map.candidateCount > map.runCount;
+  const next = SAMPLE_STEPS.find((size) => size > current);
+
+  return hasMoreRuns && next ? next : current;
+}
+
+/**
+ * The type's name, its sampled runs by status, and the actions: how the diagram
+ * was drawn (behind an info button), redraw, and the runs in Executions.
+ */
 function SampleLine(props: {
   drawnAt?: string;
+  isRedrawing: boolean;
   map: TemporalTypeMapResponse;
+  onRedraw: (sampleSize: number) => void;
+  /** Every run of the type, when the server counted them all. */
+  runCount?: number;
   workflowsUrl: string;
 }) {
-  const { drawnAt, map, workflowsUrl } = props;
+  const { drawnAt, isRedrawing, map, onRedraw, runCount, workflowsUrl } = props;
+  const nextSize = nextSampleSize(map);
+  const grows = nextSize > (map.sampleSize ?? SAMPLE_STEPS[0]!);
+  const redrawLabel = grows
+    ? `Redraw from up to ${nextSize} runs`
+    : "Redraw the diagram";
 
   return (
     <div
-      className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground"
+      className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-4 py-1.5 text-xs text-muted-foreground"
       data-testid="temporal-type-sample"
     >
-      <span className="font-mono text-sm font-medium text-foreground">
-        {map.workflowType}
-      </span>
-      <span>
-        Drawn from{" "}
-        <span className="font-medium tabular-nums text-foreground">
-          {map.runCount}
+      <span className="flex items-center gap-1">
+        <span className="font-mono text-sm font-medium text-foreground">
+          {map.workflowType}
         </span>
-        {map.candidatesComplete && map.candidateCount > map.runCount
-          ? ` of ${map.candidateCount.toLocaleString("en-US")}`
-          : ""}{" "}
-        {map.runCount === 1 ? "run" : "runs"}
-        {map.candidateCount <= map.runCount
-          ? ""
-          : map.candidatesComplete
-            ? ": the newest, and the newest of each status"
-            : // A namespace too large to copy: the BFF knows one page of the type's runs.
-              ", chosen from its running runs and one page of its other runs"}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="xs"
+              className="w-6 px-0 text-muted-foreground"
+              aria-label="How this diagram is drawn"
+              title="How this diagram is drawn"
+              data-testid="temporal-type-sample-info"
+            >
+              <Info />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            align="start"
+            className="flex w-80 flex-col gap-2 p-3 text-xs"
+            data-testid="temporal-type-sample-details"
+          >
+            <p className="font-medium text-foreground">
+              Drawn from a sample of runs
+            </p>
+            <p className="text-muted-foreground">
+              Temporal keeps no definition of a Workflow, only the history of
+              each run. Studio reads the histories of some runs of this type and
+              merges their steps. The numbers on the diagram count those runs,
+              not every run.
+            </p>
+            <p className="text-foreground">
+              This diagram: {map.runCount}
+              {map.candidatesComplete && map.candidateCount > map.runCount
+                ? ` of ${map.candidateCount.toLocaleString("en-US")}`
+                : ""}{" "}
+              {map.runCount === 1 ? "run" : "runs"}
+              {map.candidateCount <= map.runCount
+                ? "."
+                : map.candidatesComplete
+                  ? ": the newest, and the newest of each status."
+                  : // A namespace too large to copy: the BFF knows one page of the type's runs.
+                    ", chosen from its running runs and one page of its other runs."}
+            </p>
+            {map.truncatedRunCount > 0 ? (
+              <p className="text-muted-foreground">
+                {map.truncatedRunCount} of them have a history longer than
+                Studio reads, so their last steps are missing.
+              </p>
+            ) : null}
+            {drawnAt ? (
+              <p className="text-muted-foreground">
+                Drawn <TickingTime iso={drawnAt} />. While Live, it is drawn
+                again at most once a minute.
+              </p>
+            ) : null}
+            <Button
+              variant="outline"
+              size="xs"
+              className="self-start"
+              disabled={isRedrawing}
+              onClick={() => onRedraw(nextSize)}
+            >
+              <RefreshCw
+                className={cn(isRedrawing && "motion-safe:animate-spin")}
+              />
+              {grows ? `Redraw from up to ${nextSize} runs` : "Redraw now"}
+            </Button>
+          </PopoverContent>
+        </Popover>
       </span>
       <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        {/* The counts are of the sample, not of every run of the type. */}
+        <span>Sample of {map.runCount}:</span>
         {STATUS_ORDER.filter((status) => map.statusCounts[status]).map(
           (status) => (
             <span key={status} className="flex items-center gap-1">
@@ -435,23 +544,29 @@ function SampleLine(props: {
           ),
         )}
       </span>
-      {map.truncatedRunCount > 0 ? (
-        <span>
-          {map.truncatedRunCount} with a history longer than Studio reads
-        </span>
-      ) : null}
-      <span className="ml-auto flex items-center gap-4">
-        {drawnAt ? (
-          <span>
-            Drawn <TickingTime iso={drawnAt} />
-          </span>
-        ) : null}
-        <a
-          className="font-medium text-foreground underline underline-offset-2 hover:no-underline"
-          href={workflowsUrl}
+      <span className="ml-auto flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-8 px-0"
+          aria-label={redrawLabel}
+          title={redrawLabel}
+          disabled={isRedrawing}
+          onClick={() => onRedraw(nextSize)}
+          data-testid="temporal-type-redraw"
         >
-          Open every run of this type in Executions
-        </a>
+          <RefreshCw
+            className={cn(isRedrawing && "motion-safe:animate-spin")}
+          />
+        </Button>
+        <Button asChild size="sm">
+          <a href={workflowsUrl} data-testid="temporal-type-runs">
+            {runCount === undefined
+              ? "View All Runs"
+              : `View All ${runCount.toLocaleString("en-US")} Runs`}
+            <ArrowRight />
+          </a>
+        </Button>
       </span>
     </div>
   );

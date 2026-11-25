@@ -668,6 +668,11 @@ export interface TemporalTypeMapResponse extends TemporalTypeMap {
   candidateCount: number;
   /** False when the namespace is too large for the BFF to know every run of the type. */
   candidatesComplete: boolean;
+  /**
+   * The most runs the BFF read for this diagram. A server that does not
+   * report it drew from its default of 40.
+   */
+  sampleSize?: number;
   /** Sampled runs whose history is longer than the BFF reads. */
   truncatedRunCount: number;
   /** Per-Build-ID diagrams when the sampled runs span more than one Worker version. */

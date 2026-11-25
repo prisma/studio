@@ -1065,10 +1065,35 @@ export function useTemporalTypeInputs(args: {
 export function useTemporalTypeMap(args: {
   followMode: TemporalFollowMode;
   namespace: string;
+  /**
+   * Counts the user's redraws. A new count asks the server to draw again now
+   * instead of returning a diagram up to a minute old; later polls do not.
+   */
+  redraw?: number;
+  /** How many runs to draw from; the server's default is 40. */
+  sampleSize?: number;
   workflowType: string | null;
 }) {
   const { temporalUrl } = useStudio();
-  const { followMode, namespace, workflowType } = args;
+  const queryClient = useQueryClient();
+  const { followMode, namespace, redraw = 0, sampleSize, workflowType } = args;
+  const queryKey: [
+    "temporal",
+    "type-map",
+    string | undefined,
+    string,
+    string,
+    string,
+    string,
+  ] = [
+    "temporal",
+    "type-map",
+    temporalUrl,
+    namespace,
+    workflowType ?? "",
+    String(sampleSize ?? 0),
+    String(redraw),
+  ];
 
   return useQuery<TemporalTypeMapResponse>({
     enabled:
@@ -1079,18 +1104,23 @@ export function useTemporalTypeMap(args: {
     // The diagram of another type is not a placeholder for this one.
     placeholderData: (previous) =>
       previous?.workflowType === workflowType ? previous : undefined,
-    queryFn: () =>
-      temporalFetch<TemporalTypeMapResponse>(
+    queryFn: () => {
+      const params = new URLSearchParams();
+
+      if (sampleSize) {
+        params.set("sample", String(sampleSize));
+      }
+
+      if (redraw > 0 && queryClient.getQueryData(queryKey) === undefined) {
+        params.set("fresh", "1");
+      }
+
+      return temporalFetch<TemporalTypeMapResponse>(
         temporalUrl!,
-        `/v1/namespaces/${encodeURIComponent(namespace)}/workflow-types/${encodeURIComponent(workflowType!)}/map`,
-      ),
-    queryKey: [
-      "temporal",
-      "type-map",
-      temporalUrl,
-      namespace,
-      workflowType ?? "",
-    ],
+        `/v1/namespaces/${encodeURIComponent(namespace)}/workflow-types/${encodeURIComponent(workflowType!)}/map${params.size > 0 ? `?${params.toString()}` : ""}`,
+      );
+    },
+    queryKey,
     // The BFF draws a type again at most once a minute.
     refetchInterval: pollEvery(followMode, 30_000),
     retry: shouldRetryTemporalRequest,

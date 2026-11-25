@@ -170,13 +170,37 @@ describe("TemporalTypesView", () => {
       expect.objectContaining({ workflowType: "orderFulfillment" }),
     );
     expect(
-      container
-        .querySelector('[data-testid="temporal-type-sample"]')!
+      container.querySelector('[data-testid="temporal-type-sample"]')!
+        .textContent,
+    ).not.toContain("Drawn");
+
+    click(container, "temporal-type-sample-info");
+    expect(
+      document
+        .querySelector('[data-testid="temporal-type-sample-details"]')!
         .textContent.replace(/\s+/g, " "),
-    ).toContain("Drawn from 40 of 400 runs");
+    ).toContain("This diagram: 40 of 400 runs: the newest");
 
     click(container, "temporal-type-subscriptionBilling");
     expect(setTemporalTypeParam).toHaveBeenCalledWith("subscriptionBilling");
+  });
+
+  it("redraws from a larger sample, and opens the type's runs from a button", () => {
+    const container = render();
+
+    expect(
+      container.querySelector('[data-testid="temporal-type-runs"]')!
+        .textContent,
+    ).toContain("View All");
+
+    click(container, "temporal-type-redraw");
+    expect(typeMapArgs).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        redraw: 1,
+        sampleSize: 100,
+        workflowType: "orderFulfillment",
+      }),
+    );
   });
 
   it("lists the runs in which the selected step failed, and opens one", () => {
