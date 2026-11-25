@@ -1,5 +1,5 @@
 import { ChevronRight } from "lucide-react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
 import { cn } from "@/ui/lib/utils";
 
@@ -27,6 +27,20 @@ export function payloadSizeText(value: Container): string {
     : `${count} ${count === 1 ? "field" : "fields"}`;
 }
 
+/** Lets a long ID such as `inv_demo_2992660` wrap after `_`, `-`, `.`, `/`, `:` or `@` rather than mid-word. */
+function withBreakPoints(text: string): React.ReactNode {
+  if (text.length <= 12) {
+    return text;
+  }
+
+  return text.split(/(?<=[_\-./:@])/).map((part, index) => (
+    <Fragment key={index}>
+      {index > 0 ? <wbr /> : null}
+      {part}
+    </Fragment>
+  ));
+}
+
 function ScalarValue(props: { value: unknown }) {
   const { value } = props;
 
@@ -39,7 +53,7 @@ function ScalarValue(props: { value: unknown }) {
       <span className="text-muted-foreground italic">empty</span>
     ) : (
       <span className="break-words whitespace-pre-wrap text-foreground">
-        {value}
+        {withBreakPoints(value)}
       </span>
     );
   }
@@ -67,7 +81,7 @@ function Fields(props: { depth: number; value: Container }) {
   }
 
   return (
-    <dl className="grid grid-cols-[fit-content(55%)_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1">
+    <dl className="grid grid-cols-[minmax(6ch,max-content)_minmax(min(18ch,50%),1fr)] items-baseline gap-x-3 gap-y-1">
       {entries.map(([name, value]) => (
         <Field key={name} depth={props.depth} name={name} value={value} />
       ))}

@@ -62,6 +62,15 @@ describe("TemporalPayloadView", () => {
     expect(container.textContent).toContain("nothingNo fields");
   });
 
+  it("lets a long ID wrap after its separators, not mid-word", () => {
+    const container = render({ id: "inv_demo_vwait_2992660" });
+
+    expect(container.querySelectorAll("wbr")).toHaveLength(3);
+    expect(container.querySelector("dd")!.textContent).toBe(
+      "inv_demo_vwait_2992660",
+    );
+  });
+
   it("shows a value that is not an object on its own", () => {
     expect(render("done").textContent).toBe("done");
   });
