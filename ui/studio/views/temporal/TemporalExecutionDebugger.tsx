@@ -77,6 +77,7 @@ import {
 } from "./temporal-utils";
 import { TemporalFailurePanel } from "./TemporalFailurePanel";
 import { TemporalInteractPanel } from "./TemporalInteractPanel";
+import { payloadSizeText, TemporalPayloadView } from "./TemporalPayloadView";
 import { TemporalPendingActivityCard } from "./TemporalPendingActivityCard";
 import {
   TEMPORAL_SECTION_NAMES,
@@ -1424,7 +1425,7 @@ export function TemporalExecutionDebugger(
                       emptyText="This run was started with no input."
                       label="Workflow Input"
                       name="the Workflow input"
-                      preClassName={META_PRE_CLASS}
+                      viewClassName={META_VIEW_CLASS}
                       value={data.input}
                     />
                     {data.result !== undefined ? (
@@ -1432,7 +1433,7 @@ export function TemporalExecutionDebugger(
                         emptyText=""
                         label="Workflow Result"
                         name="the Workflow result"
-                        preClassName={META_PRE_CLASS}
+                        viewClassName={META_VIEW_CLASS}
                         value={data.result}
                       />
                     ) : null}
@@ -1447,7 +1448,7 @@ export function TemporalExecutionDebugger(
                         emptyText=""
                         label="Memo"
                         name="the memo"
-                        preClassName={META_PRE_CLASS}
+                        viewClassName={META_VIEW_CLASS}
                         value={execution.memo}
                       />
                     ) : null}
@@ -1810,25 +1811,23 @@ function MetaBlock(props: {
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       <TemporalSectionLabel>{props.label}</TemporalSectionLabel>
-      <pre
+      <p
         className={cn(
-          "max-h-44 overflow-auto whitespace-pre-wrap rounded-md border p-3 font-mono text-xs text-foreground",
+          "max-h-44 overflow-auto whitespace-pre-wrap rounded-md border px-3 py-2.5 text-xs leading-5 text-foreground",
           props.tone === "danger"
             ? "border-destructive/30 bg-destructive/10"
-            : "border-border bg-muted/30",
+            : "border-border bg-background",
         )}
       >
         {props.children}
-      </pre>
+      </p>
     </div>
   );
 }
 
-const META_PRE_CLASS =
-  "max-h-44 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3 font-mono text-xs text-foreground";
+const META_VIEW_CLASS = "max-h-72";
 
-const SPAN_PRE_CLASS =
-  "max-h-40 overflow-auto rounded-md border border-border bg-card p-3 font-mono text-xs text-foreground";
+const SPAN_VIEW_CLASS = "max-h-56 bg-card";
 
 /** A payload as JSON with a button that copies it, or a sentence when there is none. */
 function PayloadBlock(props: {
@@ -1836,15 +1835,22 @@ function PayloadBlock(props: {
   label: React.ReactNode;
   /** What the copy button names, such as "the Workflow input". */
   name: string;
-  preClassName: string;
   value: unknown;
+  viewClassName: string;
 }) {
-  const { emptyText, label, name, preClassName, value } = props;
+  const { emptyText, label, name, value, viewClassName } = props;
 
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       <div className="flex min-h-6 items-center justify-between gap-2">
-        <TemporalSectionLabel>{label}</TemporalSectionLabel>
+        <div className="flex min-w-0 items-baseline gap-2">
+          <TemporalSectionLabel>{label}</TemporalSectionLabel>
+          {typeof value === "object" && value !== null ? (
+            <span className="shrink-0 text-2xs text-muted-foreground">
+              {payloadSizeText(value as Record<string, unknown>)}
+            </span>
+          ) : null}
+        </div>
         {value === undefined ? null : (
           <TemporalCopyButton
             label={`Copy ${name}`}
@@ -1856,7 +1862,7 @@ function PayloadBlock(props: {
       {value === undefined ? (
         <p className="text-xs text-muted-foreground">{emptyText}</p>
       ) : (
-        <pre className={preClassName}>{safeJsonPretty(value)}</pre>
+        <TemporalPayloadView className={viewClassName} value={value} />
       )}
     </div>
   );
@@ -1994,7 +2000,7 @@ function GroupedSpanRow(props: {
                   : ""
               }`}
               name={`the input of ${span.label}`}
-              preClassName={SPAN_PRE_CLASS}
+              viewClassName={SPAN_VIEW_CLASS}
               value={span.input}
             />
             {span.error ? (
@@ -2016,7 +2022,7 @@ function GroupedSpanRow(props: {
                 }
                 label="Output"
                 name={`the output of ${span.label}`}
-                preClassName={SPAN_PRE_CLASS}
+                viewClassName={SPAN_VIEW_CLASS}
                 value={span.output}
               />
             )}

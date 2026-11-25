@@ -53,7 +53,7 @@ No Temporal filter can find these, so the BFF describes every running workflow a
 ## Temporal One-Click Queries, Signals and Updates
 
 The workflow page asks the Worker which Queries, Signals and Updates the workflow handles, and shows each as a row with its description. A Query runs in one click and shows its result inline; a Signal or an Update asks for its arguments first.
-The status in the header shows the workflow's summary and current details text when hovered. The panel also has a Stack tab with the call stack, and falls back to a name field when no Worker answers.
+Inputs, results, outputs and memos show as lists of fields, with nested objects indented and folded past two levels; the copy button still copies the JSON. The status in the header shows the workflow's summary and current details text when hovered. The panel also has a Stack tab with the call stack, and falls back to a name field when no Worker answers.
 
 ## Temporal Timeline
 
