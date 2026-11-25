@@ -33,6 +33,8 @@ import {
   formatTimeLeft,
   pluralize,
 } from "./temporal-utils";
+import { TemporalFailurePanel } from "./TemporalFailurePanel";
+import { payloadSizeText, TemporalPayloadView } from "./TemporalPayloadView";
 import {
   TEMPORAL_SPAN_STATUS,
   TemporalTime,
@@ -171,6 +173,7 @@ export function TemporalRunDiagram(props: {
           node={
             displayMap.nodes.find((node) => node.id === selectedNodeId) ?? null
           }
+          position={position}
           steps={steps}
         />
       ) : null}
@@ -265,9 +268,11 @@ function RunNodeDetail(props: {
   map: TemporalTypeMapResponse;
   moment: ReturnType<typeof runMomentOnTypeMap>;
   node: TemporalTypeMapNode | null;
+  /** The run page's step; null is the end of the history. */
+  position: number | null;
   steps: TemporalGroupedSpan[];
 }) {
-  const { map, moment, node, steps } = props;
+  const { map, moment, node, position, steps } = props;
 
   if (!node || node.kind === "start") {
     return null;
@@ -303,7 +308,11 @@ function RunNodeDetail(props: {
   const matches = steps
     .map((span, index) => ({ index, span }))
     .filter(({ span }) => typeMapStepId(span, map) === node.id);
-  const latest = matches.at(-1) ?? null;
+  // The visit at the run page's step, or the last one before it.
+  const latest =
+    (position === null
+      ? matches.at(-1)
+      : [...matches].reverse().find(({ index }) => index <= position)) ?? null;
   const nextInfo = moment.next[node.id];
 
   return (
@@ -347,7 +356,95 @@ function RunNodeDetail(props: {
           </span>
         ) : null}
       </div>
+      {latest && node.kind !== "timer" ? (
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          <PayloadButton
+            label="Input"
+            stepName={typeMapStepName(node)}
+            value={latest.span.input}
+          />
+          {latest.span.error ? (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="text-destructive"
+                  data-testid="temporal-run-node-failure"
+                >
+                  Failure
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="end"
+                side="top"
+                className="max-h-96 w-[min(32rem,calc(100vw-2rem))] overflow-auto p-3"
+              >
+                <TemporalFailurePanel
+                  attempt={
+                    latest.span.kind === "activity"
+                      ? latest.span.attempt
+                      : undefined
+                  }
+                  failure={latest.span.error}
+                />
+              </PopoverContent>
+            </Popover>
+          ) : latest.span.status === "running" ||
+            latest.span.status === "retrying" ? null : (
+            <PayloadButton
+              label="Output"
+              stepName={typeMapStepName(node)}
+              value={latest.span.output}
+            />
+          )}
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+/** A step's input or output behind a small button that says how big it is. */
+function PayloadButton(props: {
+  label: string;
+  stepName: string;
+  value: unknown;
+}) {
+  const { label, stepName, value } = props;
+
+  if (value === undefined) {
+    return null;
+  }
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="xs"
+          className="gap-1.5 text-muted-foreground"
+          data-testid={`temporal-run-node-${label.toLowerCase()}`}
+        >
+          <span className="text-foreground">{label}</span>
+          {typeof value === "object" && value !== null
+            ? payloadSizeText(value as Record<string, unknown>)
+            : null}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        side="top"
+        className="w-[min(28rem,calc(100vw-2rem))] p-0"
+      >
+        <p className="truncate border-b border-border px-3 py-2 text-2xs text-muted-foreground">
+          <span className="text-foreground">{label}</span> of {stepName}
+        </p>
+        <TemporalPayloadView
+          className="max-h-80 rounded-none border-0 bg-transparent"
+          value={value}
+        />
+      </PopoverContent>
+    </Popover>
   );
 }
 

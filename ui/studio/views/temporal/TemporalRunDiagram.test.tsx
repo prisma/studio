@@ -321,7 +321,7 @@ describe("TemporalRunDiagram", () => {
     expect(onActiveSpanIdsChange).toHaveBeenLastCalledWith([]);
   });
 
-  it("shows how this run relates to the chosen node, with no buttons", () => {
+  it("shows how this run relates to the chosen node", () => {
     render({ selectedNodeId: "activity:trackPackage" });
 
     const detail = container.querySelector(
@@ -331,7 +331,69 @@ describe("TemporalRunDiagram", () => {
     expect(detail.textContent.replace(/\s+/g, " ")).toContain(
       "Taken once in this run",
     );
+    // A step with no recorded input or output has no buttons for them.
     expect(detail.querySelector("button")).toBeNull();
+  });
+
+  it("opens the input and output of the chosen node's visit at the run page's step", () => {
+    const visit = (from: number, to: number, n: number) => ({
+      ...activity(from, to),
+      input: { trackingNumber: "TRK1" },
+      output: { check: n, delivered: false },
+    });
+    const spans = [visit(20, 22, 1), visit(27, 29, 2), timer({})];
+    const outputShown = () => {
+      act(() =>
+        container
+          .querySelector<HTMLElement>(
+            '[data-testid="temporal-run-node-output"]',
+          )!
+          .click(),
+      );
+
+      return document
+        .querySelector('[data-testid="temporal-payload-view"]')!
+        .textContent.replace(/\s+/g, " ");
+    };
+
+    render({ position: 0, selectedNodeId: "activity:trackPackage", spans });
+    expect(
+      container.querySelector('[data-testid="temporal-run-node-input"]')!
+        .textContent,
+    ).toBe("Input1 field");
+    expect(outputShown()).toContain("check1");
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    render({ position: null, selectedNodeId: "activity:trackPackage", spans });
+    expect(outputShown()).toContain("check2");
+  });
+
+  it("opens the failure of a failed step in place of its output", () => {
+    render({
+      selectedNodeId: "activity:trackPackage",
+      spans: [
+        {
+          ...activity(27, 29),
+          error: { message: "carrier timeout" },
+          input: { trackingNumber: "TRK1" },
+          status: "failed",
+        },
+        timer({}),
+      ],
+    });
+
+    expect(
+      container.querySelector('[data-testid="temporal-run-node-output"]'),
+    ).toBeNull();
+    act(() =>
+      container
+        .querySelector<HTMLElement>(
+          '[data-testid="temporal-run-node-failure"]',
+        )!
+        .click(),
+    );
+    expect(document.body.textContent).toContain("carrier timeout");
   });
 
   it("adds steps from the current run that were missing from the sampled diagram and updates as new steps arrive", () => {

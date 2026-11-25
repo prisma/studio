@@ -44,8 +44,8 @@ import {
   type TypeMapLayout,
   typeMapNodeHasMarks,
   typeMapNodeSize,
-  typeMapTitleWraps,
   type TypeMapPoint,
+  typeMapTitleWraps,
 } from "./temporal-type-map-layout";
 import { formatDuration } from "./temporal-utils";
 import { WorkflowStatusBadge, workflowStatusLabel } from "./TemporalPrimitives";
@@ -554,6 +554,15 @@ const edgeTypes: EdgeTypes = { routed: RoutedEdge };
 const MIN_OPENING_ZOOM = 0.8;
 const OPENING_MARGIN = 24;
 
+/** How far to move a box along one axis so it sits inside `low`..`high` with a margin; 0 when it already does. */
+function shiftIntoView(start: number, end: number, low: number, high: number) {
+  return start < low + OPENING_MARGIN
+    ? low + OPENING_MARGIN - start
+    : end > high - OPENING_MARGIN
+      ? high - OPENING_MARGIN - end
+      : 0;
+}
+
 /**
  * Where the diagram opens: whole and centred when that leaves it readable.
  * A diagram too tall for that opens at a readable size with its start at the
@@ -873,6 +882,50 @@ export function TemporalTypeMapCanvas(props: {
     ],
   );
 
+  // A node selected from outside the canvas, such as by the run's stepper, may be out of view.
+  const shownSelectedId = useRef(selectedId);
+
+  useEffect(() => {
+    if (selectedId === shownSelectedId.current) {
+      return;
+    }
+
+    shownSelectedId.current = selectedId;
+    const node = nodes.find((item) => item.id === selectedId);
+    const view = container.current?.getBoundingClientRect();
+
+    if (!node || !view || !flow.current) {
+      return;
+    }
+
+    const { x, y, zoom } = flow.current.getViewport();
+    const left = x + node.position.x * zoom;
+    const top = y + node.position.y * zoom;
+    const dx = shiftIntoView(
+      left,
+      left + Number(node.style!.width) * zoom,
+      0,
+      view.width,
+    );
+    const dy = shiftIntoView(
+      top,
+      top + Number(node.style!.height) * zoom,
+      0,
+      view.height,
+    );
+
+    if (dx !== 0 || dy !== 0) {
+      const reduceMotion =
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      flow.current.setViewport(
+        { x: x + dx, y: y + dy, zoom },
+        { duration: reduceMotion ? 0 : 300 },
+      );
+    }
+  }, [nodes, selectedId]);
+
   if (nodes.length === 0) {
     return (
       <div className="flex size-full flex-col items-center gap-4 p-8">
@@ -926,19 +979,8 @@ export function TemporalTypeMapCanvas(props: {
 
         const view = canvas.getBoundingClientRect();
         const box = node.getBoundingClientRect();
-        const shift = (
-          start: number,
-          end: number,
-          low: number,
-          high: number,
-        ) =>
-          start < low + OPENING_MARGIN
-            ? low + OPENING_MARGIN - start
-            : end > high - OPENING_MARGIN
-              ? high - OPENING_MARGIN - end
-              : 0;
-        const dx = shift(box.left, box.right, view.left, view.right);
-        const dy = shift(box.top, box.bottom, view.top, view.bottom);
+        const dx = shiftIntoView(box.left, box.right, view.left, view.right);
+        const dy = shiftIntoView(box.top, box.bottom, view.top, view.bottom);
 
         if (dx !== 0 || dy !== 0) {
           const viewport = flow.current.getViewport();
