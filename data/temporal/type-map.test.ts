@@ -703,7 +703,7 @@ describe("pickTypeMapSample", () => {
 });
 
 describe("extractRunBuildId", () => {
-  it("reads the newest Worker Build ID from WorkflowTaskCompleted events", () => {
+  it("reads the Worker Build ID that started the run from WorkflowTaskCompleted events", () => {
     expect(
       extractRunBuildId([
         {
@@ -723,9 +723,30 @@ describe("extractRunBuildId", () => {
           offsetMs: 1000,
         },
       ]),
-    ).toBe("billing:v2");
+    ).toBe("v1");
 
     expect(extractRunBuildId([])).toBeUndefined();
+  });
+
+  it("has no Build ID for a run that a Worker without one started, though a newer Worker took it over", () => {
+    expect(
+      extractRunBuildId([
+        {
+          attributes: {},
+          eventId: 4,
+          eventTime: "2026-11-23T10:00:00.000Z",
+          eventType: "WorkflowTaskCompleted",
+          offsetMs: 0,
+        },
+        {
+          attributes: { workerVersion: { buildId: "929c37c5df16" } },
+          eventId: 9,
+          eventTime: "2026-11-23T10:30:00.000Z",
+          eventType: "WorkflowTaskCompleted",
+          offsetMs: 1_800_000,
+        },
+      ]),
+    ).toBeUndefined();
   });
 
   it("reads the Build ID that SDK Workers without Worker Versioning report", () => {

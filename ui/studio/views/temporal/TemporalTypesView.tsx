@@ -525,9 +525,9 @@ function SampleInfo(props: {
             data-testid="temporal-type-versions"
           >
             <p className="text-muted-foreground">
-              The sample ran on {versions.length} versions of the Workflow code
-              (Worker Build IDs). Older runs can take steps the code no longer
-              has, so the diagram draws the newest version.
+              Versions of the Workflow code (Worker Build IDs) started the
+              sampled runs. Older runs can take steps the code no longer has, so
+              the diagram draws the runs that the newest version started.
             </p>
             <div className="flex flex-wrap gap-1">
               {versions.map((version, index) => (

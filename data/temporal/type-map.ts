@@ -13,14 +13,15 @@ import type {
 } from "./types";
 
 /**
- * Reads the newest Worker Build ID recorded on a run's `WorkflowTaskCompleted`
- * events, checking both `deploymentVersion`, `deployment`, and `workerVersionStamp`.
+ * The Worker Build ID that started a run: the first one recorded on its
+ * `WorkflowTaskCompleted` events (`deploymentVersion`, `deployment`,
+ * `workerVersion` or `workerVersionStamp`). A run keeps the steps of the code
+ * that started it, even after a newer Worker takes it over.
  */
 export function extractRunBuildId(
   rawEvents: readonly TemporalHistoryEvent[],
 ): string | undefined {
-  for (let i = rawEvents.length - 1; i >= 0; i--) {
-    const event = rawEvents[i]!;
+  for (const event of rawEvents) {
     if (event.eventType !== "WorkflowTaskCompleted") {
       continue;
     }
@@ -47,9 +48,10 @@ export function extractRunBuildId(
     }
 
     const stamp = attrs.workerVersion ?? attrs.workerVersionStamp;
-    if (typeof stamp?.buildId === "string" && stamp.buildId) {
-      return stamp.buildId;
-    }
+
+    return typeof stamp?.buildId === "string" && stamp.buildId
+      ? stamp.buildId
+      : undefined;
   }
 
   return undefined;
