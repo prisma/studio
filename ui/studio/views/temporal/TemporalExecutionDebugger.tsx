@@ -17,7 +17,6 @@ import {
   StopCircle,
   Terminal,
   Waves,
-  Waypoints,
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -29,7 +28,6 @@ import type {
   TemporalFollowMode,
   TemporalGroupedSpan,
   TemporalPendingActivity,
-  TemporalSection,
   TemporalTypeMapResponse,
 } from "@/data/temporal";
 import { timerProgress, typeMapStepId } from "@/data/temporal/type-map";
@@ -45,12 +43,7 @@ import {
 } from "@/ui/components/ui/dropdown-menu";
 import { Input } from "@/ui/components/ui/input";
 import { Skeleton } from "@/ui/components/ui/skeleton";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/ui/components/ui/tooltip";
+import {} from "@/ui/components/ui/tooltip";
 import { useNavigation } from "@/ui/hooks/use-navigation";
 import { useStreams } from "@/ui/hooks/use-streams";
 import {
@@ -68,10 +61,8 @@ import { cn } from "@/ui/lib/utils";
 import { useStudio } from "../../context";
 import { StudioHeader } from "../../StudioHeader";
 import {
-  formatBytes,
   formatDuration,
   formatFailureMessage,
-  formatRelativeTime,
   formatTimeLeft,
   safeJsonPretty,
 } from "./temporal-utils";
@@ -80,7 +71,6 @@ import { TemporalInteractPanel } from "./TemporalInteractPanel";
 import { payloadSizeText, TemporalPayloadView } from "./TemporalPayloadView";
 import { TemporalPendingActivityCard } from "./TemporalPendingActivityCard";
 import {
-  TEMPORAL_SECTION_NAMES,
   TEMPORAL_SPAN_STATUS,
   TemporalConfirmDialog,
   TemporalFollowControl,
@@ -92,17 +82,16 @@ import {
   TemporalStatusBadge,
   TemporalTime,
   useNow,
-  WorkflowStatusBadge,
 } from "./TemporalPrimitives";
 import { relatedRunCount, TemporalRelatedPanel } from "./TemporalRelatedPanel";
 import {
-  compactRunId,
   quoteFilterValue,
   TemporalCopyButton,
   TemporalRunBreadcrumb,
 } from "./TemporalRunBreadcrumb";
 import { TemporalRunCompare } from "./TemporalRunCompare";
 import { TemporalRunDiagram, TemporalTimerDetail } from "./TemporalRunDiagram";
+import { TemporalRunStatus } from "./TemporalRunStatus";
 import type { TemporalStartPreset } from "./TemporalStartSheet";
 import { TemporalTimeline } from "./TemporalTimeline";
 
@@ -121,8 +110,6 @@ interface TemporalExecutionDebuggerProps {
   onClone: (preset: TemporalStartPreset) => void;
   onFollowModeChange: (mode: TemporalFollowMode) => void;
   onOpenExecution: (workflowId: string, runId?: string) => void;
-  /** The screen the run was opened from. The left menu marks it, and the path starts with it. */
-  origin?: TemporalSection;
   runId?: string;
   workflowId: string;
 }
@@ -139,7 +126,6 @@ export function TemporalExecutionDebugger(
     onClone,
     onFollowModeChange,
     onOpenExecution,
-    origin = "workflows",
   } = props;
 
   const fetched = useTemporalWorkflowDetail({
@@ -187,15 +173,6 @@ export function TemporalExecutionDebugger(
 
   const { hasDatabase, streamsUrl } = useStudio();
   const { createUrl, schemaParam, streamParam, tableParam } = useNavigation();
-  const originCrumb = {
-    href: createUrl({
-      temporalNsParam: namespace,
-      // A recent run is one of the executions.
-      temporalSectionParam: origin === "recent" ? "workflows" : origin,
-      viewParam: "temporal",
-    }),
-    label: TEMPORAL_SECTION_NAMES[origin],
-  };
   const { streams } = useStreams();
   const targetStream =
     streamParam ??
@@ -562,21 +539,6 @@ export function TemporalExecutionDebugger(
                   <Terminal />
                   Copy Temporal CLI Command
                 </DropdownMenuItem>
-                {execution && !imported ? (
-                  <DropdownMenuItem asChild>
-                    <a
-                      href={createUrl({
-                        temporalNsParam: namespace,
-                        temporalSectionParam: "types",
-                        temporalTypeParam: execution.workflowType,
-                        viewParam: "temporal",
-                      })}
-                    >
-                      <Waypoints />
-                      Open Workflow Type
-                    </a>
-                  </DropdownMenuItem>
-                ) : null}
                 {execution?.parentWorkflowId ? (
                   <DropdownMenuItem
                     onClick={() =>
@@ -728,17 +690,17 @@ export function TemporalExecutionDebugger(
                 isImported={Boolean(imported)}
                 namespace={namespace}
                 onOpenRun={(runId) => onOpenExecution(workflowId, runId)}
-                origin={originCrumb}
                 hasMoreRuns={hasMoreRuns}
                 runCount={runCount}
                 runs={runsOfId}
               />
               {/* A narrow header has no room for the status either; the row under it shows it. */}
-              <RunStatus
+              <TemporalRunStatus
                 className="@max-4xl:hidden"
                 currentDetails={metadata.data?.currentDetails}
                 detail={data}
                 isImported={Boolean(imported)}
+                run={execution}
               />
             </>
           ) : (
@@ -803,15 +765,15 @@ export function TemporalExecutionDebugger(
               isImported={Boolean(imported)}
               namespace={namespace}
               onOpenRun={(runId) => onOpenExecution(workflowId, runId)}
-              origin={originCrumb}
               hasMoreRuns={hasMoreRuns}
               runCount={runCount}
               runs={runsOfId}
             />
-            <RunStatus
+            <TemporalRunStatus
               currentDetails={metadata.data?.currentDetails}
               detail={data}
               isImported={Boolean(imported)}
+              run={execution}
             />
           </div>
 
@@ -884,7 +846,11 @@ export function TemporalExecutionDebugger(
                     Send Signal
                   </Button>
                 ) : null}
-                <Button size="sm" onClick={() => showInspectorTab("pending")}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => showInspectorTab("pending")}
+                >
                   Inspect Pending
                 </Button>
               </div>
@@ -1625,127 +1591,6 @@ function describeRawEvents(
   }
 
   return details;
-}
-
-/** What a closed run ended with, in one line: its failure, its next run, or the start of its result. */
-function runOutcome(detail: TemporalExecutionDetail): string | null {
-  if (detail.failure) {
-    return formatFailureMessage(detail.failure);
-  }
-
-  if (detail.execution.status === "ContinuedAsNew" && detail.chain.nextRunId) {
-    return `Continued as run ${compactRunId(detail.chain.nextRunId)}`;
-  }
-
-  if (detail.result === undefined) {
-    return null;
-  }
-
-  const text = JSON.stringify(detail.result) ?? String(detail.result);
-
-  return `Result: ${text.length > 200 ? `${text.slice(0, 200)}…` : text}`;
-}
-
-/**
- * The run's status, how long it ran and when it closed. Hovering or focusing it
- * shows what the run was started for, what it last reported, how it ended, and
- * the facts about it.
- */
-function RunStatus(props: {
-  className?: string;
-  currentDetails?: string;
-  detail: TemporalExecutionDetail;
-  isImported: boolean;
-}) {
-  const { className, currentDetails, detail, isImported } = props;
-  const { codec, execution, summary } = detail;
-  const outcome = runOutcome(detail);
-  const facts: Array<[string, React.ReactNode]> = [
-    ["Type", execution.workflowType],
-    ["Queue", execution.taskQueue],
-    ["Started", <TemporalTime key="started" iso={execution.startTime} />],
-    ...(execution.closeTime
-      ? ([
-          ["Closed", <TemporalTime key="closed" iso={execution.closeTime} />],
-        ] as Array<[string, React.ReactNode]>)
-      : []),
-    ["Duration", formatDuration(execution.durationMs)],
-    [
-      "History",
-      `${execution.historyLength} events · ${formatBytes(execution.historySizeBytes)}`,
-    ],
-    ...(codec && codec.decoded > 0
-      ? ([["Codec", `${codec.decoded} payloads decoded`]] as Array<
-          [string, React.ReactNode]
-        >)
-      : []),
-    ...(execution.parentWorkflowId
-      ? ([["Parent", execution.parentWorkflowId]] as Array<
-          [string, React.ReactNode]
-        >)
-      : []),
-    ...(isImported
-      ? ([["Source", "Imported history"]] as Array<[string, React.ReactNode]>)
-      : []),
-  ];
-
-  return (
-    <TooltipProvider delayDuration={200}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            className={cn(
-              "inline-flex shrink-0 cursor-help items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              className,
-            )}
-            data-testid="temporal-run-status"
-          >
-            <WorkflowStatusBadge status={execution.status} />
-            <span className="font-mono text-2xs text-muted-foreground tabular-nums">
-              {formatDuration(execution.durationMs)}
-              {execution.closeTime
-                ? ` · ${formatRelativeTime(execution.closeTime)}`
-                : null}
-            </span>
-          </button>
-        </TooltipTrigger>
-        <TooltipContent
-          align="end"
-          side="bottom"
-          className="w-[min(28rem,calc(100vw-2rem))] p-3"
-          data-testid="temporal-run-status-card"
-        >
-          <div className="flex flex-col gap-2">
-            {summary ? (
-              <p className="font-medium text-foreground">{summary}</p>
-            ) : null}
-            {currentDetails ? (
-              <p className="whitespace-pre-wrap text-muted-foreground">
-                <span className="text-foreground">Last reported: </span>
-                {currentDetails}
-              </p>
-            ) : null}
-            {outcome ? (
-              <p className="break-words font-mono text-2xs text-foreground">
-                {outcome}
-              </p>
-            ) : null}
-            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-2xs text-muted-foreground">
-              {facts.map(([label, value]) => (
-                <div key={label} className="contents">
-                  <dt>{label}</dt>
-                  <dd className="truncate font-mono text-foreground">
-                    {value}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
 }
 
 function StackPanel(props: {

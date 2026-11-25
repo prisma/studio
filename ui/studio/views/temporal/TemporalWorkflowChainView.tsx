@@ -1,11 +1,4 @@
-import {
-  ArrowRight,
-  ChevronLeft,
-  ChevronRight,
-  Copy,
-  Plus,
-  RefreshCw,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -30,6 +23,8 @@ import { ToggleGroup, ToggleGroupItem } from "@/ui/components/ui/toggle-group";
 import { useNavigation } from "@/ui/hooks/use-navigation";
 import {
   useTemporalWorkflowCounts,
+  useTemporalWorkflowDetail,
+  useTemporalWorkflowMetadata,
   useTemporalWorkflows,
 } from "@/ui/hooks/use-temporal";
 import { cn } from "@/ui/lib/utils";
@@ -42,7 +37,6 @@ import {
   pluralize,
 } from "./temporal-utils";
 import {
-  TEMPORAL_SECTION_NAMES,
   TemporalFollowControl,
   temporalIconScale,
   TemporalLoadError,
@@ -53,10 +47,8 @@ import {
   WorkflowStatusIcon,
   workflowStatusLabel,
 } from "./TemporalPrimitives";
-import {
-  quoteFilterValue,
-  TemporalWorkflowTypeLink,
-} from "./TemporalRunBreadcrumb";
+import { quoteFilterValue, TemporalTypeCrumb } from "./TemporalRunBreadcrumb";
+import { TemporalRunStatus } from "./TemporalRunStatus";
 import type { TemporalStartPreset } from "./TemporalStartSheet";
 
 const PAGE_SIZE = 100;
@@ -214,6 +206,20 @@ export function TemporalWorkflowChainView(
   const latestRun = newestLoadedRun ?? rememberedLatestRun;
   const workflowType = latestRun?.workflowType;
   const taskQueue = latestRun?.taskQueue;
+  // The status card shows the latest run's result and details, read only when the card opens.
+  const [isStatusCardOpen, setIsStatusCardOpen] = useState(false);
+  const latestDetail = useTemporalWorkflowDetail({
+    enabled: isStatusCardOpen && Boolean(latestRun),
+    namespace,
+    runId: latestRun?.runId,
+    workflowId,
+  });
+  const latestMetadata = useTemporalWorkflowMetadata({
+    enabled: isStatusCardOpen && latestRun?.status === "Running",
+    namespace,
+    runId: latestRun?.runId,
+    workflowId,
+  });
 
   // The counts of every run of the ID. Null when the server could not count a long chain.
   const statusCounts = useMemo(() => {
@@ -311,14 +317,6 @@ export function TemporalWorkflowChainView(
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [focusedIndex, onOpenExecution, visibleRuns]);
 
-  const workflowsUrl = (filter: string) =>
-    createUrl({
-      searchParam: filter,
-      temporalNsParam: namespace,
-      temporalSectionParam: "workflows",
-      viewParam: "temporal",
-    });
-
   const workflowIdsUrl = createUrl({
     temporalNsParam: namespace,
     temporalSectionParam: "workflow",
@@ -342,10 +340,34 @@ export function TemporalWorkflowChainView(
   };
 
   const latestRunStatus = latestRun ? (
-    <span className="shrink-0" title="Status of the latest run">
-      <span className="sr-only">Latest run: </span>
-      <WorkflowStatusBadge status={latestRun.status} />
-    </span>
+    <TemporalRunStatus
+      currentDetails={latestMetadata.data?.currentDetails}
+      detail={latestDetail.data}
+      extraFacts={[
+        ...(hasAnswer
+          ? ([
+              [
+                "Runs",
+                totalRuns !== null
+                  ? totalRuns.toLocaleString("en-US")
+                  : `${loadedThrough.toLocaleString("en-US")}+`,
+              ],
+            ] as Array<[string, React.ReactNode]>)
+          : []),
+        ...(hasAnswer && !isLongChain && runs.length > 0
+          ? ([
+              [
+                "First run",
+                <TemporalTime key="first" iso={runs.at(-1)?.startTime} />,
+              ],
+            ] as Array<[string, React.ReactNode]>)
+          : []),
+      ]}
+      heading={`Latest run ${compactRunId(latestRun.runId)}`}
+      isLoadingDetail={latestDetail.isLoading}
+      onOpenChange={setIsStatusCardOpen}
+      run={latestRun}
+    />
   ) : null;
 
   const runUrl = (runId: string) =>
@@ -380,7 +402,6 @@ export function TemporalWorkflowChainView(
           : isSinglePage
             ? pluralize(runs.length, "run")
             : `Runs ${pageStart}–${pageEnd}${totalRuns !== null ? ` of ${totalRuns.toLocaleString("en-US")}` : ""}`;
-  const hasRuns = hasAnswer && (runs.length > 0 || statusFilter !== null);
 
   return (
     <div
@@ -422,7 +443,6 @@ export function TemporalWorkflowChainView(
               />
             </Button>
             <Button
-              variant="outline"
               size="sm"
               className="shrink-0 whitespace-nowrap"
               onClick={openStartForChain}
@@ -431,91 +451,27 @@ export function TemporalWorkflowChainView(
               <Plus />
               <span className="@max-3xl:sr-only">Start Execution</span>
             </Button>
-            {latestRun ? (
-              <Button
-                size="sm"
-                className="shrink-0 whitespace-nowrap"
-                onClick={() => onOpenExecution(workflowId, latestRun.runId)}
-              >
-                <span>
-                  <span className="@max-xl:sr-only">Open </span>
-                  Latest Run
-                </span>
-                <ArrowRight />
-              </Button>
-            ) : null}
           </>
         }
       >
         <div className="flex min-w-0 flex-1 items-center gap-3 @max-3xl:hidden">
-          <ChainBreadcrumb listUrl={workflowIdsUrl} workflowId={workflowId} />
+          <ChainBreadcrumb
+            namespace={namespace}
+            workflowId={workflowId}
+            workflowType={workflowType}
+          />
           {latestRunStatus}
         </div>
       </StudioHeader>
 
       {/* Under 48rem the path and the status have a row of their own, so the header keeps its actions. */}
       <div className="flex min-w-0 items-center gap-3 border-b border-border px-4 py-1.5 @3xl:hidden">
-        <ChainBreadcrumb listUrl={workflowIdsUrl} workflowId={workflowId} />
+        <ChainBreadcrumb
+          namespace={namespace}
+          workflowId={workflowId}
+          workflowType={workflowType}
+        />
         {latestRunStatus}
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-1.5 border-b border-border px-4 py-2 text-xs text-muted-foreground">
-        {isLoading ? (
-          <div className="flex items-center gap-4">
-            <Skeleton className="h-4 w-28" />
-            <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-4 w-32" />
-          </div>
-        ) : (
-          <dl className="flex flex-wrap items-center gap-x-5 gap-y-1">
-            {workflowType ? (
-              <div className="flex items-baseline gap-1.5">
-                <dt>Type</dt>
-                <dd className="font-mono text-foreground">
-                  <TemporalWorkflowTypeLink
-                    namespace={namespace}
-                    workflowType={workflowType}
-                  />
-                </dd>
-              </div>
-            ) : null}
-            <SummaryFact label="Namespace" value={namespace} />
-            {taskQueue ? (
-              <SummaryFact label="Task Queue" value={taskQueue} />
-            ) : null}
-            {hasAnswer ? (
-              <SummaryFact
-                label="Runs"
-                value={
-                  totalRuns !== null
-                    ? totalRuns.toLocaleString("en-US")
-                    : `${loadedThrough.toLocaleString("en-US")}+`
-                }
-              />
-            ) : null}
-            {hasAnswer && !isLongChain && runs.length > 0 ? (
-              <div className="flex items-baseline gap-1.5">
-                <dt>First run</dt>
-                <dd className="font-mono tabular-nums text-foreground">
-                  <TemporalTime iso={runs.at(-1)?.startTime} />
-                </dd>
-              </div>
-            ) : null}
-          </dl>
-        )}
-        {hasRuns ? (
-          <a
-            className={cn(
-              linkClassName,
-              "font-medium text-foreground underline underline-offset-2 hover:no-underline",
-            )}
-            data-testid="temporal-chain-open-executions"
-            href={workflowsUrl(idFilter)}
-            title="Open these runs in Executions, to filter, sort or select them"
-          >
-            Open in Executions
-          </a>
-        ) : null}
       </div>
 
       {hasAnswer && (filterStatuses.length > 1 || statusFilter) ? (
@@ -581,7 +537,7 @@ export function TemporalWorkflowChainView(
               <code className="font-mono text-foreground">{namespace}</code>.
             </p>
             <div className="flex items-center gap-2">
-              <Button size="sm" onClick={openStartForChain}>
+              <Button variant="outline" size="sm" onClick={openStartForChain}>
                 <Plus />
                 Start Execution
               </Button>
@@ -736,9 +692,17 @@ export function TemporalWorkflowChainView(
   );
 }
 
-/** The path of the page, as the left menu has it: Workflow IDs, then this Workflow ID. */
-function ChainBreadcrumb(props: { listUrl: string; workflowId: string }) {
-  const { listUrl, workflowId } = props;
+/**
+ * The path of the page: the Workflow Type of its runs, which opens the type's
+ * diagram, then this Workflow ID. The left menu shows Workflow IDs, so the
+ * path does not repeat it. The type is known once the first run has loaded.
+ */
+function ChainBreadcrumb(props: {
+  namespace: string;
+  workflowId: string;
+  workflowType?: string;
+}) {
+  const { namespace, workflowId, workflowType } = props;
 
   return (
     <nav
@@ -746,21 +710,18 @@ function ChainBreadcrumb(props: { listUrl: string; workflowId: string }) {
       className="flex min-w-0 items-center gap-1.5"
       data-testid="temporal-chain-breadcrumb"
     >
-      <a
-        className={cn(
-          linkClassName,
-          "shrink-0 font-sans text-sm text-muted-foreground hover:text-foreground",
-        )}
-        data-testid="temporal-chain-crumb-list"
-        href={listUrl}
-        title="Back to Workflow IDs"
-      >
-        {TEMPORAL_SECTION_NAMES.workflow}
-      </a>
-      <ChevronRight
-        aria-hidden
-        className="size-3 shrink-0 text-muted-foreground/70"
-      />
+      {workflowType ? (
+        <>
+          <TemporalTypeCrumb
+            namespace={namespace}
+            workflowType={workflowType}
+          />
+          <ChevronRight
+            aria-hidden
+            className="size-3 shrink-0 text-muted-foreground/70"
+          />
+        </>
+      ) : null}
       <span className="flex min-w-0 items-center gap-0.5">
         {/* The page is about this Workflow ID, so it is the heading. */}
         <h1
@@ -785,15 +746,6 @@ function ChainBreadcrumb(props: { listUrl: string; workflowId: string }) {
         </Button>
       </span>
     </nav>
-  );
-}
-
-function SummaryFact(props: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline gap-1.5">
-      <dt>{props.label}</dt>
-      <dd className="font-mono tabular-nums text-foreground">{props.value}</dd>
-    </div>
   );
 }
 

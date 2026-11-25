@@ -430,6 +430,7 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
               <>
                 <p>No schedules in namespace {namespace}.</p>
                 <Button
+                  variant="outline"
                   size="sm"
                   onClick={(event) => openNewSchedule(event.currentTarget)}
                 >
@@ -1341,6 +1342,7 @@ function ScheduleDetailSheet(props: {
                     Preview Fire Times
                   </Button>
                   <Button
+                    variant="outline"
                     size="sm"
                     disabled={!backfillPreview || backfillPreview.length === 0}
                     onClick={(event) => {

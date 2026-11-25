@@ -42,13 +42,8 @@ vi.mock("./TemporalWorkflowsGrid", () => ({
 }));
 
 vi.mock("./TemporalExecutionDebugger", () => ({
-  TemporalExecutionDebugger: (props: {
-    origin?: string;
-    workflowId: string;
-  }) => (
-    <div data-origin={props.origin} data-testid="debugger">
-      {props.workflowId}
-    </div>
+  TemporalExecutionDebugger: (props: { workflowId: string }) => (
+    <div data-testid="debugger">{props.workflowId}</div>
   ),
 }));
 
@@ -151,7 +146,7 @@ describe("TemporalView", () => {
     const debuggerNode = container.querySelector('[data-testid="debugger"]')!;
 
     expect(debuggerNode.textContent).toBe("sub-cus_4920");
-    expect(debuggerNode.getAttribute("data-origin")).toBe("workflow");
+    expect(navigation.temporalSectionParam).toBe("workflow");
     expect(container.querySelector('[data-testid="chain"]')).toBeNull();
   });
 

@@ -178,7 +178,6 @@ export function TemporalView() {
           onClone={openStartSheet}
           onFollowModeChange={(m) => void setTemporalFollowParam(m)}
           onOpenExecution={openExecution}
-          origin={section}
           runId={temporalRunParam ?? undefined}
           workflowId={temporalWfParam}
         />

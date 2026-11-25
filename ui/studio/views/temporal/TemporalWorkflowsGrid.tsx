@@ -781,7 +781,11 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
               </code>
             </p>
             <div className="flex gap-2">
-              <Button size="sm" onClick={() => searchInputRef.current?.focus()}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => searchInputRef.current?.focus()}
+              >
                 Edit Filter
               </Button>
               <Button
@@ -826,7 +830,11 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
                   Clear Filter
                 </Button>
               ) : null}
-              <Button size="sm" onClick={() => onOpenStart(null)}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onOpenStart(null)}
+              >
                 <Plus />
                 Start Execution
               </Button>
@@ -1326,7 +1334,9 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
                   Stop
                 </Button>
               ) : (
-                <Button onClick={() => bulkJob.reset()}>Close</Button>
+                <Button variant="outline" onClick={() => bulkJob.reset()}>
+                  Close
+                </Button>
               )}
             </DialogFooter>
           </DialogContent>

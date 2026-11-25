@@ -9,11 +9,7 @@ import type {
 } from "@/data/temporal";
 
 import { relatedRunCount, TemporalRelatedPanel } from "./TemporalRelatedPanel";
-import {
-  runPosition,
-  TemporalRunBreadcrumb,
-  TemporalWorkflowTypeLink,
-} from "./TemporalRunBreadcrumb";
+import { runPosition, TemporalRunBreadcrumb } from "./TemporalRunBreadcrumb";
 
 vi.mock("@/ui/hooks/use-navigation", () => ({
   useNavigation: () => ({
@@ -52,9 +48,6 @@ function run(
   };
 }
 
-const filterOf = (link: Element | null) =>
-  new URLSearchParams(link!.getAttribute("href")!.slice(1)).get("searchParam");
-
 describe("TemporalRunBreadcrumb", () => {
   let root: Root | undefined;
   const onOpenRun = vi.fn();
@@ -87,19 +80,19 @@ describe("TemporalRunBreadcrumb", () => {
     return container;
   }
 
-  it("starts the path with the screen the run was opened from and links the Workflow ID to its page", () => {
-    const container = render({
-      origin: { href: "#section=workflow", label: "Workflow IDs" },
-    });
-    const origin = container.querySelector(
-      '[data-testid="temporal-crumb-origin"]',
+  it("starts the path with the Workflow Type, which opens its diagram, and links the Workflow ID to its page", () => {
+    const container = render();
+    const type = container.querySelector(
+      '[data-testid="temporal-crumb-type"]',
     )!;
+    const typeParams = new URLSearchParams(type.getAttribute("href")!.slice(1));
 
-    expect(origin.textContent).toBe("Workflow IDs");
-    expect(origin.getAttribute("href")).toBe("#section=workflow");
-    // The Workflow Type is a fact of the run, not a part of its path.
+    expect(type.textContent).toBe("shipment");
+    expect(typeParams.get("temporalSectionParam")).toBe("types");
+    expect(typeParams.get("temporalTypeParam")).toBe("shipment");
+    // The left menu shows the screen the run was opened from, so the path does not.
     expect(
-      container.querySelector('[data-testid="temporal-crumb-type"]'),
+      container.querySelector('[data-testid="temporal-crumb-origin"]'),
     ).toBeNull();
     const wfHref = container
       .querySelector('[data-testid="temporal-crumb-workflow-id"]')!
@@ -109,28 +102,13 @@ describe("TemporalRunBreadcrumb", () => {
     expect(wfParams.get("temporalWfParam")).toBe("shipment-1a4a7395");
   });
 
-  it("links the Workflow Type to its executions and to its diagram", () => {
-    const container = document.createElement("div");
-
-    document.body.append(container);
-    root = createRoot(container);
-    act(() =>
-      root!.render(
-        <TemporalWorkflowTypeLink
-          namespace="default"
-          workflowType="shipment"
-        />,
-      ),
-    );
+  it("shows the Workflow Type of a run from a history file as text", () => {
+    const container = render({ isImported: true });
 
     expect(
-      filterOf(container.querySelector('[data-testid="temporal-crumb-type"]')),
-    ).toBe('WorkflowType = "shipment"');
-    expect(
-      container
-        .querySelector('[data-testid="temporal-type-link"]')!
-        .getAttribute("href"),
-    ).toContain("temporalTypeParam=shipment");
+      container.querySelector('[data-testid="temporal-crumb-type"]'),
+    ).toBeNull();
+    expect(container.textContent).toContain("shipment");
   });
 
   it("says that a run is the only run of its Workflow ID, with nothing to open", () => {

@@ -559,7 +559,7 @@ function SampleLine(props: {
             className={cn(isRedrawing && "motion-safe:animate-spin")}
           />
         </Button>
-        <Button asChild size="sm">
+        <Button variant="outline" asChild size="sm">
           <a href={workflowsUrl} data-testid="temporal-type-runs">
             {runCount === undefined
               ? "View All Runs"

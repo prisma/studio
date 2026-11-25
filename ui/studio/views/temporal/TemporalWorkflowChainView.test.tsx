@@ -50,6 +50,8 @@ vi.mock("@/ui/hooks/use-navigation", () => ({
 vi.mock("@/ui/hooks/use-temporal", () => ({
   useTemporalWorkflowCounts: (args: { enabled?: boolean; query?: string }) =>
     useTemporalWorkflowCountsMock(args),
+  useTemporalWorkflowDetail: () => ({ data: undefined, isLoading: false }),
+  useTemporalWorkflowMetadata: () => ({ data: undefined }),
   useTemporalWorkflows: (args: { query: string }) =>
     useTemporalWorkflowsMock(args),
 }));
@@ -160,19 +162,28 @@ describe("TemporalWorkflowChainView", () => {
     act(() => root.render(<Harness />));
   }
 
-  it("renders the path under Workflow IDs, the type as a fact, the summary and numbered runs", () => {
+  it("starts the path with the Workflow Type, has no row of facts, and numbers the runs", () => {
     render();
 
+    const typeCrumb = container.querySelector<HTMLAnchorElement>(
+      '[data-testid="temporal-crumb-type"]',
+    )!;
+
+    expect(typeCrumb.textContent).toBe("subscriptionBilling");
+    expect(typeCrumb.getAttribute("href")).toContain(
+      "temporalSectionParam=types",
+    );
+    expect(typeCrumb.getAttribute("href")).toContain(
+      "temporalTypeParam=subscriptionBilling",
+    );
     expect(
-      container.querySelector('[data-testid="temporal-chain-crumb-list"]')
-        ?.textContent,
-    ).toBe("Workflow IDs");
-    expect(
-      container.querySelector('[data-testid="temporal-crumb-type"]')
-        ?.textContent,
-    ).toBe("subscriptionBilling");
+      container.querySelector('[data-testid="temporal-chain-breadcrumb"]')!
+        .textContent,
+    ).not.toContain("Workflow IDs");
     expect(container.textContent).toContain("sub-cus_4920");
-    expect(container.textContent).toContain("Open in Executions");
+    expect(container.textContent).not.toContain("Open in Executions");
+    expect(container.textContent).not.toContain("Namespace");
+    expect(container.textContent).not.toContain("Latest Run");
     expect(container.textContent).toContain("#3");
     expect(container.textContent).toContain("Latest");
     expect(container.textContent).toContain("#1");
@@ -262,7 +273,6 @@ describe("TemporalWorkflowChainView", () => {
     countsResult.data = { countsByStatus: {}, totalCount: 0 };
     render();
 
-    expect(container.textContent).toContain("1+");
     expect(container.textContent).not.toContain("#1");
     expect(
       container.querySelector('[data-testid="temporal-chain-status-filter"]'),
@@ -389,6 +399,11 @@ describe("TemporalWorkflowChainView", () => {
     render();
 
     expect(container.querySelector("h1")?.textContent).toBe("sub-cus_4920");
-    expect(container.textContent).toContain("Latest run: Running");
+    const status = container.querySelector(
+      '[data-testid="temporal-run-status"]',
+    )!;
+
+    expect(status.textContent).toContain("Latest run 01a20d4c");
+    expect(status.textContent).toContain("Running");
   });
 });
