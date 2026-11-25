@@ -30,7 +30,12 @@ import type {
   TemporalPendingActivity,
   TemporalTypeMapResponse,
 } from "@/data/temporal";
-import { timerProgress, typeMapStepId } from "@/data/temporal/type-map";
+import {
+  mergeRunIntoTypeMap,
+  runSteps,
+  timerProgress,
+  typeMapStepId,
+} from "@/data/temporal/type-map";
 import { Badge } from "@/ui/components/ui/badge";
 import { Button } from "@/ui/components/ui/button";
 import {
@@ -90,8 +95,13 @@ import {
   TemporalRunBreadcrumb,
 } from "./TemporalRunBreadcrumb";
 import { TemporalRunCompare } from "./TemporalRunCompare";
-import { TemporalRunDiagram, TemporalTimerDetail } from "./TemporalRunDiagram";
+import {
+  TemporalRunDiagram,
+  TemporalRunDiagramInfo,
+  TemporalTimerDetail,
+} from "./TemporalRunDiagram";
 import { TemporalRunStatus } from "./TemporalRunStatus";
+import { TemporalRunStepper } from "./TemporalRunStepper";
 import type { TemporalStartPreset } from "./TemporalStartSheet";
 import { TemporalTimeline } from "./TemporalTimeline";
 
@@ -200,11 +210,12 @@ export function TemporalExecutionDebugger(
   >("grouped");
   const [diagramNodeId, setDiagramNodeId] = useState<string | null>(null);
   const [diagramSpanIds, setDiagramSpanIds] = useState<string[]>([]);
-  const [diagramFocus, setDiagramFocus] = useState<{
-    id: string;
-    seq: number;
-  } | null>(null);
+  // The span the run page is on, in every history view and on the timeline: the stepper moves it.
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
+  const [typeMapDraw, setTypeMapDraw] = useState<{
+    redraw: number;
+    sampleSize?: number;
+  }>({ redraw: 0 });
   // The diagram of the type is read only when something on screen shows it:
   // the Diagram tab, or the open row of a Timer.
   const needsTypeMap =
@@ -216,8 +227,32 @@ export function TemporalExecutionDebugger(
   const typeMap = useTemporalTypeMap({
     followMode,
     namespace,
+    redraw: typeMapDraw.redraw,
+    sampleSize: typeMapDraw.sampleSize,
     workflowType: needsTypeMap ? (data?.execution.workflowType ?? null) : null,
   });
+  // The type's diagram with this run's own steps added, so every step of the run has a node.
+  const runTypeMap = useMemo(
+    () =>
+      typeMap.data && data ? mergeRunIntoTypeMap(typeMap.data, data) : null,
+    [data, typeMap.data],
+  );
+  const steps = useMemo(() => (data ? runSteps(data) : []), [data]);
+  const stepIndex = selectedSpanId
+    ? steps.findIndex((span) => span.id === selectedSpanId)
+    : -1;
+  const stepPosition = stepIndex >= 0 ? stepIndex : null;
+  /** Puts the run page on a span: its row, its events, its node on the diagram. */
+  const selectSpan = (spanId: string | null) => {
+    setSelectedSpanId(spanId);
+
+    const span = spanId ? spans.find((item) => item.id === spanId) : undefined;
+    const nodeId = span && runTypeMap ? typeMapStepId(span, runTypeMap) : null;
+
+    if (nodeId) {
+      setDiagramNodeId(nodeId);
+    }
+  };
   const [rawFilter, setRawFilter] = useState("");
   const [hiddenEventTypes, setHiddenEventTypes] = useState<string[]>([]);
   // The open event is in the URL, so the page's link points at it.
@@ -285,19 +320,30 @@ export function TemporalExecutionDebugger(
   }, [rawEvents.length > 0]);
 
   useEffect(() => {
-    if (!selectedSpanId || historyTab !== "grouped") {
+    if (!selectedSpanId || (historyTab !== "grouped" && historyTab !== "raw")) {
       return;
     }
 
-    // A span chosen on the timeline or in the diagram may be far down the list.
-    Array.from(
+    // The span the page moved to may be far down the list: its row, or its first event.
+    const firstEventId = spans.find((span) => span.id === selectedSpanId)
+      ?.eventIds[0];
+    const rows = Array.from(
       historyListRef.current?.querySelectorAll<HTMLElement>(
-        "[data-temporal-span]",
+        historyTab === "grouped"
+          ? "[data-temporal-span]"
+          : "[data-temporal-event]",
       ) ?? [],
-    )
-      .find((row) => row.dataset.temporalSpan === selectedSpanId)
-      ?.scrollIntoView({ block: "nearest" });
-  }, [historyTab, selectedSpanId]);
+    );
+
+    rows
+      .find((row) =>
+        historyTab === "grouped"
+          ? row.dataset.temporalSpan === selectedSpanId
+          : row.dataset.temporalEvent === String(firstEventId),
+      )
+      // A span's events go to the middle, so the ones after the first show too.
+      ?.scrollIntoView({ block: historyTab === "raw" ? "center" : "nearest" });
+  }, [historyTab, selectedSpanId, spans]);
 
   const sendActivityOperation = (
     activityId: string,
@@ -369,8 +415,13 @@ export function TemporalExecutionDebugger(
   const failedSpan = isRunning && !retryingActivity ? lastFailedSpan : null;
   const inspectSpan = (spanId: string) => {
     setHistoryTab("grouped");
-    setSelectedSpanId(spanId);
+    selectSpan(spanId);
   };
+  const selectedEventIds = useMemo(
+    () =>
+      new Set(spans.find((span) => span.id === selectedSpanId)?.eventIds ?? []),
+    [selectedSpanId, spans],
+  );
   // The time between an event and the one before it. An offset from the start is too coarse after a long wait.
   const eventGaps = useMemo(
     () =>
@@ -884,36 +935,21 @@ export function TemporalExecutionDebugger(
               {spans.length > 0 ? (
                 <TemporalTimeline
                   highlightedSpanIds={
-                    historyTab === "diagram" ? diagramSpanIds : undefined
+                    historyTab === "diagram" && !selectedSpanId
+                      ? diagramSpanIds
+                      : undefined
                   }
                   namespace={namespace}
                   onOpenExecution={onOpenExecution}
                   onSelectSpan={(spanId) => {
-                    if (historyTab === "diagram" && spanId) {
-                      const clicked = spans.find((span) => span.id === spanId);
-                      const nodeId =
-                        clicked && typeMap.data
-                          ? typeMapStepId(clicked, typeMap.data)
-                          : null;
-
-                      setDiagramFocus((prev) => ({
-                        id: spanId,
-                        seq: (prev?.seq ?? 0) + 1,
-                      }));
-
-                      if (nodeId) {
-                        setDiagramNodeId(nodeId);
-                      }
-
-                      return;
+                    // Compare has no span of its own to show.
+                    if (historyTab === "compare") {
+                      setHistoryTab("grouped");
                     }
 
-                    setHistoryTab("grouped");
-                    setSelectedSpanId(spanId);
+                    selectSpan(spanId);
                   }}
-                  selectedSpanId={
-                    historyTab === "grouped" ? selectedSpanId : null
-                  }
+                  selectedSpanId={selectedSpanId}
                   spans={spans}
                   startTime={execution.startTime}
                   totalDurationMs={totalDurationMs}
@@ -921,48 +957,83 @@ export function TemporalExecutionDebugger(
               ) : null}
 
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-2.5">
-                <TemporalSegmentedControl
-                  ariaLabel="History view"
-                  // Four views do not fit a narrow page at their full padding.
-                  className="@max-lg:gap-0 @max-lg:[&>button]:px-1.5"
-                  onChange={setHistoryTab}
-                  options={[
-                    {
-                      count: spans.length,
-                      label: "Grouped Spans",
-                      value: "grouped",
-                    },
-                    {
-                      count: rawEvents.length,
-                      label: "Raw Events",
-                      value: "raw",
-                    },
-                    // A run from a history file has no type on the server to draw.
-                    ...(imported
-                      ? []
-                      : [
-                          {
-                            label: "Diagram",
-                            title:
-                              "The steps of this Workflow Type, with this run marked",
-                            value: "diagram" as const,
-                          },
-                        ]),
-                    ...(!imported &&
-                    (execution.status === "Failed" ||
-                      execution.status === "TimedOut")
-                      ? [
-                          {
-                            label: "Compare",
-                            title:
-                              "Compare this failed run against a recent completed run",
-                            value: "compare" as const,
-                          },
-                        ]
-                      : []),
-                  ]}
-                  value={historyTab}
-                />
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <TemporalSegmentedControl
+                    ariaLabel="History view"
+                    // Four views do not fit a narrow page at their full padding.
+                    className="@max-lg:gap-0 @max-lg:[&>button]:px-1.5"
+                    onChange={setHistoryTab}
+                    options={[
+                      {
+                        count: spans.length,
+                        label: "Grouped Spans",
+                        value: "grouped",
+                      },
+                      {
+                        count: rawEvents.length,
+                        label: "Raw Events",
+                        value: "raw",
+                      },
+                      // A run from a history file has no type on the server to draw.
+                      ...(imported
+                        ? []
+                        : [
+                            {
+                              label: "Diagram",
+                              title:
+                                "The steps of this Workflow Type, with this run marked",
+                              value: "diagram" as const,
+                            },
+                          ]),
+                      ...(!imported &&
+                      (execution.status === "Failed" ||
+                        execution.status === "TimedOut")
+                        ? [
+                            {
+                              label: "Compare",
+                              title:
+                                "Compare this failed run against a recent completed run",
+                              value: "compare" as const,
+                            },
+                          ]
+                        : []),
+                    ]}
+                    value={historyTab}
+                  />
+                  {historyTab === "diagram" && runTypeMap && typeMap.data ? (
+                    <TemporalRunDiagramInfo
+                      detail={data}
+                      isRedrawing={typeMap.isFetching && typeMapDraw.redraw > 0}
+                      map={typeMap.data}
+                      onRedraw={(sampleSize) =>
+                        setTypeMapDraw((draw) => ({
+                          redraw: draw.redraw + 1,
+                          sampleSize,
+                        }))
+                      }
+                      typeUrl={createUrl({
+                        temporalNsParam: namespace,
+                        temporalSectionParam: "types",
+                        temporalTypeParam: execution.workflowType,
+                        viewParam: "temporal",
+                      })}
+                    />
+                  ) : null}
+                  {historyTab !== "compare" ? (
+                    <TemporalRunStepper
+                      isOpen={isRunning || isPaused}
+                      onChange={(position) =>
+                        selectSpan(
+                          position === null
+                            ? null
+                            : (steps[position]?.id ?? null),
+                        )
+                      }
+                      position={stepPosition}
+                      steps={steps}
+                    />
+                  ) : null}
+                </div>
                 {historyTab === "raw" ? (
                   <div className="flex flex-wrap items-center gap-2">
                     {filteredRawEvents.length < rawEvents.length ? (
@@ -1059,23 +1130,30 @@ export function TemporalExecutionDebugger(
                 ) : historyTab === "diagram" ? (
                   <TemporalRunDiagram
                     detail={data}
-                    focusSpan={diagramFocus}
                     isError={typeMap.isError}
                     map={typeMap.data}
                     onActiveSpanIdsChange={setDiagramSpanIds}
-                    onOpenSpan={(spanId) => {
-                      setSelectedSpanId(spanId);
-                      setHistoryTab("grouped");
-                    }}
                     onRetry={() => void typeMap.refetch()}
-                    onSelect={setDiagramNodeId}
-                    selectedId={diagramNodeId}
-                    typeUrl={createUrl({
-                      temporalNsParam: namespace,
-                      temporalSectionParam: "types",
-                      temporalTypeParam: execution.workflowType,
-                      viewParam: "temporal",
-                    })}
+                    onSelectNode={(nodeId) => {
+                      setDiagramNodeId(nodeId);
+
+                      // A step this run took moves the run to its latest visit.
+                      const visit =
+                        nodeId && runTypeMap
+                          ? [...steps]
+                              .reverse()
+                              .find(
+                                (span) =>
+                                  typeMapStepId(span, runTypeMap) === nodeId,
+                              )
+                          : undefined;
+
+                      if (visit) {
+                        setSelectedSpanId(visit.id);
+                      }
+                    }}
+                    position={stepPosition}
+                    selectedNodeId={diagramNodeId}
                   />
                 ) : historyTab === "grouped" ? (
                   spans.length === 0 ? (
@@ -1107,18 +1185,14 @@ export function TemporalExecutionDebugger(
                             onShowInDiagram={
                               imported
                                 ? undefined
-                                : (nodeId) => {
-                                    setDiagramNodeId(nodeId);
-                                    setDiagramFocus((prev) => ({
-                                      id: span.id,
-                                      seq: (prev?.seq ?? 0) + 1,
-                                    }));
+                                : () => {
+                                    selectSpan(span.id);
                                     setHistoryTab("diagram");
                                   }
                             }
                             onToggle={() =>
-                              setSelectedSpanId((prev) =>
-                                prev === span.id ? null : span.id,
+                              selectSpan(
+                                selectedSpanId === span.id ? null : span.id,
                               )
                             }
                             pendingActivity={matchingPending}
@@ -1145,7 +1219,12 @@ export function TemporalExecutionDebugger(
                       return (
                         <div
                           key={evt.eventId}
-                          className="text-xs"
+                          className={cn(
+                            "text-xs",
+                            // The events of the span the page is on. A shadow, because the list's dividers set the border colour.
+                            selectedEventIds.has(evt.eventId) &&
+                              "shadow-[inset_2px_0_0_var(--prism-cyan-500)]",
+                          )}
                           data-temporal-event={evt.eventId}
                         >
                           <button
@@ -1754,7 +1833,13 @@ function GroupedSpanRow(props: {
   const status = TEMPORAL_SPAN_STATUS[span.status];
 
   return (
-    <div className="text-xs" data-temporal-span={span.id}>
+    <div
+      className={cn(
+        "text-xs",
+        isExpanded && "shadow-[inset_2px_0_0_var(--prism-cyan-500)]",
+      )}
+      data-temporal-span={span.id}
+    >
       <button
         type="button"
         aria-expanded={isExpanded}

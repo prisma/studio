@@ -15,6 +15,10 @@ import type {
   TemporalTypeMapResponse,
   TemporalWorkflowStatus,
 } from "@/data/temporal";
+import {
+  nextTypeMapSampleSize,
+  TYPE_MAP_SAMPLE_STEPS,
+} from "@/data/temporal/type-map";
 import { Button } from "@/ui/components/ui/button";
 import { Input } from "@/ui/components/ui/input";
 import {
@@ -451,19 +455,6 @@ export function TemporalTypesView(props: TemporalTypesViewProps) {
   );
 }
 
-/** The sample sizes a redraw steps through: each run costs one or two history reads. */
-const SAMPLE_STEPS = [40, 100, 200];
-
-/** How many runs the next redraw reads: the next step, or the same number when no more runs exist. */
-export function nextSampleSize(map: TemporalTypeMapResponse): number {
-  const current = map.sampleSize ?? SAMPLE_STEPS[0]!;
-  const hasMoreRuns =
-    !map.candidatesComplete || map.candidateCount > map.runCount;
-  const next = SAMPLE_STEPS.find((size) => size > current);
-
-  return hasMoreRuns && next ? next : current;
-}
-
 /**
  * How the diagram was drawn, behind an info button beside the type's name:
  * why Studio samples runs, which runs and how many of each status, when it was
@@ -476,8 +467,8 @@ function SampleInfo(props: {
   onRedraw: (sampleSize: number) => void;
 }) {
   const { drawnAt, isRedrawing, map, onRedraw } = props;
-  const nextSize = nextSampleSize(map);
-  const grows = nextSize > (map.sampleSize ?? SAMPLE_STEPS[0]!);
+  const nextSize = nextTypeMapSampleSize(map);
+  const grows = nextSize > (map.sampleSize ?? TYPE_MAP_SAMPLE_STEPS[0]!);
 
   return (
     <Popover>

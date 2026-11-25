@@ -1,5 +1,5 @@
-import { ChevronLeft, ChevronRight, SkipBack, SkipForward } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Info, RefreshCw } from "lucide-react";
+import { useEffect, useMemo } from "react";
 
 import type {
   TemporalExecutionDetail,
@@ -10,14 +10,22 @@ import type {
 import {
   formatTimerLength,
   mergeRunIntoTypeMap,
+  nextTypeMapSampleSize,
   runMomentOnTypeMap,
   runSteps,
   timerProgress,
+  TYPE_MAP_SAMPLE_STEPS,
   typeMapNeighbours,
   typeMapStepId,
 } from "@/data/temporal/type-map";
 import { Button } from "@/ui/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/ui/components/ui/popover";
 import { Skeleton } from "@/ui/components/ui/skeleton";
+import { cn } from "@/ui/lib/utils";
 
 import {
   formatAbsoluteTime,
@@ -55,71 +63,35 @@ function openStepNote(span: TemporalGroupedSpan, nowMs: number): string {
  * and arrows the run took stand out, the step it is at says so, with the time
  * a Timer has left, and the steps that can come next have a dashed border.
  *
- * The bar under the text steps through the run's history: at each step the
+ * `position` is the run page's step (`TemporalRunStepper`): at a step the
  * diagram shows the run as it was when that step started.
  */
 export function TemporalRunDiagram(props: {
   detail: Pick<TemporalExecutionDetail, "execution" | "spans">;
-  /** Moves the stepper to this span when changed (for example, on timeline click). */
-  focusSpan?: { id: string; seq: number } | null;
   isError: boolean;
   map: TemporalTypeMapResponse | undefined;
-  /** Called with the span(s) the stepper is currently on, so the timeline can highlight them. */
+  /** Called with the span(s) open at the end of the history, so the timeline can highlight them. */
   onActiveSpanIdsChange?: (spanIds: string[]) => void;
-  /** Opens a span in the list of spans. */
-  onOpenSpan?: (spanId: string) => void;
   onRetry: () => void;
-  onSelect: (nodeId: string | null) => void;
-  selectedId: string | null;
-  /** The diagram of the type on its own screen. */
-  typeUrl: string;
+  onSelectNode: (nodeId: string | null) => void;
+  /** The run page's step; null is the end of the history. */
+  position: number | null;
+  selectedNodeId: string | null;
 }) {
   const {
     detail,
-    focusSpan,
     isError,
     map,
     onActiveSpanIdsChange,
-    onOpenSpan,
     onRetry,
-    onSelect,
-    selectedId,
-    typeUrl,
+    onSelectNode,
+    position,
+    selectedNodeId,
   } = props;
   const steps = useMemo(() => runSteps(detail), [detail]);
-  // Null is the end of the history: where the run is now, or how it closed.
-  const [chosenPosition, setChosenPosition] = useState<number | null>(null);
-  const lastAppliedFocusSeq = useRef<number | null>(null);
-  const position =
-    chosenPosition === null || chosenPosition >= steps.length
-      ? null
-      : chosenPosition;
-
-  useEffect(() => {
-    if (!focusSpan || focusSpan.seq === lastAppliedFocusSeq.current) {
-      return;
-    }
-
-    const index = steps.findIndex((span) => span.id === focusSpan.id);
-
-    if (index >= 0) {
-      lastAppliedFocusSeq.current = focusSpan.seq;
-      setChosenPosition(index);
-    }
-  }, [focusSpan, steps]);
-
   const displayMap = useMemo(
     () => (map ? mergeRunIntoTypeMap(map, detail) : null),
     [detail, map],
-  );
-  const addedStepCount = useMemo(
-    () =>
-      displayMap
-        ? displayMap.nodes.filter(
-            (node) => node.runCount === 0 && node.kind !== "start",
-          ).length
-        : 0,
-    [displayMap],
   );
   const moment = useMemo(
     () =>
@@ -139,72 +111,21 @@ export function TemporalRunDiagram(props: {
   const notes = Object.fromEntries(
     openSteps.map(([id, step]) => [id, openStepNote(step.openSpan!, now)]),
   );
-  const hasDiagram = !isError && Boolean(map && moment);
-  const activeSpanIds = useMemo(() => {
-    if (position !== null) {
-      const current = steps[position];
-      return current ? [current.id] : [];
-    }
-
-    return openSteps
-      .map(([, step]) => step.openSpan?.id)
-      .filter((id): id is string => Boolean(id));
-  }, [openSteps, position, steps]);
+  const openSpanIds = useMemo(
+    () =>
+      openSteps
+        .map(([, step]) => step.openSpan?.id)
+        .filter((id): id is string => Boolean(id)),
+    [openSteps],
+  );
 
   useEffect(() => {
-    onActiveSpanIdsChange?.(activeSpanIds);
+    onActiveSpanIdsChange?.(openSpanIds);
 
     return () => {
       onActiveSpanIdsChange?.([]);
     };
-  }, [activeSpanIds, onActiveSpanIdsChange]);
-
-  useEffect(() => {
-    if (!hasDiagram || steps.length === 0) {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.altKey || event.ctrlKey || event.metaKey) {
-        return;
-      }
-
-      const target = event.target instanceof HTMLElement ? event.target : null;
-
-      if (
-        target &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.tagName === "SELECT" ||
-          target.isContentEditable ||
-          target.closest('[role="dialog"], [role="menu"], [role="listbox"]'))
-      ) {
-        return;
-      }
-
-      if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        setChosenPosition(Math.max(0, (position ?? steps.length) - 1));
-      } else if (event.key === "ArrowRight") {
-        event.preventDefault();
-        if (position !== null) {
-          setChosenPosition(position + 1 >= steps.length ? null : position + 1);
-        }
-      } else if (event.key === "Home") {
-        event.preventDefault();
-        setChosenPosition(0);
-      } else if (event.key === "End") {
-        event.preventDefault();
-        setChosenPosition(null);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [hasDiagram, position, steps.length]);
+  }, [openSpanIds, onActiveSpanIdsChange]);
 
   if (isError) {
     return (
@@ -229,162 +150,27 @@ export function TemporalRunDiagram(props: {
     );
   }
 
-  const isOpen =
-    detail.execution.status === "Running" ||
-    detail.execution.status === "Paused";
-  const stepAt = position === null ? null : steps[position]!;
-
   return (
     <div
       className="flex h-full min-h-96 flex-col"
       data-testid="temporal-run-diagram"
     >
-      <p className="border-b border-border px-4 py-2 text-xs text-muted-foreground">
-        The steps of{" "}
-        <span className="font-mono text-foreground">
-          {displayMap.workflowType}
-        </span>
-        , drawn from {displayMap.runCount} recent runs. Dark steps and arrows
-        are the ones this run took. A dashed step can come next; its number says
-        how many recent runs went there.
-        {addedStepCount > 0
-          ? ` Includes ${pluralize(addedStepCount, "step")} from this run not seen in those ${displayMap.runCount} runs.`
-          : ""}{" "}
-        <a
-          className="font-medium text-foreground underline underline-offset-2 hover:no-underline"
-          href={typeUrl}
-        >
-          Open the diagram of the type
-        </a>
-      </p>
-
-      {steps.length > 0 ? (
-        <div
-          className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border px-4 py-1.5 text-xs"
-          data-testid="temporal-run-stepper"
-        >
-          <div className="flex items-center gap-0.5">
-            <Button
-              variant="ghost"
-              size="xs"
-              aria-label="First step"
-              title="First step"
-              className="w-6 px-0"
-              disabled={position === 0}
-              onClick={() => setChosenPosition(0)}
-            >
-              <SkipBack />
-            </Button>
-            <Button
-              variant="ghost"
-              size="xs"
-              aria-label="Previous step"
-              title="Previous step"
-              className="w-6 px-0"
-              disabled={position === 0}
-              onClick={() => setChosenPosition((position ?? steps.length) - 1)}
-            >
-              <ChevronLeft />
-            </Button>
-            {/* The arrow keys move this slider one step at a time. */}
-            <input
-              type="range"
-              aria-label="Step of the run's history"
-              aria-valuetext={
-                stepAt
-                  ? `Step ${position! + 1} of ${steps.length}: ${stepName(stepAt)}`
-                  : isOpen
-                    ? "Now"
-                    : "End of the run"
-              }
-              className="mx-1 h-1 w-40 cursor-pointer accent-foreground"
-              max={steps.length}
-              min={0}
-              onChange={(event) =>
-                setChosenPosition(Number(event.target.value))
-              }
-              step={1}
-              value={position ?? steps.length}
-            />
-            <Button
-              variant="ghost"
-              size="xs"
-              aria-label="Next step"
-              title="Next step"
-              className="w-6 px-0"
-              disabled={position === null}
-              onClick={() => setChosenPosition(position! + 1)}
-            >
-              <ChevronRight />
-            </Button>
-            <Button
-              variant="ghost"
-              size="xs"
-              aria-label={isOpen ? "Now" : "End of the run"}
-              title={isOpen ? "Now" : "End of the run"}
-              className="w-6 px-0"
-              disabled={position === null}
-              onClick={() => setChosenPosition(null)}
-            >
-              <SkipForward />
-            </Button>
-          </div>
-
-          {stepAt ? (
-            <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-muted-foreground">
-              <span className="font-medium tabular-nums text-foreground">
-                Step {position! + 1} of {steps.length}
-              </span>
-              <span className="font-mono text-foreground">
-                {stepName(stepAt)}
-              </span>
-              <span>
-                {TEMPORAL_SPAN_STATUS[stepAt.status].label} · started{" "}
-                <TemporalTime iso={stepAt.timestamp} />
-                {stepAt.closedEventId === undefined
-                  ? ""
-                  : ` · took ${formatDuration(stepAt.durationMs)}`}
-              </span>
-              {onOpenSpan ? (
-                <Button
-                  variant="outline"
-                  size="xs"
-                  onClick={() => onOpenSpan(stepAt.id)}
-                >
-                  Open Span
-                </Button>
-              ) : null}
-            </span>
-          ) : (
-            <span className="text-muted-foreground">
-              <span className="font-medium text-foreground">
-                {isOpen ? "Now" : "End of the run"}
-              </span>
-              {" · "}
-              {isOpen
-                ? `${pluralize(steps.length, "step")} so far`
-                : `${pluralize(steps.length, "step")}, closed as ${workflowStatusLabel(detail.execution.status)}`}
-            </span>
-          )}
-        </div>
-      ) : null}
-
       <div className="min-h-0 flex-1">
         <TemporalTypeMapCanvas
           map={displayMap}
-          onSelect={onSelect}
+          onSelect={onSelectNode}
           run={{ isPast: position !== null, notes, path: moment }}
-          selectedId={selectedId}
+          selectedId={selectedNodeId}
         />
       </div>
 
-      {selectedId ? (
+      {selectedNodeId ? (
         <RunNodeDetail
           map={displayMap}
           moment={moment}
-          node={displayMap.nodes.find((node) => node.id === selectedId) ?? null}
-          onJumpToStep={(index) => setChosenPosition(index)}
-          onOpenSpan={onOpenSpan}
+          node={
+            displayMap.nodes.find((node) => node.id === selectedNodeId) ?? null
+          }
           steps={steps}
         />
       ) : null}
@@ -392,16 +178,96 @@ export function TemporalRunDiagram(props: {
   );
 }
 
-/** Shows how this run relates to the clicked node on the diagram, with step and span links. */
+/**
+ * How the run's diagram is drawn, behind an info button beside the history
+ * views: what the marks mean, which runs the diagram comes from, a link to the
+ * type's own diagram, and a redraw from more runs.
+ */
+export function TemporalRunDiagramInfo(props: {
+  detail: Pick<TemporalExecutionDetail, "execution" | "spans">;
+  isRedrawing: boolean;
+  map: TemporalTypeMapResponse;
+  onRedraw: (sampleSize: number) => void;
+  /** The diagram of the type on its own screen. */
+  typeUrl: string;
+}) {
+  const { detail, isRedrawing, map, onRedraw, typeUrl } = props;
+  const addedStepCount = useMemo(
+    () =>
+      mergeRunIntoTypeMap(map, detail).nodes.filter(
+        (node) => node.runCount === 0 && node.kind !== "start",
+      ).length,
+    [detail, map],
+  );
+  const nextSize = nextTypeMapSampleSize(map);
+  const grows = nextSize > (map.sampleSize ?? TYPE_MAP_SAMPLE_STEPS[0]!);
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="xs"
+          className="w-6 shrink-0 px-0 text-muted-foreground"
+          aria-label="How this diagram is drawn"
+          title="How this diagram is drawn"
+          data-testid="temporal-run-diagram-info"
+        >
+          <Info />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="flex w-80 flex-col gap-2 p-3 text-xs"
+        data-testid="temporal-run-diagram-info-details"
+      >
+        <p className="font-medium text-foreground">
+          The steps of <span className="font-mono">{map.workflowType}</span>
+        </p>
+        <p className="text-muted-foreground">
+          Drawn from {pluralize(map.runCount, "recent run")}
+          {addedStepCount > 0
+            ? `, plus ${pluralize(addedStepCount, "step")} of this run that none of them took`
+            : ""}
+          . Dark steps and arrows are the ones this run took. A dashed step can
+          come next; its number says how many recent runs went there.
+        </p>
+        <p className="text-muted-foreground">
+          Choosing a step that this run took moves the run to that step, in
+          every history view.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button asChild variant="outline" size="xs">
+            <a href={typeUrl}>Open the Type&apos;s Diagram</a>
+          </Button>
+          {grows ? (
+            <Button
+              variant="outline"
+              size="xs"
+              disabled={isRedrawing}
+              onClick={() => onRedraw(nextSize)}
+              data-testid="temporal-run-diagram-redraw"
+            >
+              <RefreshCw
+                className={cn(isRedrawing && "motion-safe:animate-spin")}
+              />
+              Redraw from up to {nextSize} runs
+            </Button>
+          ) : null}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** How this run relates to the chosen node on the diagram. */
 function RunNodeDetail(props: {
   map: TemporalTypeMapResponse;
   moment: ReturnType<typeof runMomentOnTypeMap>;
   node: TemporalTypeMapNode | null;
-  onJumpToStep: (index: number) => void;
-  onOpenSpan?: (spanId: string) => void;
   steps: TemporalGroupedSpan[];
 }) {
-  const { map, moment, node, onJumpToStep, onOpenSpan, steps } = props;
+  const { map, moment, node, steps } = props;
 
   if (!node || node.kind === "start") {
     return null;
@@ -442,7 +308,7 @@ function RunNodeDetail(props: {
 
   return (
     <div
-      className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-border bg-muted/20 px-4 py-2.5 text-xs"
+      className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border bg-muted/20 px-4 py-2.5 text-xs"
       data-testid="temporal-run-node-detail"
     >
       <div className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1">
@@ -481,33 +347,8 @@ function RunNodeDetail(props: {
           </span>
         ) : null}
       </div>
-      {latest ? (
-        <div className="flex shrink-0 items-center gap-1.5">
-          <Button
-            variant="outline"
-            size="xs"
-            onClick={() => onJumpToStep(latest.index)}
-          >
-            Jump to Step {latest.index + 1}
-          </Button>
-          {onOpenSpan ? (
-            <Button
-              variant="outline"
-              size="xs"
-              onClick={() => onOpenSpan(latest.span.id)}
-            >
-              Open Span
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
     </div>
   );
-}
-
-/** The name of a step without the kind in front of it. */
-function stepName(span: TemporalGroupedSpan): string {
-  return span.label.replace(/^(?:Child|Signal|Update): /, "");
 }
 
 function StepList(props: {

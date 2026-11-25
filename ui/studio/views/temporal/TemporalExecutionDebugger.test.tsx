@@ -238,4 +238,68 @@ describe("TemporalExecutionDebugger", () => {
     );
     unmount();
   });
+  it("keeps the step the user moved to when switching between Grouped Spans and Raw Events", () => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const detail = detailOf("order-2", "run-2");
+    const span = (id: number, label: string) => ({
+      closedEventId: id + 2,
+      durationMs: 10,
+      eventIds: [id, id + 1, id + 2],
+      id: `span-${id}`,
+      kind: "activity" as const,
+      label,
+      startedEventId: id,
+      startOffsetMs: 0,
+      status: "completed" as const,
+      timestamp: "2026-11-22T10:00:00.000Z",
+    });
+    const event = (eventId: number) => ({
+      attributes: {},
+      eventId,
+      eventTime: "2026-11-22T10:00:00.000Z",
+      eventType: "ActivityTaskScheduled",
+      offsetMs: 0,
+    });
+
+    detail.spans = [span(5, "chargeCard"), span(9, "shipOrder")];
+    detail.rawEvents = [5, 6, 7, 8, 9, 10, 11].map(event);
+    detailMock.mockReturnValue({ data: detail });
+
+    const { container, unmount } = render("order-2");
+    const press = (label: string) =>
+      act(() =>
+        container
+          .querySelector<HTMLElement>(`[aria-label="${label}"]`)!
+          .click(),
+      );
+    const marked = (selector: string) =>
+      [...container.querySelectorAll<HTMLElement>(selector)]
+        .filter((row) => row.className.includes("var(--prism-cyan-500)"))
+        .map((row) => row.dataset.temporalSpan ?? row.dataset.temporalEvent);
+
+    press("Previous step");
+    expect(
+      container.querySelector('[data-testid="temporal-run-stepper-place"]')!
+        .textContent,
+    ).toBe("Step 2 of 2");
+    expect(marked("[data-temporal-span]")).toEqual(["span-9"]);
+
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent?.startsWith("Raw Events"))!
+        .click(),
+    );
+    expect(marked("[data-temporal-event]")).toEqual(["9", "10", "11"]);
+
+    press("Previous step");
+    expect(marked("[data-temporal-event]")).toEqual(["5", "6", "7"]);
+    unmount();
+    vi.unstubAllGlobals();
+  });
 });

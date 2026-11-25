@@ -7,6 +7,7 @@ import type {
   TemporalTypeMap,
   TemporalTypeMapEdge,
   TemporalTypeMapNode,
+  TemporalTypeMapResponse,
   TemporalWorkflowExecution,
 } from "./types";
 
@@ -769,4 +770,22 @@ export function pickTypeMapSample(
   }
 
   return byActivity.filter((run) => sample.has(run)).slice(0, limit);
+}
+
+/** The sample sizes a redraw of a type's diagram steps through: each run costs one or two history reads. */
+export const TYPE_MAP_SAMPLE_STEPS = [40, 100, 200];
+
+/** How many runs the next redraw reads: the next step, or the same number when the type has no more runs. */
+export function nextTypeMapSampleSize(
+  map: Pick<
+    TemporalTypeMapResponse,
+    "candidateCount" | "candidatesComplete" | "runCount" | "sampleSize"
+  >,
+): number {
+  const current = map.sampleSize ?? TYPE_MAP_SAMPLE_STEPS[0]!;
+  const hasMoreRuns =
+    !map.candidatesComplete || map.candidateCount > map.runCount;
+  const next = TYPE_MAP_SAMPLE_STEPS.find((size) => size > current);
+
+  return hasMoreRuns && next ? next : current;
 }

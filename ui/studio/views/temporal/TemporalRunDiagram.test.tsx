@@ -8,7 +8,11 @@ import type {
   TemporalTypeMapResponse,
 } from "@/data/temporal";
 
-import { TemporalRunDiagram, TemporalTimerDetail } from "./TemporalRunDiagram";
+import {
+  TemporalRunDiagram,
+  TemporalRunDiagramInfo,
+  TemporalTimerDetail,
+} from "./TemporalRunDiagram";
 
 vi.mock("@/ui/hooks/use-ui-state", () => ({
   useUiState: <T,>(_key: string, initial: T) => [initial, vi.fn(), vi.fn()],
@@ -196,8 +200,8 @@ describe("TemporalTimerDetail", () => {
 describe("TemporalRunDiagram", () => {
   let root: Root;
   let container: HTMLElement;
-  const onOpenSpan = vi.fn();
   const onActiveSpanIdsChange = vi.fn();
+  const onSelectNode = vi.fn();
 
   beforeEach(() => {
     container = document.createElement("div");
@@ -226,164 +230,108 @@ describe("TemporalRunDiagram", () => {
     };
   }
 
+  const execution = {
+    durationMs: 1_000,
+    historyLength: 33,
+    historySizeBytes: 100,
+    memo: {},
+    namespace: "default",
+    runId: "run-1",
+    searchAttributes: {},
+    startTime: STARTED,
+    status: "Running" as const,
+    taskQueue: "shipping",
+    workflowId: "shipment-1",
+    workflowType: "shipment",
+  };
+
   /** A run that tracked the package and now waits on the Timer. */
   function render(overrides?: {
-    focusSpan?: { id: string; seq: number } | null;
-    selectedId?: string | null;
+    position?: number | null;
+    selectedNodeId?: string | null;
     spans?: TemporalGroupedSpan[];
   }) {
     act(() =>
       root.render(
         <TemporalRunDiagram
           detail={{
-            execution: {
-              durationMs: 1_000,
-              historyLength: 33,
-              historySizeBytes: 100,
-              memo: {},
-              namespace: "default",
-              runId: "run-1",
-              searchAttributes: {},
-              startTime: STARTED,
-              status: "Running",
-              taskQueue: "shipping",
-              workflowId: "shipment-1",
-              workflowType: "shipment",
-            },
+            execution,
             spans: overrides?.spans ?? [activity(27, 29), timer({})],
           }}
-          focusSpan={overrides?.focusSpan}
           isError={false}
           map={map}
           onActiveSpanIdsChange={onActiveSpanIdsChange}
-          onOpenSpan={onOpenSpan}
           onRetry={vi.fn()}
-          onSelect={vi.fn()}
-          selectedId={overrides?.selectedId ?? null}
-          typeUrl="#type"
+          onSelectNode={onSelectNode}
+          position={overrides?.position ?? null}
+          selectedNodeId={overrides?.selectedNodeId ?? null}
         />,
       ),
     );
   }
 
   const shown = () => canvasProps.mock.lastCall![0].run;
-  const stepper = () =>
-    container
-      .querySelector('[data-testid="temporal-run-stepper"]')!
-      .textContent.replace(/\s+/g, " ");
-  const press = (label: string) =>
-    act(() =>
-      container.querySelector<HTMLElement>(`[aria-label="${label}"]`)!.click(),
-    );
 
-  it("opens at the end of the history, with the possible next steps of an open run", () => {
+  it("shows the end of the history, with the possible next steps of an open run", () => {
     render();
 
-    expect(stepper()).toContain("Now · 2 steps so far");
     expect(shown().isPast).toBe(false);
     expect(shown().path.steps["timer:Timer 30s"]!.state).toBe("now");
     expect(Object.keys(shown().path.next).sort()).toEqual([
       "activity:trackPackage",
       "end:Completed",
     ]);
+    // The explanation is behind the info button, not above the diagram.
+    expect(container.textContent).not.toContain("recent runs");
   });
 
-  it("steps back to an earlier step and shows the run as it was then", () => {
-    render();
-    press("First step");
+  it("shows the run as it was at the run page's step", () => {
+    render({ position: 0 });
 
-    expect(stepper()).toContain("Step 1 of 2trackPackage");
     expect(shown().isPast).toBe(true);
     expect(shown().path.steps["activity:trackPackage"]!.state).toBe("now");
     // The Timer had not started yet, and the run went there next.
     expect(shown().path.laterStepIds).toEqual(["timer:Timer 30s"]);
     expect(shown().path.next["timer:Timer 30s"]!.isTaken).toBe(true);
 
-    press("Next step");
-    expect(stepper()).toContain("Step 2 of 2Timer: 3");
-
-    press("Next step");
-    expect(stepper()).toContain("Now");
+    render({ position: null });
     expect(shown().isPast).toBe(false);
   });
 
-  it("opens the span of the step on screen in the list of spans", () => {
-    render();
-    press("First step");
-
-    act(() =>
-      [...container.querySelectorAll("button")]
-        .find((button) => button.textContent === "Open Span")!
-        .click(),
-    );
-    expect(onOpenSpan).toHaveBeenCalledWith("activity-27");
-  });
-
-  it("steps through the run with arrow, Home and End keys", () => {
-    render();
-    const key = (k: string) =>
-      act(() => {
-        window.dispatchEvent(
-          new KeyboardEvent("keydown", { bubbles: true, key: k }),
-        );
-      });
-
-    key("ArrowLeft");
-    expect(stepper()).toContain("Step 2 of 2Timer: 3");
-
-    key("Home");
-    expect(stepper()).toContain("Step 1 of 2trackPackage");
-
-    key("ArrowRight");
-    expect(stepper()).toContain("Step 2 of 2Timer: 3");
-
-    key("End");
-    expect(stepper()).toContain("Now");
-  });
-
-  it("reports all active spans as the stepper moves so the timeline can highlight them", () => {
+  it("reports the spans open at the end of the history, so the timeline can highlight them", () => {
     render({
       spans: [
         { ...activity(27, 29), closedEventId: undefined, status: "running" },
         timer({}),
       ],
     });
-    // At Now with two parallel open steps, both spans are reported.
     expect(onActiveSpanIdsChange).toHaveBeenLastCalledWith([
       "activity-27",
       "timer-33",
     ]);
 
-    press("First step");
-    expect(onActiveSpanIdsChange).toHaveBeenLastCalledWith(["activity-27"]);
-
-    press("Next step");
-    expect(onActiveSpanIdsChange).toHaveBeenLastCalledWith(["timer-33"]);
+    // At a step, the run page's own selection marks the timeline.
+    render({
+      position: 0,
+      spans: [
+        { ...activity(27, 29), closedEventId: undefined, status: "running" },
+        timer({}),
+      ],
+    });
+    expect(onActiveSpanIdsChange).toHaveBeenLastCalledWith([]);
   });
 
-  it("jumps the stepper when focusSpan changes and shows node details when selected", () => {
-    render({
-      focusSpan: { id: "activity-27", seq: 1 },
-      selectedId: "activity:trackPackage",
-    });
+  it("shows how this run relates to the chosen node, with no buttons", () => {
+    render({ selectedNodeId: "activity:trackPackage" });
 
-    expect(stepper()).toContain("Step 1 of 2trackPackage");
-    const detailText = container
-      .querySelector('[data-testid="temporal-run-node-detail"]')!
-      .textContent.replace(/\s+/g, " ");
-    expect(detailText).toContain("trackPackage");
-    expect(detailText).toContain("Taken once in this run");
+    const detail = container.querySelector(
+      '[data-testid="temporal-run-node-detail"]',
+    )!;
 
-    act(() =>
-      [
-        ...container.querySelectorAll<HTMLButtonElement>(
-          '[data-testid="temporal-run-node-detail"] button',
-        ),
-      ]
-        .find((button) => button.textContent === "Open Span")!
-        .click(),
+    expect(detail.textContent.replace(/\s+/g, " ")).toContain(
+      "Taken once in this run",
     );
-    expect(onOpenSpan).toHaveBeenCalledWith("activity-27");
+    expect(detail.querySelector("button")).toBeNull();
   });
 
   it("adds steps from the current run that were missing from the sampled diagram and updates as new steps arrive", () => {
@@ -417,9 +365,6 @@ describe("TemporalRunDiagram", () => {
     );
     expect(lastCall.run.path.edgeIds).toContain(
       "timer:Timer 30s\nactivity:chargeSubscription",
-    );
-    expect(container.textContent).toContain(
-      "Includes 1 step from this run not seen in those 40 runs.",
     );
 
     const invoice: TemporalGroupedSpan = {
@@ -455,26 +400,53 @@ describe("TemporalRunDiagram", () => {
     );
   });
 
-  it("does not snap back to an earlier focused span when new live steps arrive after returning to Now", () => {
-    const initialSpans = [activity(27, 29), timer({})];
-    const focus = { id: "activity-27", seq: 1 };
+  it("explains the diagram behind an info button, with the type's diagram and a redraw from more runs", () => {
+    const onRedraw = vi.fn();
 
-    render({ focusSpan: focus, spans: initialSpans });
-    expect(stepper()).toContain("Step 1 of 2");
+    act(() =>
+      root.render(
+        <TemporalRunDiagramInfo
+          detail={{
+            execution,
+            spans: [
+              activity(27, 29),
+              {
+                ...activity(38, 40),
+                id: "activity-38",
+                label: "chargeSubscription",
+              },
+            ],
+          }}
+          isRedrawing={false}
+          map={map}
+          onRedraw={onRedraw}
+          typeUrl="#type"
+        />,
+      ),
+    );
+    act(() =>
+      container
+        .querySelector<HTMLElement>(
+          '[data-testid="temporal-run-diagram-info"]',
+        )!
+        .click(),
+    );
 
-    // User returns to Now while watching the run live.
-    press("Now");
-    expect(stepper()).toContain("Now · 2 steps so far");
+    const details = document.querySelector(
+      '[data-testid="temporal-run-diagram-info-details"]',
+    )!;
 
-    // A new step arrives on the next poll with the same stale focusSpan prop.
-    render({
-      focusSpan: focus,
-      spans: [
-        activity(27, 29),
-        timer({ closedEventId: 34, durationMs: 30_000, status: "fired" }),
-        activity(36, 38),
-      ],
-    });
-    expect(stepper()).toContain("Now · 3 steps so far");
+    expect(details.textContent.replace(/\s+/g, " ")).toContain(
+      "plus 1 step of this run that none of them took",
+    );
+    expect(details.querySelector("a")!.getAttribute("href")).toBe("#type");
+    act(() =>
+      details
+        .querySelector<HTMLElement>(
+          '[data-testid="temporal-run-diagram-redraw"]',
+        )!
+        .click(),
+    );
+    expect(onRedraw).toHaveBeenCalledWith(100);
   });
 });

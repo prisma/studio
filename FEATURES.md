@@ -93,7 +93,7 @@ The page of an ID links to its latest run, starts a new run with the same ID, an
 
 A Timer is named by its length ("Timer 5m 50s") in the timeline, the span list and the diagrams. An open Timer's row counts down the time it has left, and its details show the length, the time it fires, a progress bar, and what recent runs of the type do before and after it.
 The run screen has a Diagram tab: the diagram of the run's Workflow Type with this run marked on it. The steps and arrows the run took stand out, the others are faint, and the step the run is at says so, with the time a Timer has left. The steps that can come next have a dashed border and say how many recent runs went there.
-A bar above the diagram steps through the run's history, with buttons, a slider and the arrow keys. At each step the diagram shows the run as it was when that step started, marks the step the run went to next, and highlights that step's span on the timeline above.
+A stepper beside the Grouped Spans, Raw Events and Diagram tabs steps through the run's history, with buttons, a slider and the arrow keys, and every view follows it: the timeline marks the step's span, Grouped Spans opens its row, Raw Events marks its events with a coloured left border, and the Diagram shows the run as it was when that step started. Clicking a span on the timeline or a step on the diagram moves the stepper there. An info button beside the tabs explains the Diagram, links to the type's own diagram and redraws it from more runs.
 
 ## Temporal Failure Panel
 
