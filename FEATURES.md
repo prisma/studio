@@ -58,7 +58,7 @@ It also shows the workflow's summary and current details text, a Stack tab with 
 ## Temporal Timeline
 
 The workflow page draws every Activity, Timer, Child Workflow, Signal and Update on one time axis. "Shorten idle time" gives a long stretch in which nothing happens a small fixed width, so one 30-minute Timer no longer turns every Activity into a dot.
-The timeline zooms (buttons, or Ctrl or Cmd with the wheel), filters by kind, resizes, shows the time an Activity waited or spent on earlier attempts as a thin line, and shows a Child Workflow's own spans inline when its row is expanded.
+The timeline zooms (buttons, or Ctrl or Cmd with the wheel), filters by kind, resizes by its lower edge, lets you set the width of the name column by dragging its edge (or with the arrow keys on it; a double-click restores the automatic width), shows the time an Activity waited or spent on earlier attempts as a thin line, and shows a Child Workflow's own spans inline when its row is expanded.
 Every sleep of a run that sleeps between short Activities is shortened, and a bar that crosses a shortened stretch is striped there. Moving the pointer over the bars shows the exact time under it and a card with the span's start, duration, attempts and failure.
 
 ## Temporal Search Field Autocomplete

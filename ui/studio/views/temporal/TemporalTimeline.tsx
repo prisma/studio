@@ -28,6 +28,9 @@ const WIDE_LABEL_WIDTH = 220;
 const NARROW_LABEL_WIDTH = 148;
 /** Below this width the label column gives room to the bars. */
 const NARROW_BELOW = 560;
+const MIN_LABEL_WIDTH = 96;
+/** The bars keep at least this much room when the user widens the label column. */
+const MIN_TRACK_WIDTH = 140;
 const DURATION_WIDTH = 72;
 const ROW_HEIGHT = 24;
 const MIN_ZOOM = 1;
@@ -152,6 +155,12 @@ export function TemporalTimeline(props: {
     DEFAULT_HEIGHT,
     { persistent: true },
   );
+  // `null` until the user drags the label column's edge: the width then follows the panel's.
+  const [chosenLabelWidth, setChosenLabelWidth] = useUiState<number | null>(
+    "temporal:timeline-label-width",
+    null,
+    { persistent: true },
+  );
   const [shownKinds, setShownKinds] = useState<string[]>(
     KIND_FILTERS.map((filter) => filter.label),
   );
@@ -168,10 +177,20 @@ export function TemporalTimeline(props: {
   const hoverCardRef = useRef<HTMLDivElement | null>(null);
   const hoveredKeyRef = useRef<string | null>(null);
 
+  const maxLabelWidth = Math.max(
+    MIN_LABEL_WIDTH,
+    containerWidth - DURATION_WIDTH - MIN_TRACK_WIDTH,
+  );
+  const clampLabelWidth = (width: number) =>
+    Math.round(Math.min(maxLabelWidth, Math.max(MIN_LABEL_WIDTH, width)));
   const labelWidth =
-    containerWidth < NARROW_BELOW ? NARROW_LABEL_WIDTH : WIDE_LABEL_WIDTH;
+    chosenLabelWidth === null
+      ? containerWidth < NARROW_BELOW
+        ? NARROW_LABEL_WIDTH
+        : WIDE_LABEL_WIDTH
+      : clampLabelWidth(chosenLabelWidth);
   const trackBaseWidth = Math.max(
-    140,
+    MIN_TRACK_WIDTH,
     containerWidth - labelWidth - DURATION_WIDTH,
   );
 
@@ -413,6 +432,43 @@ export function TemporalTimeline(props: {
     return () => element.removeEventListener("wheel", onWheel);
   }, []);
 
+  const startLabelResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = labelWidth;
+    const handle = event.currentTarget;
+
+    handle.setPointerCapture(event.pointerId);
+
+    const onMove = (move: PointerEvent) => {
+      setChosenLabelWidth(clampLabelWidth(startWidth + move.clientX - startX));
+    };
+    const onUp = () => {
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+    };
+
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+  };
+
+  const resizeLabelsWithKeys = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const step = event.shiftKey ? 64 : 16;
+    const next = {
+      ArrowLeft: labelWidth - step,
+      ArrowRight: labelWidth + step,
+      End: maxLabelWidth,
+      Home: MIN_LABEL_WIDTH,
+    }[event.key];
+
+    if (next === undefined) {
+      return;
+    }
+
+    event.preventDefault();
+    setChosenLabelWidth(clampLabelWidth(next));
+  };
+
   const startResize = (event: React.PointerEvent<HTMLDivElement>) => {
     const startY = event.clientY;
     const startHeight = Math.min(
@@ -619,282 +675,310 @@ export function TemporalTimeline(props: {
         </div>
       </div>
 
-      <div
-        ref={scrollRef}
-        className="overflow-auto"
-        style={{ maxHeight: height }}
-        onScroll={measureRowsBelow}
-        onPointerMove={followPointer}
-        onPointerLeave={hideCursor}
-        data-testid="temporal-timeline-scroll"
-      >
+      <div className="relative">
+        {/* Outside the scrolling area, so the edge stays put while the bars scroll sideways. */}
+        {/* A focusable separator with a value is ARIA's window splitter, which this rule does not know. */}
+        {/* eslint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */}
         <div
-          className="relative flex flex-col"
-          style={{ width: labelWidth + trackWidth + DURATION_WIDTH }}
+          role="separator"
+          tabIndex={0}
+          aria-orientation="vertical"
+          aria-label="Resize the name column"
+          aria-valuemin={MIN_LABEL_WIDTH}
+          aria-valuemax={maxLabelWidth}
+          aria-valuenow={labelWidth}
+          title="Drag to resize the names. Double-click for the automatic width."
+          className="absolute inset-y-0 z-30 w-2 -translate-x-1/2 cursor-col-resize touch-none after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-border/60 hover:after:w-0.5 hover:after:bg-border focus-visible:outline-none focus-visible:after:w-0.5 focus-visible:after:bg-ring"
+          style={{ left: labelWidth }}
+          onPointerDown={startLabelResize}
+          onKeyDown={resizeLabelsWithKeys}
+          onDoubleClick={() => setChosenLabelWidth(null)}
+          data-testid="temporal-timeline-label-resize"
+        />
+        {/* eslint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */}
+        <div
+          ref={scrollRef}
+          className="overflow-auto"
+          style={{ maxHeight: height }}
+          onScroll={measureRowsBelow}
+          onPointerMove={followPointer}
+          onPointerLeave={hideCursor}
+          data-testid="temporal-timeline-scroll"
         >
-          <div className="sticky top-0 z-20 flex h-6 shrink-0 items-center border-b border-border/60 bg-muted font-mono text-2xs text-muted-foreground">
-            <span
-              className="sticky left-0 z-10 h-full shrink-0 bg-muted"
-              style={{ width: labelWidth }}
-            />
-            <span
-              ref={axisTrackRef}
-              className="relative h-full"
-              style={{ width: trackWidth }}
-            >
-              {axisLabels.map((label) => (
-                <span
-                  key={`${label.tone}:${label.left}`}
-                  className={cn(
-                    "absolute top-1 whitespace-nowrap",
-                    label.align === "centre" && "-translate-x-1/2",
-                    label.align === "end" && "-translate-x-full",
-                    label.tone === "gap" &&
-                      "rounded-sm bg-background px-1 text-foreground",
-                  )}
-                  style={{ left: label.left }}
-                  title={label.title}
-                >
-                  {label.tone === "gap" ? (
-                    <span aria-hidden className="text-muted-foreground">
-                      ⋯{" "}
-                    </span>
-                  ) : null}
-                  {label.text}
-                </span>
-              ))}
+          <div
+            className="relative flex flex-col"
+            style={{ width: labelWidth + trackWidth + DURATION_WIDTH }}
+          >
+            <div className="sticky top-0 z-20 flex h-6 shrink-0 items-center border-b border-border/60 bg-muted font-mono text-2xs text-muted-foreground">
               <span
-                ref={cursorLabelRef}
-                aria-hidden
-                className="pointer-events-none absolute top-0.5 z-10 -translate-x-1/2 whitespace-nowrap rounded-sm bg-foreground px-1.5 leading-5 text-background opacity-0"
+                className="sticky left-0 z-10 h-full shrink-0 bg-muted"
+                style={{ width: labelWidth }}
               />
-            </span>
-            <span
-              className="sticky right-0 z-10 h-full shrink-0 bg-muted pr-3 text-right leading-6 text-foreground"
-              style={{ width: DURATION_WIDTH }}
-              title="The run's duration"
-            >
-              {formatDuration(totalDurationMs)}
-            </span>
-          </div>
-
-          {/* The time under the pointer. The sticky label and duration columns cover it at the edges. */}
-          <span
-            ref={cursorLineRef}
-            aria-hidden
-            className="pointer-events-none absolute top-6 bottom-0 z-[5] w-px bg-foreground/50 opacity-0"
-            style={{ left: labelWidth }}
-          />
-
-          {rows.length === 0 ? (
-            <p className="sticky left-0 w-fit p-4 text-xs text-muted-foreground">
-              No spans of the chosen kinds.
-            </p>
-          ) : null}
-
-          {rows.map((row) => {
-            const { span } = row;
-            // One row is a tab stop; the arrow keys reach the others.
-            const isTabStop = row.key === tabStopKey;
-            const isSelected = !row.child && selectedSpanId === span.id;
-            const isHighlighted = !row.child && highlightedSet.has(span.id);
-            const isChildSpan =
-              !row.child &&
-              span.kind === "child-workflow" &&
-              Boolean(span.childWorkflowId);
-            const isExpanded = expandedChildIds.includes(span.id);
-            const left = scale.toFraction(row.startOffsetMs);
-            const right = scale.toFraction(row.startOffsetMs + row.durationMs);
-            // The time between scheduling and the last start: queue wait, or earlier attempts.
-            const waitEnd =
-              span.kind === "activity" && span.queueWaitMs
-                ? scale.toFraction(row.startOffsetMs + span.queueWaitMs)
-                : left;
-            const hadRetries = (span.attempt ?? 1) > 1;
-            const isMessage = span.kind === "signal" || span.kind === "update";
-            const label = span.userSummary ?? span.label;
-            const select = () => {
-              if (row.child) {
-                onOpenExecution(row.child.workflowId, row.child.runId);
-              } else {
-                onSelectSpan(isSelected ? null : span.id);
-              }
-            };
-
-            return (
-              <div
-                key={row.key}
-                className={cn(
-                  "group flex h-6 shrink-0 items-center text-xs hover:bg-muted",
-                  isSelected && "bg-muted",
-                  isHighlighted && "bg-prism-cyan-500/12",
-                )}
-                data-highlighted={isHighlighted ? "true" : undefined}
-                data-testid={`temporal-timeline-row-${row.key}`}
+              <span
+                ref={axisTrackRef}
+                className="relative h-full"
+                style={{ width: trackWidth }}
               >
-                <div
-                  className={cn(
-                    "sticky left-0 z-10 flex h-full shrink-0 items-center gap-1 bg-[color-mix(in_oklab,var(--muted)_20%,var(--background))] pr-2 group-hover:bg-muted",
-                    isSelected && "bg-muted",
-                    isHighlighted &&
-                      "bg-[color-mix(in_oklab,var(--prism-cyan-500)_14%,var(--background))] group-hover:bg-[color-mix(in_oklab,var(--prism-cyan-500)_18%,var(--background))]",
-                  )}
-                  style={{
-                    paddingLeft: 8 + row.depth * 16,
-                    width: labelWidth,
-                  }}
-                >
-                  {isChildSpan ? (
-                    <button
-                      type="button"
-                      tabIndex={isTabStop ? 0 : -1}
-                      aria-expanded={isExpanded}
-                      aria-label={`${isExpanded ? "Hide" : "Show"} the spans of ${span.childWorkflowId}`}
-                      className="flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      onClick={() =>
-                        setExpandedChildIds((ids) =>
-                          isExpanded
-                            ? ids.filter((id) => id !== span.id)
-                            : [...ids, span.id],
-                        )
-                      }
-                    >
-                      {isExpanded ? (
-                        <ChevronDown className="size-3" />
-                      ) : (
-                        <ChevronRight className="size-3" />
-                      )}
-                    </button>
-                  ) : (
-                    <span className="w-4 shrink-0" />
-                  )}
-                  <button
-                    type="button"
-                    tabIndex={isTabStop ? 0 : -1}
-                    aria-pressed={row.child ? undefined : isSelected}
-                    data-timeline-label
-                    onClick={select}
-                    onFocus={() => setFocusedRowKey(row.key)}
-                    onKeyDown={moveBetweenRows}
+                {axisLabels.map((label) => (
+                  <span
+                    key={`${label.tone}:${label.left}`}
                     className={cn(
-                      "h-full min-w-0 flex-1 truncate rounded-sm text-left font-mono text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                      isHighlighted && "font-medium",
+                      "absolute top-1 whitespace-nowrap",
+                      label.align === "centre" && "-translate-x-1/2",
+                      label.align === "end" && "-translate-x-full",
+                      label.tone === "gap" &&
+                        "rounded-sm bg-background px-1 text-foreground",
                     )}
-                    title={
-                      row.child
-                        ? `${label}: open ${row.child.workflowId}`
-                        : label
-                    }
+                    style={{ left: label.left }}
+                    title={label.title}
                   >
-                    {label}
-                    {hadRetries ? (
-                      <span className="text-amber-700 dark:text-amber-300">
-                        {" "}
-                        ×{span.attempt}
+                    {label.tone === "gap" ? (
+                      <span aria-hidden className="text-muted-foreground">
+                        ⋯{" "}
                       </span>
                     ) : null}
-                  </button>
-                  {isChildSpan ? (
+                    {label.text}
+                  </span>
+                ))}
+                <span
+                  ref={cursorLabelRef}
+                  aria-hidden
+                  className="pointer-events-none absolute top-0.5 z-10 -translate-x-1/2 whitespace-nowrap rounded-sm bg-foreground px-1.5 leading-5 text-background opacity-0"
+                />
+              </span>
+              <span
+                className="sticky right-0 z-10 h-full shrink-0 bg-muted pr-3 text-right leading-6 text-foreground"
+                style={{ width: DURATION_WIDTH }}
+                title="The run's duration"
+              >
+                {formatDuration(totalDurationMs)}
+              </span>
+            </div>
+
+            {/* The time under the pointer. The sticky label and duration columns cover it at the edges. */}
+            <span
+              ref={cursorLineRef}
+              aria-hidden
+              className="pointer-events-none absolute top-6 bottom-0 z-[5] w-px bg-foreground/50 opacity-0"
+              style={{ left: labelWidth }}
+            />
+
+            {rows.length === 0 ? (
+              <p className="sticky left-0 w-fit p-4 text-xs text-muted-foreground">
+                No spans of the chosen kinds.
+              </p>
+            ) : null}
+
+            {rows.map((row) => {
+              const { span } = row;
+              // One row is a tab stop; the arrow keys reach the others.
+              const isTabStop = row.key === tabStopKey;
+              const isSelected = !row.child && selectedSpanId === span.id;
+              const isHighlighted = !row.child && highlightedSet.has(span.id);
+              const isChildSpan =
+                !row.child &&
+                span.kind === "child-workflow" &&
+                Boolean(span.childWorkflowId);
+              const isExpanded = expandedChildIds.includes(span.id);
+              const left = scale.toFraction(row.startOffsetMs);
+              const right = scale.toFraction(
+                row.startOffsetMs + row.durationMs,
+              );
+              // The time between scheduling and the last start: queue wait, or earlier attempts.
+              const waitEnd =
+                span.kind === "activity" && span.queueWaitMs
+                  ? scale.toFraction(row.startOffsetMs + span.queueWaitMs)
+                  : left;
+              const hadRetries = (span.attempt ?? 1) > 1;
+              const isMessage =
+                span.kind === "signal" || span.kind === "update";
+              const label = span.userSummary ?? span.label;
+              const select = () => {
+                if (row.child) {
+                  onOpenExecution(row.child.workflowId, row.child.runId);
+                } else {
+                  onSelectSpan(isSelected ? null : span.id);
+                }
+              };
+
+              return (
+                <div
+                  key={row.key}
+                  className={cn(
+                    "group flex h-6 shrink-0 items-center text-xs hover:bg-muted",
+                    isSelected && "bg-muted",
+                    isHighlighted && "bg-prism-cyan-500/12",
+                  )}
+                  data-highlighted={isHighlighted ? "true" : undefined}
+                  data-testid={`temporal-timeline-row-${row.key}`}
+                >
+                  <div
+                    className={cn(
+                      "sticky left-0 z-10 flex h-full shrink-0 items-center gap-1 bg-[color-mix(in_oklab,var(--muted)_20%,var(--background))] pr-2 group-hover:bg-muted",
+                      isSelected && "bg-muted",
+                      isHighlighted &&
+                        "bg-[color-mix(in_oklab,var(--prism-cyan-500)_14%,var(--background))] group-hover:bg-[color-mix(in_oklab,var(--prism-cyan-500)_18%,var(--background))]",
+                    )}
+                    style={{
+                      paddingLeft: 8 + row.depth * 16,
+                      width: labelWidth,
+                    }}
+                  >
+                    {isChildSpan ? (
+                      <button
+                        type="button"
+                        tabIndex={isTabStop ? 0 : -1}
+                        aria-expanded={isExpanded}
+                        aria-label={`${isExpanded ? "Hide" : "Show"} the spans of ${span.childWorkflowId}`}
+                        className="flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        onClick={() =>
+                          setExpandedChildIds((ids) =>
+                            isExpanded
+                              ? ids.filter((id) => id !== span.id)
+                              : [...ids, span.id],
+                          )
+                        }
+                      >
+                        {isExpanded ? (
+                          <ChevronDown className="size-3" />
+                        ) : (
+                          <ChevronRight className="size-3" />
+                        )}
+                      </button>
+                    ) : (
+                      <span className="w-4 shrink-0" />
+                    )}
                     <button
                       type="button"
                       tabIndex={isTabStop ? 0 : -1}
-                      aria-label={`Open ${span.childWorkflowId}`}
-                      className="hidden size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:flex"
-                      onClick={() =>
-                        onOpenExecution(span.childWorkflowId!, span.childRunId)
+                      aria-pressed={row.child ? undefined : isSelected}
+                      data-timeline-label
+                      onClick={select}
+                      onFocus={() => setFocusedRowKey(row.key)}
+                      onKeyDown={moveBetweenRows}
+                      className={cn(
+                        "h-full min-w-0 flex-1 truncate rounded-sm text-left font-mono text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                        isHighlighted && "font-medium",
+                      )}
+                      title={
+                        row.child
+                          ? `${label}: open ${row.child.workflowId}`
+                          : label
                       }
                     >
-                      <ExternalLink className="size-3" />
+                      {label}
+                      {hadRetries ? (
+                        <span className="text-amber-700 dark:text-amber-300">
+                          {" "}
+                          ×{span.attempt}
+                        </span>
+                      ) : null}
                     </button>
-                  ) : null}
-                </div>
+                    {isChildSpan ? (
+                      <button
+                        type="button"
+                        tabIndex={isTabStop ? 0 : -1}
+                        aria-label={`Open ${span.childWorkflowId}`}
+                        className="hidden size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:flex"
+                        onClick={() =>
+                          onOpenExecution(
+                            span.childWorkflowId!,
+                            span.childRunId,
+                          )
+                        }
+                      >
+                        <ExternalLink className="size-3" />
+                      </button>
+                    ) : null}
+                  </div>
 
-                {/* The label button carries the same action for keyboard users. */}
-                <div
-                  aria-hidden
-                  className="relative h-full shrink-0 cursor-pointer"
-                  style={{ width: trackWidth }}
-                  data-timeline-track={row.key}
-                  onClick={select}
-                >
-                  {scale.gaps.map((gap) => (
-                    <span
-                      key={gap.startFraction}
-                      className="absolute inset-y-0 bg-[repeating-linear-gradient(135deg,transparent_0_3px,var(--border)_3px_4px)] opacity-70"
-                      style={{
-                        left: `${gap.startFraction * 100}%`,
-                        width: `${(gap.endFraction - gap.startFraction) * 100}%`,
-                      }}
-                    />
-                  ))}
-                  {waitEnd > left ? (
-                    <span
-                      className={cn(
-                        "absolute top-1/2 h-1 -translate-y-1/2 rounded-sm",
-                        hadRetries
-                          ? "bg-amber-500/70"
-                          : "bg-muted-foreground/40",
-                      )}
-                      style={{
-                        left: `${left * 100}%`,
-                        width: `${(waitEnd - left) * 100}%`,
-                      }}
-                    />
-                  ) : null}
-                  {isMessage ? (
-                    <span
-                      className={cn(
-                        "absolute top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-[1px]",
-                        spanBarClasses(span.kind, span.status),
-                        isHighlighted &&
-                          "ring-2 ring-prism-cyan-600 ring-offset-1 ring-offset-background dark:ring-prism-cyan-300",
-                      )}
-                      style={{ left: `${left * 100}%` }}
-                    />
-                  ) : (
-                    <span
-                      className={cn(
-                        "absolute top-1/2 h-2.5 min-w-[3px] -translate-y-1/2 overflow-hidden rounded-sm",
-                        barClasses(row),
-                        row.depth > 0 && "h-1.5 opacity-80",
-                        isHighlighted &&
-                          "ring-2 ring-prism-cyan-600 ring-offset-1 ring-offset-background dark:ring-prism-cyan-300",
-                      )}
-                      style={{
-                        left: `${waitEnd * 100}%`,
-                        width: `${Math.max(0, right - waitEnd) * 100}%`,
-                      }}
-                    />
-                  )}
-                  {/* Stripes over the part of a bar that lies in a shortened stretch. */}
-                  {scale.gaps.map((gap) =>
-                    gap.endFraction > waitEnd && gap.startFraction < right ? (
+                  {/* The label button carries the same action for keyboard users. */}
+                  <div
+                    aria-hidden
+                    className="relative h-full shrink-0 cursor-pointer"
+                    style={{ width: trackWidth }}
+                    data-timeline-track={row.key}
+                    onClick={select}
+                  >
+                    {scale.gaps.map((gap) => (
                       <span
                         key={gap.startFraction}
-                        className="absolute top-1/2 h-2.5 -translate-y-1/2 bg-[repeating-linear-gradient(135deg,transparent_0_3px,var(--background)_3px_5px)] opacity-60"
+                        className="absolute inset-y-0 bg-[repeating-linear-gradient(135deg,transparent_0_3px,var(--border)_3px_4px)] opacity-70"
                         style={{
-                          left: `${Math.max(gap.startFraction, waitEnd) * 100}%`,
-                          width: `${(Math.min(gap.endFraction, right) - Math.max(gap.startFraction, waitEnd)) * 100}%`,
+                          left: `${gap.startFraction * 100}%`,
+                          width: `${(gap.endFraction - gap.startFraction) * 100}%`,
                         }}
                       />
-                    ) : null,
-                  )}
-                </div>
+                    ))}
+                    {waitEnd > left ? (
+                      <span
+                        className={cn(
+                          "absolute top-1/2 h-1 -translate-y-1/2 rounded-sm",
+                          hadRetries
+                            ? "bg-amber-500/70"
+                            : "bg-muted-foreground/40",
+                        )}
+                        style={{
+                          left: `${left * 100}%`,
+                          width: `${(waitEnd - left) * 100}%`,
+                        }}
+                      />
+                    ) : null}
+                    {isMessage ? (
+                      <span
+                        className={cn(
+                          "absolute top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-[1px]",
+                          spanBarClasses(span.kind, span.status),
+                          isHighlighted &&
+                            "ring-2 ring-prism-cyan-600 ring-offset-1 ring-offset-background dark:ring-prism-cyan-300",
+                        )}
+                        style={{ left: `${left * 100}%` }}
+                      />
+                    ) : (
+                      <span
+                        className={cn(
+                          "absolute top-1/2 h-2.5 min-w-[3px] -translate-y-1/2 overflow-hidden rounded-sm",
+                          barClasses(row),
+                          row.depth > 0 && "h-1.5 opacity-80",
+                          isHighlighted &&
+                            "ring-2 ring-prism-cyan-600 ring-offset-1 ring-offset-background dark:ring-prism-cyan-300",
+                        )}
+                        style={{
+                          left: `${waitEnd * 100}%`,
+                          width: `${Math.max(0, right - waitEnd) * 100}%`,
+                        }}
+                      />
+                    )}
+                    {/* Stripes over the part of a bar that lies in a shortened stretch. */}
+                    {scale.gaps.map((gap) =>
+                      gap.endFraction > waitEnd && gap.startFraction < right ? (
+                        <span
+                          key={gap.startFraction}
+                          className="absolute top-1/2 h-2.5 -translate-y-1/2 bg-[repeating-linear-gradient(135deg,transparent_0_3px,var(--background)_3px_5px)] opacity-60"
+                          style={{
+                            left: `${Math.max(gap.startFraction, waitEnd) * 100}%`,
+                            width: `${(Math.min(gap.endFraction, right) - Math.max(gap.startFraction, waitEnd)) * 100}%`,
+                          }}
+                        />
+                      ) : null,
+                    )}
+                  </div>
 
-                <span
-                  className={cn(
-                    "sticky right-0 z-10 h-full shrink-0 bg-[color-mix(in_oklab,var(--muted)_20%,var(--background))] pr-3 text-right font-mono text-2xs leading-6 tabular-nums text-muted-foreground group-hover:bg-muted",
-                    isSelected && "bg-muted",
-                    isHighlighted &&
-                      "bg-[color-mix(in_oklab,var(--prism-cyan-500)_14%,var(--background))] font-medium text-foreground group-hover:bg-[color-mix(in_oklab,var(--prism-cyan-500)_18%,var(--background))]",
-                  )}
-                  style={{ width: DURATION_WIDTH }}
-                >
-                  {formatDuration(row.durationMs)}
-                </span>
-              </div>
-            );
-          })}
+                  <span
+                    className={cn(
+                      "sticky right-0 z-10 h-full shrink-0 bg-[color-mix(in_oklab,var(--muted)_20%,var(--background))] pr-3 text-right font-mono text-2xs leading-6 tabular-nums text-muted-foreground group-hover:bg-muted",
+                      isSelected && "bg-muted",
+                      isHighlighted &&
+                        "bg-[color-mix(in_oklab,var(--prism-cyan-500)_14%,var(--background))] font-medium text-foreground group-hover:bg-[color-mix(in_oklab,var(--prism-cyan-500)_18%,var(--background))]",
+                    )}
+                    style={{ width: DURATION_WIDTH }}
+                  >
+                    {formatDuration(row.durationMs)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
