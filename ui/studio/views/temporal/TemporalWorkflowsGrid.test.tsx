@@ -69,6 +69,15 @@ vi.mock("@/ui/hooks/use-temporal", () => ({
     useTemporalWorkflowsMock(args),
 }));
 
+// The fold-out loads the run's detail; a marker stands in for it.
+vi.mock("./TemporalRunPreview", () => ({
+  TemporalRunPreview: (props: { execution: { workflowId: string } }) => (
+    <button type="button" data-testid="preview-control">
+      {props.execution.workflowId}
+    </button>
+  ),
+}));
+
 vi.mock("@/ui/hooks/use-ui-state", () => ({
   useUiState: <T,>(_key: string, initial: T) => [initial, vi.fn(), vi.fn()],
 }));
@@ -240,6 +249,68 @@ describe("TemporalWorkflowsGrid", () => {
     click(find("temporal-sort-StartTime"));
 
     expect(navigation.setSortParam).toHaveBeenCalledWith("StartTime:asc");
+  });
+
+  it("opens the cursor row's fold-out with the right arrow, moves it with the cursor, and closes it", () => {
+    render();
+    const foldout = () =>
+      container
+        .querySelector('tr[data-foldout="true"]')
+        ?.getAttribute("data-testid");
+
+    press("j");
+    press("ArrowRight");
+    expect(foldout()).toBe("temporal-expanded-a");
+
+    press("j");
+    expect(cursorRow()).toBe("temporal-wf-row-b");
+    expect(foldout()).toBe("temporal-expanded-b");
+
+    press("ArrowLeft");
+    expect(foldout()).toBeUndefined();
+
+    press("o");
+    expect(foldout()).toBe("temporal-expanded-b");
+    press("Escape");
+    expect(foldout()).toBeUndefined();
+  });
+
+  it("moves the cursor to a row when focus enters it, and returns focus to the row's button on Escape", () => {
+    render();
+    press("j");
+    press("ArrowRight");
+
+    const control = find("preview-control")!;
+
+    act(() => control.focus());
+    press("j");
+    expect(cursorRow()).toBe("temporal-wf-row-b");
+
+    act(() => find("temporal-expand-c")!.focus());
+    expect(cursorRow()).toBe("temporal-wf-row-c");
+
+    click(find("temporal-expand-c"));
+    act(() => find("preview-control")!.focus());
+    act(() => {
+      find("preview-control")!.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }),
+      );
+    });
+    expect(container.querySelector('tr[data-foldout="true"]')).toBeNull();
+    expect(document.activeElement).toBe(find("temporal-expand-c"));
+  });
+
+  it("leaves Enter on a control in the fold-out to the control", () => {
+    render();
+    press("j");
+    press("ArrowRight");
+    act(() => {
+      find("preview-control")!.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }),
+      );
+    });
+
+    expect(onOpenExecution).not.toHaveBeenCalled();
   });
 
   it("keeps the cursor on its execution when a refresh adds a row above it", () => {

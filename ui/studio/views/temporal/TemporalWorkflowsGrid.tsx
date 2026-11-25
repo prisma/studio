@@ -486,9 +486,19 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
     onQueryChange(nextQuery);
   };
 
-  // Keyboard navigation (j/k, Space, Enter, /)
+  // Keyboard navigation (j/k, arrows, Space, Enter, Escape, /)
   useEffect(() => {
-    // The keys move the cursor out of view on a long page, so the page follows it.
+    // The keys move the cursor out of view on a long page, so the page follows it:
+    // first the fold-out, then the row, so the row stays in view when both do not fit.
+    const scrollToCursor = () =>
+      requestAnimationFrame(() => {
+        tableAreaRef.current
+          ?.querySelector('tr[data-foldout="true"]')
+          ?.scrollIntoView({ block: "nearest" });
+        tableAreaRef.current
+          ?.querySelector('tr[data-focused="true"]')
+          ?.scrollIntoView({ block: "nearest" });
+      });
     const moveTo = (index: number) => {
       const next = executions[index];
 
@@ -496,12 +506,27 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
         return;
       }
 
+      // An open fold-out moves with the cursor, so j and k step through the runs' details.
+      if (expandedKey !== null && expandedKey === focusedKey) {
+        setExpandedKey(rowKey(next));
+      }
+
       setFocusedKey(rowKey(next));
-      requestAnimationFrame(() => {
-        tableAreaRef.current
-          ?.querySelector('tr[data-focused="true"]')
-          ?.scrollIntoView({ block: "nearest" });
-      });
+      scrollToCursor();
+    };
+    const collapse = () => {
+      const foldout = tableAreaRef.current?.querySelector(
+        'tr[data-foldout="true"]',
+      );
+
+      // Focus inside the closing fold-out goes back to its row's expand button.
+      if (foldout?.contains(document.activeElement)) {
+        foldout.previousElementSibling
+          ?.querySelector<HTMLElement>("[aria-expanded]")
+          ?.focus();
+      }
+
+      setExpandedKey(null);
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -533,11 +558,31 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
           event.preventDefault();
           openFromList(current.workflowId, current.runId);
         }
+      } else if (event.key === "ArrowRight" || event.key === "o") {
+        const current = executions[focusedIndex];
+        if (current && expandedKey !== rowKey(current)) {
+          event.preventDefault();
+          setExpandedKey(rowKey(current));
+          scrollToCursor();
+        }
+      } else if (
+        (event.key === "ArrowLeft" || event.key === "Escape") &&
+        expandedKey !== null
+      ) {
+        event.preventDefault();
+        collapse();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [executions, focusedIndex, openFromList, toggleSelect]);
+  }, [
+    executions,
+    expandedKey,
+    focusedIndex,
+    focusedKey,
+    openFromList,
+    toggleSelect,
+  ]);
 
   const runningTotal =
     (countsByStatus.Running ?? 0) + (countsByStatus.Paused ?? 0);
@@ -1178,7 +1223,8 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
               serverOrderNote ? "@7xl:inline" : "@5xl:inline",
             )}
           >
-            j/k move · Space select · Enter inspect · / search
+            j/k move · → open · ← close · Space select · Enter inspect · /
+            search
           </span>
           <TemporalTimeFormatControl className="h-6" />
         </div>
@@ -1398,6 +1444,8 @@ function WorkflowGridRow(props: {
     <>
       <TableRow
         onClick={onFocus}
+        // Tab into a row's controls moves the cursor there too.
+        onFocusCapture={onFocus}
         data-focused={isFocused ? "true" : undefined}
         data-state={isSelected ? "selected" : undefined}
         className={cn(
@@ -1453,7 +1501,9 @@ function WorkflowGridRow(props: {
       {isExpanded ? (
         <TableRow
           className="border-border/60 bg-muted/20 hover:bg-muted/20"
+          data-foldout="true"
           data-testid={`temporal-expanded-${execution.workflowId}`}
+          onFocusCapture={onFocus}
         >
           <TableCell colSpan={columns.length + 2} className="p-0">
             {/* As wide as the visible grid, not the table, so no part of it scrolls out of view. */}

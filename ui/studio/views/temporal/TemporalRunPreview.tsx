@@ -34,6 +34,7 @@ import {
   TemporalSpanStatusIcon,
   TemporalTime,
 } from "./TemporalPrimitives";
+import { TemporalPayloadView } from "./TemporalPayloadView";
 import type { TemporalStartPreset } from "./TemporalStartSheet";
 
 /** The fold-out shows this many steps; the run page shows the rest. */
@@ -442,7 +443,7 @@ function PayloadBlock(props: { label: string; value: unknown }) {
           No {label.toLowerCase()}.
         </p>
       ) : (
-        <pre className={paneClass}>{text}</pre>
+        <TemporalPayloadView className="max-h-[182px] bg-card" value={value} />
       )}
     </div>
   );

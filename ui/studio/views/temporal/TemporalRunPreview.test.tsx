@@ -122,7 +122,7 @@ describe("TemporalRunPreview", () => {
     expect(steps.textContent).toContain("chargeSubscription");
     expect(steps.textContent).toContain("×3");
     expect(steps.textContent).toContain("600ms");
-    expect(container.textContent).toContain('"cyclesBilled": 3');
+    expect(container.textContent).toContain("cyclesBilled3");
   });
 
   it("names the step that failed above the failure message", () => {

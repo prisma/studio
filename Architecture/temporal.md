@@ -227,6 +227,8 @@ The status is a `role="status"` element with the phase in words; the time is `ar
 - A row's fold-out loads the run's detail only while it is open. `summarizeRunSteps` (`data/temporal/run-steps.ts`) groups the spans into steps: one for each Activity type, Child Workflow type, Signal and Update, and one for all Timers. At most six steps show; steps that failed or are still open are kept first.
 - The steps share one time axis from `buildTimelineScale` with idle time shortened. A grey band marks the time that is not drawn to scale.
 - The third block depends on the run: the failure and the step that failed, the pending Activities with attempt and next attempt, the result, or for a running Workflow the open Timers and Child Workflows. A Timer's fire time comes from `startToFireTimeout` of its `TimerStarted` event.
+- The input and the result use `TemporalPayloadView`, the field list of the run page.
+- Keys: j/k and the up and down arrows move the cursor, the right arrow or `o` opens the cursor row's fold-out, and the left arrow or Escape closes it. Focus inside a closing fold-out goes back to its row's expand button. While the cursor row's fold-out is open, moving the cursor moves the fold-out, so j and k step through the runs' details. Focus entering a row or its fold-out by Tab moves the cursor there. Enter and Space on a focused button or link belong to that control (`isShortcutBlockedTarget`), so Enter opens the run only from the row.
 - The fold-out is `sticky left-0` and `100cqw` wide, the width of the grid's container, so it stays in view when the table is wider than the page and scrolls sideways.
 
 ## History Grouping (`data/temporal/history-grouping.ts`)

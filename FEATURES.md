@@ -42,6 +42,7 @@ Every Temporal screen shows the active namespace, and actions that stop, delete,
 ## Temporal Workflow Sorting and Paging
 
 The Workflows grid sorts by any column and pages through every match, with 50, 100 or 250 rows per page and a "Rows 51–100 of 6,012" counter.
+In the Workflows grid, j and k move the cursor, the right arrow opens the cursor row's fold-out and the left arrow or Escape closes it. While a fold-out is open, j and k move it to the next run, so the runs' input, result and steps can be read one after another. The fold-out shows input and result as the same field list as the run screen.
 Temporal servers sort by at most one fixed order, so Studio's BFF reads every matching run (up to 10,000), sorts them, and keeps the result for a few seconds; above that limit the grid says so and lists the runs in the server's order.
 The default is newest first on every server, the sort is part of the URL, and Type and Workflow ID are separate columns.
 
