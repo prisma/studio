@@ -42,6 +42,7 @@ import {
 import { cn } from "@/ui/lib/utils";
 
 import { StudioHeader } from "../../StudioHeader";
+import { setTemporalListContext } from "./temporal-list-context";
 import { formatRelativeTime, pluralize, summarizeIds } from "./temporal-utils";
 import {
   TemporalConfirmDialog,
@@ -126,7 +127,7 @@ const CONFIRM_COPY: Record<
   cancel: {
     confirmLabel: "Request Cancel",
     describe: (item) =>
-      `This asks ${item.workflowId} to cancel. The execution can run its cleanup logic before it stops.`,
+      `This asks ${item.workflowId} to cancel. The workflow can run its cleanup logic before it stops.`,
     title: "Request cancellation?",
   },
   "reset-activity": {
@@ -138,7 +139,7 @@ const CONFIRM_COPY: Record<
   "reset-sticky": {
     confirmLabel: "Reset Sticky Queue",
     describe: (item) =>
-      `The next Workflow Task of ${item.workflowId} goes to the Task Queue ${item.taskQueue}, where any Worker can pick it up. Use this when the Worker that held the execution is gone.`,
+      `The next Workflow Task of ${item.workflowId} goes to the Task Queue ${item.taskQueue}, where any Worker can pick it up. Use this when the Worker that held the workflow is gone.`,
     title: "Reset the sticky Task Queue?",
   },
 };
@@ -179,6 +180,36 @@ export function TemporalAttentionView(props: {
     terminateWorkflow,
   } = useTemporalActions(namespace);
   const items = useMemo(() => data?.items ?? [], [data?.items]);
+  // The workflow page shows where it is in this list, with the next and previous runs.
+  const openFromList = (workflowId: string, runId?: string) => {
+    const shown = GROUPS.flatMap((group) =>
+      sortAttentionItems(
+        group.kind,
+        items.filter((item) => item.kind === group.kind),
+      ),
+    );
+    const seen = new Set<string>();
+
+    setTemporalListContext({
+      href: window.location.hash,
+      // One run can be in several groups; the list visits it once.
+      items: shown
+        .filter((item) => {
+          const key = `${item.workflowId}\n${item.runId}`;
+
+          if (seen.has(key)) {
+            return false;
+          }
+
+          seen.add(key);
+
+          return true;
+        })
+        .map((item) => ({ runId: item.runId, workflowId: item.workflowId })),
+      label: "Needs Attention",
+    });
+    onOpenExecution(workflowId, runId);
+  };
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(
     () => new Set(),
   );
@@ -231,7 +262,7 @@ export function TemporalAttentionView(props: {
         .filter((item): item is TemporalAttentionItem => item !== undefined),
     [openRunsByKey, selectedKeys],
   );
-  const selectedSummary = `${pluralize(selectedRuns.length, "execution")} (${summarizeIds(selectedRuns.map((item) => item.workflowId))})`;
+  const selectedSummary = `${pluralize(selectedRuns.length, "workflow")} (${summarizeIds(selectedRuns.map((item) => item.workflowId))})`;
 
   const toggleSelect = (key: string) => {
     setSelectedKeys((prev) => {
@@ -358,8 +389,8 @@ export function TemporalAttentionView(props: {
             </span>{" "}
             of{" "}
             {isPartialCheck
-              ? `the ${data.checkedRunning.toLocaleString("en-US")} oldest running executions`
-              : pluralize(data.totalRunning, "running execution")}{" "}
+              ? `the ${data.checkedRunning.toLocaleString("en-US")} oldest running workflows`
+              : pluralize(data.totalRunning, "running workflow")}{" "}
             {openProblems === 1 ? "needs" : "need"} attention
           </span>
           {isPartialCheck ? (
@@ -391,7 +422,7 @@ export function TemporalAttentionView(props: {
             onRetry={() => void refetch()}
             title={
               <>
-                Could not check the running executions of namespace{" "}
+                Could not check the running workflows of namespace{" "}
                 <code className="font-mono">{namespace}</code>.
               </>
             }
@@ -408,7 +439,7 @@ export function TemporalAttentionView(props: {
               <div className="flex flex-col items-center justify-center gap-2 p-10 text-sm text-muted-foreground">
                 <CircleCheck className="size-6 opacity-60" />
                 <p>
-                  No running execution in{" "}
+                  No running workflow in{" "}
                   <code className="font-mono text-foreground">{namespace}</code>{" "}
                   needs attention.
                 </p>
@@ -431,7 +462,7 @@ export function TemporalAttentionView(props: {
                   onConfirm={(item, action) =>
                     setConfirming({ action, isOpen: true, item })
                   }
-                  onOpenExecution={onOpenExecution}
+                  onOpenExecution={openFromList}
                   onToggleActivityPause={(item) => {
                     if (!item.activityId) {
                       return;
@@ -522,7 +553,7 @@ export function TemporalAttentionView(props: {
 
       <TemporalConfirmDialog
         confirmLabel="Request Cancel"
-        description={`This asks ${selectedSummary} to cancel. Each execution can run its cleanup logic before it stops.`}
+        description={`This asks ${selectedSummary} to cancel. Each workflow can run its cleanup logic before it stops.`}
         isPending={bulkAction.isPending}
         onConfirm={() => runBulk("cancel")}
         onOpenChange={(open) => {
@@ -535,7 +566,7 @@ export function TemporalAttentionView(props: {
       />
 
       <TemporalConfirmDialog
-        confirmLabel={`Terminate ${pluralize(selectedRuns.length, "Execution")}`}
+        confirmLabel={`Terminate ${pluralize(selectedRuns.length, "Workflow")}`}
         defaultReason="Bulk terminated from Attention"
         description={`This stops ${selectedSummary} immediately, without running cleanup logic.`}
         isPending={bulkAction.isPending}
@@ -547,11 +578,11 @@ export function TemporalAttentionView(props: {
         open={bulkTerminateOpen}
         reasonLabel="Termination reason"
         showReasonInput
-        title="Terminate selected executions?"
+        title="Terminate selected workflows?"
       />
 
       <TemporalConfirmDialog
-        confirmLabel="Terminate Execution"
+        confirmLabel="Terminate Workflow"
         defaultReason="Terminated from Attention"
         description={`This stops ${terminateTarget?.workflowId ?? ""} immediately, without running cleanup logic.`}
         isPending={terminateWorkflow.isPending}
@@ -577,7 +608,7 @@ export function TemporalAttentionView(props: {
         open={terminateTarget !== null}
         reasonLabel="Termination reason"
         showReasonInput
-        title="Terminate workflow execution?"
+        title="Terminate workflow?"
       />
 
       <TemporalConfirmDialog
@@ -651,6 +682,18 @@ const headCellClassName = cn(
   "shadow-[inset_0_-1px_0_var(--border)]",
 );
 
+/** A group's rows in the order the page shows them: the longest-standing problem first, the newest failure first. */
+function sortAttentionItems<T extends { since?: string }>(
+  kind: string,
+  items: T[],
+): T[] {
+  return [...items].sort((a, b) =>
+    kind === "failed"
+      ? (b.since ?? "").localeCompare(a.since ?? "")
+      : (a.since ?? "").localeCompare(b.since ?? ""),
+  );
+}
+
 function AttentionGroup(props: {
   description: string;
   /** Set to the row's menu button, which gets focus back when a dialog closes. */
@@ -690,12 +733,7 @@ function AttentionGroup(props: {
   // Some servers report only when the next attempt is due, not when the last one ended.
   const showNextAttempt =
     kind === "activity-retrying" && items.every((item) => !item.since);
-  // The longest-standing problem first.
-  const sorted = [...items].sort((a, b) =>
-    kind === "failed"
-      ? (b.since ?? "").localeCompare(a.since ?? "")
-      : (a.since ?? "").localeCompare(b.since ?? ""),
-  );
+  const sorted = sortAttentionItems(kind, items);
   const allSelected =
     isOpenGroup &&
     sorted.length > 0 &&
@@ -949,7 +987,7 @@ function AttentionGroup(props: {
                           onClick={() => onTerminate(item)}
                         >
                           <StopCircle />
-                          Terminate Execution
+                          Terminate Workflow
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>

@@ -80,7 +80,7 @@ describe("TemporalRunBreadcrumb", () => {
     return container;
   }
 
-  it("starts the path with the Workflow Type, which opens its diagram, and links the Workflow ID to its page", () => {
+  it("starts the path with the Workflow Type, which opens its diagram, and opens the Runs tab from the Workflow ID", () => {
     const container = render();
     const type = container.querySelector(
       '[data-testid="temporal-crumb-type"]',
@@ -94,12 +94,23 @@ describe("TemporalRunBreadcrumb", () => {
     expect(
       container.querySelector('[data-testid="temporal-crumb-origin"]'),
     ).toBeNull();
-    const wfHref = container
-      .querySelector('[data-testid="temporal-crumb-workflow-id"]')!
-      .getAttribute("href")!;
-    const wfParams = new URLSearchParams(wfHref.slice(1));
-    expect(wfParams.get("temporalSectionParam")).toBe("workflow");
-    expect(wfParams.get("temporalWfParam")).toBe("shipment-1a4a7395");
+    // With one run there is no Runs tab, so the Workflow ID is text.
+    expect(
+      container.querySelector('[data-testid="temporal-crumb-workflow-id"]')!
+        .tagName,
+    ).toBe("SPAN");
+  });
+
+  it("opens the Runs tab from the Workflow ID when the ID has several runs", () => {
+    const onOpenRuns = vi.fn();
+    const container = render({ onOpenRuns });
+    const workflowId = container.querySelector<HTMLButtonElement>(
+      '[data-testid="temporal-crumb-workflow-id"]',
+    )!;
+
+    expect(workflowId.tagName).toBe("BUTTON");
+    act(() => workflowId.click());
+    expect(onOpenRuns).toHaveBeenCalled();
   });
 
   it("shows the Workflow Type of a run from a history file as text", () => {
@@ -228,11 +239,8 @@ describe("TemporalRelatedPanel", () => {
       root!.render(
         <TemporalRelatedPanel
           execution={run("01a20953-aaaa", "Running")}
-          isLoadingRuns={false}
           onOpenExecution={onOpenExecution}
-          runs={[run("01a20953-aaaa", "Running")]}
           spans={[]}
-          workflowIdUrl="#all"
           {...props}
         />,
       ),
@@ -261,7 +269,8 @@ describe("TemporalRelatedPanel", () => {
     expect(container.textContent).toContain(
       "No Workflow started this run, and it started no Child Workflow.",
     );
-    expect(container.textContent).toContain("This is the only run of");
+    // The other runs of the Workflow ID are in the Runs tab.
+    expect(container.textContent).not.toContain("Runs of This Workflow ID");
     expect(container.querySelector("ul")).toBeNull();
   });
 
@@ -294,104 +303,16 @@ describe("TemporalRelatedPanel", () => {
     act(() => rows[0]!.querySelector("button")!.click());
     expect(onOpenExecution).toHaveBeenCalledWith("order-1a4a7395", "run-order");
   });
-
-  it("lists the other runs of the Workflow ID and marks this one", () => {
-    const container = render({
-      runs: [
-        run("03cccccc-cccc", "Running"),
-        run("01a20953-aaaa", "ContinuedAsNew"),
-      ],
-    });
-    const rows = [
-      ...container.querySelectorAll(
-        '[data-testid="temporal-related-runs"] > li',
-      ),
-    ];
-
-    expect(rows[1]!.textContent).toContain("This run");
-    expect(rows[1]!.querySelector("button")).toBeNull();
-
-    act(() => rows[0]!.querySelector("button")!.click());
-    expect(onOpenExecution).toHaveBeenCalledWith(
-      "shipment-1a4a7395",
-      "03cccccc-cccc",
-    );
-  });
-});
-
-describe("TemporalRelatedPanel with more runs than it loaded", () => {
-  let root: Root | undefined;
-
-  afterEach(() => {
-    act(() => root?.unmount());
-    root = undefined;
-    document.body.innerHTML = "";
-  });
-
-  function render(runCount?: number) {
-    const container = document.createElement("div");
-
-    document.body.append(container);
-    root = createRoot(container);
-    act(() =>
-      root!.render(
-        <TemporalRelatedPanel
-          execution={run("01a20d99-0d5c-7af8-bffe-865954a459e0")}
-          hasMoreRuns
-          isLoadingRuns={false}
-          onOpenExecution={vi.fn()}
-          runCount={runCount}
-          runs={[
-            run("01a20d99-0d82-7222-b496-9939c1719edf"),
-            run("01a20d99-0d5c-7af8-bffe-865954a459e0"),
-          ]}
-          spans={[]}
-          workflowIdUrl="#all"
-        />,
-      ),
-    );
-
-    return container;
-  }
-
-  it("says that it lists the newest runs, with the server's total", () => {
-    const text = render(130).textContent;
-
-    expect(text).toContain("Runs of This Workflow ID (130)");
-    expect(text).toContain("The newest 2 of 130 runs.");
-    expect(text).toContain("View all 130 runs");
-    expect(text).toContain("01a20d99…9edf");
-  });
-
-  it("prints no total while it does not know one", () => {
-    const text = render().textContent;
-
-    expect(text).toContain("The newest 2 runs.");
-    expect(text).toContain("View all runs");
-    expect(text).not.toContain("(2)");
-  });
 });
 
 describe("relatedRunCount", () => {
-  it("counts the parent, the children and the other runs, not this run", () => {
+  it("counts the root, the parent and the children, not this run or its Workflow ID's other runs", () => {
     expect(
       relatedRunCount({
         execution: run("a", "Running", { parentWorkflowId: "order-1" }),
-        runs: [run("a"), run("b"), run("c")],
         spans: [],
       }),
-    ).toBe(3);
-    expect(
-      relatedRunCount({ execution: run("a"), runs: [run("a")], spans: [] }),
-    ).toBe(0);
-    // A Workflow ID with more runs than the page loaded.
-    expect(
-      relatedRunCount({
-        execution: run("a"),
-        runCount: 130,
-        runs: [run("a"), run("b")],
-        spans: [],
-      }),
-    ).toBe(129);
+    ).toBe(1);
+    expect(relatedRunCount({ execution: run("a"), spans: [] })).toBe(0);
   });
 });

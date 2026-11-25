@@ -5,19 +5,24 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { TemporalView } from "./TemporalView";
 
 const navigation = {
-  searchParam: "",
+  createUrl: (values: Record<string, string>) =>
+    `#${new URLSearchParams(values).toString()}`,
+  searchParam: "" as string | null,
   setSearchParam: vi.fn(),
-  setTemporalEventParam: vi.fn(),
+  setSortParam: vi.fn(),
   setTemporalFollowParam: vi.fn(),
-  setTemporalRunParam: vi.fn(),
+  setTemporalScheduleParam: vi.fn(),
   setTemporalSectionParam: vi.fn(),
   setTemporalStatusParam: vi.fn(),
-  setTemporalWfParam: vi.fn(),
-  temporalFollowParam: null,
-  temporalNsParam: null,
+  setTemporalTypeParam: vi.fn(),
+  sortParam: null as string | null,
+  temporalFollowParam: null as string | null,
+  temporalNsParam: "default" as string | null,
   temporalRunParam: null as string | null,
-  temporalSectionParam: null,
+  temporalScheduleParam: null as string | null,
+  temporalSectionParam: null as string | null,
   temporalStatusParam: null as string | null,
+  temporalTypeParam: null as string | null,
   temporalWfParam: null as string | null,
 };
 
@@ -42,45 +47,18 @@ vi.mock("./TemporalWorkflowsGrid", () => ({
 }));
 
 vi.mock("./TemporalExecutionDebugger", () => ({
-  TemporalExecutionDebugger: (props: { workflowId: string }) => (
-    <div data-testid="debugger">{props.workflowId}</div>
-  ),
-}));
-
-vi.mock("./TemporalWorkflowChainView", () => ({
-  chainStatusOfParam: (raw: string | null) =>
-    raw === "Failed" ? "Failed" : null,
-  TemporalWorkflowChainView: (props: {
-    onOpenExecution: (workflowId: string, runId?: string) => void;
-    statusFilter: string | null;
+  TemporalExecutionDebugger: (props: {
+    runId?: string;
     workflowId: string;
   }) => (
-    <button
-      data-status={props.statusFilter ?? ""}
-      data-testid="chain"
-      onClick={() => props.onOpenExecution(props.workflowId, "run-9")}
-    >
+    <div data-run={props.runId ?? ""} data-testid="debugger">
       {props.workflowId}
-    </button>
-  ),
-}));
-
-vi.mock("./TemporalWorkflowIdsView", () => ({
-  TemporalWorkflowIdsView: (props: {
-    onOpenWorkflowId: (workflowId: string) => void;
-    search: string;
-  }) => (
-    <button
-      data-testid="workflow-ids"
-      onClick={() => props.onOpenWorkflowId("sub-cus_4920")}
-    >
-      {props.search}
-    </button>
+    </div>
   ),
 }));
 
 vi.mock("./TemporalAttentionView", () => ({
-  TemporalAttentionView: () => null,
+  TemporalAttentionView: () => <div data-testid="attention" />,
 }));
 vi.mock("./TemporalClusterView", () => ({ TemporalClusterView: () => null }));
 vi.mock("./TemporalSchedulesView", () => ({
@@ -102,7 +80,9 @@ describe("TemporalView", () => {
   afterEach(() => {
     act(() => root?.unmount());
     document.body.innerHTML = "";
+    window.location.hash = "";
     navigation.searchParam = "";
+    navigation.sortParam = null;
     navigation.temporalRunParam = null;
     navigation.temporalSectionParam = null;
     navigation.temporalStatusParam = null;
@@ -120,101 +100,77 @@ describe("TemporalView", () => {
     return container;
   }
 
-  it("adds a browser history entry when a run opens, so Back returns to the list", () => {
+  it("opens a workflow at its one URL, with no screen or filter, as a new history entry", () => {
+    navigation.searchParam = 'ExecutionStatus = "Failed"';
+
     const container = render();
+    const lengthBefore = window.history.length;
 
     act(() =>
       container.querySelector<HTMLElement>('[data-testid="open"]')!.click(),
     );
 
-    expect(navigation.setTemporalWfParam).toHaveBeenCalledWith("order-7", {
-      history: "push",
+    const params = new URLSearchParams(window.location.hash.slice(1));
+
+    expect(Object.fromEntries(params)).toEqual({
+      temporalNsParam: "default",
+      temporalRunParam: "run-1",
+      temporalWfParam: "order-7",
+      viewParam: "temporal",
     });
-    expect(navigation.setTemporalRunParam).toHaveBeenCalledWith("run-1", {
-      history: "push",
-    });
-    // A run is one level below the screen it was opened from, so the section stays.
-    expect(navigation.setTemporalSectionParam).not.toHaveBeenCalled();
+    expect(window.history.length).toBe(lengthBefore + 1);
   });
 
-  it("shows a run under the screen it was opened from", () => {
-    navigation.temporalSectionParam = "workflow" as never;
+  it("shows the workflow page for any Workflow ID, with or without a run", () => {
+    navigation.temporalWfParam = "order-7";
+
+    const container = render();
+    const page = container.querySelector('[data-testid="debugger"]')!;
+
+    expect(page.textContent).toBe("order-7");
+    expect(page.getAttribute("data-run")).toBe("");
+  });
+
+  it("drops the screen and filter of an older workflow link in place", () => {
+    navigation.temporalSectionParam = "workflow";
+    navigation.temporalStatusParam = "Failed";
     navigation.temporalWfParam = "sub-cus_4920";
     navigation.temporalRunParam = "run-2";
 
     const container = render();
-    const debuggerNode = container.querySelector('[data-testid="debugger"]')!;
-
-    expect(debuggerNode.textContent).toBe("sub-cus_4920");
-    expect(navigation.temporalSectionParam).toBe("workflow");
-    expect(container.querySelector('[data-testid="chain"]')).toBeNull();
-  });
-
-  it("renders the execution debugger when a Workflow ID is in the URL", () => {
-    navigation.temporalWfParam = "order-7";
-
-    const container = render();
+    const replace = { history: "replace" };
 
     expect(
-      container.querySelector('[data-testid="debugger"]')?.textContent,
-    ).toBe("order-7");
-  });
-
-  it("renders the workflow chain view when temporalSection is workflow", () => {
-    navigation.temporalSectionParam = "workflow" as never;
-    navigation.temporalWfParam = "sub-cus_4920";
-
-    const container = render();
-
-    expect(container.querySelector('[data-testid="chain"]')?.textContent).toBe(
-      "sub-cus_4920",
-    );
-  });
-
-  it("reads the status filter of a Workflow ID from the URL and drops it from the entry of an opened run", () => {
-    navigation.temporalSectionParam = "workflow" as never;
-    navigation.temporalStatusParam = "Failed";
-    navigation.temporalWfParam = "sub-cus_4920";
-
-    const container = render();
-    const chain = container.querySelector<HTMLElement>(
-      '[data-testid="chain"]',
-    )!;
-
-    expect(chain.getAttribute("data-status")).toBe("Failed");
-
-    act(() => chain.click());
-
-    expect(navigation.setTemporalStatusParam).toHaveBeenCalledWith(null, {
-      history: "push",
-    });
-    expect(navigation.setTemporalRunParam).toHaveBeenCalledWith("run-9", {
-      history: "push",
-    });
-  });
-
-  it("renders the Workflow IDs list for the workflow section with no Workflow ID", () => {
-    navigation.temporalSectionParam = "workflow" as never;
-    navigation.searchParam = "sub-";
-
-    const container = render();
-    const list = container.querySelector<HTMLElement>(
-      '[data-testid="workflow-ids"]',
-    )!;
-
-    expect(list.textContent).toBe("sub-");
-
-    act(() => list.click());
-
-    expect(navigation.setTemporalWfParam).toHaveBeenCalledWith("sub-cus_4920", {
-      history: "push",
-    });
+      container.querySelector('[data-testid="debugger"]')!.textContent,
+    ).toBe("sub-cus_4920");
     expect(navigation.setTemporalSectionParam).toHaveBeenCalledWith(
-      "workflow",
-      { history: "push" },
+      null,
+      replace,
     );
-    expect(navigation.setSearchParam).toHaveBeenCalledWith(null, {
-      history: "push",
-    });
+    expect(navigation.setTemporalStatusParam).toHaveBeenCalledWith(
+      null,
+      replace,
+    );
+    expect(navigation.setSearchParam).toHaveBeenCalledWith(null, replace);
+  });
+
+  it("leaves the URL of a list alone", () => {
+    navigation.temporalSectionParam = "attention";
+
+    const container = render();
+
+    expect(container.querySelector('[data-testid="attention"]')).not.toBeNull();
+    expect(navigation.setTemporalSectionParam).not.toHaveBeenCalled();
+  });
+
+  it("opens Workflows for the sections that are gone: Workflow IDs and Recent Runs", () => {
+    for (const section of ["workflow", "recent"]) {
+      navigation.temporalSectionParam = section;
+
+      const container = render();
+
+      expect(container.querySelector('[data-testid="open"]')).not.toBeNull();
+      act(() => root?.unmount());
+    }
   });
 });

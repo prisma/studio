@@ -425,13 +425,14 @@ describe("Studio command palette", () => {
     expect(text).not.toContain("SQL");
     expect(text).not.toContain("Workers");
     expect(text).toContain("Workflow Types");
-    expect(text).toContain("Executions");
-    expect(text).toContain("Attention");
+    expect(text).toContain("Workflows");
+    expect(text).toContain("Needs Attention");
+    expect(text).not.toContain("Workflow IDs");
     expect(text).toContain("Schedules");
     expect(text).toContain("Task Queues");
     expect(text).toContain("Cluster & Shards");
     expect(text.indexOf("Workflow Types")).toBeLessThan(
-      text.indexOf("Executions"),
+      text.indexOf("Workflows"),
     );
 
     act(() => {

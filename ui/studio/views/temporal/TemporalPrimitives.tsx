@@ -286,17 +286,15 @@ export function TemporalRefreshError(props: {
   );
 }
 
-/** The name of each Temporal screen, as the left menu shows it. A recent run belongs to Executions. */
+/** The name of each Temporal screen, as the left menu shows it. */
 export const TEMPORAL_SECTION_NAMES: Record<TemporalSection, string> = {
-  attention: "Attention",
+  attention: "Needs Attention",
   cluster: "Cluster & Shards",
   queues: "Task Queues",
-  recent: "Executions",
   schedules: "Schedules",
   types: "Workflow Types",
   workers: "Workers",
-  workflow: "Workflow IDs",
-  workflows: "Executions",
+  workflows: "Workflows",
 };
 
 /** Shows which Temporal namespace a screen reads from and acts on. */

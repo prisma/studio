@@ -60,7 +60,7 @@ describe("TemporalQueryStatusButton", () => {
     render(null);
 
     expect(status()).toBeNull();
-    expect(button()!.getAttribute("aria-label")).toBe("Refresh executions");
+    expect(button()!.getAttribute("aria-label")).toBe("Refresh workflows");
     act(() => button()!.click());
     expect(onRefresh).toHaveBeenCalledTimes(1);
   });
@@ -98,12 +98,12 @@ describe("TemporalQueryStatusButton", () => {
 
     expect(button()!.textContent).toContain("2.40s");
     expect(button()!.getAttribute("aria-label")).toBe(
-      "Refresh executions. The last query took 2.40s",
+      "Refresh workflows. The last query took 2.40s",
     );
 
     wait(3_000);
     expect(button()!.textContent).toBe("Refresh");
-    expect(button()!.getAttribute("aria-label")).toBe("Refresh executions");
+    expect(button()!.getAttribute("aria-label")).toBe("Refresh workflows");
   });
 
   it("is as wide in every state, so the header beside it does not move", () => {

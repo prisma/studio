@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Copy, Plus, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -23,13 +23,10 @@ import { ToggleGroup, ToggleGroupItem } from "@/ui/components/ui/toggle-group";
 import { useNavigation } from "@/ui/hooks/use-navigation";
 import {
   useTemporalWorkflowCounts,
-  useTemporalWorkflowDetail,
-  useTemporalWorkflowMetadata,
   useTemporalWorkflows,
 } from "@/ui/hooks/use-temporal";
 import { cn } from "@/ui/lib/utils";
 
-import { StudioHeader } from "../../StudioHeader";
 import {
   formatBytes,
   formatDuration,
@@ -37,8 +34,6 @@ import {
   pluralize,
 } from "./temporal-utils";
 import {
-  TemporalFollowControl,
-  temporalIconScale,
   TemporalLoadError,
   temporalTableHeadClass,
   TemporalTime,
@@ -47,9 +42,7 @@ import {
   WorkflowStatusIcon,
   workflowStatusLabel,
 } from "./TemporalPrimitives";
-import { quoteFilterValue, TemporalTypeCrumb } from "./TemporalRunBreadcrumb";
-import { TemporalRunStatus } from "./TemporalRunStatus";
-import type { TemporalStartPreset } from "./TemporalStartSheet";
+import { quoteFilterValue } from "./TemporalRunBreadcrumb";
 
 const PAGE_SIZE = 100;
 
@@ -91,7 +84,7 @@ const linkClassName =
 
 const cellClassName = "px-2 py-2";
 
-/** Marks the row the keyboard is on, as the Executions grid does. */
+/** Marks the row the keyboard is on, as the Workflows grid does. */
 const focusedCellClassName = "shadow-[inset_2px_0_0_0_var(--foreground)]";
 
 /** The status a `temporalStatus` URL value names, or null for none or an unknown one. */
@@ -109,44 +102,32 @@ function compactRunId(runId: string): string {
   return runId.length > 14 ? `${runId.slice(0, 8)}…${runId.slice(-4)}` : runId;
 }
 
-export interface TemporalWorkflowChainViewProps {
+export interface TemporalWorkflowRunsProps {
+  /** The run the workflow page shows, marked in the list. */
+  currentRunId: string;
   followMode: TemporalFollowMode;
   namespace: string;
-  onFollowModeChange: (mode: TemporalFollowMode) => void;
   onOpenExecution: (workflowId: string, runId?: string) => void;
-  onOpenStart: (preset?: TemporalStartPreset | null) => void;
-  onStatusFilterChange: (status: TemporalWorkflowStatus | null) => void;
-  /** The status the runs are filtered by. It is in the URL, so the Back button keeps it. */
-  statusFilter: TemporalWorkflowStatus | null;
   workflowId: string;
 }
 
 /**
- * The middle level of the Temporal hierarchy: every Run sharing one Workflow ID
- * (its Workflow Execution Chain), ordered newest first. The caller gives it a
- * key per Workflow ID, so its state starts fresh for each one.
+ * The Runs tab of a workflow page: every run that shares its Workflow ID (its
+ * Workflow Execution Chain), newest first, with a status filter. The workflow
+ * page shows it only when the ID has more than one run, and gives it a key per
+ * Workflow ID, so its state starts fresh for each one.
  */
-export function TemporalWorkflowChainView(
-  props: TemporalWorkflowChainViewProps,
-) {
-  const {
-    followMode,
-    namespace,
-    onFollowModeChange,
-    onOpenExecution,
-    onOpenStart,
-    onStatusFilterChange,
-    statusFilter,
-    workflowId,
-  } = props;
+export function TemporalWorkflowRuns(props: TemporalWorkflowRunsProps) {
+  const { currentRunId, followMode, namespace, onOpenExecution, workflowId } =
+    props;
+  const [statusFilter, setStatusFilter] =
+    useState<TemporalWorkflowStatus | null>(null);
   const { createUrl } = useNavigation();
   const tableAreaRef = useRef<HTMLDivElement | null>(null);
   const [pageTokens, setPageTokens] = useState<string[]>([""]);
   const [focusedIndex, setFocusedIndex] = useState(0);
   // True once the runs did not fit one page. The server then counts and filters them.
   const [isLongChain, setIsLongChain] = useState(false);
-  const [rememberedLatestRun, setRememberedLatestRun] =
-    useState<TemporalWorkflowExecution>();
 
   const pageIndex = pageTokens.length - 1;
   const pageToken = pageTokens[pageIndex] ?? "";
@@ -154,25 +135,18 @@ export function TemporalWorkflowChainView(
   const serverStatusFilter = isLongChain ? statusFilter : null;
   const queryFollowMode = followMode === "paused" ? "paused" : "live";
 
-  const {
-    data,
-    error,
-    isError,
-    isFetching,
-    isLoading,
-    isPlaceholderData,
-    refetch,
-  } = useTemporalWorkflows({
-    followMode: queryFollowMode,
-    includeCounts: false,
-    namespace,
-    pageSize: PAGE_SIZE,
-    pageToken,
-    query: serverStatusFilter
-      ? `${idFilter} AND ExecutionStatus = "${serverStatusFilter}"`
-      : idFilter,
-    sort: NEWEST_FIRST,
-  });
+  const { data, error, isError, isLoading, isPlaceholderData, refetch } =
+    useTemporalWorkflows({
+      followMode: queryFollowMode,
+      includeCounts: false,
+      namespace,
+      pageSize: PAGE_SIZE,
+      pageToken,
+      query: serverStatusFilter
+        ? `${idFilter} AND ExecutionStatus = "${serverStatusFilter}"`
+        : idFilter,
+      sort: NEWEST_FIRST,
+    });
   const chainCounts = useTemporalWorkflowCounts({
     enabled: isLongChain,
     followMode: queryFollowMode,
@@ -189,37 +163,6 @@ export function TemporalWorkflowChainView(
   if (!isLongChain && nextPageToken && !isPlaceholderData) {
     setIsLongChain(true);
   }
-
-  const newestLoadedRun =
-    pageIndex === 0 && !serverStatusFilter && !isPlaceholderData
-      ? runs[0]
-      : undefined;
-
-  if (
-    newestLoadedRun &&
-    (rememberedLatestRun?.runId !== newestLoadedRun.runId ||
-      rememberedLatestRun.status !== newestLoadedRun.status)
-  ) {
-    setRememberedLatestRun(newestLoadedRun);
-  }
-
-  const latestRun = newestLoadedRun ?? rememberedLatestRun;
-  const workflowType = latestRun?.workflowType;
-  const taskQueue = latestRun?.taskQueue;
-  // The status card shows the latest run's result and details, read only when the card opens.
-  const [isStatusCardOpen, setIsStatusCardOpen] = useState(false);
-  const latestDetail = useTemporalWorkflowDetail({
-    enabled: isStatusCardOpen && Boolean(latestRun),
-    namespace,
-    runId: latestRun?.runId,
-    workflowId,
-  });
-  const latestMetadata = useTemporalWorkflowMetadata({
-    enabled: isStatusCardOpen && latestRun?.status === "Running",
-    namespace,
-    runId: latestRun?.runId,
-    workflowId,
-  });
 
   // The counts of every run of the ID. Null when the server could not count a long chain.
   const statusCounts = useMemo(() => {
@@ -296,10 +239,11 @@ export function TemporalWorkflowChainView(
         return;
       }
 
-      if (event.key === "j" || event.key === "ArrowDown") {
+      // j and k move between workflows of the list the page was opened from.
+      if (event.key === "ArrowDown") {
         event.preventDefault();
         moveTo(Math.min(visibleRuns.length - 1, focusedIndex + 1));
-      } else if (event.key === "k" || event.key === "ArrowUp") {
+      } else if (event.key === "ArrowUp") {
         event.preventDefault();
         moveTo(Math.max(0, focusedIndex - 1));
       } else if (event.key === "Enter") {
@@ -317,21 +261,8 @@ export function TemporalWorkflowChainView(
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [focusedIndex, onOpenExecution, visibleRuns]);
 
-  const workflowIdsUrl = createUrl({
-    temporalNsParam: namespace,
-    temporalSectionParam: "workflow",
-    viewParam: "temporal",
-  });
-
-  const openStartForChain = () =>
-    onOpenStart({
-      ...(taskQueue ? { taskQueue } : {}),
-      workflowId,
-      ...(workflowType ? { workflowType } : {}),
-    });
-
   const applyStatusFilter = (status: TemporalWorkflowStatus | null) => {
-    onStatusFilterChange(status);
+    setStatusFilter(status);
     setFocusedIndex(0);
 
     if (isLongChain) {
@@ -339,43 +270,10 @@ export function TemporalWorkflowChainView(
     }
   };
 
-  const latestRunStatus = latestRun ? (
-    <TemporalRunStatus
-      currentDetails={latestMetadata.data?.currentDetails}
-      detail={latestDetail.data}
-      extraFacts={[
-        ...(hasAnswer
-          ? ([
-              [
-                "Runs",
-                totalRuns !== null
-                  ? totalRuns.toLocaleString("en-US")
-                  : `${loadedThrough.toLocaleString("en-US")}+`,
-              ],
-            ] as Array<[string, React.ReactNode]>)
-          : []),
-        ...(hasAnswer && !isLongChain && runs.length > 0
-          ? ([
-              [
-                "First run",
-                <TemporalTime key="first" iso={runs.at(-1)?.startTime} />,
-              ],
-            ] as Array<[string, React.ReactNode]>)
-          : []),
-      ]}
-      heading={`Latest run ${compactRunId(latestRun.runId)}`}
-      isLoadingDetail={latestDetail.isLoading}
-      onOpenChange={setIsStatusCardOpen}
-      run={latestRun}
-    />
-  ) : null;
-
   const runUrl = (runId: string) =>
     createUrl({
       temporalNsParam: namespace,
       temporalRunParam: runId,
-      // A run opened from this page stays under Workflow IDs in the left menu.
-      temporalSectionParam: "workflow",
       temporalWfParam: workflowId,
       viewParam: "temporal",
     });
@@ -405,75 +303,9 @@ export function TemporalWorkflowChainView(
 
   return (
     <div
-      className={cn(
-        "@container flex h-full min-h-0 flex-col bg-background",
-        temporalIconScale,
-      )}
-      data-testid="temporal-workflow-chain"
+      className="@container flex h-full min-h-0 flex-col bg-background"
+      data-testid="temporal-workflow-runs"
     >
-      <StudioHeader
-        endContent={
-          <>
-            {/* A narrow page drops the control while it reads Live, and keeps it while refresh is paused. */}
-            <span
-              className={cn(
-                "contents",
-                followMode !== "paused" && "@max-2xl:hidden",
-              )}
-            >
-              <TemporalFollowControl
-                onChange={onFollowModeChange}
-                value={followMode}
-              />
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-8 px-0"
-              aria-label="Refresh runs"
-              title="Refresh runs"
-              onClick={() => {
-                void chainCounts.refetch();
-                void refetch();
-              }}
-              disabled={isFetching}
-            >
-              <RefreshCw
-                className={cn(isFetching && "motion-safe:animate-spin")}
-              />
-            </Button>
-            <Button
-              size="sm"
-              className="shrink-0 whitespace-nowrap"
-              onClick={openStartForChain}
-              title="Start a new run of this Workflow ID"
-            >
-              <Plus />
-              <span className="@max-3xl:sr-only">Start Execution</span>
-            </Button>
-          </>
-        }
-      >
-        <div className="flex min-w-0 flex-1 items-center gap-3 @max-3xl:hidden">
-          <ChainBreadcrumb
-            namespace={namespace}
-            workflowId={workflowId}
-            workflowType={workflowType}
-          />
-          {latestRunStatus}
-        </div>
-      </StudioHeader>
-
-      {/* Under 48rem the path and the status have a row of their own, so the header keeps its actions. */}
-      <div className="flex min-w-0 items-center gap-3 border-b border-border px-4 py-1.5 @3xl:hidden">
-        <ChainBreadcrumb
-          namespace={namespace}
-          workflowId={workflowId}
-          workflowType={workflowType}
-        />
-        {latestRunStatus}
-      </div>
-
       {hasAnswer && (filterStatuses.length > 1 || statusFilter) ? (
         <div
           className="border-b border-border px-4 py-1.5"
@@ -536,15 +368,6 @@ export function TemporalWorkflowChainView(
               namespace{" "}
               <code className="font-mono text-foreground">{namespace}</code>.
             </p>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={openStartForChain}>
-                <Plus />
-                Start Execution
-              </Button>
-              <Button variant="outline" size="sm" asChild>
-                <a href={workflowIdsUrl}>Find a Workflow ID</a>
-              </Button>
-            </div>
           </div>
         ) : visibleRuns.length === 0 && statusFilter ? (
           <div className="flex flex-col items-center justify-center gap-3 p-12 text-center text-sm text-muted-foreground">
@@ -625,7 +448,10 @@ export function TemporalWorkflowChainView(
                   isFirst={visibleIndex === 0}
                   isFocused={focusedIndex === visibleIndex}
                   isLast={visibleIndex === visibleRuns.length - 1}
-                  isLatest={run.runId === latestRun?.runId}
+                  isCurrent={run.runId === currentRunId}
+                  isLatest={
+                    pageIndex === 0 && !serverStatusFilter && indexInPage === 0
+                  }
                   onOpen={() => onOpenExecution(run.workflowId, run.runId)}
                   run={run}
                   runHref={runUrl(run.runId)}
@@ -682,7 +508,7 @@ export function TemporalWorkflowChainView(
         <div className="flex items-center gap-3">
           {visibleRuns.length > 0 ? (
             <span className="hidden font-mono text-2xs @2xl:inline">
-              j/k move · Enter inspect
+              ↑/↓ move · Enter open
             </span>
           ) : null}
           <TemporalTimeFormatControl className="h-6" />
@@ -692,64 +518,6 @@ export function TemporalWorkflowChainView(
   );
 }
 
-/**
- * The path of the page: the Workflow Type of its runs, which opens the type's
- * diagram, then this Workflow ID. The left menu shows Workflow IDs, so the
- * path does not repeat it. The type is known once the first run has loaded.
- */
-function ChainBreadcrumb(props: {
-  namespace: string;
-  workflowId: string;
-  workflowType?: string;
-}) {
-  const { namespace, workflowId, workflowType } = props;
-
-  return (
-    <nav
-      aria-label="Breadcrumb"
-      className="flex min-w-0 items-center gap-1.5"
-      data-testid="temporal-chain-breadcrumb"
-    >
-      {workflowType ? (
-        <>
-          <TemporalTypeCrumb
-            namespace={namespace}
-            workflowType={workflowType}
-          />
-          <ChevronRight
-            aria-hidden
-            className="size-3 shrink-0 text-muted-foreground/70"
-          />
-        </>
-      ) : null}
-      <span className="flex min-w-0 items-center gap-0.5">
-        {/* The page is about this Workflow ID, so it is the heading. */}
-        <h1
-          aria-current="page"
-          className="truncate font-mono text-sm font-semibold text-foreground"
-          title={workflowId}
-        >
-          {workflowId}
-        </h1>
-        <Button
-          variant="ghost"
-          size="xs"
-          aria-label={`Copy workflow ID ${workflowId}`}
-          title={`Copy workflow ID ${workflowId}`}
-          className="w-6 shrink-0 px-0 text-muted-foreground"
-          onClick={() => {
-            void navigator.clipboard.writeText(workflowId);
-            toast.success("Copied Workflow ID");
-          }}
-        >
-          <Copy />
-        </Button>
-      </span>
-    </nav>
-  );
-}
-
-/** One pill of the status filter, in the style of the status presets of the Executions grid. */
 function StatusFilterItem(props: {
   /** Undefined when the server could not count the runs. */
   count?: number;
@@ -776,6 +544,8 @@ function StatusFilterItem(props: {
 }
 
 function ChainRunRow(props: {
+  /** The run the workflow page shows. */
+  isCurrent: boolean;
   isFirst: boolean;
   isFocused: boolean;
   isLast: boolean;
@@ -789,6 +559,7 @@ function ChainRunRow(props: {
   showRunColumn: boolean;
 }) {
   const {
+    isCurrent,
     isFirst,
     isFocused,
     isLast,
@@ -803,15 +574,25 @@ function ChainRunRow(props: {
   const isOpen = run.status === "Running" || run.status === "Paused";
   // A server reports the size of a history when the run closes.
   const hasHistorySize = run.historyLength > 0;
-  const latestBadge = isLatest ? (
-    <Badge variant="secondary" className="px-1.5 py-0 text-2xs font-normal">
-      Latest
-    </Badge>
-  ) : null;
+  const latestBadge = (
+    <>
+      {isLatest ? (
+        <Badge variant="secondary" className="px-1.5 py-0 text-2xs font-normal">
+          Latest
+        </Badge>
+      ) : null}
+      {isCurrent ? (
+        <Badge variant="outline" className="px-1.5 py-0 text-2xs font-normal">
+          On screen
+        </Badge>
+      ) : null}
+    </>
+  );
 
   return (
     <TableRow
       data-focused={isFocused ? "true" : undefined}
+      aria-current={isCurrent ? "true" : undefined}
       data-testid={`temporal-chain-row-${run.runId}`}
       onClick={onOpen}
       className={cn(

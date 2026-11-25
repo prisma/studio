@@ -113,7 +113,7 @@ export function TemporalSearchField(props: {
                 ? `${listId}-${chosenIndex}`
                 : undefined
             }
-            aria-label="Search executions"
+            aria-label="Search workflows"
             autoComplete="off"
             spellCheck={false}
             value={draft}

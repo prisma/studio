@@ -1,15 +1,12 @@
 import { Slot } from "@radix-ui/react-slot";
 import {
   Activity,
-  Bookmark,
   CalendarClock,
-  CircleAlert,
   Code2,
   Cpu,
   Database,
   History,
   Layers,
-  ListTree,
   type LucideIcon,
   Network,
   RefreshCw,
@@ -81,7 +78,6 @@ import {
   TEMPORAL_BUILT_IN_VIEWS,
   useTemporalSavedViews,
 } from "./views/temporal/temporal-saved-views";
-import { WorkflowStatusIcon } from "./views/temporal/TemporalPrimitives";
 
 const NO_SERVICE_LOCATIONS: StudioServiceLocations = {};
 const DATABASE_SERVICE_LABELS = {
@@ -89,9 +85,6 @@ const DATABASE_SERVICE_LABELS = {
   postgresql: "Postgres",
   sqlite: "SQLite",
 };
-const RECENT_RUN_COUNT = 20;
-const RECENT_RUN_PAGE_SIZE = 100;
-const RECENT_RUN_WINDOW_MS = 5 * 60_000;
 // Thin scrollbar that only appears on hover, so it never sits against the page edge.
 const hoverScrollbarClasses =
   "[scrollbar-width:thin] [scrollbar-color:transparent_transparent] hover:[scrollbar-color:var(--border)_transparent]";
@@ -606,7 +599,7 @@ export function Navigation({ className }: NavigationProps) {
     services.push({
       attention:
         failedWorkflowCount > 0
-          ? `${failedWorkflowCount} failed ${failedWorkflowCount === 1 ? "execution" : "executions"}`
+          ? `${failedWorkflowCount} failed ${failedWorkflowCount === 1 ? "workflow" : "workflows"}`
           : null,
       href:
         serviceLocations.temporal ??
@@ -994,10 +987,7 @@ export function Navigation({ className }: NavigationProps) {
       )}
 
       {openService === "temporal" ? (
-        <Navigation.TemporalSection
-          itemClassName={navigationItemClasses}
-          runItemClassName={tableItemClasses}
-        />
+        <Navigation.TemporalSection itemClassName={navigationItemClasses} />
       ) : null}
 
       {/* Wide invisible grab area; only a hairline at the page edge shows on hover or drag. */}
@@ -1154,14 +1144,6 @@ const Block = ({
     >
       {children}
     </nav>
-  );
-};
-
-const ZoneHeading = ({ children }: { children: React.ReactNode }) => {
-  return (
-    <div className="flex shrink-0 items-center px-4 pt-4 pb-1">
-      <h2 className={zoneHeadingClasses}>{children}</h2>
-    </div>
   );
 };
 
@@ -1436,17 +1418,6 @@ function useTemporalNavigation() {
     viewParam === "temporal" && temporalFollowParam === "paused"
       ? "paused"
       : "live";
-  const [recentSince, setRecentSince] = useState(getRecentRunsStart);
-
-  useEffect(() => {
-    const timer = setInterval(
-      () => setRecentSince(getRecentRunsStart()),
-      60_000,
-    );
-
-    return () => clearInterval(timer);
-  }, []);
-
   // Status counts for the whole namespace. The same request as the unfiltered
   // Workflows list, so the two share one response.
   const { data: workflowList } = useTemporalWorkflows({
@@ -1454,58 +1425,28 @@ function useTemporalNavigation() {
     namespace: activeNamespace,
     query: "",
   });
-  // Not every Temporal server lists the newest runs first, so recent runs are
-  // asked for by start time and put in order here.
-  const { data: recentList } = useTemporalWorkflows({
-    followMode,
-    includeCounts: false,
-    namespace: activeNamespace,
-    pageSize: RECENT_RUN_PAGE_SIZE,
-    query: `StartTime > "${recentSince}"`,
-  });
-  // The rows show the Workflow ID, so an ID with several recent runs shows once, as its newest run.
-  const recentRuns = useMemo(() => {
-    if (!recentList) {
-      return undefined;
-    }
-
-    const listedIds = new Set<string>();
-
-    return [...recentList.executions]
-      .sort((a, b) => b.startTime.localeCompare(a.startTime))
-      .filter((run) => {
-        if (listedIds.has(run.workflowId)) {
-          return false;
-        }
-
-        listedIds.add(run.workflowId);
-
-        return true;
-      })
-      .slice(0, RECENT_RUN_COUNT);
-  }, [recentList]);
-
   return {
     activeNamespace,
     capabilities,
     namespaces,
-    recentRuns,
     workflowList,
   };
 }
 
-/** The start of the recent-runs window, on a whole minute so its query stays the same for a minute. */
-function getRecentRunsStart(): string {
-  const minute = Math.floor(Date.now() / 60_000) * 60_000;
-
-  return new Date(minute - RECENT_RUN_WINDOW_MS).toISOString();
-}
-
-const TemporalSection = (props: {
-  itemClassName: string;
-  runItemClassName: string;
-}) => {
-  const { itemClassName, runItemClassName } = props;
+/**
+ * The Temporal part of the menu. It holds only lists, the ways to find
+ * things: Workflow Types, Workflows with its views beneath it (Needs
+ * Attention, the built-in and saved views), Schedules, Task Queues, Workers
+ * and Cluster & Shards. A workflow is a thing a list leads to, so its page is
+ * not an entry: the menu marks Workflows while one is open.
+ */
+const TemporalSection = (props: { itemClassName: string }) => {
+  const { itemClassName } = props;
+  const viewItemClassName = cn(
+    itemClassName,
+    // Indented under Workflows with no icon, so the text lines up with "Workflows".
+    "py-1 pl-8 text-xs",
+  );
   const {
     createUrl,
     searchParam,
@@ -1514,45 +1455,28 @@ const TemporalSection = (props: {
     setTemporalWfParam,
     setViewParam,
     temporalFollowParam,
-    temporalRunParam,
     temporalSectionParam,
     temporalWfParam,
     viewParam,
   } = useNavigation();
-  const {
-    activeNamespace,
-    capabilities,
-    namespaces,
-    workflowList,
-    ...temporal
-  } = useTemporalNavigation();
+  const { activeNamespace, capabilities, namespaces, workflowList } =
+    useTemporalNavigation();
   const { removeView, saveView, views: userViews } = useTemporalSavedViews();
 
   const isTemporalOpen = viewParam === "temporal";
-  const recentRuns = temporal.recentRuns ?? [];
-  // A run opened from Recent Runs marks its row there. Opened from any other
-  // screen it leaves that screen's entry marked, so opening a run never moves
-  // the mark. Without a run ID in the URL the page shows the newest run of the ID.
-  const openRecentRun =
-    isTemporalOpen && temporalSectionParam === "recent" && temporalWfParam
-      ? recentRuns.find(
-          (run) =>
-            run.workflowId === temporalWfParam &&
-            (!temporalRunParam || run.runId === temporalRunParam),
-        )
-      : undefined;
-  // A link to a screen this server does not have opens Executions, as `TemporalView` does.
-  const activeSection =
-    temporalSectionParam === "attention" ||
-    temporalSectionParam === "queues" ||
-    temporalSectionParam === "types" ||
-    temporalSectionParam === "workflow" ||
-    (temporalSectionParam === "schedules" &&
-      capabilities?.supportsSchedules !== false) ||
-    (temporalSectionParam === "workers" &&
-      capabilities?.supportsDescribeTaskQueue === true) ||
-    (temporalSectionParam === "cluster" &&
-      capabilities?.supportsAdminApi === true)
+  const isWorkflowPage = isTemporalOpen && Boolean(temporalWfParam);
+  // A link to a screen this server does not have opens Workflows, as `TemporalView` does.
+  const activeSection = isWorkflowPage
+    ? "workflows"
+    : temporalSectionParam === "attention" ||
+        temporalSectionParam === "queues" ||
+        temporalSectionParam === "types" ||
+        (temporalSectionParam === "schedules" &&
+          capabilities?.supportsSchedules !== false) ||
+        (temporalSectionParam === "workers" &&
+          capabilities?.supportsDescribeTaskQueue === true) ||
+        (temporalSectionParam === "cluster" &&
+          capabilities?.supportsAdminApi === true)
       ? temporalSectionParam
       : "workflows";
   const savedViews = [...TEMPORAL_BUILT_IN_VIEWS, ...userViews];
@@ -1562,7 +1486,7 @@ const TemporalSection = (props: {
     followMode: temporalFollowParam === "paused" ? "paused" : "live",
     namespace: activeNamespace,
   });
-  // One run can have several problems, and the Attention page counts runs.
+  // One run can have several problems, and the Needs Attention page counts runs.
   const attentionCount = new Set(
     attention?.items
       .filter((item) => item.kind !== "failed")
@@ -1645,29 +1569,11 @@ const TemporalSection = (props: {
         <Navigation.Item
           asChild
           className={itemClassName}
-          isActive={isTemporalOpen && activeSection === "workflow"}
-        >
-          <a
-            className="w-full"
-            data-testid="navigation-temporal-workflow-ids"
-            href={createUrl({
-              ...temporalUrlBase,
-              temporalSectionParam: "workflow",
-            })}
-          >
-            <ListTree aria-hidden />
-            Workflow IDs
-          </a>
-        </Navigation.Item>
-
-        <Navigation.Item
-          asChild
-          className={itemClassName}
           isActive={
-            isTemporalOpen &&
-            activeSection === "workflows" &&
-            openSavedViewQuery === undefined &&
-            !openRecentRun
+            isWorkflowPage ||
+            (isTemporalOpen &&
+              activeSection === "workflows" &&
+              openSavedViewQuery === undefined)
           }
         >
           <a
@@ -1680,7 +1586,7 @@ const TemporalSection = (props: {
           >
             <span className="flex min-w-0 items-center gap-2">
               <Workflow aria-hidden />
-              <span className="truncate">Executions</span>
+              <span className="truncate">Workflows</span>
             </span>
             <span className="flex shrink-0 items-center gap-0.5 tabular-nums">
               {runningCount > 0 ? (
@@ -1703,10 +1609,13 @@ const TemporalSection = (props: {
           </a>
         </Navigation.Item>
 
+        {/* The views of Workflows: lists of the same workflows, narrowed. */}
         <Navigation.Item
           asChild
-          className={itemClassName}
-          isActive={isTemporalOpen && activeSection === "attention"}
+          className={viewItemClassName}
+          isActive={
+            isTemporalOpen && !isWorkflowPage && activeSection === "attention"
+          }
         >
           <a
             className="w-full justify-between"
@@ -1716,20 +1625,65 @@ const TemporalSection = (props: {
               temporalSectionParam: "attention",
             })}
           >
-            <span className="flex min-w-0 items-center gap-2">
-              <CircleAlert aria-hidden />
-              <span className="truncate">Attention</span>
-            </span>
+            <span className="truncate">Needs Attention</span>
             {attentionCount > 0 ? (
               <span
                 className="shrink-0 rounded-full bg-amber-500/20 px-1.5 py-0.5 font-mono text-2xs font-medium tabular-nums text-foreground"
-                title={`${attentionCount} running executions need attention`}
+                title={`${attentionCount} running workflows need attention`}
               >
                 {attentionCount}
               </span>
             ) : null}
           </a>
         </Navigation.Item>
+
+        {savedViews.map((view) => (
+          <Navigation.Item
+            key={view.id}
+            asChild
+            className={cn(viewItemClassName, "group/view")}
+            isActive={openSavedViewQuery === view.query}
+          >
+            <div className="flex w-full items-center">
+              <a
+                className="flex min-w-0 flex-1 items-center gap-2"
+                href={createUrl({
+                  ...temporalUrlBase,
+                  searchParam: view.query,
+                  ...(view.sort ? { sortParam: view.sort } : {}),
+                  temporalSectionParam: "workflows",
+                })}
+                title={view.query}
+              >
+                <span className="truncate">{view.name}</span>
+              </a>
+              {view.id.startsWith("built-in:") ? null : (
+                <button
+                  type="button"
+                  aria-label={`Delete saved view ${view.name}`}
+                  // Transparent, not hidden, so the Tab key reaches it.
+                  className="flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover/view:opacity-100"
+                  onClick={() => {
+                    removeView(view.id);
+                    toast(`Deleted the saved view ${view.name}`, {
+                      action: {
+                        label: "Undo",
+                        onClick: () =>
+                          saveView({
+                            name: view.name,
+                            query: view.query,
+                            ...(view.sort ? { sort: view.sort } : {}),
+                          }),
+                      },
+                    });
+                  }}
+                >
+                  <X aria-hidden className="size-3" />
+                </button>
+              )}
+            </div>
+          </Navigation.Item>
+        ))}
 
         {capabilities?.supportsSchedules !== false ? (
           <Navigation.Item
@@ -1810,101 +1764,6 @@ const TemporalSection = (props: {
           </Navigation.Item>
         ) : null}
       </Navigation.Block>
-
-      <ZoneHeading>Saved Views</ZoneHeading>
-      <Navigation.Block label="Saved views">
-        {savedViews.map((view) => (
-          <Navigation.Item
-            key={view.id}
-            asChild
-            className={cn(itemClassName, "group/view")}
-            isActive={openSavedViewQuery === view.query}
-          >
-            <div className="flex w-full items-center">
-              <a
-                className="flex min-w-0 flex-1 items-center gap-2"
-                href={createUrl({
-                  ...temporalUrlBase,
-                  searchParam: view.query,
-                  ...(view.sort ? { sortParam: view.sort } : {}),
-                  temporalSectionParam: "workflows",
-                })}
-                title={view.query}
-              >
-                <Bookmark aria-hidden />
-                <span className="truncate">{view.name}</span>
-              </a>
-              {view.id.startsWith("built-in:") ? null : (
-                <button
-                  type="button"
-                  aria-label={`Delete saved view ${view.name}`}
-                  // Transparent, not hidden, so the Tab key reaches it.
-                  className="flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover/view:opacity-100"
-                  onClick={() => {
-                    removeView(view.id);
-                    toast(`Deleted the saved view ${view.name}`, {
-                      action: {
-                        label: "Undo",
-                        onClick: () =>
-                          saveView({
-                            name: view.name,
-                            query: view.query,
-                            ...(view.sort ? { sort: view.sort } : {}),
-                          }),
-                      },
-                    });
-                  }}
-                >
-                  <X aria-hidden className="size-3" />
-                </button>
-              )}
-            </div>
-          </Navigation.Item>
-        ))}
-      </Navigation.Block>
-
-      <ZoneHeading>Recent Runs</ZoneHeading>
-      <nav
-        aria-label="Recent runs"
-        className={cn(
-          // Positioned, so the screen-reader-only status text scrolls with its row.
-          "relative flex min-h-24 flex-1 basis-0 flex-col gap-px overflow-y-auto px-2 pt-1 pb-2",
-          hoverScrollbarClasses,
-        )}
-        data-testid="navigation-temporal-recent-runs"
-      >
-        {recentRuns.length > 0 ? (
-          recentRuns.map((run) => (
-            <Navigation.Item
-              key={`${run.workflowId}:${run.runId}`}
-              asChild
-              className={runItemClassName}
-              isActive={run === openRecentRun}
-            >
-              <a
-                className="w-full"
-                href={createUrl({
-                  ...temporalUrlBase,
-                  temporalRunParam: run.runId,
-                  temporalSectionParam: "recent",
-                  temporalWfParam: run.workflowId,
-                })}
-                title={`${run.workflowType} · ${run.status}`}
-              >
-                <WorkflowStatusIcon status={run.status} />
-                <span className="truncate">{run.workflowId}</span>
-                <span className="sr-only">{run.status}</span>
-              </a>
-            </Navigation.Item>
-          ))
-        ) : (
-          <Navigation.Item>
-            {temporal.recentRuns
-              ? "No runs started in the last 5 minutes"
-              : "Loading runs..."}
-          </Navigation.Item>
-        )}
-      </nav>
     </>
   );
 };

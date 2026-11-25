@@ -386,8 +386,8 @@ function StartForm(props: TemporalStartSheetProps) {
         <div className="flex items-center gap-2">
           <SheetTitle className="text-base">
             {preset?.clonedFromWorkflowId
-              ? "Clone & Start Execution"
-              : "Start Execution"}
+              ? "Clone & Start Workflow"
+              : "Start Workflow"}
           </SheetTitle>
           <TemporalNamespaceBadge namespace={namespace} />
         </div>
@@ -694,7 +694,7 @@ function StartForm(props: TemporalStartSheetProps) {
           data-testid="temporal-start-error"
           role="alert"
         >
-          <span className="font-medium">Could not start the execution.</span>
+          <span className="font-medium">Could not start the workflow.</span>
           <span className="font-mono text-2xs break-words">{startError}</span>
         </div>
       ) : null}
@@ -715,7 +715,7 @@ function StartForm(props: TemporalStartSheetProps) {
           data-testid="temporal-start-submit"
         >
           <Play />
-          {startWorkflow.isPending ? "Starting…" : "Start Execution"}
+          {startWorkflow.isPending ? "Starting…" : "Start Workflow"}
           <kbd className="ml-1 font-sans text-2xs opacity-70">
             {isMacPlatform() ? "⌘↵" : "Ctrl+↵"}
           </kbd>

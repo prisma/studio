@@ -80,14 +80,13 @@ Cmd+Enter or Ctrl+Enter starts the run. A field the user changed is never filled
 
 ## Temporal Run Path
 
-The header of a run is a path from the general to the particular: the Workflow Type, the Workflow ID, and the run. The type opens its diagram, the Workflow ID opens every run of that ID, and the run opens a list of the runs of the ID to move to another one. The page of a Workflow ID has the same path without the run, and its status shows the same card for the latest run. Opening a run never moves the mark in the left menu, so a run opened from Workflow IDs stays under Workflow IDs. It says "2 of 3" for a run of several. Beside the path, the status shows how long the run took and when it closed; hovering it shows how the run ended (the start of its result, or its failure), its Type, Queue, times and history size. The actions menu opens the parent run and searches in Streams and Tables.
-The Related tab shows the parent, this run and its Child Workflows as a tree, and the other runs of the Workflow ID as a list. Where there is nothing, it says so in a sentence.
+The header of a run is a path from the general to the particular: the Workflow Type, the Workflow ID, and the run. The type opens its diagram, the Workflow ID opens the Runs tab when the ID has several runs, and the run opens a list of the runs of the ID to move to another one. A workflow has one link, the same wherever it was opened from, and the left menu marks Workflows while one is open. Before the path, the header shows the list it was opened from, such as "← Failed · 3 of 12", with buttons and the j and k keys for the next and previous row. It says "2 of 3" for a run of several. Beside the path, the status shows how long the run took and when it closed; hovering it shows how the run ended (the start of its result, or its failure), its Type, Queue, times and history size. The actions menu opens the parent run and searches in Streams and Tables.
+The Related tab shows the parent, this run and its Child Workflows as a tree. Where there is nothing, it says so in a sentence.
 
-## Temporal Workflow IDs
+## Temporal Workflows and Runs
 
-A Workflow ID names one business object, such as an order or a subscription, and can have many runs: one per retry, cron tick or continue-as-new. The Workflow IDs entry in the sidebar lists the IDs among the 200 executions the server returns first, each with its latest run, its start time and the statuses of its recent runs. A search field finds any other ID by how it starts.
-Opening an ID shows every run of it, newest first, numbered from the oldest, with a filter by status that stays in the URL. A chain of more than 100 runs is counted and filtered by the server and shown in pages.
-The page of an ID links to its latest run, starts a new run with the same ID, and opens the same runs in Executions.
+A Workflow ID names one business object, such as an order or a subscription, and can have many runs: one per retry, cron tick or continue-as-new. The left menu lists Workflows, with Needs Attention and the saved views beneath it; a Workflow ID is found by pasting it in the search or the command palette.
+A workflow page shows its latest run, or the run its link pins. When the ID has several runs, a Runs tab lists them newest first, numbered from the oldest, with a filter by status. A chain of more than 100 runs is counted and filtered by the server and shown in pages.
 
 ## Temporal Timers and the Run Diagram
 
@@ -140,7 +139,7 @@ In a namespace with more runs than Studio copies, it counts the running runs onl
 
 ## Temporal Workflow Type Diagrams
 
-Workflow Types draws one diagram per Workflow Type: the Activities, Timers, Child Workflows, Signals and Updates that its runs take, top to bottom, with an arrow where one step followed another and the number of runs that went that way. Temporal stores no definition of a Workflow, so Studio draws the diagram from the histories of the 40 newest runs, with a few runs of every status. An info button beside the type's name in the header explains this, counts the sampled runs by status, says when the diagram was drawn, and redraws it from more runs: 100, then 200. The header's refresh button redraws it now, and "View All N Runs" opens the type's runs in Executions.
+Workflow Types draws one diagram per Workflow Type: the Activities, Timers, Child Workflows, Signals and Updates that its runs take, top to bottom, with an arrow where one step followed another and the number of runs that went that way. Temporal stores no definition of a Workflow, so Studio draws the diagram from the histories of the 40 newest runs, with a few runs of every status. An info button beside the type's name in the header explains this, counts the sampled runs by status, says when the diagram was drawn, and redraws it from more runs: 100, then 200. The header's refresh button redraws it now, and "View All N Runs" opens the type's runs in Workflows.
 An arrow carries words, not a box: the summary the Workflow code gave the step it leads to (the SDK's `summary` option), or what kind of transition it is, such as "after timer" or "on signal". Pointing at any arrow shows on every arrow the share of runs that took it.
 Each step shows how many runs are at it now, in how many it failed or was retried, and its median duration. Selecting a step lists those runs; a run's Workflow Type name links to its diagram.
 

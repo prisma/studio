@@ -1139,7 +1139,9 @@ describe("Navigation", () => {
     const temporal = renderNavigation();
 
     expect(temporal.container.textContent).toContain("Schedules");
-    expect(temporal.container.textContent).toContain("Recent Runs");
+    expect(temporal.container.textContent).toContain("Needs Attention");
+    expect(temporal.container.textContent).not.toContain("Recent Runs");
+    expect(temporal.container.textContent).not.toContain("Workflow IDs");
     expect(
       temporal.container.querySelector('nav[aria-label="Tables"]'),
     ).toBeNull();
@@ -1175,9 +1177,9 @@ describe("Navigation", () => {
     const database = renderNavigation();
     const temporalLink = getServiceLinks(database.container)[2];
 
-    expect(temporalLink?.textContent).toBe("Temporal2 failed executions");
+    expect(temporalLink?.textContent).toBe("Temporal2 failed workflows");
     expect(temporalLink?.getAttribute("title")).toBe(
-      "Temporal: 2 failed executions",
+      "Temporal: 2 failed workflows",
     );
     database.unmount();
 
@@ -1190,7 +1192,7 @@ describe("Navigation", () => {
     temporal.unmount();
   });
 
-  it("links Temporal views, saved views, and recent runs with full URLs", () => {
+  it("links Temporal lists and the views of Workflows with full URLs", () => {
     mockStudio({ temporalUrl: "/api/temporal" });
     mockNavigation({ viewParam: "temporal" });
     useTemporalWorkflowsMock.mockReturnValue({
@@ -1220,9 +1222,8 @@ describe("Navigation", () => {
     expect(hrefByText("Failed")).toBe(
       '#temporalNsParam=default&viewParam=temporal&searchParam=ExecutionStatus = "Failed"&temporalSectionParam=workflows',
     );
-    expect(hrefByText("ord-8488")).toBe(
-      "#temporalNsParam=default&viewParam=temporal&temporalRunParam=run-1&temporalSectionParam=recent&temporalWfParam=ord-8488",
-    );
+    // The menu holds lists only, not workflows.
+    expect(hrefByText("ord-8488")).toBeUndefined();
     expect(
       container
         .querySelector('[data-testid="navigation-temporal-workflows"]')
@@ -1231,47 +1232,20 @@ describe("Navigation", () => {
     const temporalNavLabels = Array.from(
       container.querySelectorAll('[data-testid="navigation-temporal-block"] a'),
     ).map((link) => link.textContent ?? "");
-    expect(temporalNavLabels[0]).toBe("Workflow Types");
-    expect(temporalNavLabels[1]).toBe("Workflow IDs");
-    expect(temporalNavLabels[2]).toContain("Executions");
-    expect(hrefByText("Workflow IDs")).toBe(
-      "#temporalNsParam=default&viewParam=temporal&temporalSectionParam=workflow",
+    expect(temporalNavLabels.slice(0, 4)).toEqual([
+      "Workflow Types",
+      "Workflows1",
+      "Needs Attention",
+      "Running",
+    ]);
+    expect(hrefByText("Needs Attention")).toBe(
+      "#temporalNsParam=default&viewParam=temporal&temporalSectionParam=attention",
     );
 
     unmount();
   });
 
-  it("lists recent runs newest first, whatever order the server returns", () => {
-    mockStudio({ temporalUrl: "/api/temporal" });
-    mockNavigation({ viewParam: "temporal" });
-    useTemporalWorkflowsMock.mockReturnValue({
-      data: {
-        countsByStatus: {},
-        executions: ["10:01", "10:03", "10:02"].map((time) => ({
-          runId: `run-${time}`,
-          startTime: `2026-11-22T${time}:00.000Z`,
-          status: "Running",
-          workflowId: `order-${time}`,
-          workflowType: "orderFulfillment",
-        })),
-      },
-    });
-
-    const { container, unmount } = renderNavigation();
-    const recentRuns = Array.from(
-      container.querySelectorAll('nav[aria-label="Recent runs"] a'),
-    ).map((link) => link.textContent);
-
-    expect(recentRuns).toEqual([
-      "order-10:03Running",
-      "order-10:02Running",
-      "order-10:01Running",
-    ]);
-
-    unmount();
-  });
-
-  it("marks the open saved view or recent run instead of Workflows", () => {
+  it("marks the open view instead of Workflows, and Workflows on a workflow page", () => {
     mockStudio({ temporalUrl: "/api/temporal" });
     useTemporalWorkflowsMock.mockReturnValue({
       data: {
@@ -1301,43 +1275,24 @@ describe("Navigation", () => {
     expect(activeLabels(savedView.container)).toEqual(["Running"]);
     savedView.unmount();
 
-    mockNavigation({
-      temporalSectionParam: "recent",
-      temporalWfParam: "ord-8490",
-      viewParam: "temporal",
-    });
-    const recentRun = renderNavigation();
+    mockNavigation({ temporalWfParam: "ord-8490", viewParam: "temporal" });
+    const workflow = renderNavigation();
 
-    expect(activeLabels(recentRun.container)).toEqual(["ord-8490Completed"]);
-    recentRun.unmount();
+    expect(activeLabels(workflow.container)).toEqual(["Workflows"]);
+    workflow.unmount();
   });
 
-  it("keeps the entry a run was opened from marked, also when the run is a recent one", () => {
+  it("marks Workflows on a workflow page, also with an older link that names the screen it came from", () => {
     mockStudio({ temporalUrl: "/api/temporal" });
     useTemporalWorkflowsMock.mockReturnValue({
-      data: {
-        countsByStatus: {},
-        executions: [
-          {
-            runId: "run-1",
-            startTime: "2026-11-22T10:00:00.000Z",
-            status: "Completed",
-            workflowId: "ord-8490",
-            workflowType: "ChargeOrder",
-          },
-        ],
-      },
+      data: { countsByStatus: {}, executions: [] },
     });
     const activeLabels = (container: HTMLElement) =>
       Array.from(container.querySelectorAll('[data-active="true"]')).map(
         (link) => link.textContent,
       );
 
-    for (const [section, label] of [
-      ["workflow", "Workflow IDs"],
-      ["workflows", "Executions"],
-      ["attention", "Attention"],
-    ] as const) {
+    for (const section of ["workflow", "workflows", "attention", "recent"]) {
       mockNavigation({
         temporalRunParam: "run-1",
         temporalSectionParam: section,
@@ -1346,91 +1301,29 @@ describe("Navigation", () => {
       });
       const { container, unmount } = renderNavigation();
 
-      expect(activeLabels(container)).toEqual([label]);
+      expect(activeLabels(container)).toEqual(["Workflows"]);
       unmount();
     }
   });
 
-  it("marks Workflow IDs for the list and for the page of one Workflow ID", () => {
+  it("marks Needs Attention on its own list only", () => {
     mockStudio({ temporalUrl: "/api/temporal" });
     useTemporalWorkflowsMock.mockReturnValue({
-      data: {
-        countsByStatus: {},
-        executions: [
-          {
-            runId: "run-1",
-            startTime: "2026-11-22T10:00:00.000Z",
-            status: "Completed",
-            workflowId: "ord-8490",
-            workflowType: "ChargeOrder",
-          },
-        ],
-      },
+      data: { countsByStatus: {}, executions: [] },
     });
     const activeLabels = (container: HTMLElement) =>
       Array.from(container.querySelectorAll('[data-active="true"]')).map(
         (link) => link.textContent,
       );
 
-    mockNavigation({ temporalSectionParam: "workflow", viewParam: "temporal" });
+    mockNavigation({
+      temporalSectionParam: "attention",
+      viewParam: "temporal",
+    });
     const list = renderNavigation();
 
-    expect(activeLabels(list.container)).toEqual(["Workflow IDs"]);
+    expect(activeLabels(list.container)).toEqual(["Needs Attention"]);
     list.unmount();
-
-    mockNavigation({
-      temporalSectionParam: "workflow",
-      temporalWfParam: "ord-8490",
-      viewParam: "temporal",
-    });
-    const workflowId = renderNavigation();
-
-    expect(activeLabels(workflowId.container)).toEqual(["Workflow IDs"]);
-    workflowId.unmount();
-  });
-
-  it("lists a Workflow ID once in recent runs and marks only the run that is open", () => {
-    mockStudio({ temporalUrl: "/api/temporal" });
-    mockNavigation({
-      temporalRunParam: "run-10:02",
-      temporalSectionParam: "recent",
-      temporalWfParam: "report-eu",
-      viewParam: "temporal",
-    });
-    useTemporalWorkflowsMock.mockReturnValue({
-      data: {
-        countsByStatus: {},
-        executions: ["10:01", "10:03", "10:02"].map((time) => ({
-          runId: `run-${time}`,
-          startTime: `2026-11-22T${time}:00.000Z`,
-          status: time === "10:03" ? "Running" : "Completed",
-          workflowId: "report-eu",
-          workflowType: "nightlyReport",
-        })),
-      },
-    });
-
-    const { container, unmount } = renderNavigation();
-    const recentRuns = Array.from(
-      container.querySelectorAll('nav[aria-label="Recent runs"] a'),
-    );
-
-    expect(recentRuns.map((link) => link.textContent)).toEqual([
-      "report-euRunning",
-    ]);
-    // The open run is an older one, so the row of the newest run is not marked.
-    expect(
-      container.querySelectorAll(
-        'nav[aria-label="Recent runs"] [data-active="true"]',
-      ),
-    ).toHaveLength(0);
-    expect(
-      container
-        .querySelector('[data-testid="navigation-temporal-workflows"]')
-        ?.getAttribute("data-active"),
-    ).toBe("true");
-
-    unmount();
   });
 
   it("hides the Streams section when Studio has no streams server configured", () => {

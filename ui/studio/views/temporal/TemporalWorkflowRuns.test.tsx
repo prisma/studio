@@ -1,4 +1,4 @@
-import { act, useState } from "react";
+import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -7,7 +7,7 @@ import type {
   TemporalWorkflowStatus,
 } from "@/data/temporal";
 
-import { TemporalWorkflowChainView } from "./TemporalWorkflowChainView";
+import { TemporalWorkflowRuns } from "./TemporalWorkflowRuns";
 
 const workflowsResult = {
   data: undefined as
@@ -98,11 +98,10 @@ function makeRun(
   };
 }
 
-describe("TemporalWorkflowChainView", () => {
+describe("TemporalWorkflowRuns", () => {
   let root: Root;
   let container: HTMLElement;
   const onOpenExecution = vi.fn();
-  const onOpenStart = vi.fn();
 
   beforeEach(() => {
     workflowsResult.data = {
@@ -139,20 +138,13 @@ describe("TemporalWorkflowChainView", () => {
     vi.clearAllMocks();
   });
 
-  // Holds the status filter as the URL does in the app.
   function Harness() {
-    const [statusFilter, setStatusFilter] =
-      useState<TemporalWorkflowStatus | null>(null);
-
     return (
-      <TemporalWorkflowChainView
+      <TemporalWorkflowRuns
+        currentRunId="01a20d4c-0002"
         followMode="live"
         namespace="default"
-        onFollowModeChange={vi.fn()}
         onOpenExecution={onOpenExecution}
-        onOpenStart={onOpenStart}
-        onStatusFilterChange={setStatusFilter}
-        statusFilter={statusFilter}
         workflowId="sub-cus_4920"
       />
     );
@@ -162,28 +154,16 @@ describe("TemporalWorkflowChainView", () => {
     act(() => root.render(<Harness />));
   }
 
-  it("starts the path with the Workflow Type, has no row of facts, and numbers the runs", () => {
+  it("numbers the runs and marks the latest and the one on screen", () => {
     render();
 
-    const typeCrumb = container.querySelector<HTMLAnchorElement>(
-      '[data-testid="temporal-crumb-type"]',
-    )!;
-
-    expect(typeCrumb.textContent).toBe("subscriptionBilling");
-    expect(typeCrumb.getAttribute("href")).toContain(
-      "temporalSectionParam=types",
-    );
-    expect(typeCrumb.getAttribute("href")).toContain(
-      "temporalTypeParam=subscriptionBilling",
-    );
     expect(
-      container.querySelector('[data-testid="temporal-chain-breadcrumb"]')!
-        .textContent,
-    ).not.toContain("Workflow IDs");
-    expect(container.textContent).toContain("sub-cus_4920");
-    expect(container.textContent).not.toContain("Open in Executions");
-    expect(container.textContent).not.toContain("Namespace");
-    expect(container.textContent).not.toContain("Latest Run");
+      container
+        .querySelector('[data-testid="temporal-chain-row-01a20d4c-0002"]')!
+        .getAttribute("aria-current"),
+    ).toBe("true");
+    expect(container.textContent).toContain("On screen");
+    expect(container.querySelector("header")).toBeNull();
     expect(container.textContent).toContain("#3");
     expect(container.textContent).toContain("Latest");
     expect(container.textContent).toContain("#1");
@@ -315,28 +295,11 @@ describe("TemporalWorkflowChainView", () => {
     );
   });
 
-  it("opens the start sheet prefilled with this Workflow ID, type, and task queue", () => {
-    render();
-
-    const startButton = [...container.querySelectorAll("button")].find((b) =>
-      b.textContent?.includes("Start Execution"),
-    )!;
-
-    act(() => startButton.click());
-    expect(onOpenStart).toHaveBeenCalledWith({
-      taskQueue: "billing",
-      workflowId: "sub-cus_4920",
-      workflowType: "subscriptionBilling",
-    });
-  });
-
-  it("shows an actionable empty state when no runs match the Workflow ID", () => {
+  it("says so when no runs match the Workflow ID", () => {
     workflowsResult.data = { executions: [] };
     render();
 
     expect(container.textContent).toContain("No runs found for Workflow ID");
-    expect(container.textContent).toContain("Find a Workflow ID");
-    expect(container.textContent).not.toContain("Open in Executions");
   });
   it("says nothing about the number of runs while they load or when the request fails", () => {
     workflowsResult.data = undefined;
@@ -384,6 +347,12 @@ describe("TemporalWorkflowChainView", () => {
     act(() => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "j" }));
     });
+    // j and k belong to the list the workflow page was opened from.
+    expect(focusedRunId()).toBe("temporal-chain-row-01a20d4c-0003");
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" }));
+    });
     expect(focusedRunId()).toBe("temporal-chain-row-01a20d4c-0002");
 
     act(() => {
@@ -393,17 +362,5 @@ describe("TemporalWorkflowChainView", () => {
       "sub-cus_4920",
       "01a20d4c-0002",
     );
-  });
-
-  it("names the page with the Workflow ID and labels the status as the latest run's", () => {
-    render();
-
-    expect(container.querySelector("h1")?.textContent).toBe("sub-cus_4920");
-    const status = container.querySelector(
-      '[data-testid="temporal-run-status"]',
-    )!;
-
-    expect(status.textContent).toContain("Latest run 01a20d4c");
-    expect(status.textContent).toContain("Running");
   });
 });

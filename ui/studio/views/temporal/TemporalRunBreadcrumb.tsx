@@ -141,7 +141,7 @@ export function TemporalTypeCrumb(props: {
  * part leads somewhere:
  *
  * - the Workflow Type opens its diagram;
- * - the Workflow ID opens every run of that ID;
+ * - the Workflow ID opens the Runs tab, when the ID has more than one run;
  * - the run opens a list of the runs of the ID, to move to another one.
  *
  * A run read from a history file is not on the server, so its parts are text.
@@ -154,6 +154,8 @@ export function TemporalRunBreadcrumb(props: {
   hasMoreRuns?: boolean;
   namespace: string;
   onOpenRun: (runId: string) => void;
+  /** Opens the Runs tab of the workflow page. Absent when the ID has one run. */
+  onOpenRuns?: () => void;
   /** How many runs the Workflow ID has, when the server counted them. */
   runCount?: number;
   /** The newest runs of this Workflow ID, newest first. Undefined while they load. */
@@ -166,17 +168,11 @@ export function TemporalRunBreadcrumb(props: {
     isImported,
     namespace,
     onOpenRun,
+    onOpenRuns,
     runs,
   } = props;
-  const { createUrl } = useNavigation();
   const [timeFormat] = useTemporalTimeFormat();
   const { runId, workflowId } = execution;
-  const chainUrl = createUrl({
-    temporalNsParam: namespace,
-    temporalSectionParam: "workflow",
-    temporalWfParam: workflowId,
-    viewParam: "temporal",
-  });
   // With more runs than the list holds, only the server's count is a total.
   const total = hasMoreRuns ? props.runCount : (runs?.length ?? 0);
   const position =
@@ -203,19 +199,24 @@ export function TemporalRunBreadcrumb(props: {
       <Separator />
 
       <span className="flex min-w-0 items-center gap-0.5 font-mono text-xs text-foreground">
-        {isImported ? (
-          <span className="truncate" title={workflowId}>
+        {isImported || !onOpenRuns ? (
+          <span
+            className="truncate"
+            data-testid="temporal-crumb-workflow-id"
+            title={workflowId}
+          >
             {workflowId}
           </span>
         ) : (
-          <a
+          <button
+            type="button"
             className={cn(linkClassName, "truncate")}
             data-testid="temporal-crumb-workflow-id"
-            href={chainUrl}
-            title={`Workflow ID ${workflowId}: view all runs of this ID`}
+            onClick={onOpenRuns}
+            title={`Workflow ID ${workflowId}: show every run of this ID`}
           >
             {workflowId}
-          </a>
+          </button>
         )}
         <TemporalCopyButton
           label={`Copy workflow ID ${workflowId}`}
@@ -296,13 +297,13 @@ export function TemporalRunBreadcrumb(props: {
                 ))}
               </div>
               <DropdownMenuSeparator />
-              <DropdownMenuItem asChild className="text-xs">
-                <a href={chainUrl}>
+              {onOpenRuns ? (
+                <DropdownMenuItem className="text-xs" onSelect={onOpenRuns}>
                   {total === undefined
-                    ? "View all runs"
-                    : `View all ${total.toLocaleString("en-US")} runs`}
-                </a>
-              </DropdownMenuItem>
+                    ? "Show All Runs"
+                    : `Show All ${total.toLocaleString("en-US")} Runs`}
+                </DropdownMenuItem>
+              ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (

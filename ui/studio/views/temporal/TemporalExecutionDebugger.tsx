@@ -69,6 +69,10 @@ import { cn } from "@/ui/lib/utils";
 import { useStudio } from "../../context";
 import { StudioHeader } from "../../StudioHeader";
 import {
+  temporalListPosition,
+  useTemporalListContext,
+} from "./temporal-list-context";
+import {
   formatDuration,
   formatFailureMessage,
   formatTimeLeft,
@@ -76,6 +80,7 @@ import {
 } from "./temporal-utils";
 import { TemporalFailurePanel } from "./TemporalFailurePanel";
 import { TemporalInteractPanel } from "./TemporalInteractPanel";
+import { TemporalListPosition } from "./TemporalListPosition";
 import { payloadSizeText, TemporalPayloadView } from "./TemporalPayloadView";
 import { TemporalPendingActivityCard } from "./TemporalPendingActivityCard";
 import {
@@ -107,6 +112,7 @@ import { TemporalRunStatus } from "./TemporalRunStatus";
 import { TemporalRunStepper } from "./TemporalRunStepper";
 import type { TemporalStartPreset } from "./TemporalStartSheet";
 import { TemporalTimeline } from "./TemporalTimeline";
+import { TemporalWorkflowRuns } from "./TemporalWorkflowRuns";
 
 type InspectorTab = "interact" | "pending" | "related" | "stack" | "meta";
 
@@ -182,6 +188,20 @@ export function TemporalExecutionDebugger(
     sort: NEWEST_FIRST,
   });
   const runCount = hasMoreRuns ? runCounts.data?.totalCount : runsOfId?.length;
+  // Most Workflow IDs have one run; only an ID with several has a Runs tab.
+  const hasSeveralRuns = hasMoreRuns || (runsOfId?.length ?? 0) > 1;
+  const listContext = useTemporalListContext();
+  const listPosition =
+    listContext && !imported
+      ? temporalListPosition(listContext, workflowId, runId)
+      : -1;
+  const openListItem = (index: number) => {
+    const item = listContext?.items[index];
+
+    if (item) {
+      onOpenExecution(item.workflowId, item.runId);
+    }
+  };
   const { temporalEventParam, setTemporalEventParam } = useNavigation();
 
   const { hasDatabase, streamsUrl } = useStudio();
@@ -209,7 +229,7 @@ export function TemporalExecutionDebugger(
   });
 
   const [historyTab, setHistoryTab] = useState<
-    "compare" | "diagram" | "grouped" | "raw"
+    "compare" | "diagram" | "grouped" | "raw" | "runs"
   >("grouped");
   const [diagramNodeId, setDiagramNodeId] = useState<string | null>(null);
   const [diagramSpanIds, setDiagramSpanIds] = useState<string[]>([]);
@@ -515,7 +535,7 @@ export function TemporalExecutionDebugger(
     {
       id: "related",
       label: execution
-        ? `Related ${relatedRunCount({ execution, runCount, runs: runsOfId, spans })}${hasMoreRuns && runCount === undefined ? "+" : ""}`
+        ? `Related ${relatedRunCount({ execution, spans })}`
         : "Related",
     },
     ...(isClosed ? [] : [{ id: "stack" as const, label: "Stack" }]),
@@ -688,7 +708,7 @@ export function TemporalExecutionDebugger(
                     }
                   >
                     {isPaused ? <Play /> : <Pause />}
-                    {isPaused ? "Resume Execution" : "Pause Execution"}
+                    {isPaused ? "Resume Workflow" : "Pause Workflow"}
                   </DropdownMenuItem>
                 ) : null}
                 {/* Only an open run has Workflow Tasks left to route. */}
@@ -731,7 +751,7 @@ export function TemporalExecutionDebugger(
                       }}
                     >
                       <StopCircle />
-                      Terminate Execution
+                      Terminate Workflow
                     </DropdownMenuItem>
                   </>
                 ) : null}
@@ -758,6 +778,13 @@ export function TemporalExecutionDebugger(
         }
       >
         <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
+          {listContext && listPosition >= 0 ? (
+            <TemporalListPosition
+              context={listContext}
+              onOpenItem={openListItem}
+              position={listPosition}
+            />
+          ) : null}
           {execution ? (
             <>
               {/* A narrow page has no room for the path in the header; the row under it shows it. */}
@@ -767,6 +794,9 @@ export function TemporalExecutionDebugger(
                 isImported={Boolean(imported)}
                 namespace={namespace}
                 onOpenRun={(runId) => onOpenExecution(workflowId, runId)}
+                onOpenRuns={
+                  hasSeveralRuns ? () => setHistoryTab("runs") : undefined
+                }
                 hasMoreRuns={hasMoreRuns}
                 runCount={runCount}
                 runs={runsOfId}
@@ -842,6 +872,9 @@ export function TemporalExecutionDebugger(
               isImported={Boolean(imported)}
               namespace={namespace}
               onOpenRun={(runId) => onOpenExecution(workflowId, runId)}
+              onOpenRuns={
+                hasSeveralRuns ? () => setHistoryTab("runs") : undefined
+              }
               hasMoreRuns={hasMoreRuns}
               runCount={runCount}
               runs={runsOfId}
@@ -1018,6 +1051,18 @@ export function TemporalExecutionDebugger(
                               value: "diagram" as const,
                             },
                           ]),
+                      ...(hasSeveralRuns
+                        ? [
+                            {
+                              ...(runCount !== undefined
+                                ? { count: runCount }
+                                : {}),
+                              label: "Runs",
+                              title: "Every run of this Workflow ID",
+                              value: "runs" as const,
+                            },
+                          ]
+                        : []),
                       ...(!imported &&
                       (execution.status === "Failed" ||
                         execution.status === "TimedOut")
@@ -1052,7 +1097,7 @@ export function TemporalExecutionDebugger(
                       })}
                     />
                   ) : null}
-                  {historyTab !== "compare" ? (
+                  {historyTab !== "compare" && historyTab !== "runs" ? (
                     <TemporalRunStepper
                       isOpen={isRunning || isPaused}
                       onChange={(position) =>
@@ -1154,7 +1199,15 @@ export function TemporalExecutionDebugger(
                 ref={historyListRef}
                 className="min-h-0 flex-1 overflow-y-auto @max-4xl:max-h-[28rem] @max-4xl:flex-none"
               >
-                {historyTab === "compare" && !imported ? (
+                {historyTab === "runs" && !imported ? (
+                  <TemporalWorkflowRuns
+                    currentRunId={execution.runId}
+                    followMode={followMode}
+                    namespace={namespace}
+                    onOpenExecution={onOpenExecution}
+                    workflowId={workflowId}
+                  />
+                ) : historyTab === "compare" && !imported ? (
                   <TemporalRunCompare
                     detail={data}
                     namespace={namespace}
@@ -1480,18 +1533,8 @@ export function TemporalExecutionDebugger(
                   ) : inspectorTab === "related" ? (
                     <TemporalRelatedPanel
                       execution={execution}
-                      hasMoreRuns={hasMoreRuns}
-                      isLoadingRuns={runsQuery.isLoading}
                       onOpenExecution={onOpenExecution}
-                      runCount={runCount}
-                      runs={runsOfId}
                       spans={spans}
-                      workflowIdUrl={createUrl({
-                        temporalNsParam: namespace,
-                        temporalSectionParam: "workflow",
-                        temporalWfParam: workflowId,
-                        viewParam: "temporal",
-                      })}
                     />
                   ) : inspectorTab === "stack" ? (
                     <StackPanel
@@ -1545,7 +1588,7 @@ export function TemporalExecutionDebugger(
       )}
 
       <TemporalConfirmDialog
-        confirmLabel="Terminate Execution"
+        confirmLabel="Terminate Workflow"
         defaultReason="Terminated via Prisma Studio"
         description={`This stops ${workflowId} immediately, without running cleanup logic.`}
         isPending={terminateWorkflow.isPending}
@@ -1568,7 +1611,7 @@ export function TemporalExecutionDebugger(
         open={terminateConfirmOpen}
         reasonLabel="Termination reason"
         showReasonInput
-        title="Terminate workflow execution?"
+        title="Terminate workflow?"
       />
 
       <TemporalConfirmDialog

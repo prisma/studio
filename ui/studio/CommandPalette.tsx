@@ -9,7 +9,6 @@ import {
   GalleryVerticalEnd,
   Laptop,
   Layers,
-  ListTree,
   Moon,
   Search,
   Server,
@@ -606,35 +605,17 @@ function StudioCommandPalette() {
         },
         {
           disabled: false,
-          icon: ListTree,
-          id: "view:temporal:workflow-ids",
-          keywords: [
-            "temporal",
-            "workflow id",
-            "workflow ids",
-            "chain",
-            "runs",
-            "continue as new",
-            "cron",
-            "retry",
-          ],
-          label: temporalLabel("Workflow IDs"),
-          onSelect: () => {
-            window.location.hash = createUrl({
-              ...temporalFollow,
-              temporalNsParam: ns,
-              temporalSectionParam: "workflow",
-              viewParam: "temporal",
-            });
-          },
-          section: "views",
-        },
-        {
-          disabled: false,
           icon: Workflow,
           id: "view:temporal:workflows",
-          keywords: ["temporal", "executions", "workflows", "runs", "debugger"],
-          label: temporalLabel("Executions"),
+          keywords: [
+            "temporal",
+            "executions",
+            "workflows",
+            "workflow id",
+            "runs",
+            "debugger",
+          ],
+          label: temporalLabel("Workflows"),
           onSelect: () => {
             window.location.hash = createUrl({
               ...temporalFollow,
@@ -650,7 +631,7 @@ function StudioCommandPalette() {
           icon: CircleAlert,
           id: "view:temporal:attention",
           keywords: ["temporal", "attention", "stuck", "retrying", "failed"],
-          label: temporalLabel("Attention"),
+          label: temporalLabel("Needs Attention"),
           onSelect: () => {
             window.location.hash = createUrl({
               ...temporalFollow,
@@ -817,7 +798,6 @@ function StudioCommandPalette() {
                 ...temporalFollow,
                 temporalNsParam: temporalNamespace,
                 temporalRunParam: run.runId,
-                temporalSectionParam: "workflows",
                 temporalWfParam: run.workflowId,
                 viewParam: "temporal",
               });
@@ -1064,7 +1044,7 @@ function StudioCommandPalette() {
           <DialogTitle className="sr-only">Command palette</DialogTitle>
           <DialogDescription className="sr-only">
             {isTemporalOnly
-              ? "Search commands, executions, schedules, and views."
+              ? "Search commands, workflows, schedules, and views."
               : "Search commands, tables, and Studio views."}
           </DialogDescription>
           <Command className="font-sans" shouldFilter={false}>
@@ -1086,7 +1066,7 @@ function StudioCommandPalette() {
                 label: "Tables",
               })}
               {isSearchingWorkflows ? (
-                <CommandGroup heading="Executions">
+                <CommandGroup heading="Workflows">
                   <div
                     className="px-3 py-2 text-sm text-muted-foreground"
                     data-testid="command-palette-searching"
@@ -1098,7 +1078,7 @@ function StudioCommandPalette() {
               ) : (
                 renderSection({
                   items: workflowItems,
-                  label: "Executions",
+                  label: "Workflows",
                 })
               )}
               {renderSection({

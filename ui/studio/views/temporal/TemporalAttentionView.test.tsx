@@ -162,7 +162,7 @@ describe("TemporalAttentionView", () => {
     const { container, root } = render();
     const text = container.textContent ?? "";
 
-    expect(text).toContain("1 of the 1,500 oldest running executions needs");
+    expect(text).toContain("1 of the 1,500 oldest running workflows needs");
     expect(text).toContain("4,200 are running");
     expect(text).not.toContain("of 4200");
 
@@ -197,7 +197,7 @@ describe("TemporalAttentionView", () => {
     const { container, root } = render();
     const text = container.textContent ?? "";
 
-    expect(text).toContain("Could not check the running executions");
+    expect(text).toContain("Could not check the running workflows");
     expect(text).not.toContain("need attention");
     expect(text).not.toContain("Checking every running execution");
 

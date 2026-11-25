@@ -47,7 +47,7 @@ Only keys declared in [`ui/hooks/nuqs.ts`](../ui/hooks/nuqs.ts) are allowed:
 - `streamFollow`
 - `streamObserve`
 - `temporalNs`
-- `temporalSection`
+- `temporalSection` (a list only: a workflow page has none)
 - `temporalWf`
 - `temporalRun`
 - `temporalSchedule`

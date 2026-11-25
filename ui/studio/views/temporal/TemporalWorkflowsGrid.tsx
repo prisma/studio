@@ -81,6 +81,7 @@ import {
   useWorkflowColumns,
   type WorkflowColumn,
 } from "./temporal-grid-columns";
+import { setTemporalListContext } from "./temporal-list-context";
 import {
   MAX_TEMPORAL_SAVED_VIEWS,
   TEMPORAL_BUILT_IN_VIEWS,
@@ -250,7 +251,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
   const nativeListOrder = capabilities?.nativeListOrder;
   const isNativeNewestFirst = nativeListOrder === "newest-first";
   const parsedSort = parseWorkflowSort(sortParam);
-  // The order with no sort in the URL. A server that lists running executions first has none by a column.
+  // The order with no sort in the URL. A server that lists running workflows first has none by a column.
   const defaultSort =
     nativeListOrder === "newest-first" || nativeListOrder === "workflow-id"
       ? NEWEST_FIRST
@@ -361,6 +362,26 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
   );
 
   const executions = useMemo(() => data?.executions ?? [], [data?.executions]);
+  // The workflow page shows where it is in this list, with the next and previous rows.
+  const openFromList = useCallback(
+    (workflowId: string, runId?: string) => {
+      const view = [...TEMPORAL_BUILT_IN_VIEWS, ...savedViews].find(
+        (saved) => saved.query === query.trim(),
+      );
+
+      setTemporalListContext({
+        href: window.location.hash,
+        items: executions.map((run) => ({
+          runId: run.runId,
+          workflowId: run.workflowId,
+        })),
+        label:
+          view?.name ?? (query.trim() ? "Filtered Workflows" : "Workflows"),
+      });
+      onOpenExecution(workflowId, runId);
+    },
+    [executions, onOpenExecution, query, savedViews],
+  );
   const { data: facets } = useTemporalFacets(namespace);
   const {
     available: availableColumns,
@@ -455,7 +476,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
     repeatedIds.has(exec.workflowId)
       ? `${exec.workflowId}, run ${exec.runId.slice(0, 13)}`
       : exec.workflowId;
-  const selectedSummary = `${pluralize(actionableExecutions.length, "running execution")} (${summarizeIds(actionableExecutions.map(labelOf))})`;
+  const selectedSummary = `${pluralize(actionableExecutions.length, "running workflow")} (${summarizeIds(actionableExecutions.map(labelOf))})`;
   const focusedIndex =
     focusedKey === null
       ? -1
@@ -511,13 +532,13 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
         const current = executions[focusedIndex];
         if (current) {
           event.preventDefault();
-          onOpenExecution(current.workflowId, current.runId);
+          openFromList(current.workflowId, current.runId);
         }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [executions, focusedIndex, onOpenExecution, toggleSelect]);
+  }, [executions, focusedIndex, openFromList, toggleSelect]);
 
   const runningTotal =
     (countsByStatus.Running ?? 0) + (countsByStatus.Paused ?? 0);
@@ -525,7 +546,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
     ? runningTotal
     : actionableExecutions.length;
   const bulkSummary = allMatchingSelected
-    ? `${runningTotal === 1 ? "the" : "all"} ${pluralize(runningTotal, "running execution")}${query.trim() ? " that this search matches" : ""}`
+    ? `${runningTotal === 1 ? "the" : "all"} ${pluralize(runningTotal, "running workflow")}${query.trim() ? " that this search matches" : ""}`
     : selectedSummary;
   const bulkSignalArgsError = parseJsonArgsText(bulkSignalArgs).error;
 
@@ -568,7 +589,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
       data-testid="temporal-workflows-grid"
     >
       <StudioHeader
-        title="Executions"
+        title="Workflows"
         endContent={
           <>
             {/* A narrow page drops the control while it reads Live. While paused only a very narrow one does, and says so below. */}
@@ -631,7 +652,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
               data-testid="temporal-start-workflow-btn"
             >
               <Plus />
-              <span className="@max-3xl:sr-only">Start Execution</span>
+              <span className="@max-3xl:sr-only">Start Workflow</span>
             </Button>
           </>
         }
@@ -799,7 +820,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
             onRetry={refresh}
             title={
               <>
-                Could not load the executions of namespace{" "}
+                Could not load the workflows of namespace{" "}
                 <code className="font-mono">{namespace}</code>.
               </>
             }
@@ -807,7 +828,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
         ) : executions.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 p-10 text-sm text-muted-foreground">
             <p>
-              No executions found in namespace{" "}
+              No workflows found in namespace{" "}
               <code className="font-mono text-foreground">{namespace}</code>
               {isPlainTextSearch
                 ? ` with a Workflow ID, Workflow Type or Run ID starting with ${query.trim()}`
@@ -832,7 +853,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
                 onClick={() => onOpenStart(null)}
               >
                 <Plus />
-                Start Execution
+                Start Workflow
               </Button>
             </div>
           </div>
@@ -868,7 +889,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
                   <Checkbox
                     checked={allSelected}
                     onCheckedChange={toggleSelectAll}
-                    aria-label="Select all executions on this page"
+                    aria-label="Select all workflows on this page"
                   />
                 </TableHead>
                 <TableHead className="h-9 px-0" />
@@ -904,7 +925,6 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
                         : {}),
                       temporalNsParam: namespace,
                       temporalRunParam: exec.runId,
-                      temporalSectionParam: "workflows",
                       temporalWfParam: exec.workflowId,
                       viewParam: "temporal",
                     })}
@@ -914,10 +934,8 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
                     namespace={namespace}
                     onClone={(preset) => onOpenStart(preset)}
                     onFocus={() => setFocusedKey(key)}
-                    onOpen={() => onOpenExecution(exec.workflowId, exec.runId)}
-                    onOpenRun={(runId) =>
-                      onOpenExecution(exec.workflowId, runId)
-                    }
+                    onOpen={() => openFromList(exec.workflowId, exec.runId)}
+                    onOpenRun={(runId) => openFromList(exec.workflowId, runId)}
                     onToggleExpand={() =>
                       setExpandedKey((prev) => (prev === key ? null : key))
                     }
@@ -961,7 +979,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
                 data-testid="temporal-select-all-matching"
               >
                 Select all {runningTotal.toLocaleString("en-US")} running
-                executions that match
+                workflows that match
               </Button>
             ) : null}
             <Button
@@ -1171,7 +1189,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              Signal {pluralize(bulkCount, "running execution")}
+              Signal {pluralize(bulkCount, "running workflow")}
             </DialogTitle>
             <DialogDescription>
               Send the same signal to {bulkSummary} in namespace{" "}
@@ -1244,7 +1262,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
 
       <TemporalConfirmDialog
         confirmLabel="Request Cancel"
-        description={`This asks ${bulkSummary} to cancel. Each execution can run its cleanup logic before it stops.`}
+        description={`This asks ${bulkSummary} to cancel. Each workflow can run its cleanup logic before it stops.`}
         isPending={isBulkPending}
         onConfirm={() => runBulkAction("cancel")}
         onOpenChange={setBulkCancelConfirmOpen}
@@ -1254,7 +1272,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
       />
 
       <TemporalConfirmDialog
-        confirmLabel={`Terminate ${pluralize(bulkCount, "Execution")}`}
+        confirmLabel={`Terminate ${pluralize(bulkCount, "Workflow")}`}
         defaultReason="Bulk terminated via Prisma Studio"
         description={`This stops ${bulkSummary} immediately, without running cleanup logic.`}
         isPending={isBulkPending}
@@ -1263,7 +1281,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
         open={bulkTerminateConfirmOpen}
         reasonLabel="Termination reason"
         showReasonInput
-        title="Terminate selected executions?"
+        title="Terminate selected workflows?"
       />
 
       <Dialog
@@ -1290,7 +1308,7 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
               </DialogTitle>
               <DialogDescription>
                 {bulkJob.job.done.toLocaleString("en-US")} of{" "}
-                {pluralize(bulkJob.job.total, "execution")} done
+                {pluralize(bulkJob.job.total, "workflow")} done
                 {bulkJob.job.failed > 0
                   ? `, ${bulkJob.job.failed.toLocaleString("en-US")} failed`
                   : ""}
@@ -1533,7 +1551,7 @@ function ColumnHead(props: {
           )}
           title={
             column.sortField && sortDisabled
-              ? "Filter to 10,000 or fewer executions to change sort order"
+              ? "Filter to 10,000 or fewer workflows to change sort order"
               : undefined
           }
         >

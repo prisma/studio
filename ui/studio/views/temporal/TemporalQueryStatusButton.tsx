@@ -132,8 +132,8 @@ export function TemporalQueryStatusButton(props: {
       className={cn(slotClass, "gap-1.5 px-2")}
       aria-label={
         tookMs === null
-          ? "Refresh executions"
-          : `Refresh executions. The last query took ${formatDuration(tookMs)}`
+          ? "Refresh workflows"
+          : `Refresh workflows. The last query took ${formatDuration(tookMs)}`
       }
       onClick={onRefresh}
     >

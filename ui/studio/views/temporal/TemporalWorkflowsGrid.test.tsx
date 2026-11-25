@@ -374,7 +374,7 @@ describe("TemporalWorkflowsGrid", () => {
     render({ query: 'TaskQueue = "billing"' });
 
     expect(find("temporal-load-error")!.textContent).toContain(
-      "Could not load the executions of namespace default",
+      "Could not load the workflows of namespace default",
     );
     expect(container.textContent).not.toContain("could not read this filter");
     expect(find("temporal-row-range")!.textContent).toBe("");
