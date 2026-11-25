@@ -1,4 +1,11 @@
-import { Copy, Database, Play, Waves } from "lucide-react";
+import {
+  ChevronRight,
+  Copy,
+  Database,
+  MoreHorizontal,
+  Play,
+  Waves,
+} from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";
 
@@ -8,10 +15,24 @@ import type {
   TemporalPendingActivity,
   TemporalWorkflowExecution,
 } from "@/data/temporal";
-import { summarizeRunSteps } from "@/data/temporal/run-steps";
+import {
+  summarizeRunSteps,
+  type TemporalRunStep,
+} from "@/data/temporal/run-steps";
 import { buildTimelineScale } from "@/data/temporal/timeline-scale";
-import { timerProgress } from "@/data/temporal/type-map";
+import {
+  isOpenStatus,
+  resultOutcome,
+  summaryOf,
+  timerProgress,
+} from "@/data/temporal/type-map";
 import { Button } from "@/ui/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/ui/components/ui/dropdown-menu";
 import { Skeleton } from "@/ui/components/ui/skeleton";
 import { useNavigation } from "@/ui/hooks/use-navigation";
 import { useStreams } from "@/ui/hooks/use-streams";
@@ -24,21 +45,19 @@ import {
   formatDuration,
   formatFailureMessage,
   formatRelativeTime,
-  pluralize,
   safeJsonPretty,
   spanBarClasses,
 } from "./temporal-utils";
+import { payloadSizeText, TemporalPayloadView } from "./TemporalPayloadView";
 import {
   TEMPORAL_SPAN_STATUS,
   TemporalSectionLabel,
   TemporalSpanStatusIcon,
-  TemporalTime,
 } from "./TemporalPrimitives";
-import { TemporalPayloadView } from "./TemporalPayloadView";
 import type { TemporalStartPreset } from "./TemporalStartSheet";
 
 /** The fold-out shows this many steps; the run page shows the rest. */
-const MAX_STEPS = 6;
+const MAX_STEPS = 8;
 
 /** As tall at most as the steps box with all its rows, so the three blocks line up. */
 const paneClass =
@@ -64,16 +83,19 @@ function encodedPayloadNote(value: unknown): string | null {
   return `${encoding ?? "encoded"}, ${formatBytes(sizeBytes ?? 0)}`;
 }
 
-function formatMemoValue(value: unknown): string {
-  return typeof value === "string"
-    ? value
-    : (encodedPayloadNote(value) ?? JSON.stringify(value));
+/** A memo value, or a note when the Codec Server did not decode it. */
+function memoValue(value: unknown): unknown {
+  const note = encodedPayloadNote(value);
+
+  return note ? `not decoded (${note})` : value;
 }
 
 /**
- * What a row of the Workflows grid shows when it is unfolded: the steps of the
- * run on a small timeline, its input, and its outcome. Non-standard UI: see
- * `Architecture/non-standard-ui.md`, "Temporal Run Preview".
+ * What a row of the Workflows grid shows when it is unfolded: how the run
+ * ended, its steps on a small timeline named as the Workflow Type's diagram
+ * names them, its input and memo, and its result or failure. The row above
+ * already shows the status, the times and the history size. Non-standard UI:
+ * see `Architecture/non-standard-ui.md`, "Temporal Run Preview".
  */
 export function TemporalRunPreview(props: {
   execution: TemporalWorkflowExecution;
@@ -112,49 +134,28 @@ export function TemporalRunPreview(props: {
   }
 
   const run = detail.execution;
-  const memoEntries = Object.entries(run.memo);
   const cloneArgs =
     detail.input === undefined
       ? []
       : Array.isArray(detail.input)
         ? detail.input
         : [detail.input];
+  const outcome =
+    run.status === "Completed" ? resultOutcome(detail.result) : undefined;
+  const outcomeBlock = <OutcomeBlock detail={detail} outcome={outcome} />;
+  const hasOutcomeBlock = hasThirdBlock(detail);
 
   return (
     <div className="@container flex flex-col gap-3">
-      <div className="flex items-start justify-between gap-x-6 gap-y-2 @max-3xl:flex-wrap">
-        <div className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-4 gap-y-0.5 font-mono text-xs text-muted-foreground">
+      <div className="flex items-start justify-between gap-x-6">
+        <div className="flex min-h-7 min-w-0 flex-wrap items-baseline gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
           {detail.summary ? (
-            <span className="basis-full font-sans text-sm text-foreground">
-              {detail.summary}
-            </span>
+            <span className="text-sm text-foreground">{detail.summary}</span>
           ) : null}
-          <Button
-            variant="ghost"
-            size="xs"
-            aria-label={`Copy run ID ${run.runId}`}
-            className="-mx-1 px-1 font-mono font-normal text-muted-foreground [&_svg]:size-3"
-            onClick={() => {
-              void navigator.clipboard.writeText(run.runId);
-              toast.success("Copied Run ID");
-            }}
-            title={`Run ID: ${run.runId}`}
-          >
-            run {run.runId.slice(0, 8)}
-            <Copy />
-          </Button>
-          <span>
-            started <TemporalTime iso={run.startTime} />
-          </span>
-          {run.closeTime ? (
-            <span>
-              closed <TemporalTime iso={run.closeTime} />
-            </span>
-          ) : null}
-          {run.historyLength > 0 ? (
-            <span>
-              {pluralize(run.historyLength, "event")},{" "}
-              {formatBytes(run.historySizeBytes)}
+          {outcome ? (
+            <span data-testid="temporal-preview-outcome">
+              Ended as{" "}
+              <span className="font-mono text-foreground">{outcome.value}</span>
             </span>
           ) : null}
           {detail.chain.previousRunId ? (
@@ -171,90 +172,101 @@ export function TemporalRunPreview(props: {
           ) : null}
         </div>
 
-        {/* No wider than the preview, so the buttons wrap on a narrow page. */}
-        <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">
-          {typeof streamsUrl === "string" ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
             <Button
-              asChild
               variant="ghost"
-              size="sm"
-              className="text-muted-foreground"
+              size="xs"
+              className="w-7 shrink-0 px-0 text-muted-foreground"
+              aria-label="Run actions"
+              data-testid="temporal-preview-actions"
             >
-              <a
-                href={createUrl({
-                  searchParam: execution.workflowId,
-                  ...(targetStream ? { streamParam: targetStream } : {}),
-                  viewParam: "stream",
-                })}
-              >
-                <Waves />
-                Search Streams
-              </a>
+              <MoreHorizontal />
             </Button>
-          ) : null}
-          {hasDatabase ? (
-            <Button
-              asChild
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground"
-            >
-              <a
-                href={createUrl({
-                  schemaParam,
-                  searchParam: execution.workflowId,
-                  tableParam,
-                  viewParam: "table",
-                })}
-              >
-                <Database />
-                Search Tables
-              </a>
-            </Button>
-          ) : null}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() =>
-              onClone({
-                args: cloneArgs,
-                clonedFromWorkflowId: execution.workflowId,
-                taskQueue: execution.taskQueue,
-                workflowType: execution.workflowType,
-              })
-            }
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            className="w-56 [&_[role=menuitem]]:text-xs"
           >
-            <Play />
-            Clone &amp; Start
-          </Button>
-          <Button variant="outline" size="sm" onClick={onOpen}>
-            Inspect
-          </Button>
-        </div>
+            <DropdownMenuItem
+              onClick={() =>
+                onClone({
+                  args: cloneArgs,
+                  clonedFromWorkflowId: execution.workflowId,
+                  taskQueue: execution.taskQueue,
+                  workflowType: execution.workflowType,
+                })
+              }
+            >
+              <Play />
+              Clone &amp; Start…
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => {
+                void navigator.clipboard.writeText(run.runId);
+                toast.success("Copied Run ID");
+              }}
+            >
+              <Copy />
+              Copy Run ID
+            </DropdownMenuItem>
+            {typeof streamsUrl === "string" ? (
+              <DropdownMenuItem asChild>
+                <a
+                  href={createUrl({
+                    searchParam: execution.workflowId,
+                    ...(targetStream ? { streamParam: targetStream } : {}),
+                    viewParam: "stream",
+                  })}
+                >
+                  <Waves />
+                  Search Streams
+                </a>
+              </DropdownMenuItem>
+            ) : null}
+            {hasDatabase ? (
+              <DropdownMenuItem asChild>
+                <a
+                  href={createUrl({
+                    schemaParam,
+                    searchParam: execution.workflowId,
+                    tableParam,
+                    viewParam: "table",
+                  })}
+                >
+                  <Database />
+                  Search Tables
+                </a>
+              </DropdownMenuItem>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
-      <div className="grid grid-cols-1 gap-x-4 gap-y-3 @3xl:grid-cols-2 @4xl:grid-cols-[minmax(0,4fr)_minmax(0,3fr)_minmax(0,3fr)] @6xl:grid-cols-[minmax(0,5fr)_minmax(0,3fr)_minmax(0,3fr)]">
+      <div
+        className={cn(
+          "grid grid-cols-1 gap-x-4 gap-y-3",
+          hasOutcomeBlock
+            ? "@3xl:grid-cols-2 @4xl:grid-cols-[minmax(0,4fr)_minmax(0,3fr)_minmax(0,3fr)] @6xl:grid-cols-[minmax(0,5fr)_minmax(0,3fr)_minmax(0,3fr)]"
+            : "@3xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]",
+        )}
+      >
         <StepsBlock
-          className="@3xl:col-span-2 @4xl:col-span-1"
+          className={cn(hasOutcomeBlock && "@3xl:col-span-2 @4xl:col-span-1")}
+          detail={detail}
           onOpen={onOpen}
-          spans={detail.spans}
-          totalDurationMs={detail.totalDurationMs}
         />
-        <PayloadBlock label="Input" value={detail.input} />
-        <OutcomeBlock detail={detail} />
+        {/* On a narrow page the result comes before the input. */}
+        <PayloadBlock
+          className="@max-3xl:order-3"
+          label="Input"
+          memo={run.memo}
+          value={detail.input}
+        />
+        {hasOutcomeBlock ? (
+          <div className="min-w-0 @max-3xl:order-2">{outcomeBlock}</div>
+        ) : null}
       </div>
-
-      {memoEntries.length > 0 ? (
-        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          <TemporalSectionLabel>Memo</TemporalSectionLabel>
-          {memoEntries.map(([key, value]) => (
-            <span key={key} className="font-mono text-xs">
-              <span className="text-muted-foreground">{key}:</span>{" "}
-              {formatMemoValue(value)}
-            </span>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -271,13 +283,45 @@ function RunLink(props: { label: string; onOpen: () => void }) {
   );
 }
 
+/** What the duration column of a step says: how long it ran, or what it is doing now. */
+function stepTimeText(
+  step: TemporalRunStep,
+  pending: TemporalPendingActivity[],
+): string {
+  const open = [...step.spans]
+    .reverse()
+    .find((span) => span.status === "running" || span.status === "retrying");
+
+  if (step.kind === "signal" || step.kind === "update") {
+    return "";
+  }
+
+  if (open?.status === "retrying") {
+    const activity = pending.find(
+      (item) => item.activityId === open.activityId,
+    );
+    const attempt = activity?.attempt ?? open.attempt;
+
+    return attempt
+      ? `try ${attempt}${activity && activity.maximumAttempts > 0 ? ` of ${activity.maximumAttempts}` : ""}`
+      : "retrying";
+  }
+
+  if (open) {
+    return timerFireTime(open) ?? `running ${formatDuration(open.durationMs)}`;
+  }
+
+  return formatDuration(step.durationMs);
+}
+
 function StepsBlock(props: {
   className?: string;
+  detail: TemporalExecutionDetail;
   onOpen: () => void;
-  spans: TemporalGroupedSpan[];
-  totalDurationMs: number;
 }) {
-  const { className, onOpen, spans, totalDurationMs } = props;
+  const { className, detail, onOpen } = props;
+  const { spans, totalDurationMs } = detail;
+  const pending = detail.execution.pendingActivities ?? [];
   const { hiddenCount, steps } = useMemo(
     () => summarizeRunSteps(spans, MAX_STEPS),
     [spans],
@@ -298,6 +342,15 @@ function StepsBlock(props: {
     [steps, totalDurationMs],
   );
   const shortenedMs = scale.gaps.reduce((sum, gap) => sum + gap.durationMs, 0);
+  const isWaitingForMessage =
+    isOpenStatus(detail.execution.status) &&
+    !spans.some(
+      (span) =>
+        (span.status === "running" || span.status === "retrying") &&
+        span.kind !== "workflow" &&
+        span.kind !== "workflow-task",
+    );
+  const totalSteps = steps.length + hiddenCount;
 
   return (
     <div
@@ -305,117 +358,139 @@ function StepsBlock(props: {
       data-testid="temporal-preview-steps"
     >
       <TemporalSectionLabel>Steps</TemporalSectionLabel>
-      {steps.length === 0 ? (
-        <p className={cn(paneClass, "font-sans text-muted-foreground")}>
-          No Activity, Timer, Child Workflow or message yet.
-        </p>
-      ) : (
-        <div className="flex flex-col rounded-md border border-border bg-card px-3 py-1.5">
-          {steps.map((step) => (
-            <div
-              key={step.key}
-              className="grid h-6 grid-cols-[14px_minmax(0,9rem)_minmax(5rem,1fr)_4rem] items-center gap-x-2 text-xs"
-              title={`${step.label}: ${
-                step.spans.length === 1
-                  ? TEMPORAL_SPAN_STATUS[step.status].label
-                  : `${step.spans.length} times, ${formatDuration(step.durationMs)} in total`
-              }`}
-            >
-              <TemporalSpanStatusIcon status={step.status} />
-              <span className="flex min-w-0 items-baseline gap-1.5">
-                <span className="truncate text-foreground">{step.label}</span>
-                {step.spans.length > 1 ? (
-                  <span className="shrink-0 font-mono text-2xs text-muted-foreground">
-                    ×{step.spans.length}
-                  </span>
-                ) : null}
-              </span>
-              <span className="relative h-full" aria-hidden>
-                <span className="absolute inset-x-0 top-1/2 h-px bg-border/70" />
-                {scale.gaps.map((gap) => (
-                  <span
-                    key={gap.startFraction}
-                    className="absolute inset-y-0 bg-muted/60"
-                    style={{
-                      left: `${gap.startFraction * 100}%`,
-                      width: `${(gap.endFraction - gap.startFraction) * 100}%`,
-                    }}
-                  />
-                ))}
-                {step.spans.map((span) => {
-                  const left = scale.toFraction(span.startOffsetMs);
-                  const right = scale.toFraction(
-                    span.startOffsetMs + span.durationMs,
-                  );
-                  const isInstant =
-                    span.kind === "signal" || span.kind === "update";
-
-                  return isInstant ? (
-                    <span
-                      key={span.id}
-                      className={cn(
-                        "absolute top-1/2 size-[7px] -translate-x-1/2 -translate-y-1/2 rotate-45",
-                        spanBarClasses(span.kind, span.status),
-                      )}
-                      style={{ left: `${left * 100}%` }}
-                    />
-                  ) : (
-                    <span
-                      key={span.id}
-                      className={cn(
-                        "absolute top-1/2 h-2 min-w-[3px] -translate-y-1/2 rounded-sm",
-                        spanBarClasses(span.kind, span.status),
-                      )}
-                      style={{
-                        left: `${left * 100}%`,
-                        width: `${Math.max(0, right - left) * 100}%`,
-                      }}
-                    />
-                  );
-                })}
-              </span>
-              <span className="text-right font-mono tabular-nums text-muted-foreground">
-                {step.kind === "signal" ? "" : formatDuration(step.durationMs)}
-              </span>
-            </div>
-          ))}
-          {hiddenCount > 0 || shortenedMs > 0 ? (
-            <div className="flex h-6 items-center justify-between gap-3 font-mono text-2xs text-muted-foreground">
-              {hiddenCount > 0 ? (
-                <button
-                  type="button"
-                  className="rounded-sm underline decoration-border underline-offset-4 hover:text-foreground hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={onOpen}
-                >
-                  {pluralize(hiddenCount, "more step")}
-                </button>
-              ) : (
-                <span />
-              )}
-              {shortenedMs > 0 ? (
-                <span className="flex items-center gap-1.5">
-                  <span
-                    aria-hidden
-                    className="h-2.5 w-4 rounded-[2px] bg-muted"
-                  />
-                  {formatDuration(shortenedMs)} not to scale
+      <div className="flex flex-col rounded-md border border-border bg-card px-3 py-1.5">
+        {steps.length === 0 ? (
+          <p className="py-1 text-xs text-muted-foreground">
+            No Activity, Timer, Child Workflow or message yet.
+          </p>
+        ) : null}
+        {steps.map((step) => (
+          <div
+            key={step.key}
+            className="grid h-6 grid-cols-[14px_minmax(0,3fr)_minmax(3rem,2fr)_5.5rem] items-center gap-x-2 text-xs"
+            data-testid="temporal-preview-step"
+            title={[
+              step.label,
+              step.implementation,
+              step.spans.length === 1
+                ? TEMPORAL_SPAN_STATUS[step.status].label
+                : `${step.spans.length} times, ${formatDuration(step.durationMs)} in total`,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          >
+            <TemporalSpanStatusIcon status={step.status} />
+            <span className="flex min-w-0 items-baseline gap-1.5">
+              <span className="truncate text-foreground">{step.label}</span>
+              {step.spans.length > 1 ? (
+                <span className="shrink-0 font-mono text-2xs text-muted-foreground">
+                  ×{step.spans.length}
                 </span>
               ) : null}
-            </div>
+              {step.maxAttempt > 1 && step.status !== "retrying" ? (
+                <span className="shrink-0 text-2xs text-amber-600 dark:text-amber-400">
+                  {step.maxAttempt} tries
+                </span>
+              ) : null}
+            </span>
+            <span className="relative h-full" aria-hidden>
+              <span className="absolute inset-x-0 top-1/2 h-px bg-border/70" />
+              {scale.gaps.map((gap) => (
+                <span
+                  key={gap.startFraction}
+                  className="absolute inset-y-0 bg-muted/60"
+                  style={{
+                    left: `${gap.startFraction * 100}%`,
+                    width: `${(gap.endFraction - gap.startFraction) * 100}%`,
+                  }}
+                />
+              ))}
+              {step.spans.map((span) => {
+                const left = scale.toFraction(span.startOffsetMs);
+                const right = scale.toFraction(
+                  span.startOffsetMs + span.durationMs,
+                );
+                const isInstant =
+                  span.kind === "signal" || span.kind === "update";
+
+                return isInstant ? (
+                  <span
+                    key={span.id}
+                    className={cn(
+                      "absolute top-1/2 size-[7px] -translate-x-1/2 -translate-y-1/2 rotate-45",
+                      spanBarClasses(span.kind, span.status),
+                    )}
+                    style={{ left: `${left * 100}%` }}
+                  />
+                ) : (
+                  <span
+                    key={span.id}
+                    className={cn(
+                      "absolute top-1/2 h-2 min-w-[3px] -translate-y-1/2 rounded-sm",
+                      spanBarClasses(span.kind, span.status),
+                    )}
+                    style={{
+                      left: `${left * 100}%`,
+                      width: `${Math.max(0, right - left) * 100}%`,
+                    }}
+                  />
+                );
+              })}
+            </span>
+            <span
+              className={cn(
+                "truncate text-right font-mono tabular-nums",
+                step.status === "retrying"
+                  ? "text-amber-600 dark:text-amber-400"
+                  : "text-muted-foreground",
+              )}
+            >
+              {stepTimeText(step, pending)}
+            </span>
+          </div>
+        ))}
+        {isWaitingForMessage ? (
+          <p className="flex h-6 items-center text-xs text-muted-foreground">
+            Waiting for a Signal, an Update or its next Workflow Task
+          </p>
+        ) : null}
+        <div className="flex h-6 items-center justify-between gap-3 font-mono text-2xs text-muted-foreground">
+          <button
+            type="button"
+            className="rounded-sm underline decoration-border underline-offset-4 hover:text-foreground hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={onOpen}
+            data-testid="temporal-preview-open"
+          >
+            {totalSteps > steps.length
+              ? `All ${totalSteps} steps`
+              : "Open the run"}
+          </button>
+          {shortenedMs > 0 ? (
+            <span className="flex items-center gap-1.5">
+              <span aria-hidden className="h-2.5 w-4 rounded-[2px] bg-muted" />
+              {formatDuration(shortenedMs)} not to scale
+            </span>
           ) : null}
         </div>
-      )}
+      </div>
     </div>
   );
 }
 
-function PayloadBlock(props: { label: string; value: unknown }) {
-  const { label, value } = props;
+function PayloadBlock(props: {
+  className?: string;
+  label: string;
+  /** Shown folded below the value. */
+  memo?: Record<string, unknown>;
+  value: unknown;
+}) {
+  const { className, label, memo, value } = props;
   const encodedNote = encodedPayloadNote(value);
   const text = safeJsonPretty(value);
+  const memoEntries = Object.entries(memo ?? {});
 
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
+    <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
       <div className="flex h-4 items-center justify-between gap-2">
         <TemporalSectionLabel>{label}</TemporalSectionLabel>
         {value !== undefined && !encodedNote ? (
@@ -445,6 +520,20 @@ function PayloadBlock(props: { label: string; value: unknown }) {
       ) : (
         <TemporalPayloadView className="max-h-[182px] bg-card" value={value} />
       )}
+      {memoEntries.length > 0 ? (
+        <details className="group text-xs" data-testid="temporal-preview-memo">
+          <summary className="flex cursor-pointer list-none items-center gap-1 rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <ChevronRight className="size-3 transition-transform group-open:rotate-90" />
+            Memo · {payloadSizeText(memo!)}
+          </summary>
+          <TemporalPayloadView
+            className="mt-1.5 max-h-40 bg-card"
+            value={Object.fromEntries(
+              memoEntries.map(([key, item]) => [key, memoValue(item)]),
+            )}
+          />
+        </details>
+      ) : null}
     </div>
   );
 }
@@ -459,9 +548,25 @@ const NO_RESULT_TEXT: Partial<
   TimedOut: "The run timed out before it returned a result.",
 };
 
-function OutcomeBlock(props: { detail: TemporalExecutionDetail }) {
-  const { detail } = props;
-  const pendingActivities = detail.execution.pendingActivities ?? [];
+/** Whether the fold-out has a third block: a failure, a retrying Activity's error, or a closed run's result. */
+function hasThirdBlock(detail: TemporalExecutionDetail): boolean {
+  return (
+    Boolean(detail.failure) ||
+    (detail.execution.pendingActivities ?? []).some(
+      (activity) => activity.lastFailure,
+    ) ||
+    !isOpenStatus(detail.execution.status)
+  );
+}
+
+function OutcomeBlock(props: {
+  detail: TemporalExecutionDetail;
+  outcome: { field: string; value: string } | undefined;
+}) {
+  const { detail, outcome } = props;
+  const retrying = (detail.execution.pendingActivities ?? []).filter(
+    (activity) => activity.lastFailure,
+  );
 
   if (detail.failure) {
     const failedSpan = detail.spans
@@ -481,7 +586,7 @@ function OutcomeBlock(props: { detail: TemporalExecutionDetail }) {
         >
           {failedSpan ? (
             <div className="mb-1 font-sans text-muted-foreground">
-              {failedSpan.label}
+              {summaryOf(failedSpan) ?? failedSpan.label}
               {failedSpan.attempt && failedSpan.attempt > 1
                 ? `, attempt ${failedSpan.attempt}`
                 : ""}
@@ -493,27 +598,29 @@ function OutcomeBlock(props: { detail: TemporalExecutionDetail }) {
     );
   }
 
-  if (pendingActivities.length > 0) {
-    const isRetrying = pendingActivities.some((a) => a.lastFailure);
-
+  if (retrying.length > 0) {
     return (
       <div className="flex min-w-0 flex-col gap-1.5">
         <div className="flex h-4 items-center">
-          <TemporalSectionLabel>
-            {isRetrying ? "Retrying Activity" : "Pending Activities"}
-          </TemporalSectionLabel>
+          <TemporalSectionLabel>Last Error</TemporalSectionLabel>
         </div>
         <div
           className={cn(
             paneClass,
-            "flex flex-col gap-2",
-            isRetrying && "border-amber-500/40 bg-amber-500/10",
+            "flex flex-col gap-2 border-amber-500/40 bg-amber-500/10",
           )}
         >
-          {pendingActivities.map((activity) => (
+          {retrying.map((activity) => (
             <PendingActivityLine
               key={activity.activityId}
               activity={activity}
+              name={
+                summaryOf(
+                  detail.spans.find(
+                    (span) => span.activityId === activity.activityId,
+                  ) ?? ({} as TemporalGroupedSpan),
+                ) ?? activity.activityType
+              }
             />
           ))}
         </div>
@@ -522,10 +629,19 @@ function OutcomeBlock(props: { detail: TemporalExecutionDetail }) {
   }
 
   if (detail.result !== undefined) {
-    return <PayloadBlock label="Result" value={detail.result} />;
+    // The field that says how the run ended comes first.
+    const value =
+      outcome &&
+      typeof detail.result === "object" &&
+      detail.result !== null &&
+      !Array.isArray(detail.result)
+        ? { [outcome.field]: outcome.value, ...detail.result }
+        : detail.result;
+
+    return <PayloadBlock label="Result" value={value} />;
   }
 
-  if (detail.execution.status !== "Running") {
+  if (!isOpenStatus(detail.execution.status)) {
     return (
       <div className="flex min-w-0 flex-col gap-1.5">
         <div className="flex h-4 items-center">
@@ -538,41 +654,7 @@ function OutcomeBlock(props: { detail: TemporalExecutionDetail }) {
     );
   }
 
-  const openSpans = detail.spans.filter(
-    (span) =>
-      span.status === "running" &&
-      span.kind !== "workflow" &&
-      span.kind !== "workflow-task",
-  );
-
-  return (
-    <div className="flex min-w-0 flex-col gap-1.5">
-      <div className="flex h-4 items-center">
-        <TemporalSectionLabel>Waiting On</TemporalSectionLabel>
-      </div>
-      {openSpans.length === 0 ? (
-        <p className={cn(paneClass, "font-sans text-muted-foreground")}>
-          No Activity, Timer or Child Workflow is open. The Workflow waits for a
-          Signal, an Update or its next Workflow Task.
-        </p>
-      ) : (
-        <div className={cn(paneClass, "flex flex-col gap-1")}>
-          {openSpans.map((span) => (
-            <div key={span.id} className="flex items-baseline gap-2">
-              <span className="min-w-0 truncate">
-                {span.userSummary ?? span.label}
-              </span>
-              <span className="shrink-0 text-muted-foreground">
-                {timerFireTime(span) ?? (
-                  <>started {formatRelativeTime(span.timestamp)}</>
-                )}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  return null;
 }
 
 /** "fires in 4m" for an open Timer. */
@@ -588,8 +670,11 @@ function timerFireTime(span: TemporalGroupedSpan): string | null {
     : "due now";
 }
 
-function PendingActivityLine(props: { activity: TemporalPendingActivity }) {
-  const { activity } = props;
+function PendingActivityLine(props: {
+  activity: TemporalPendingActivity;
+  name: string;
+}) {
+  const { activity, name } = props;
   const nextAttemptMs = activity.nextAttemptScheduleTime
     ? Date.parse(activity.nextAttemptScheduleTime)
     : Number.NaN;
@@ -597,7 +682,7 @@ function PendingActivityLine(props: { activity: TemporalPendingActivity }) {
   return (
     <div className="flex min-w-0 flex-col">
       <div className="flex flex-wrap items-baseline gap-x-2">
-        <span>{activity.activityType}</span>
+        <span>{name}</span>
         <span className="text-muted-foreground">
           attempt {activity.attempt}
           {activity.maximumAttempts > 0

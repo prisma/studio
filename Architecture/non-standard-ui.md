@@ -271,7 +271,7 @@ It deliberately excludes:
   - [`ui/studio/views/temporal/TemporalRunPreview.tsx`](ui/studio/views/temporal/TemporalRunPreview.tsx)
   - [`data/temporal/run-steps.ts`](data/temporal/run-steps.ts)
 - Current UI:
-  - A list of steps in the fold-out of a Workflows grid row. Each row has a status icon, the step name, a track with one positioned bar for each time the step ran (a diamond for a Signal or an Update), and the total duration. A grey band marks time that is not drawn to scale. The tracks are `aria-hidden`; the name, count and duration carry the same facts as text.
+  - A list of steps in the fold-out of a Workflows grid row. Each row has a status icon, the step name, a track with one positioned bar for each time the step ran (a diamond for a Signal or an Update), and the total duration, or for an open step what it is doing. A grey band marks time that is not drawn to scale. A step is named by its summary, as on the Workflow Type's diagram. The tracks are `aria-hidden`; the name, count and duration carry the same facts as text.
 - Why not a standard component:
   - ShadCN has no timeline. The bars need the same piecewise time scale as the Temporal Timeline.
 - Plausible standard ShadCN alternative:

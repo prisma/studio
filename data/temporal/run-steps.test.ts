@@ -46,6 +46,69 @@ describe("summarizeRunSteps", () => {
     ]);
   });
 
+  it("names steps by their summaries, as the Workflow Type's diagram does", () => {
+    const { steps } = summarizeRunSteps(
+      [
+        span({
+          kind: "activity",
+          label: "notifyDunningStage",
+          startOffsetMs: 0,
+          userSummary: "Send the at-risk warning",
+        }),
+        span({
+          durationMs: 4_000,
+          kind: "timer",
+          label: "Timer: 1",
+          startOffsetMs: 100,
+          status: "fired",
+          userSummary: "Wait for payment until the block date",
+        }),
+        span({
+          kind: "timer",
+          label: "Timer: 2",
+          startOffsetMs: 4_200,
+          status: "fired",
+          timerMs: 3_000,
+        }),
+        span({
+          attempt: 2,
+          kind: "activity",
+          label: "notifyDunningStage",
+          startOffsetMs: 7_300,
+          userSummary: "Send the blocked notice",
+        }),
+      ],
+      8,
+    );
+
+    expect(
+      steps.map((step) => [step.label, step.implementation, step.maxAttempt]),
+    ).toEqual([
+      ["Send the at-risk warning", "notifyDunningStage", 1],
+      ["Wait for payment until the block date", undefined, 1],
+      ["Timer 3s", undefined, 1],
+      ["Send the blocked notice", "notifyDunningStage", 2],
+    ]);
+  });
+
+  it("names an Activity by its type when its summaries name single calls", () => {
+    const { steps } = summarizeRunSteps(
+      Array.from({ length: 8 }, (_, index) =>
+        span({
+          kind: "activity",
+          label: "chargeOrder",
+          startOffsetMs: index * 100,
+          userSummary: `Charge order ${index}`,
+        }),
+      ),
+      8,
+    );
+
+    expect(steps.map((step) => [step.label, step.spans.length])).toEqual([
+      ["chargeOrder", 8],
+    ]);
+  });
+
   it("gives a step the status of its most urgent span", () => {
     const { steps } = summarizeRunSteps(
       [

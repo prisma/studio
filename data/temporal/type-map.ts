@@ -68,7 +68,7 @@ const MAX_EXAMPLE_RUNS = 5;
  * An Activity with more distinct summaries than this in the sample is one
  * node: its summaries name single executions (an order ID), not business steps.
  */
-const MAX_SUMMARIES_PER_STEP = 6;
+export const MAX_SUMMARIES_PER_STEP = 6;
 /** The result fields that can name a business outcome, in the order they are tried. */
 const OUTCOME_FIELDS = ["outcome", "status", "stage"] as const;
 const MAX_OUTCOMES = 5;
@@ -109,7 +109,8 @@ function isFlowStep(span: TemporalGroupedSpan): boolean {
 }
 
 /** A summary on one line, so it can be part of an ID. */
-function summaryOf(span: TemporalGroupedSpan): string | undefined {
+/** The summary the Workflow code gave a span, with its whitespace collapsed. */
+export function summaryOf(span: TemporalGroupedSpan): string | undefined {
   const text = span.userSummary?.replace(/\s+/g, " ").trim();
 
   return text ? text : undefined;
@@ -119,7 +120,7 @@ function summaryOf(span: TemporalGroupedSpan): string | undefined {
  * What tells one Timer of a Workflow from another: the summary the Workflow
  * code gave it, or the time it waits. A Timer's own ID is a sequence number.
  */
-function timerLabel(span: TemporalGroupedSpan): string {
+export function timerLabel(span: TemporalGroupedSpan): string {
   return (
     summaryOf(span) ??
     (span.timerMs ? `Timer ${formatTimerLength(span.timerMs)}` : "Timer")
@@ -172,6 +173,24 @@ function endOf(
   return outcome
     ? { id: `end:${status}:${outcome}`, outcome }
     : { id: `end:${status}` };
+}
+
+/**
+ * How a run's result says it ended: the first of `outcome`, `status` and
+ * `stage` that holds a short string.
+ */
+export function resultOutcome(
+  result: unknown,
+): { field: string; value: string } | undefined {
+  for (const field of OUTCOME_FIELDS) {
+    const value = outcomeValue(result, field);
+
+    if (value) {
+      return { field, value };
+    }
+  }
+
+  return undefined;
 }
 
 function outcomeValue(result: unknown, field: string): string | undefined {
@@ -924,7 +943,10 @@ export function mergeRunIntoTypeMap<T extends TemporalTypeMap>(
 /** A sample has at least this many runs of every status that the type has. */
 const MIN_RUNS_PER_STATUS = 3;
 
-function isOpenStatus(status: TemporalWorkflowExecution["status"]): boolean {
+/** Whether a run with this status has not closed yet. */
+export function isOpenStatus(
+  status: TemporalWorkflowExecution["status"],
+): boolean {
   return status === "Running" || status === "Paused";
 }
 
