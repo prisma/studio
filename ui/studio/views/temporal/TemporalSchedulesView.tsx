@@ -363,9 +363,6 @@ export function TemporalSchedulesView(props: TemporalSchedulesViewProps) {
           </>
         }
       >
-        <span className="contents @max-3xl:hidden">
-          <TemporalNamespaceBadge namespace={namespace} />
-        </span>
         <ScheduleFilter
           className="max-w-md @max-lg:hidden"
           inputRef={headerFilter}

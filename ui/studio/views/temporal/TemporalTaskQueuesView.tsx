@@ -36,7 +36,6 @@ import {
   TemporalFollowControl,
   temporalIconScale,
   TemporalLoadError,
-  TemporalNamespaceBadge,
   TemporalRefreshError,
   TemporalSectionLabel,
   TemporalStatusBadge,
@@ -102,9 +101,7 @@ export function TemporalTaskQueuesView(props: TemporalTaskQueuesViewProps) {
             </Button>
           </>
         }
-      >
-        <TemporalNamespaceBadge namespace={namespace} />
-      </StudioHeader>
+      ></StudioHeader>
 
       {data ? (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground">

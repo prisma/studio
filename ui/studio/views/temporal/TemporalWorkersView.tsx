@@ -20,7 +20,6 @@ import {
   TemporalFollowControl,
   temporalIconScale,
   TemporalLoadError,
-  TemporalNamespaceBadge,
   TemporalRefreshError,
   temporalTableHeadClass,
   TemporalTime,
@@ -82,9 +81,7 @@ export function TemporalWorkersView(props: {
             </Button>
           </>
         }
-      >
-        <TemporalNamespaceBadge namespace={namespace} />
-      </StudioHeader>
+      ></StudioHeader>
 
       {data && dataUpdatedAt ? (
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground">

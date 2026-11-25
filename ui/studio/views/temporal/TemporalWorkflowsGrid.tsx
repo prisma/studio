@@ -100,7 +100,6 @@ import {
   TemporalFollowControl,
   temporalIconScale,
   TemporalLoadError,
-  TemporalNamespaceBadge,
   TemporalRefreshError,
   temporalTableHeadClass,
   TemporalTimeFormatControl,
@@ -637,9 +636,6 @@ export function TemporalWorkflowsGrid(props: TemporalWorkflowsGridProps) {
           </>
         }
       >
-        <span className="contents @max-3xl:hidden">
-          <TemporalNamespaceBadge namespace={namespace} />
-        </span>
         <TemporalSearchField
           draft={draftQuery}
           facets={facets}

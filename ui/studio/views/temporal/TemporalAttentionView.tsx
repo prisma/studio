@@ -48,7 +48,6 @@ import {
   TemporalFollowControl,
   temporalIconScale,
   TemporalLoadError,
-  TemporalNamespaceBadge,
   TemporalRefreshError,
   TemporalSectionLabel,
   temporalTableHeadClass,
@@ -349,11 +348,7 @@ export function TemporalAttentionView(props: {
             </Button>
           </>
         }
-      >
-        <span className="contents @max-3xl:hidden">
-          <TemporalNamespaceBadge namespace={namespace} />
-        </span>
-      </StudioHeader>
+      ></StudioHeader>
 
       {data && checkedAt ? (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-4 py-2 text-xs text-muted-foreground">

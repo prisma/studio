@@ -100,7 +100,17 @@ vi.mock("@/ui/hooks/use-navigation", () => ({
   }),
 }));
 
-vi.mock("../../StudioHeader", () => ({ StudioHeader: () => null }));
+vi.mock("../../StudioHeader", () => ({
+  StudioHeader: (props: {
+    children?: React.ReactNode;
+    endContent?: React.ReactNode;
+  }) => (
+    <header>
+      {props.children}
+      {props.endContent}
+    </header>
+  ),
+}));
 
 // The canvas needs a browser's layout; a button per node stands in for it.
 vi.mock("./TemporalTypeMapCanvas", async (original) => ({
@@ -170,16 +180,19 @@ describe("TemporalTypesView", () => {
       expect.objectContaining({ workflowType: "orderFulfillment" }),
     );
     expect(
-      container.querySelector('[data-testid="temporal-type-sample"]')!
-        .textContent,
-    ).not.toContain("Drawn");
+      container.querySelector('[data-testid="temporal-type-sample"]'),
+    ).toBeNull();
+    expect(container.querySelector("header")!.textContent).toContain(
+      "orderFulfillment",
+    );
 
     click(container, "temporal-type-sample-info");
-    expect(
-      document
-        .querySelector('[data-testid="temporal-type-sample-details"]')!
-        .textContent.replace(/\s+/g, " "),
-    ).toContain("This diagram: 40 of 400 runs: the newest");
+    const details = document
+      .querySelector('[data-testid="temporal-type-sample-details"]')!
+      .textContent.replace(/\s+/g, " ");
+
+    expect(details).toContain("This diagram: 40 of 400 runs: the newest");
+    expect(details).toContain("32 Completed");
 
     click(container, "temporal-type-subscriptionBilling");
     expect(setTemporalTypeParam).toHaveBeenCalledWith("subscriptionBilling");
@@ -197,6 +210,22 @@ describe("TemporalTypesView", () => {
     expect(typeMapArgs).toHaveBeenLastCalledWith(
       expect.objectContaining({
         redraw: 1,
+        sampleSize: undefined,
+        workflowType: "orderFulfillment",
+      }),
+    );
+
+    click(container, "temporal-type-sample-info");
+    act(() =>
+      document
+        .querySelector<HTMLElement>(
+          '[data-testid="temporal-type-redraw-more"]',
+        )!
+        .click(),
+    );
+    expect(typeMapArgs).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        redraw: 2,
         sampleSize: 100,
         workflowType: "orderFulfillment",
       }),

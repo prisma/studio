@@ -29,7 +29,6 @@ import {
   TemporalFollowControl,
   temporalIconScale,
   TemporalLoadError,
-  TemporalNamespaceBadge,
   temporalTableHeadClass,
   TemporalTime,
   TemporalTimeFormatControl,
@@ -280,9 +279,6 @@ export function TemporalWorkflowIdsView(props: TemporalWorkflowIdsViewProps) {
           </>
         }
       >
-        <span className="contents @max-3xl:hidden">
-          <TemporalNamespaceBadge namespace={namespace} />
-        </span>
         <form
           className="relative flex min-w-0 flex-1 items-center"
           role="search"
