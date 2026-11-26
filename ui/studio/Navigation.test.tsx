@@ -672,9 +672,9 @@ describe("Navigation", () => {
   });
 
   it("shows Migrations only when the ledger holds applied migrations", () => {
-    // useHasMigrationHistory resolves false for a missing prisma_contract
-    // schema, a missing ledger table, or an empty ledger — all three hide
-    // the item (mock default from beforeEach).
+    // useHasMigrationHistory resolves false when neither _prisma nor
+    // prisma_contract holds a ledger table, or the ledger is empty — both
+    // hide the item (mock default from beforeEach).
     const withoutHistoryContainer = document.createElement("div");
     document.body.appendChild(withoutHistoryContainer);
     const withoutHistoryRoot = createRoot(withoutHistoryContainer);

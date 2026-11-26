@@ -7,8 +7,8 @@ import fixtureJson from "./fixtures/prisma-contract-migrations.json";
  * migrations-showcase example (see prisma-next repo,
  * examples/migrations-showcase) into the demo database:
  *
- * - restores `prisma_contract.marker` / `prisma_contract.ledger` plus the
- *   content-addressed `prisma_contract.contract` store (one row per
+ * - restores `_prisma.marker` / `_prisma.ledger` plus the
+ *   content-addressed `_prisma.contract` store (one row per
  *   distinct contract, keyed by its storage hash), and
  * - re-executes every migration operation's SQL in ledger order so the
  *   live schema matches the migration history exactly.
@@ -74,9 +74,9 @@ export async function seedPrismaNextMigrations(
 ): Promise<void> {
   const fixture = loadFixture();
 
-  await sql.unsafe(`create schema if not exists prisma_contract`);
+  await sql.unsafe(`create schema if not exists _prisma`);
   await sql.unsafe(`
-    create table if not exists prisma_contract.marker (
+    create table if not exists _prisma.marker (
       space text primary key default 'app',
       core_hash text not null,
       profile_hash text not null,
@@ -89,7 +89,7 @@ export async function seedPrismaNextMigrations(
     )
   `);
   await sql.unsafe(`
-    create table if not exists prisma_contract.ledger (
+    create table if not exists _prisma.ledger (
       id bigserial primary key,
       created_at timestamptz not null default now(),
       space text not null,
@@ -103,7 +103,7 @@ export async function seedPrismaNextMigrations(
     )
   `);
   await sql.unsafe(`
-    create table if not exists prisma_contract.contract (
+    create table if not exists _prisma.contract (
       core_hash text not null primary key,
       created_at timestamptz not null default now(),
       contract_json jsonb not null
@@ -113,7 +113,7 @@ export async function seedPrismaNextMigrations(
   await upgradeLegacyLedger(sql);
 
   const [{ count }] = (await sql.unsafe(
-    `select count(*)::int as count from prisma_contract.ledger`,
+    `select count(*)::int as count from _prisma.ledger`,
   )) as unknown as [{ count: number }];
 
   if (count > 0) {
@@ -141,7 +141,7 @@ export async function seedPrismaNextMigrations(
       // every edge resolve.
       if (row.contract_json_after !== null) {
         await tx.unsafe(
-          `insert into prisma_contract.contract (core_hash, created_at, contract_json)
+          `insert into _prisma.contract (core_hash, created_at, contract_json)
            values ($1, $2, $3::jsonb)
            on conflict (core_hash) do nothing`,
           [
@@ -153,7 +153,7 @@ export async function seedPrismaNextMigrations(
       }
 
       await tx.unsafe(
-        `insert into prisma_contract.ledger (
+        `insert into _prisma.ledger (
            created_at, space, migration_name, migration_hash,
            origin_core_hash, destination_core_hash, operations
          ) values ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
@@ -171,7 +171,7 @@ export async function seedPrismaNextMigrations(
 
     for (const row of fixture.marker) {
       await tx.unsafe(
-        `insert into prisma_contract.marker (
+        `insert into _prisma.marker (
            space, core_hash, profile_hash, contract_json, canonical_version,
            updated_at, app_tag, meta, invariants
          ) values ($1, $2, $3, $4::jsonb, $5, $6, $7, $8::jsonb, $9::text[])
@@ -208,36 +208,34 @@ async function upgradeLegacyLedger(sql: postgres.Sql): Promise<void> {
   const ledgerIdKeyed = (await sql.unsafe(`
     select 1
     from information_schema.columns
-    where table_schema = 'prisma_contract'
+    where table_schema = '_prisma'
       and table_name = 'contract'
       and column_name = 'ledger_id'
   `)) as unknown as unknown[];
 
   if (ledgerIdKeyed.length > 0) {
     await sql.unsafe(`
-      create table prisma_contract.contract_rekeyed (
+      create table _prisma.contract_rekeyed (
         core_hash text not null primary key,
         created_at timestamptz not null default now(),
         contract_json jsonb not null
       )
     `);
     await sql.unsafe(`
-      insert into prisma_contract.contract_rekeyed (core_hash, created_at, contract_json)
+      insert into _prisma.contract_rekeyed (core_hash, created_at, contract_json)
       select l.destination_core_hash, c.created_at, c.contract_json
-      from prisma_contract.contract c
-      join prisma_contract.ledger l on l.id = c.ledger_id
+      from _prisma.contract c
+      join _prisma.ledger l on l.id = c.ledger_id
       on conflict (core_hash) do nothing
     `);
-    await sql.unsafe(`drop table prisma_contract.contract`);
-    await sql.unsafe(
-      `alter table prisma_contract.contract_rekeyed rename to contract`,
-    );
+    await sql.unsafe(`drop table _prisma.contract`);
+    await sql.unsafe(`alter table _prisma.contract_rekeyed rename to contract`);
   }
 
   const legacyColumns = (await sql.unsafe(`
     select 1
     from information_schema.columns
-    where table_schema = 'prisma_contract'
+    where table_schema = '_prisma'
       and table_name = 'ledger'
       and column_name = 'contract_json_after'
   `)) as unknown as unknown[];
@@ -247,17 +245,17 @@ async function upgradeLegacyLedger(sql: postgres.Sql): Promise<void> {
   }
 
   await sql.unsafe(`
-    insert into prisma_contract.contract (core_hash, created_at, contract_json)
+    insert into _prisma.contract (core_hash, created_at, contract_json)
     select destination_core_hash, created_at, contract_json_after
-    from prisma_contract.ledger
+    from _prisma.ledger
     where contract_json_after is not null
     on conflict (core_hash) do nothing
   `);
   await sql.unsafe(
-    `alter table prisma_contract.ledger drop column if exists contract_json_before`,
+    `alter table _prisma.ledger drop column if exists contract_json_before`,
   );
   await sql.unsafe(
-    `alter table prisma_contract.ledger drop column if exists contract_json_after`,
+    `alter table _prisma.ledger drop column if exists contract_json_after`,
   );
 }
 

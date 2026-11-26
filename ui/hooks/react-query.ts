@@ -1,5 +1,7 @@
 import "@tanstack/react-query";
 
+import type { PrismaTablesSchema } from "../../data/migrations";
+
 type SchemaAndTable = ["schema", string | null, "table", string | null];
 
 type MutationKey =
@@ -9,8 +11,13 @@ type MutationKey =
 type QueryKey =
   | [] // all
   | ["introspection"]
-  | ["prisma-next-migrations", "contract-table", boolean]
-  | ["prisma-next-migrations-probe"]
+  | [
+      "prisma-next-migrations",
+      PrismaTablesSchema | null,
+      "contract-table",
+      boolean,
+    ]
+  | ["prisma-next-migrations-probe", PrismaTablesSchema | null]
   | ["stream-details", string]
   | ["stream-routing-keys", string, "stream", string, "prefix", string]
   | ["streams-server-details", string]

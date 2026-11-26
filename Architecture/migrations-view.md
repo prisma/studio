@@ -9,7 +9,7 @@ The view renders the Prisma Next migration history stored in the connected datab
 This architecture governs:
 
 - detection of the Prisma Next migration ledger and Migrations navigation visibility
-- loading and normalizing `prisma_contract.ledger` rows
+- loading and normalizing ledger rows from the schema that holds Prisma's own tables
 - the contract snapshot diff engine
 - the visual diff canvas and migration timeline list
 - demo seeding of a migration history for `pnpm demo:ppg`
@@ -25,7 +25,7 @@ This architecture governs:
 
 ## Data Source
 
-Prisma Next records one row per applied migration in `prisma_contract.ledger`, and each distinct contract IR once in the content-addressed store `prisma_contract.contract` (`core_hash` PK — a contract's storage hash is its identity; see the Migration System subsystem doc in the prisma-next repository). The columns Studio consumes:
+Prisma Next records one row per applied migration in `ledger`, and each distinct contract IR once in the content-addressed store `contract`. Both tables live in the schema Prisma keeps for its own tables: `_prisma` since Prisma ORM 8.0.0, and `prisma_contract` before that. The ORM renames `prisma_contract` to `_prisma` the first time a command that changes the database runs, so a database not yet touched by such a command still has `prisma_contract`. Studio reads `_prisma` when it holds a ledger and `prisma_contract` otherwise, so `_prisma` wins when both exist. `PRISMA_TABLES_SCHEMAS` in `data/migrations.ts` lists the two names in that order and `choosePrismaTablesSchema` applies it; the ledger queries take one of those two constants and never a name from user input. The contract store's primary key is `core_hash`: a contract's storage hash is its identity (see the Migration System subsystem doc in the prisma-next repository). The columns Studio consumes:
 
 - `ledger.id` — apply order (bigserial)
 - `ledger.space` — contract space (`app` for the application schema)
@@ -39,7 +39,7 @@ Both endpoint snapshots come straight from the joins — a baseline origin (no s
 
 ## Detection
 
-`useMigrationsDetection` derives ledger and contract-table presence purely from introspection data (`introspection.schemas["prisma_contract"].tables["ledger"|"contract"]`); the contract-table flag picks the joined or join-less ledger query. The Migrations navigation item is gated by `useHasMigrationHistory`, which additionally runs a one-row `EXISTS` probe (not a full ledger fetch — snapshots can be megabytes of jsonb): a missing `prisma_contract` schema, a missing ledger table, or an empty ledger all hide the item. Stale `view=migrations` URLs against such a database show the view's empty state rather than breaking navigation.
+`useMigrationsDetection` derives the schema and contract-table presence purely from introspection data (`detectMigrationTables` checks `introspection.schemas[schema].tables["ledger"|"contract"]` for `_prisma`, then `prisma_contract`); the schema goes into every ledger query, and the contract-table flag picks the joined or join-less one. The Migrations navigation item is gated by `useHasMigrationHistory`, which additionally runs a one-row `EXISTS` probe (not a full ledger fetch — snapshots can be megabytes of jsonb): a database with no ledger table in either schema, or with an empty ledger, hides the item. Stale `view=migrations` URLs against such a database show the view's empty state rather than breaking navigation.
 
 ## Missing Contract Data
 
@@ -96,7 +96,7 @@ height so the canvas can measure its viewport.
 
 `@prisma/studio-core/data/migrations` exports `readRecordedSchema(executor)`.
 The reader requires a PostgreSQL executor.
-It probes the tables and reads the newest `app` ledger destination with its
+It probes both schemas for the tables in one `to_regclass` query, picks the schema by the same rule as the Migrations view, and reads the newest `app` ledger destination with its
 stored contract in a bounded query. Missing tables, an empty ledger, and a
 missing current snapshot have distinct statuses. The reader never substitutes
 an older snapshot and does not introspect or mutate the live schema. The host
@@ -115,4 +115,4 @@ After `pnpm build`, `node demo/schema-app/server.mjs` serves a sandboxed host at
 
 ## Demo Seeding
 
-`seed-migrations.ts` replays a fixture captured from the prisma-next `migrations-showcase` example (`demo/ppg-dev/fixtures/prisma-contract-migrations.json`): it recreates the `prisma_contract` schema (marker, ledger, and the hash-keyed contract store), upserts each migration's after-state under its destination hash (`ON CONFLICT DO NOTHING` — the fixture's `contract_json_before` values are intentionally not written; origins resolve as predecessors' destinations), restores the marker and ledger rows, and re-executes every operation's SQL in ledger order so the live schema matches the migration history exactly. Legacy demo volumes are upgraded in place: a `ledger_id`-keyed contract table is re-keyed by destination hash, and a two-column ledger has its after-states moved into the store and the bookend columns dropped. A few showcase rows are inserted so the resulting tables are browsable.
+`seed-migrations.ts` replays a fixture captured from the prisma-next `migrations-showcase` example (`demo/ppg-dev/fixtures/prisma-contract-migrations.json`): it recreates the `_prisma` schema (marker, ledger, and the hash-keyed contract store), upserts each migration's after-state under its destination hash (`ON CONFLICT DO NOTHING` — the fixture's `contract_json_before` values are intentionally not written; origins resolve as predecessors' destinations), restores the marker and ledger rows, and re-executes every operation's SQL in ledger order so the live schema matches the migration history exactly. Legacy demo volumes are upgraded in place: a `ledger_id`-keyed contract table is re-keyed by destination hash, and a two-column ledger has its after-states moved into the store and the bookend columns dropped. A few showcase rows are inserted so the resulting tables are browsable.

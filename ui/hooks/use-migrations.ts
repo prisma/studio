@@ -1,32 +1,53 @@
 import { useQuery } from "@tanstack/react-query";
 
+import type { Schema } from "../../data/adapter";
+import {
+  choosePrismaTablesSchema,
+  ledgerProbeQuery,
+  ledgerQuery,
+  ledgerQueryWithoutContract,
+  parseLedgerRows,
+  type PrismaTablesSchema,
+  type StudioMigration,
+} from "../../data/migrations";
 import { useStudio } from "../studio/context";
 import { useIntrospection } from "./use-introspection";
 
-import {
-  LEDGER_QUERY,
-  LEDGER_QUERY_WITHOUT_CONTRACT,
-  LEDGER_PROBE_QUERY,
-  parseLedgerRows,
-  type StudioMigration,
-} from "../../data/migrations";
+export function detectMigrationTables(schemas: Record<string, Schema>): {
+  schema: PrismaTablesSchema | null;
+  hasContractTable: boolean;
+} {
+  const schema = choosePrismaTablesSchema(
+    (candidate) => schemas[candidate]?.tables["ledger"] != null,
+  );
+
+  return {
+    schema,
+    hasContractTable:
+      schema !== null && schemas[schema]?.tables["contract"] != null,
+  };
+}
 
 /**
  * Detects whether the connected database carries a Prisma Next
- * migration ledger (`prisma_contract.ledger`) and its hash-keyed
- * contract store (`prisma_contract.contract`). Purely derived from
- * introspection data — no extra query.
+ * migration ledger and its hash-keyed contract store, and in which
+ * schema (`_prisma`, or `prisma_contract` before Prisma ORM 8.0.0).
+ * Purely derived from introspection data — no extra query.
  */
 export function useMigrationsDetection(): {
+  schema: PrismaTablesSchema | null;
   hasPrismaNextMigrations: boolean;
   hasContractTable: boolean;
 } {
   const { data: introspection } = useIntrospection();
-  const contractSchema = introspection.schemas["prisma_contract"];
+  const { schema, hasContractTable } = detectMigrationTables(
+    introspection.schemas,
+  );
 
   return {
-    hasPrismaNextMigrations: contractSchema?.tables["ledger"] != null,
-    hasContractTable: contractSchema?.tables["contract"] != null,
+    schema,
+    hasPrismaNextMigrations: schema !== null,
+    hasContractTable,
   };
 }
 
@@ -39,21 +60,25 @@ export function parseLedgerProbeRows(rows: Record<string, unknown>[]): boolean {
 /**
  * True when the connected database has a Prisma Next migration ledger
  * with at least one row. Drives the Migrations navigation item: a
- * database without the `prisma_contract` schema, without the ledger
- * table, or with an empty ledger shows no menu entry. Resolves to
+ * database without a ledger table in either schema, or with an empty
+ * ledger, shows no menu entry. Resolves to
  * `false` while the probe is in flight, so the item appears only once
  * history is confirmed.
  */
 export function useHasMigrationHistory(): boolean {
   const { adapter } = useStudio();
-  const { hasPrismaNextMigrations } = useMigrationsDetection();
+  const { schema } = useMigrationsDetection();
 
   const query = useQuery({
-    enabled: hasPrismaNextMigrations,
-    queryKey: ["prisma-next-migrations-probe"],
+    enabled: schema !== null,
+    queryKey: ["prisma-next-migrations-probe", schema],
     queryFn: async ({ signal }) => {
+      if (schema === null) {
+        return false;
+      }
+
       const [error, result] = await adapter.raw(
-        { sql: LEDGER_PROBE_QUERY },
+        { sql: ledgerProbeQuery(schema) },
         { abortSignal: signal },
       );
 
@@ -69,25 +94,36 @@ export function useHasMigrationHistory(): boolean {
     staleTime: 30_000,
   });
 
-  return hasPrismaNextMigrations && query.data === true;
+  return schema !== null && query.data === true;
 }
 
 /**
- * Loads the Prisma Next migration history from
- * `prisma_contract.ledger`, newest first.
+ * Loads the Prisma Next migration history from the detected schema's
+ * `ledger`, newest first.
  */
 export function useMigrations() {
   const { adapter } = useStudio();
-  const { hasPrismaNextMigrations, hasContractTable } =
+  const { schema, hasPrismaNextMigrations, hasContractTable } =
     useMigrationsDetection();
 
   const query = useQuery({
-    enabled: hasPrismaNextMigrations,
-    queryKey: ["prisma-next-migrations", "contract-table", hasContractTable],
+    enabled: schema !== null,
+    queryKey: [
+      "prisma-next-migrations",
+      schema,
+      "contract-table",
+      hasContractTable,
+    ],
     queryFn: async ({ signal }) => {
+      if (schema === null) {
+        return [];
+      }
+
       const [error, result] = await adapter.raw(
         {
-          sql: hasContractTable ? LEDGER_QUERY : LEDGER_QUERY_WITHOUT_CONTRACT,
+          sql: hasContractTable
+            ? ledgerQuery(schema)
+            : ledgerQueryWithoutContract(schema),
         },
         { abortSignal: signal },
       );
