@@ -41,7 +41,7 @@ If you have a security issue to report, contact [security@prisma.io](mailto:secu
 
 Prisma Studio is licensed under the [Apache License 2.0](LICENSE). You can use it, embed it in your own product, modify it and redistribute it, including commercially, without a separate license from Prisma. You may remove or replace the Prisma branding shown in the UI.
 
-This applies to every version of Prisma Studio, including all previously published releases of `@prisma/studio-core`. Prisma Data, Inc. also releases those earlier versions under the Apache License 2.0 alone, without the branding requirement that their bundled `LICENSE` and `NOTICE` files stated.
+This also applies to every previously published release of `@prisma/studio-core`, regardless of the license its package metadata or bundled files stated (ISC, UNLICENSED, or Apache 2.0 with a branding requirement). Prisma Data, Inc. releases all of those versions under the Apache License 2.0 alone. This grant covers only `@prisma/studio-core`, not the separate `@prisma/studio-core-licensed` package or earlier closed-source Prisma Studio builds.
 
 As with any Apache 2.0 project, the license grants no rights to the Prisma name or logos (section 6), beyond reasonable and customary use to describe where the work came from and to reproduce the `NOTICE` content. If you ship a modified or rebranded build, don't present it as an official Prisma product. When you redistribute Studio, include a copy of the license (section 4(a)) and carry the attribution from the `NOTICE` file, either as a NOTICE file, in your documentation or in a third-party notices screen (section 4(d)).
 
