@@ -588,6 +588,15 @@
   --secondary-foreground: #3a3b3c;
   --muted: #f5f5f5;
   --muted-foreground: #646567;
+  /* Secondary ink for code (SQL editor gutter, punctuation, types, comments). Thin
+     monospace glyphs need more contrast than UI copy: >= 7:1 on --background. */
+  --code-muted-foreground: #555555;
+  /* SQL syntax colours: the three Prism brand hues plus Prisma's classic indigo as a
+     cool complement. Light mode uses the deep end of each scale (>= 4.5:1 on white). */
+  --code-keyword: var(--prism-cyan-700);
+  --code-string: var(--prism-yellow-700);
+  --code-literal: var(--prism-red-600);
+  --code-type: #5a67d8;
   --accent: #f5f5f5;
   --accent-foreground: #3a3b3c;
   --destructive: #d02344;
@@ -669,6 +678,12 @@
   --secondary-foreground: var(--foreground);
   --muted: #262626;
   --muted-foreground: #9fa0a6;
+  --code-muted-foreground: #c2c3c7;
+  /* Dark mode uses the bright brand steps (the prism-ray swatches); all >= 7:1. */
+  --code-keyword: var(--prism-cyan-400);
+  --code-string: var(--prism-yellow-300);
+  --code-literal: var(--prism-red-400);
+  --code-type: #a3bffa;
   --accent: #262626;
   --accent-foreground: var(--foreground);
   --destructive: #ff6467;

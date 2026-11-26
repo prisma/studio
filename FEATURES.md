@@ -274,6 +274,7 @@ Matching substrings are highlighted in the grid, and timeout errors explain that
 ## SQL Editor Intelligence
 
 The SQL view uses a full CodeMirror editor with dialect-aware syntax highlighting and schema-aware autocomplete for schemas, tables, and columns.
+Highlighting uses Prisma brand colours (cyan keywords, yellow strings, red literals, indigo types and built-ins) through per-theme `--code-*` tokens, so code stays legible in both light and dark mode.
 Autocomplete is built from live introspection metadata, so suggestions track the current database structure without manual refresh workflows.
 The active schema selector is also used as the default SQL namespace, so unqualified queries like `select * from order_items` run and lint against the selected schema instead of always resolving through `public`.
 PostgreSQL, MySQL, and SQLite linting runs asynchronously through guarded parse/plan `EXPLAIN` paths and shows inline diagnostics while preserving the normal run/cancel query flow.
