@@ -44,6 +44,9 @@ dependencies:
   elkjs:
     specifier: 0.11.1
     version: 0.11.1
+  kysely:
+    specifier: ^0.28.20
+    version: 0.28.20
   react:
     specifier: ^18.0.0 || ^19.0.0
     version: 19.2.4
@@ -253,9 +256,6 @@ devDependencies:
   happy-dom:
     specifier: 20.8.9
     version: 20.8.9
-  kysely:
-    specifier: 0.28.10
-    version: 0.28.10
   lucide-react:
     specifier: 0.562.0
     version: 0.562.0(react@19.2.4)
@@ -8961,10 +8961,10 @@ packages:
       json-buffer: 3.0.1
     dev: true
 
-  /kysely@0.28.10:
-    resolution: {integrity: sha512-ksNxfzIW77OcZ+QWSAPC7yDqUSaIVwkTWnTPNiIy//vifNbwsSgQ57OkkncHxxpcBHM3LRfLAZVEh7kjq5twVA==}
+  /kysely@0.28.20:
+    resolution: {integrity: sha512-D7rXCs0Psxq2hqjg15PGzk/k2bsWY1ohT9o/Xzl8SzgWExT6GiHCz4Z0NP1z5uOE3WBG7gJ46kYdgLYCOlaLoA==}
     engines: {node: '>=20.0.0'}
-    dev: true
+    dev: false
 
   /language-subtag-registry@0.3.23:
     resolution: {integrity: sha512-0K65Lea881pHotoGEa5gDlMxt3pctLi2RplBb7Ezh4rRdLEOtgi7n4EwK9lamnUCkKBqaeKRVebTq6BAxSkpXQ==}

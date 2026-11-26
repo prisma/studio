@@ -247,7 +247,6 @@
     "eslint-plugin-vitest": "0.5.4",
     "globals": "15.9.0",
     "happy-dom": "20.8.9",
-    "kysely": "0.28.10",
     "lucide-react": "0.562.0",
     "motion": "12.27.1",
     "motion-plus": "0.1.6",
@@ -306,6 +305,7 @@
     "@visx/shape": "4.0.1-alpha.0",
     "d3-array": "3.2.4",
     "d3-shape": "3.2.0",
-    "elkjs": "0.11.1"
+    "elkjs": "0.11.1",
+    "kysely": "^0.28.20"
   }
 }
