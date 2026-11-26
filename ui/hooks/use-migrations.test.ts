@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { Schema } from "../../data/adapter";
+import { parseLedgerRows } from "../../data/migrations";
 import {
   LEGACY_PRISMA_TABLES_SCHEMA,
-  parseLedgerRows,
   PRISMA_TABLES_SCHEMA,
   PRISMA_TABLES_SCHEMAS,
-} from "../../data/migrations";
+} from "../../data/prisma-tables-schema";
 import { detectMigrationTables, parseLedgerProbeRows } from "./use-migrations";
 
 function introspectedSchema(name: string, tableNames: string[]): Schema {

@@ -1,15 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 
 import type { Schema } from "../../data/adapter";
+import { parseLedgerRows, type StudioMigration } from "../../data/migrations";
 import {
   choosePrismaTablesSchema,
   ledgerProbeQuery,
   ledgerQuery,
   ledgerQueryWithoutContract,
-  parseLedgerRows,
   type PrismaTablesSchema,
-  type StudioMigration,
-} from "../../data/migrations";
+} from "../../data/prisma-tables-schema";
 import { useStudio } from "../studio/context";
 import { useIntrospection } from "./use-introspection";
 
@@ -31,7 +30,8 @@ export function detectMigrationTables(schemas: Record<string, Schema>): {
 /**
  * Detects whether the connected database carries a Prisma Next
  * migration ledger and its hash-keyed contract store, and in which
- * schema (`_prisma`, or `prisma_contract` before Prisma ORM 8.0.0).
+ * schema (`_prisma`, or `prisma_contract` in databases last changed by
+ * a Prisma ORM 8 release candidate).
  * Purely derived from introspection data — no extra query.
  */
 export function useMigrationsDetection(): {

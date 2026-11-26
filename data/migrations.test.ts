@@ -1,27 +1,35 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { Executor } from "./executor";
+import { readRecordedSchema } from "./migrations";
 import {
   LEGACY_PRISMA_TABLES_SCHEMA,
   PRISMA_TABLES_SCHEMA,
-  readRecordedSchema,
-} from "./migrations";
+} from "./prisma-tables-schema";
 
 const noTables = {
-  has_prisma_ledger: false,
-  has_prisma_contract: false,
-  has_legacy_ledger: false,
-  has_legacy_contract: false,
+  current_schema_has_ledger: false,
+  current_schema_has_contract: false,
+  legacy_schema_has_ledger: false,
+  legacy_schema_has_contract: false,
 };
 
 describe.each([
   {
     schema: PRISMA_TABLES_SCHEMA,
-    tables: { ...noTables, has_prisma_ledger: true, has_prisma_contract: true },
+    tables: {
+      ...noTables,
+      current_schema_has_ledger: true,
+      current_schema_has_contract: true,
+    },
   },
   {
     schema: LEGACY_PRISMA_TABLES_SCHEMA,
-    tables: { ...noTables, has_legacy_ledger: true, has_legacy_contract: true },
+    tables: {
+      ...noTables,
+      legacy_schema_has_ledger: true,
+      legacy_schema_has_contract: true,
+    },
   },
 ])("Prisma's tables in the $schema schema", ({ schema, tables }) => {
   it("uses the current app ledger row even when its snapshot is missing", async () => {
@@ -61,8 +69,8 @@ describe.each([
       [
         {
           ...tables,
-          has_prisma_contract: false,
-          has_legacy_contract: false,
+          current_schema_has_contract: false,
+          legacy_schema_has_contract: false,
         },
       ],
     ]);
@@ -71,6 +79,24 @@ describe.each([
     ).toMatchObject([null, { status: "no-contract-store" }]);
     expect(execute).toHaveBeenCalledTimes(1);
   });
+});
+
+it("reports no contract store when _prisma has a ledger without one, even if prisma_contract has both", async () => {
+  const execute = vi.fn<Executor["execute"]>().mockResolvedValue([
+    null,
+    [
+      {
+        current_schema_has_ledger: true,
+        current_schema_has_contract: false,
+        legacy_schema_has_ledger: true,
+        legacy_schema_has_contract: true,
+      },
+    ],
+  ]);
+  expect(
+    await readRecordedSchema({ execute: execute as Executor["execute"] }),
+  ).toMatchObject([null, { status: "no-contract-store" }]);
+  expect(execute).toHaveBeenCalledTimes(1);
 });
 
 it("does not query absent migration tables", async () => {

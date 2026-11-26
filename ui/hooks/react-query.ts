@@ -1,6 +1,6 @@
 import "@tanstack/react-query";
 
-import type { PrismaTablesSchema } from "../../data/migrations";
+import type { PrismaTablesSchema } from "../../data/prisma-tables-schema";
 
 type SchemaAndTable = ["schema", string | null, "table", string | null];
 

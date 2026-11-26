@@ -1,6 +1,8 @@
 import { PGlite } from "@electric-sql/pglite";
 import { describe, expect, it } from "vitest";
 
+import { readRecordedSchema } from "./migrations";
+import { createPGLiteExecutor } from "./pglite";
 import {
   ledgerProbeQuery,
   ledgerQuery,
@@ -9,9 +11,7 @@ import {
   PRISMA_TABLES_SCHEMA,
   PRISMA_TABLES_SCHEMAS,
   type PrismaTablesSchema,
-  readRecordedSchema,
-} from "./migrations";
-import { createPGLiteExecutor } from "./pglite";
+} from "./prisma-tables-schema";
 
 async function createPrismaTables(
   db: PGlite,
