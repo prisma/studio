@@ -37,6 +37,14 @@ Issue-first contributions work best for this repo. Please open an issue before i
 
 If you have a security issue to report, contact [security@prisma.io](mailto:security@prisma.io?subject=%5BGitHub%5D%20Prisma%20Studio%20Security%20Report).
 
+## License
+
+Prisma Studio is licensed under the [Apache License 2.0](LICENSE). You can use it, embed it in your own product, modify it and redistribute it, including commercially, without a separate license from Prisma. You may remove or replace the Prisma branding shown in the UI.
+
+This also applies to every previously published release of `@prisma/studio-core`, regardless of the license its package metadata or bundled files stated (ISC, UNLICENSED, or Apache 2.0 with a branding requirement). Prisma Data, Inc. releases all of those versions under the Apache License 2.0 alone. This grant covers only `@prisma/studio-core`, not the separate `@prisma/studio-core-licensed` package or earlier closed-source Prisma Studio builds.
+
+As with any Apache 2.0 project, the license grants no rights to the Prisma name or logos (section 6), beyond reasonable and customary use to describe where the work came from and to reproduce the `NOTICE` content. If you ship a modified or rebranded build, don't present it as an official Prisma product. When you redistribute Studio, include a copy of the license (section 4(a)) and carry the attribution from the `NOTICE` file, either as a NOTICE file, in your documentation or in a third-party notices screen (section 4(d)).
+
 ## Embedding Prisma Studio
 
 `@prisma/studio-core` is the embeddable Prisma Studio package.
