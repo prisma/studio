@@ -43,7 +43,8 @@ Studio context provides the canonical stores in [`ui/studio/context.tsx`](../ui/
 - `uiPersistentStateCollection` (`localStorageCollectionOptions`)
   - General scoped UI state that must survive page reloads, accessed through
     `useUiState` with `{ persistent: true }` (for example the schema
-    visualizer's manually arranged node positions).
+    visualizer's manually arranged node positions, and the SQL view's
+    `sql:confirm-before-changes` boolean).
 - `sqlEditorStateCollection` (`localStorageCollectionOptions`)
   - Persisted SQL editor draft state:
   - `queryText`

@@ -781,7 +781,7 @@ function queryConfirmationDialog() {
       document.querySelectorAll<HTMLElement>(
         '[role="alertdialog"], [role="dialog"]',
       ),
-    ).find((element) => element.className.includes("max-w-[280px]")) ?? null
+    ).find((element) => element.className.includes("w-[360px]")) ?? null
   );
 }
 
@@ -890,7 +890,9 @@ function renderView() {
 
 function getFocusedCellState() {
   return localUiStateStore.get("datagrid:public.users:focused-cell") as
-    { columnId: string; rowIndex: number } | null | undefined;
+    | { columnId: string; rowIndex: number }
+    | null
+    | undefined;
 }
 
 beforeEach(() => {
@@ -1431,7 +1433,8 @@ describe("ActiveTableView filtering", () => {
       );
 
       const filter = JSON.parse(createUrlArgs?.filterParam ?? "{}") as
-        FilterGroup | Record<string, unknown>;
+        | FilterGroup
+        | Record<string, unknown>;
 
       expect(filter).toMatchObject({
         after: "and",
@@ -1494,9 +1497,9 @@ describe("ActiveTableView filtering", () => {
 
     expect(dialog).not.toBeNull();
     expect(dialog?.className).toContain("font-sans");
-    expect(dialog?.className).toContain("max-w-[280px]");
-    expect(dialog?.className).toContain("gap-4");
-    expect(dialog?.className).toContain("p-4");
+    expect(dialog?.className).toContain("w-[360px]");
+    expect(dialog?.className).toContain("gap-5");
+    expect(dialog?.className).toContain("p-5");
 
     const prompt = dialog?.querySelector("p");
 
@@ -3050,7 +3053,8 @@ describe("ActiveTableView filtering", () => {
       expect(
         (
           updateManyMutateMock.mock.calls[0]?.[1] as
-            { onSuccess?: unknown } | undefined
+            | { onSuccess?: unknown }
+            | undefined
         )?.onSuccess,
       ).toBeTypeOf("function");
       expect(queryConfirmationDialog()).toBeNull();

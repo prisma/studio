@@ -7,6 +7,7 @@ import {
   Laptop,
   Moon,
   Search,
+  ShieldCheck,
   Sun,
 } from "lucide-react";
 import {
@@ -47,8 +48,19 @@ import {
   TABLE_SEARCH_UI_STATE_KEY,
   type TableSearchUiState,
 } from "./navigation-ui-state";
+import { useSqlRunConfirmationSetting } from "./views/sql/sql-run-confirmation";
 
 const COMMAND_PALETTE_UI_STATE_KEY = "studio:command-palette";
+const SQL_RUN_CONFIRMATION_LABEL =
+  "Confirm before running SQL that changes data";
+const SQL_RUN_CONFIRMATION_KEYWORDS = [
+  "confirm",
+  "delete",
+  "don't ask again",
+  "safety",
+  "sql",
+  "warning",
+];
 
 export interface CommandPaletteContextAction {
   id: string;
@@ -464,6 +476,13 @@ function StudioCommandPalette() {
   });
   const shouldShowAppearanceSection =
     showSystemThemeControl || showExplicitThemeControl;
+  const [isSqlRunConfirmationEnabled, setSqlRunConfirmationEnabled] =
+    useSqlRunConfirmationSetting();
+  const showSqlRunConfirmationControl = matchesCommandSearch({
+    label: SQL_RUN_CONFIRMATION_LABEL,
+    keywords: SQL_RUN_CONFIRMATION_KEYWORDS,
+    query,
+  });
   const handleSystemThemeToggle = useCallback(
     (checked: boolean) => {
       if (checked) {
@@ -693,6 +712,39 @@ function StudioCommandPalette() {
     );
   }
 
+  function renderSafetySection() {
+    if (!showSqlRunConfirmationControl) {
+      return null;
+    }
+
+    return (
+      <CommandGroup heading="Safety">
+        <AppearanceCommandItem
+          icon={ShieldCheck}
+          keywords={SQL_RUN_CONFIRMATION_KEYWORDS}
+          label={SQL_RUN_CONFIRMATION_LABEL}
+          onSelect={() =>
+            setSqlRunConfirmationEnabled(!isSqlRunConfirmationEnabled)
+          }
+          value="safety:sql-run-confirmation"
+        >
+          <Switch
+            aria-label={SQL_RUN_CONFIRMATION_LABEL}
+            checked={isSqlRunConfirmationEnabled}
+            onClick={(event) => {
+              event.stopPropagation();
+            }}
+            onCheckedChange={setSqlRunConfirmationEnabled}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+          />
+        </AppearanceCommandItem>
+      </CommandGroup>
+    );
+  }
+
   const scopePortalContainer = scopeRef.current?.closest(".ps");
   const portalContainer =
     scopePortalContainer instanceof HTMLElement
@@ -738,11 +790,13 @@ function StudioCommandPalette() {
                 label: "Tables",
               })}
               {renderAppearanceSection()}
+              {renderSafetySection()}
               {renderSection({
                 items: viewItems,
                 label: "Navigation",
               })}
-              {!shouldShowAppearanceSection ? (
+              {!shouldShowAppearanceSection &&
+              !showSqlRunConfirmationControl ? (
                 <CommandEmpty>No matching commands.</CommandEmpty>
               ) : null}
             </CommandList>

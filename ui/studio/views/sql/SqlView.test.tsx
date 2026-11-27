@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Adapter, AdapterError, AdapterSqlLintResult } from "@/data";
 import type { StudioLlmRequest } from "@/data/llm";
 
+import { useUiState } from "../../../hooks/use-ui-state";
+import { SQL_RUN_CONFIRMATION_UI_STATE_KEY } from "./sql-run-confirmation";
 import { SqlView } from "./SqlView";
 
 type StudioMock = ReturnType<typeof createStudioMock>;
@@ -40,6 +42,21 @@ const mockEditorDispatch = vi.fn((transaction: unknown) => {
   }
 });
 const mockEditorFocus = vi.fn();
+const mockCreatedEditorElements = new WeakSet<Element>();
+let mockKeyboardRunSql: (() => void) | undefined;
+const toastMock = vi.hoisted(() => vi.fn());
+
+vi.mock("sonner", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("sonner")>()),
+  toast: toastMock,
+}));
+
+vi.mock("./sql-editor-keybindings", () => ({
+  createSqlEditorKeybindings: (args: { runSql: () => void }) => {
+    mockKeyboardRunSql = args.runSql;
+    return [];
+  },
+}));
 
 vi.mock("../../context", () => ({
   useStudio: () => useStudioMock(),
@@ -123,30 +140,38 @@ vi.mock("@uiw/react-codemirror", () => ({
     mockCodeMirrorExtensions = props.extensions ?? [];
     mockEditorDocLength = (props.value ?? "").length;
     mockEditorDocText = props.value ?? "";
-    props.onCreateEditor?.({
-      dispatch: mockEditorDispatch,
-      focus: mockEditorFocus,
-      state: {
-        doc: {
-          get length() {
-            return mockEditorDocLength;
+    const createEditor = () =>
+      props.onCreateEditor?.({
+        dispatch: mockEditorDispatch,
+        focus: mockEditorFocus,
+        state: {
+          doc: {
+            get length() {
+              return mockEditorDocLength;
+            },
+            toString() {
+              return mockEditorDocText;
+            },
           },
-          toString() {
-            return mockEditorDocText;
-          },
-        },
-        selection: {
-          main: {
-            get head() {
-              return mockEditorCursorHead;
+          selection: {
+            main: {
+              get head() {
+                return mockEditorCursorHead;
+              },
             },
           },
         },
-      },
-    });
+      });
 
     return (
       <textarea
+        // Like CodeMirror, create the editor view once per mount.
+        ref={(element) => {
+          if (element && !mockCreatedEditorElements.has(element)) {
+            mockCreatedEditorElements.add(element);
+            createEditor();
+          }
+        }}
         aria-label={props["aria-label"] ?? "SQL editor"}
         onChange={(event) => {
           mockEditorDocText = event.currentTarget.value;
@@ -2205,6 +2230,366 @@ describe("SqlView", () => {
 
     expect(editor.value).toBe("select * from public.organizations limit 7;");
 
+    harness.cleanup();
+  });
+});
+
+describe("SqlView run confirmation", () => {
+  let setConfirmationSetting: ((value: boolean) => void) | undefined;
+
+  function ConfirmationSettingProbe() {
+    const [, setValue] = useUiState<boolean>(
+      SQL_RUN_CONFIRMATION_UI_STATE_KEY,
+      true,
+      { persistent: true },
+    );
+    setConfirmationSetting = setValue;
+    return null;
+  }
+
+  function renderWithSettingProbe() {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <>
+          <ConfirmationSettingProbe />
+          <SqlView />
+        </>,
+      );
+    });
+
+    return {
+      cleanup() {
+        act(() => {
+          root.unmount();
+        });
+        container.remove();
+      },
+      container,
+    };
+  }
+
+  function readConfirmationSetting(): boolean | undefined {
+    let value: boolean | undefined;
+
+    function Reader() {
+      [value] = useUiState<boolean>(SQL_RUN_CONFIRMATION_UI_STATE_KEY, true, {
+        persistent: true,
+      });
+      return null;
+    }
+
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    act(() => {
+      root.render(<Reader />);
+    });
+    act(() => {
+      root.unmount();
+    });
+
+    return value;
+  }
+
+  function setup(sql: string) {
+    const { adapter, rawSpy } = createAdapterMock();
+    useStudioMock.mockReturnValue(createStudioMock(adapter));
+    const harness = renderWithSettingProbe();
+
+    act(() => {
+      mockCodeMirrorOnChange?.(sql);
+    });
+
+    return { harness, rawSpy };
+  }
+
+  function clickRunButton(container: HTMLElement) {
+    const runButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Run SQL"),
+    );
+
+    if (!runButton) {
+      throw new Error("Run SQL button not rendered");
+    }
+
+    act(() => {
+      runButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+  }
+
+  function getDialog() {
+    return document.querySelector<HTMLElement>('[role="alertdialog"]');
+  }
+
+  function getDialogButton(label: string) {
+    return [...(getDialog()?.querySelectorAll("button") ?? [])].find(
+      (button) => button.textContent?.trim() === label,
+    );
+  }
+
+  function pressInDialog(key: string, init?: KeyboardEventInit) {
+    const target = document.activeElement ?? getDialog();
+
+    act(() => {
+      target?.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          key,
+          ...init,
+        }),
+      );
+    });
+  }
+
+  afterEach(() => {
+    act(() => {
+      setConfirmationSetting?.(true);
+    });
+    setConfirmationSetting = undefined;
+    mockKeyboardRunSql = undefined;
+  });
+
+  it.each([
+    "select * from organizations",
+    "explain select 1",
+    "show search_path",
+  ])("runs %j straight away without a dialog", async (sql) => {
+    const { harness, rawSpy } = setup(sql);
+
+    clickRunButton(harness.container);
+    await waitFor(() => rawSpy.mock.calls.length === 1);
+
+    expect(getDialog()).toBeNull();
+    harness.cleanup();
+  });
+
+  it.each([
+    ["DELETE FROM t", "This will delete every row in t.", "delete all rows"],
+    ["UPDATE t SET a=1", "This will change every row in t.", "change all rows"],
+    [
+      "DROP TABLE t",
+      "This will delete the table t and all of its data.",
+      "delete table",
+    ],
+    ["TRUNCATE t", "This will delete every row in t.", "delete all rows"],
+  ])(
+    "asks before running %j with the strong warning",
+    async (sql, prompt, primaryLabel) => {
+      const { harness, rawSpy } = setup(sql);
+
+      clickRunButton(harness.container);
+      await flush();
+
+      expect(getDialog()?.textContent).toContain(prompt);
+      expect(getDialog()?.textContent).toContain("Studio can't undo this.");
+      // The table name is set apart from the sentence.
+      expect(getDialog()?.querySelector("code")?.textContent).toBe("t");
+      const primary = getDialogButton(primaryLabel);
+      expect(primary?.className).toContain("destructive");
+      // Cancel is focused so a stray Enter never confirms a destructive run.
+      expect(document.activeElement).toBe(getDialogButton("cancel"));
+      expect(getDialog()?.querySelector('[role="checkbox"]')).toBeNull();
+      expect(rawSpy).not.toHaveBeenCalled();
+
+      act(() => {
+        primary?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      await waitFor(() => rawSpy.mock.calls.length === 1);
+
+      expect(rawSpy).toHaveBeenCalledWith(
+        { schema: "public", sql },
+        expect.any(Object),
+      );
+      await flush();
+      expect(rawSpy).toHaveBeenCalledTimes(1);
+      harness.cleanup();
+    },
+  );
+
+  it.each([
+    [
+      "DELETE FROM t WHERE id = 1",
+      "This will delete some rows from t.",
+      "delete rows",
+    ],
+    [
+      "UPDATE t SET a = 1 WHERE id = 1",
+      "This will change data in t.",
+      "change data",
+    ],
+    [
+      "ALTER TABLE t ADD c int",
+      "This will change the columns or settings of the table t.",
+      "run",
+    ],
+    ["INSERT INTO t VALUES (1)", "This will add rows to t.", "add rows"],
+    [
+      "call refresh_all()",
+      "Studio can't tell what this SQL does.",
+      "run anyway",
+    ],
+  ])(
+    "asks before running %j in plain language",
+    async (sql, prompt, primaryLabel) => {
+      const { harness, rawSpy } = setup(sql);
+
+      clickRunButton(harness.container);
+      await flush();
+
+      expect(getDialog()?.textContent).toContain(prompt);
+      // No SQL keywords in the question itself.
+      const descriptionId = getDialog()?.getAttribute("aria-describedby") ?? "";
+      expect(document.getElementById(descriptionId)?.textContent).toContain(
+        prompt,
+      );
+      // Says why Studio is asking.
+      expect(getDialog()?.textContent).toContain("can't undo");
+      expect(document.getElementById(descriptionId)?.textContent).not.toMatch(
+        /\b(UPDATE|DELETE|INSERT|ALTER|WHERE)\b/,
+      );
+      const primary = getDialogButton(primaryLabel);
+      expect(primary).toBeDefined();
+      expect(primary?.className).not.toContain("destructive");
+      expect(rawSpy).not.toHaveBeenCalled();
+
+      harness.cleanup();
+    },
+  );
+
+  it("guards the keyboard run path and confirms with Cmd/Ctrl+Enter", async () => {
+    const { harness, rawSpy } = setup("DELETE FROM t WHERE id = 1");
+
+    act(() => {
+      mockKeyboardRunSql?.();
+    });
+    await flush();
+
+    expect(getDialog()).not.toBeNull();
+    expect(rawSpy).not.toHaveBeenCalled();
+
+    pressInDialog("Enter", { metaKey: true });
+    await waitFor(() => rawSpy.mock.calls.length === 1);
+
+    await flush();
+    expect(rawSpy).toHaveBeenCalledTimes(1);
+    expect(getDialog()).toBeNull();
+    harness.cleanup();
+  });
+
+  it("does not run a destructive statement when Cmd/Ctrl+Enter is pressed again", async () => {
+    const { harness, rawSpy } = setup("DELETE FROM t");
+
+    act(() => {
+      mockKeyboardRunSql?.();
+    });
+    await flush();
+    pressInDialog("Enter", { ctrlKey: true });
+    await flush();
+
+    expect(getDialog()).toBeNull();
+    expect(rawSpy).not.toHaveBeenCalled();
+    harness.cleanup();
+  });
+
+  it.each(["cancel button", "Escape"])(
+    "runs nothing after %s and returns focus to the editor",
+    async (method) => {
+      const { harness, rawSpy } = setup("DROP TABLE t");
+
+      clickRunButton(harness.container);
+      await flush();
+      mockEditorFocus.mockClear();
+
+      if (method === "Escape") {
+        pressInDialog("Escape");
+      } else {
+        act(() => {
+          getDialogButton("cancel")?.dispatchEvent(
+            new MouseEvent("click", { bubbles: true }),
+          );
+        });
+      }
+      await flush();
+
+      expect(getDialog()).toBeNull();
+      expect(rawSpy).not.toHaveBeenCalled();
+      expect(mockEditorFocus).toHaveBeenCalled();
+      expect(
+        harness.container.querySelector<HTMLTextAreaElement>("textarea")?.value,
+      ).toBe("DROP TABLE t");
+      harness.cleanup();
+    },
+  );
+
+  it("turns confirmation off only when the box is ticked and the run confirmed", async () => {
+    const { harness, rawSpy } = setup("UPDATE t SET a = 1 WHERE id = 1");
+
+    clickRunButton(harness.container);
+    await flush();
+    const checkbox =
+      getDialog()?.querySelector<HTMLElement>('[role="checkbox"]');
+    expect(checkbox?.getAttribute("aria-checked")).toBe("false");
+
+    act(() => {
+      checkbox?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    act(() => {
+      getDialogButton("cancel")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    await flush();
+
+    expect(readConfirmationSetting()).toBe(true);
+    expect(toastMock).not.toHaveBeenCalled();
+
+    clickRunButton(harness.container);
+    await flush();
+    const reopenedCheckbox =
+      getDialog()?.querySelector<HTMLElement>('[role="checkbox"]');
+    expect(reopenedCheckbox?.getAttribute("aria-checked")).toBe("false");
+
+    act(() => {
+      reopenedCheckbox?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    act(() => {
+      getDialogButton("change data")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    await waitFor(() => rawSpy.mock.calls.length === 1);
+
+    expect(readConfirmationSetting()).toBe(false);
+    expect(toastMock).toHaveBeenCalledTimes(1);
+    expect(toastMock.mock.calls[0]?.[0]).toBe("Confirmation turned off");
+
+    harness.cleanup();
+  });
+
+  it("runs routine changes without asking once confirmation is off, but still asks before wiping data", async () => {
+    const { harness, rawSpy } = setup("DELETE FROM t WHERE id = 1");
+
+    act(() => {
+      setConfirmationSetting?.(false);
+    });
+    clickRunButton(harness.container);
+    await waitFor(() => rawSpy.mock.calls.length === 1);
+    expect(getDialog()).toBeNull();
+
+    act(() => {
+      mockCodeMirrorOnChange?.("DELETE FROM t");
+    });
+    clickRunButton(harness.container);
+    await flush();
+
+    expect(getDialog()?.textContent).toContain("delete every row in t");
+    expect(rawSpy).toHaveBeenCalledTimes(1);
     harness.cleanup();
   });
 });

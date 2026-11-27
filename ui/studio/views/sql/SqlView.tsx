@@ -11,6 +11,7 @@ import CodeMirror from "@uiw/react-codemirror";
 import { Loader2, Play, Sparkles, Square } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import { toast } from "sonner";
 
 import type {
   Adapter,
@@ -22,14 +23,21 @@ import type {
 } from "../../../../data/adapter";
 import { consumeBffRequestDurationMsForSignal } from "../../../../data/bff";
 import { createSqlEditorSchemaFromIntrospection } from "../../../../data/sql-editor-schema";
+import {
+  classifySqlStatement,
+  type SqlStatementRisk,
+} from "../../../../data/sql-statement-risk";
 import { getTopLevelSqlStatementAtCursor } from "../../../../data/sql-statements";
 import { Button } from "../../../components/ui/button";
+import { Checkbox } from "../../../components/ui/checkbox";
 import { Input } from "../../../components/ui/input";
+import { Label } from "../../../components/ui/label";
 import { TableHead, TableRow } from "../../../components/ui/table";
 import { useColumnPinning } from "../../../hooks/use-column-pinning";
 import { useIntrospection } from "../../../hooks/use-introspection";
 import { useNavigation } from "../../../hooks/use-navigation";
 import { isMacPlatform } from "../../../lib/platform";
+import { BinaryAlertDialog } from "../../BinaryAlertDialog";
 import type { CellProps } from "../../cell/Cell";
 import { Cell } from "../../cell/Cell";
 import { getCell } from "../../cell/get-cell";
@@ -47,6 +55,12 @@ import {
 import { createSqlEditorKeybindings } from "./sql-editor-keybindings";
 import { sqlEditorTheme } from "./sql-editor-theme";
 import { createSqlLintSource } from "./sql-lint-source";
+import {
+  getSqlRunConfirmationCopy,
+  shouldConfirmSqlRun,
+  SQL_RUN_CONFIRMATION_NAME_TOKEN,
+  useSqlRunConfirmationSetting,
+} from "./sql-run-confirmation";
 import {
   SqlResultVisualizationChart,
   useSqlResultVisualization,
@@ -256,6 +270,79 @@ const SqlResultGrid = memo(function SqlResultGrid(props: SqlResultGridProps) {
   );
 });
 
+/**
+ * Shows the table or object name in Studio's monospace chip, like the sidebar
+ * table list and the `⌘ Enter` hint, so it stands out from the sentence.
+ */
+function renderPromptWithName(prompt: string, name: string | null) {
+  if (!name) {
+    return prompt;
+  }
+
+  return prompt.split(SQL_RUN_CONFIRMATION_NAME_TOKEN).flatMap((part, index) =>
+    index === 0
+      ? [part]
+      : [
+          <code
+            className="rounded-sm border border-border bg-secondary px-1 py-px font-mono text-[0.92em] font-normal text-foreground [box-decoration-break:clone] [overflow-wrap:anywhere] [word-break:keep-all]"
+            key={index}
+          >
+            {name}
+          </code>,
+          part,
+        ],
+  );
+}
+
+function SqlRunConfirmationDialog(props: {
+  onCloseAutoFocus: (event: Event) => void;
+  onConfirm: () => void;
+  onOpenChange: (open: boolean) => void;
+  onStopAskingChange: (value: boolean) => void;
+  open: boolean;
+  risk: SqlStatementRisk;
+  shouldStopAsking: boolean;
+}) {
+  const { onStopAskingChange, risk, shouldStopAsking } = props;
+  const copy = getSqlRunConfirmationCopy(risk);
+  const isDanger = risk.kind === "danger";
+
+  return (
+    <BinaryAlertDialog
+      initialFocus={isDanger ? "secondary" : "primary"}
+      onCloseAutoFocus={props.onCloseAutoFocus}
+      onOpenChange={props.onOpenChange}
+      onPrimaryAction={props.onConfirm}
+      open={props.open}
+      primaryLabel={copy.primaryLabel}
+      primaryVariant={copy.primaryVariant}
+      prompt={renderPromptWithName(copy.prompt, copy.name)}
+      promptDetail={copy.promptDetail}
+      secondaryLabel="cancel"
+      title={copy.title}
+      control={
+        isDanger ? null : (
+          <div className="flex items-center gap-2">
+            <Checkbox
+              checked={shouldStopAsking}
+              id="sql-run-confirmation-stop-asking"
+              onCheckedChange={(checked) =>
+                onStopAskingChange(checked === true)
+              }
+            />
+            <Label
+              className="cursor-pointer text-sm font-normal whitespace-nowrap text-muted-foreground"
+              htmlFor="sql-run-confirmation-stop-asking"
+            >
+              Don&apos;t ask again
+            </Label>
+          </div>
+        )
+      }
+    />
+  );
+}
+
 export function SqlView(_props: ViewProps) {
   const { adapter, hasAiSql, onEvent, requestLlm, sqlEditorStateCollection } =
     useStudio();
@@ -282,6 +369,15 @@ export function SqlView(_props: ViewProps) {
   const hasUserEditedEditorValueRef = useRef(false);
   const latestEditorValueRef = useRef(editorValue);
   const [isRunning, setIsRunning] = useState(false);
+  const [isSqlRunConfirmationEnabled, setSqlRunConfirmationEnabled] =
+    useSqlRunConfirmationSetting();
+  const [pendingSqlRun, setPendingSqlRun] = useState<{
+    risk: SqlStatementRisk;
+    sql: string;
+  } | null>(null);
+  const [isSqlRunConfirmationOpen, setSqlRunConfirmationOpen] = useState(false);
+  const [shouldStopAskingBeforeChanges, setShouldStopAskingBeforeChanges] =
+    useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiPromptHistory, setAiPromptHistory] = useState<string[]>(
     initialPersistedAiPromptHistory,
@@ -831,8 +927,29 @@ export function SqlView(_props: ViewProps) {
     }
   }
 
-  async function executeSql(args?: { sqlOverride?: string }) {
+  async function executeSql(args?: {
+    /** Set only by the confirmation dialog after the user said yes. */
+    isConfirmed?: boolean;
+    sqlOverride?: string;
+  }) {
     const sql = args?.sqlOverride ?? editorValue;
+
+    if (!args?.isConfirmed && !isRunning && sql.trim().length > 0) {
+      const risk = classifySqlStatement(sql);
+
+      if (
+        shouldConfirmSqlRun({
+          isConfirmationEnabled: isSqlRunConfirmationEnabled,
+          risk,
+        })
+      ) {
+        setPendingSqlRun({ risk, sql });
+        setShouldStopAskingBeforeChanges(false);
+        setSqlRunConfirmationOpen(true);
+        return;
+      }
+    }
+
     const aiExecutionContext = getPendingAiSqlExecutionContext({
       pendingAiSqlExecution,
       sql,
@@ -857,6 +974,23 @@ export function SqlView(_props: ViewProps) {
         queryErrorMessage: outcome.error.message,
       });
     }
+  }
+
+  function confirmPendingSqlRun() {
+    if (!isSqlRunConfirmationOpen || !pendingSqlRun) {
+      return;
+    }
+
+    setSqlRunConfirmationOpen(false);
+
+    if (shouldStopAskingBeforeChanges && pendingSqlRun.risk.kind !== "danger") {
+      setSqlRunConfirmationEnabled(false);
+      toast("Confirmation turned off", {
+        description: `Studio still asks before deleting all rows or dropping tables. To turn it back on, press ${isMacPlatform() ? "⌘K" : "Ctrl+K"} and search for "confirm".`,
+      });
+    }
+
+    void executeSql({ isConfirmed: true, sqlOverride: pendingSqlRun.sql });
   }
 
   function getSqlForExecutionFromCursor(): string {
@@ -1256,6 +1390,20 @@ export function SqlView(_props: ViewProps) {
           />
         )}
       </div>
+      {pendingSqlRun ? (
+        <SqlRunConfirmationDialog
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            editorViewRef.current?.focus();
+          }}
+          onConfirm={confirmPendingSqlRun}
+          onOpenChange={setSqlRunConfirmationOpen}
+          onStopAskingChange={setShouldStopAskingBeforeChanges}
+          open={isSqlRunConfirmationOpen}
+          risk={pendingSqlRun.risk}
+          shouldStopAsking={shouldStopAskingBeforeChanges}
+        />
+      ) : null}
     </div>
   );
 }
