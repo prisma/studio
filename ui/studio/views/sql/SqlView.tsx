@@ -107,7 +107,7 @@ const SQL_ROW_SELECTION_COLUMN_DEF = {
   header({ table }) {
     void table;
     return (props: Omit<CellProps, "children" | "ref">) => {
-      return <TableHead {...props} aria-label="Row selection spacer" />;
+      return <TableHead {...props} aria-label="Row selection" />;
     };
   },
   cell({ row }) {

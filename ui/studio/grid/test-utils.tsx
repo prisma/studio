@@ -60,7 +60,7 @@ export function createReadOnlyColumns(args?: {
     minSize: 35,
     header() {
       return (props: Omit<CellProps, "children" | "ref">) => (
-        <TableHead {...props} aria-label="Row selection spacer" />
+        <TableHead {...props} aria-label="Row selection" />
       );
     },
     cell() {

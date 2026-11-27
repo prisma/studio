@@ -107,3 +107,9 @@ Center-column virtualization is driven by scroll events, not render-time state:
 - Wide-grid pagination interaction max long task < 50ms in benchmark scenario.
 - No regressions in existing grid interaction test suite.
 - No TanStack mutation burst warnings under normal typing/pagination workflows.
+
+## Cell Render Functions (in place)
+
+- Column defs return a fresh render function from `columnDef.cell` / `columnDef.header` on every grid render. `DataGrid` calls it through the stable `GridCellRenderer` wrapper as a plain function, so React updates the returned `Cell` / `TableHead` in place instead of remounting every cell (and its context menu) on each selection or focus change.
+- Consequence: column render functions MUST NOT call hooks. Put hook-using UI in a named component and render that component from the function.
+- Remaining cost: a selection change still re-renders every visible cell. Memoizing rows so only changed rows re-render is the next step.
