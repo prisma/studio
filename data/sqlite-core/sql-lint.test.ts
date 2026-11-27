@@ -68,3 +68,17 @@ describe("sqlite-core/sql-lint", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 });
+
+describe("sqlite-core/sql-lint token ranges", () => {
+  it("marks the missing table as a whole word, not inside a comment or longer name", () => {
+    const sql =
+      "-- orders report\nselect * from orders_archive join orders using (id)";
+    const [diagnostic] = createLintDiagnosticsFromSQLiteError({
+      error: new Error("no such table: orders"),
+      sql,
+    });
+    const from = sql.lastIndexOf("orders");
+
+    expect(diagnostic).toMatchObject({ from, to: from + "orders".length });
+  });
+});

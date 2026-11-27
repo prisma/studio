@@ -6,6 +6,7 @@ import { createPostgresAdapter } from "../postgres-core";
 import { createPostgresSearchPath } from "../postgres-core/search-path";
 import {
   createLintDiagnosticsFromPostgresError,
+  SQL_LINT_EXPLAIN_PREFIX,
   validateSqlForLint,
 } from "../postgres-core/sql-lint";
 import { asQuery, type Query, type QueryResult } from "../query";
@@ -182,7 +183,7 @@ export function createPGLiteExecutor(
 
       for (const statement of validation.statements) {
         const [error] = await executeQuery(
-          asQuery(`EXPLAIN (FORMAT JSON) ${statement.statement}`),
+          asQuery(`${SQL_LINT_EXPLAIN_PREFIX}${statement.statement}`),
           { ...options, schema: details.schema },
         );
 
@@ -198,6 +199,7 @@ export function createPGLiteExecutor(
           ...createLintDiagnosticsFromPostgresError({
             error,
             positionOffset: statement.from,
+            queryPrefixLength: SQL_LINT_EXPLAIN_PREFIX.length,
             sql: statement.statement,
           }),
         );

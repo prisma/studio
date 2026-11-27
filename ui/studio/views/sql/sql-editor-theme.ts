@@ -4,7 +4,8 @@ import { tags } from "@lezer/highlight";
 
 /**
  * SQL editor theme built from Studio tokens, so it follows light and dark mode
- * through CSS variables and only uses prisma.io/brand colours.
+ * through CSS variables. Syntax colours are the prisma.io/brand Prism hues plus
+ * Prisma's classic indigo (see the --code-* tokens in ui/index.css).
  */
 const sqlEditorChrome = EditorView.theme({
   "&": {
@@ -37,7 +38,7 @@ const sqlEditorChrome = EditorView.theme({
   ".cm-gutters": {
     backgroundColor: "var(--background)",
     border: "none",
-    color: "var(--muted-foreground)",
+    color: "var(--code-muted-foreground)",
     paddingLeft: "8px",
   },
   ".cm-lineNumbers .cm-gutterElement": {
@@ -45,7 +46,7 @@ const sqlEditorChrome = EditorView.theme({
     fontSize: "12px",
     minWidth: "24px",
   },
-  ".cm-placeholder": { color: "var(--muted-foreground)" },
+  ".cm-placeholder": { color: "var(--code-muted-foreground)" },
   // Lint markers: a quiet token-coloured dot instead of the stock red disc.
   ".cm-lint-marker": {
     backgroundImage: "none",
@@ -75,38 +76,38 @@ const sqlEditorChrome = EditorView.theme({
   },
 });
 
-// Brand rule keeps text in ink: structure comes from weight and tone, not hue.
+// Syntax colours come from the Prism brand hues (cyan, yellow, red) plus Prisma's
+// classic indigo. Values are per-theme tokens in index.css so both modes stay legible.
 const sqlHighlightStyle = HighlightStyle.define([
   {
     tag: [tags.keyword, tags.operatorKeyword],
-    color: "var(--foreground)",
+    color: "var(--code-keyword)",
     fontWeight: "600",
   },
   {
-    tag: [
-      tags.string,
-      tags.special(tags.string),
-      tags.number,
-      tags.bool,
-      tags.null,
-    ],
-    color: "var(--foreground)",
+    tag: tags.string,
+    color: "var(--code-string)",
+  },
+  {
+    tag: [tags.number, tags.bool, tags.null, tags.special(tags.name)],
+    color: "var(--code-literal)",
   },
   {
     tag: [tags.typeName, tags.standard(tags.name)],
-    color: "var(--muted-foreground)",
+    color: "var(--code-type)",
   },
   {
     tag: [tags.comment, tags.lineComment, tags.blockComment],
-    color: "var(--muted-foreground)",
+    color: "var(--code-muted-foreground)",
     fontStyle: "italic",
   },
   {
     tag: [tags.operator, tags.punctuation, tags.paren, tags.separator],
-    color: "var(--muted-foreground)",
+    color: "var(--code-muted-foreground)",
   },
   {
-    tag: [tags.name, tags.propertyName, tags.special(tags.name)],
+    // Quoted identifiers ("Order") are names, not strings.
+    tag: [tags.name, tags.propertyName, tags.special(tags.string)],
     color: "var(--foreground)",
   },
 ]);

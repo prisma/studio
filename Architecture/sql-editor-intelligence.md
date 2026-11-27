@@ -88,6 +88,9 @@ This architecture governs:
 
 On Postgres errors, diagnostics MUST include mapped position and SQLSTATE when available. Timeout diagnostics (`57014`) MUST be rewritten to a user-facing lint-timeout message.
 For multi-statement SQL text, diagnostics MUST map statement-relative positions back to full-editor offsets.
+Postgres reports positions within the query it received, so lint paths MUST subtract the length of the `EXPLAIN` prefix they add (`queryPrefixLength`) before mapping.
+Leading whitespace and comments are not part of a statement: the statement allowlist check and statement offsets start at the first token, and comment-only segments (such as a note after the last `;`) are not linted.
+Diagnostics with a position MUST span the identifier at that position. Diagnostics inferred from a name in the error message MUST match it as a whole word outside comments and string literals (`findSqlTokenRange`), for all dialects.
 
 ## Capability Fallback Rules
 

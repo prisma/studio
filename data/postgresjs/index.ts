@@ -4,6 +4,7 @@ import { AbortError, type Executor, getAbortResult } from "../executor";
 import { createPostgresSearchPath } from "../postgres-core/search-path";
 import {
   createLintDiagnosticsFromPostgresError,
+  SQL_LINT_EXPLAIN_PREFIX,
   validateSqlForLint,
 } from "../postgres-core/sql-lint";
 import { getCancelQuery, getPIDQuery } from "../postgres-core/utility";
@@ -214,7 +215,7 @@ export function createPostgresJSExecutor(postgresjs: Sql): Executor {
           if (searchPath) {
             await setPostgresSearchPath(tx, searchPath);
           }
-          await tx.unsafe(`EXPLAIN (FORMAT JSON) ${statementSql}`);
+          await tx.unsafe(`${SQL_LINT_EXPLAIN_PREFIX}${statementSql}`);
         });
       };
 
@@ -232,6 +233,7 @@ export function createPostgresJSExecutor(postgresjs: Sql): Executor {
               ...createLintDiagnosticsFromPostgresError({
                 error,
                 positionOffset: statement.from,
+                queryPrefixLength: SQL_LINT_EXPLAIN_PREFIX.length,
                 sql: statement.statement,
               }),
             );
@@ -268,6 +270,7 @@ export function createPostgresJSExecutor(postgresjs: Sql): Executor {
               ...createLintDiagnosticsFromPostgresError({
                 error,
                 positionOffset: statement.from,
+                queryPrefixLength: SQL_LINT_EXPLAIN_PREFIX.length,
                 sql: statement.statement,
               }),
             );

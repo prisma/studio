@@ -112,7 +112,7 @@ describe("postgres-core/sql-lint", () => {
         message: 'relation "missing" does not exist',
         severity: "error",
         source: "postgres",
-        to: 15,
+        to: 21,
       },
     ]);
   });
@@ -138,7 +138,7 @@ describe("postgres-core/sql-lint", () => {
         message: "Lint query timed out. Simplify the statement and try again.",
         severity: "error",
         source: "postgres",
-        to: 1,
+        to: 6,
       },
     ]);
   });
@@ -190,8 +190,86 @@ describe("postgres-core/sql-lint", () => {
         message: 'relation "missing" does not exist',
         severity: "error",
         source: "postgres",
-        to: statementOffset + 15,
+        to: statementOffset + 21,
       },
+    ]);
+  });
+});
+
+describe("postgres-core/sql-lint comments and positions", () => {
+  it("accepts a statement that starts with a line comment and anchors it at the keyword", () => {
+    const sql = "-- recent customers\nselect * from users";
+    const result = validateSqlForLint(sql);
+
+    expect(result).toMatchObject({
+      ok: true,
+      statements: [
+        { from: sql.indexOf("select"), statement: "select * from users" },
+      ],
+    });
+  });
+
+  it("accepts a statement that starts with block comments", () => {
+    const sql = "/* one */ /* two\n */ with x as (select 1) select * from x";
+    const result = validateSqlForLint(sql);
+
+    expect(result).toMatchObject({
+      ok: true,
+      statements: [{ from: sql.indexOf("with") }],
+    });
+  });
+
+  it("ignores comment-only segments such as a trailing comment", () => {
+    const result = validateSqlForLint("select 1;\n-- done");
+
+    expect(result).toMatchObject({
+      ok: true,
+      statements: [{ from: 0, statement: "select 1" }],
+    });
+  });
+
+  it("reports a comment-only document as nothing to lint", () => {
+    expect(validateSqlForLint("-- just a note")).toMatchObject({
+      ok: false,
+      diagnostic: { severity: "info" },
+    });
+  });
+
+  it("removes the EXPLAIN prefix from postgres error positions and spans the identifier", () => {
+    const statement = "select * from missing where id = 1";
+    const prefix = "EXPLAIN (FORMAT JSON) ";
+    // Postgres reports a 1-based position within the query it received.
+    const position = String(prefix.length + statement.indexOf("missing") + 1);
+    const error = Object.assign(
+      new Error('relation "missing" does not exist'),
+      { code: "42P01", position, severity: "ERROR" },
+    );
+
+    expect(
+      createLintDiagnosticsFromPostgresError({
+        error,
+        positionOffset: 10,
+        queryPrefixLength: prefix.length,
+        sql: statement,
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        from: 10 + statement.indexOf("missing"),
+        to: 10 + statement.indexOf("missing") + "missing".length,
+      }),
+    ]);
+  });
+
+  it("matches inferred identifiers as whole words, outside comments", () => {
+    const sql =
+      "-- uses the orders table\nselect * from orders_archive, orders";
+    const error = new Error('relation "orders" does not exist');
+
+    expect(createLintDiagnosticsFromPostgresError({ error, sql })).toEqual([
+      expect.objectContaining({
+        from: sql.lastIndexOf("orders"),
+        to: sql.lastIndexOf("orders") + "orders".length,
+      }),
     ]);
   });
 });

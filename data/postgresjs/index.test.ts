@@ -299,6 +299,48 @@ describe("postgresjs executor", () => {
     ]);
   });
 
+  it("maps postgres positions from the EXPLAIN query back to the editor SQL", async () => {
+    const sql = "-- recent orders\nselect * from orders o where o.paid = true";
+    const statement = sql.slice(sql.indexOf("select"));
+    const txUnsafe = vi.fn((query: string) => {
+      if (query.startsWith("EXPLAIN")) {
+        const error = new Error('relation "orders" does not exist') as Error & {
+          code?: string;
+          position?: string;
+        };
+        error.code = "42P01";
+        // Postgres counts the position within the EXPLAIN query it received.
+        error.position = String(query.indexOf("orders") + 1);
+        return Promise.reject(error);
+      }
+
+      return Promise.resolve([]);
+    });
+    const { postgresjs } = createPostgresJsMock({
+      beginImpl: async (callback) => {
+        await callback({ unsafe: txUnsafe });
+      },
+    });
+    const executor = createPostgresJSExecutor(postgresjs);
+
+    if (!executor.lintSql) {
+      throw new Error("Expected postgresjs executor to expose lintSql");
+    }
+
+    const [error, result] = await executor.lintSql({ sql });
+    const relationFrom = sql.indexOf("orders", sql.indexOf("from"));
+
+    expect(error).toBeNull();
+    expect(txUnsafe).toHaveBeenCalledWith(`EXPLAIN (FORMAT JSON) ${statement}`);
+    expect(result?.diagnostics).toEqual([
+      expect.objectContaining({
+        code: "42P01",
+        from: relationFrom,
+        to: relationFrom + "orders".length,
+      }),
+    ]);
+  });
+
   it("lints multiple statements and maps error offsets to full SQL", async () => {
     const txUnsafe = vi.fn((sql: string) => {
       if (sql.includes("all_data_typesfail")) {
