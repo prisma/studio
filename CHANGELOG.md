@@ -1,5 +1,16 @@
 # @prisma/studio-core
 
+## 0.36.0
+
+### Minor Changes
+
+- d2e66d4: The Migrations view, its navigation item and `readRecordedSchema` now read Prisma's tables from the `_prisma` schema, the name Prisma ORM 8.0 gives them, and fall back to `prisma_contract` for databases last changed by an ORM 8 release candidate. When both schemas hold a ledger, Studio reads `_prisma`. `@prisma/studio-core/data/migrations` no longer exports the `LEDGER_QUERY`, `LEDGER_QUERY_WITHOUT_CONTRACT` and `LEDGER_PROBE_QUERY` constants; they had the old schema name built in and have no replacement in the public API.
+
+### Patch Changes
+
+- 7bf796f: Make the SQL editor easier to read: syntax highlighting now uses Prisma brand colours (cyan keywords, yellow strings, red literals, indigo types) and secondary text such as punctuation, comments and line numbers has stronger contrast in both light and dark mode.
+- 7bf796f: Fix SQL editor lint markers: a statement that starts with a comment is no longer flagged as unsupported, Postgres errors now underline the right token instead of a spot 22 characters to the right, and missing names are matched as whole words outside comments and strings.
+
 ## 0.35.2
 
 ### Patch Changes
