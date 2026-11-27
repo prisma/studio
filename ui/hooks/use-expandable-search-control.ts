@@ -308,6 +308,7 @@ export function useExpandableSearchControl(
         commitImmediately: true,
         selectAll: false,
       }),
+    appliedSearchTerm: searchTerm,
     closeRowSearch: closeSearch,
     isRowSearchOpen: isSearchOpen,
     isSearchInputInvalid: !searchValidation.isValid,

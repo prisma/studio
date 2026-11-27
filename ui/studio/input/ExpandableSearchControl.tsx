@@ -26,6 +26,7 @@ interface ExpandableSearchControlProps {
   placeholder?: string;
   rowSearch: {
     acceptSearchSuggestion: (value: string) => void;
+    appliedSearchTerm: string;
     closeRowSearch: () => void;
     isRowSearchOpen: boolean;
     isSearchInputInvalid: boolean;
@@ -57,6 +58,7 @@ export function ExpandableSearchControl(props: ExpandableSearchControlProps) {
   } = props;
   const {
     acceptSearchSuggestion,
+    appliedSearchTerm,
     closeRowSearch,
     isRowSearchOpen,
     isSearchInputInvalid,
@@ -114,8 +116,23 @@ export function ExpandableSearchControl(props: ExpandableSearchControlProps) {
       return;
     }
 
-    closeRowSearch();
-  }, [closeRowSearch, disabled]);
+    if (appliedSearchTerm.length === 0) {
+      closeRowSearch();
+      return;
+    }
+
+    // Clearing or replacing the applied term would swap the grid to a
+    // different rows collection while staged edits still belong to the
+    // searched rows, so keep it and drop any draft that is still debouncing.
+    rowSearchInputRef.current?.blur();
+    setSearchInput(appliedSearchTerm);
+  }, [
+    appliedSearchTerm,
+    closeRowSearch,
+    disabled,
+    rowSearchInputRef,
+    setSearchInput,
+  ]);
 
   useEffect(() => {
     setHighlightedSuggestionId((currentId) => {

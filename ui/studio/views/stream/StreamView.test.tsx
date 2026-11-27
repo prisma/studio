@@ -946,6 +946,7 @@ describe("StreamView", () => {
     useStreamEventSearchMock.mockImplementation(
       (args: { searchTerm?: string | null }) => ({
         acceptSearchSuggestion: vi.fn(),
+        appliedSearchTerm: args.searchTerm ?? "",
         closeRowSearch: vi.fn(),
         isRowSearchOpen: true,
         isSearchInputInvalid: false,
