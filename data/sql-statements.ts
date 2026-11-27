@@ -231,7 +231,11 @@ function getDistanceToSegment(
   return 0;
 }
 
-function readDollarQuoteDelimiter(sql: string, start: number): string | null {
+/** Returns the `$$` or `$tag$` delimiter that opens at `start`, if any. */
+export function readDollarQuoteDelimiter(
+  sql: string,
+  start: number,
+): string | null {
   if (sql[start] !== "$") {
     return null;
   }

@@ -272,4 +272,28 @@ describe("postgres-core/sql-lint comments and positions", () => {
       }),
     ]);
   });
+
+  it("does not treat comment markers inside a quoted identifier as a comment", () => {
+    const sql = 'select 1 as "a--b" from missing';
+    const error = new Error('relation "missing" does not exist');
+
+    expect(createLintDiagnosticsFromPostgresError({ error, sql })).toEqual([
+      expect.objectContaining({
+        from: sql.indexOf("missing"),
+        to: sql.indexOf("missing") + "missing".length,
+      }),
+    ]);
+  });
+
+  it("does not treat comment markers inside a dollar-quoted string as a comment", () => {
+    const sql = "select $tag$-- note$tag$, $$/* x$$ from missing";
+    const error = new Error('relation "missing" does not exist');
+
+    expect(createLintDiagnosticsFromPostgresError({ error, sql })).toEqual([
+      expect.objectContaining({
+        from: sql.indexOf("missing"),
+        to: sql.indexOf("missing") + "missing".length,
+      }),
+    ]);
+  });
 });

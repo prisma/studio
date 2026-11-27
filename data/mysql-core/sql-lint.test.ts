@@ -84,4 +84,43 @@ describe("mysql-core/sql-lint token ranges", () => {
 
     expect(diagnostic).toMatchObject({ from, to: from + "orders".length });
   });
+
+  it("reads backslash-escaped quotes as part of the string", () => {
+    const sql = "SELECT 'it\\'s' FROM missing_table";
+    const [diagnostic] = createLintDiagnosticsFromMySQLError({
+      error: new Error("Table 'studio.missing_table' doesn't exist"),
+      sql,
+    });
+    const from = sql.indexOf("missing_table");
+
+    expect(diagnostic).toMatchObject({
+      from,
+      to: from + "missing_table".length,
+    });
+  });
+
+  it("marks the table name when its qualifier is quoted", () => {
+    const sql = "select * from `studio`.orders";
+    const [diagnostic] = createLintDiagnosticsFromMySQLError({
+      error: new Error("Table 'studio.orders' doesn't exist"),
+      sql,
+    });
+    const from = sql.lastIndexOf("orders");
+
+    expect(diagnostic).toMatchObject({ from, to: from + "orders".length });
+  });
+
+  it("does not treat comment markers inside a backtick identifier as a comment", () => {
+    const sql = "select 1 as `a--b` from missing_table";
+    const [diagnostic] = createLintDiagnosticsFromMySQLError({
+      error: new Error("Table 'studio.missing_table' doesn't exist"),
+      sql,
+    });
+    const from = sql.indexOf("missing_table");
+
+    expect(diagnostic).toMatchObject({
+      from,
+      to: from + "missing_table".length,
+    });
+  });
 });

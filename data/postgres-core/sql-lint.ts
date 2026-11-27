@@ -1,5 +1,8 @@
 import type { AdapterSqlLintDiagnostic } from "../adapter";
-import { splitTopLevelSqlStatements } from "../sql-statements";
+import {
+  readDollarQuoteDelimiter,
+  splitTopLevelSqlStatements,
+} from "../sql-statements";
 
 const BYTES_PER_KILOBYTE = 1024;
 
@@ -245,47 +248,102 @@ function skipBlockComment(sql: string, start: number): number {
   return sql.length;
 }
 
+/** SQL dialect rules that change how literals and quoting are read. */
+export type SqlTokenDialect = "mysql" | "postgres" | "sqlite";
+
+export interface SqlTokenSearchOptions {
+  /** Defaults to "postgres". */
+  dialect?: SqlTokenDialect;
+  /**
+   * Also match `token` right after a `.`, as the last part of a qualified
+   * name whose qualifier is quoted, such as `"main".orders`.
+   */
+  qualified?: boolean;
+}
+
 /**
- * Replaces comments and string literals with spaces, keeping offsets intact,
- * so identifier lookups only match real SQL tokens.
+ * Returns the index just after the quoted run that opens at `start` with
+ * `quote`. A doubled quote is an escaped quote; with `backslashEscapes`, a
+ * backslash escapes the next character (MySQL strings).
  */
-function maskCommentsAndStrings(sql: string): string {
+function skipQuoted(
+  sql: string,
+  start: number,
+  quote: string,
+  backslashEscapes: boolean,
+): number {
+  let index = start + 1;
+
+  while (index < sql.length) {
+    const char = sql[index];
+
+    if (backslashEscapes && char === "\\") {
+      index += 2;
+      continue;
+    }
+
+    if (char === quote) {
+      if (sql[index + 1] === quote) {
+        index += 2;
+        continue;
+      }
+
+      return index + 1;
+    }
+
+    index += 1;
+  }
+
+  return sql.length;
+}
+
+/**
+ * Replaces comments, string literals and (Postgres) dollar-quoted strings with
+ * spaces, keeping offsets intact, so identifier lookups only match real SQL
+ * tokens. Quoted identifiers are skipped but left visible, so comment markers
+ * inside them are not read as comments and the names stay matchable.
+ */
+function maskCommentsAndStrings(sql: string, dialect: SqlTokenDialect): string {
+  const backslashEscapes = dialect === "mysql";
   let masked = "";
   let index = 0;
 
   while (index < sql.length) {
+    const char = sql[index]!;
     let end = index;
+    let mask = true;
 
     if (sql.startsWith("--", index)) {
       const lineEnd = sql.indexOf("\n", index);
       end = lineEnd < 0 ? sql.length : lineEnd;
     } else if (sql.startsWith("/*", index)) {
       end = skipBlockComment(sql, index);
-    } else if (sql[index] === "'") {
-      end = index + 1;
+    } else if (char === "'") {
+      end = skipQuoted(sql, index, "'", backslashEscapes);
+    } else if (char === '"' || char === "`") {
+      end = skipQuoted(sql, index, char, backslashEscapes && char === '"');
+      mask = false;
+    } else if (
+      char === "$" &&
+      dialect === "postgres" &&
+      !/[A-Za-z0-9_$]/.test(sql[index - 1] ?? "")
+    ) {
+      const delimiter = readDollarQuoteDelimiter(sql, index);
 
-      while (end < sql.length) {
-        if (sql[end] === "'" && sql[end + 1] === "'") {
-          end += 2;
-          continue;
-        }
-
-        if (sql[end] === "'") {
-          end += 1;
-          break;
-        }
-
-        end += 1;
+      if (delimiter) {
+        const close = sql.indexOf(delimiter, index + delimiter.length);
+        end = close < 0 ? sql.length : close + delimiter.length;
       }
     }
 
     if (end > index) {
-      masked += sql.slice(index, end).replace(/[^\n]/g, " ");
+      const run = sql.slice(index, end);
+      masked += mask ? run.replace(/[^\n]/g, " ") : run;
       index = end;
       continue;
     }
 
-    masked += sql[index];
+    masked += char;
     index += 1;
   }
 
@@ -300,6 +358,7 @@ function maskCommentsAndStrings(sql: string): string {
 export function findSqlTokenRange(
   sql: string,
   token: string,
+  options: SqlTokenSearchOptions = {},
 ): { from: number; to: number } | null {
   if (token.length === 0) {
     return null;
@@ -309,10 +368,13 @@ export function findSqlTokenRange(
     /[.*+?^${}()|[\]\\]/g,
     (char) => `\\${char}`,
   );
-  const before = /^[A-Za-z0-9_$]/.test(token) ? "(?<![A-Za-z0-9_$.])" : "";
+  const wordBoundary = options.qualified
+    ? "(?<![A-Za-z0-9_$])"
+    : "(?<![A-Za-z0-9_$.])";
+  const before = /^[A-Za-z0-9_$]/.test(token) ? wordBoundary : "";
   const after = /[A-Za-z0-9_$]$/.test(token) ? "(?![A-Za-z0-9_$])" : "";
   const match = new RegExp(`${before}${escapedToken}${after}`, "i").exec(
-    maskCommentsAndStrings(sql),
+    maskCommentsAndStrings(sql, options.dialect ?? "postgres"),
   );
 
   if (!match) {
