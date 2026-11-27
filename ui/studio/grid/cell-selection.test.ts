@@ -51,6 +51,31 @@ describe("cell-selection", () => {
     expect(text).toBe("1\tAda\n2\tLin");
   });
 
+  it("copies bytes columns as full, untruncated hex", () => {
+    const bytea = { datatype: { isArray: false, name: "bytea" } };
+    const jsonb = { datatype: { isArray: false, name: "jsonb" } };
+    const lookalike = { type: "Buffer", data: [72, 105] };
+    const text = buildClipboardText({
+      range: { rowStart: 0, rowEnd: 0, columnStart: 0, columnEnd: 2 },
+      rows: [
+        {
+          id: 1,
+          payload: {
+            type: "Buffer",
+            data: Array.from({ length: 100 }, () => 0xab),
+          },
+          settings: lookalike,
+        },
+      ],
+      columnIds: ["id", "payload", "settings"],
+      columns: { payload: bytea, settings: jsonb },
+    });
+
+    expect(text).toBe(
+      `1\t\\x${"ab".repeat(100)}\t${JSON.stringify(lookalike)}`,
+    );
+  });
+
   it("parses clipboard matrix", () => {
     expect(parseClipboardMatrix("a\tb\n1\t2\n")).toEqual([
       ["a", "b"],

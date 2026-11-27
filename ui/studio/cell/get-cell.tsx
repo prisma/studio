@@ -9,6 +9,7 @@ import {
   DEFAULT_NUMERIC,
   getDate0,
 } from "../../../data/defaults";
+import { BYTES_DISPLAY_LIMIT, formatBytesAsHex } from "../../lib/format-bytes";
 import { DefaultValueCell } from "./DefaultValueCell";
 import { HighlightSearchMatch } from "./highlight-search-match";
 import { StringCell } from "./StringCell";
@@ -74,6 +75,15 @@ export function getCell(props: GetCellProps) {
 
   if (value === null) {
     return <NullCell />;
+  }
+
+  // Binary values arrive as Buffer JSON; show them as hex like psql does.
+  const bytesHex = formatBytesAsHex(value, datatype, {
+    maxBytes: BYTES_DISPLAY_LIMIT,
+  });
+
+  if (bytesHex != null) {
+    return <HighlightSearchMatch searchTerm={searchTerm} text={bytesHex} />;
   }
 
   if (isArray && value === DEFAULT_JSON) {

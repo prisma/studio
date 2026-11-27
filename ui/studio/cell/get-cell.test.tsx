@@ -11,14 +11,16 @@ import { getCell } from "./get-cell";
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
 function createColumn(args: {
+  affinity?: string;
   group: Column["datatype"]["group"];
   isArray?: boolean;
   typeName: string;
 }): Column {
-  const { group, isArray = false, typeName } = args;
+  const { affinity, group, isArray = false, typeName } = args;
 
   return {
     datatype: {
+      affinity,
       group,
       isArray,
       isNative: true,
@@ -78,5 +80,74 @@ describe("getCell", () => {
       root.unmount();
     });
     container.remove();
+  });
+
+  describe("bytes columns", () => {
+    function renderText(value: unknown, column: Column): string {
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      act(() => {
+        root.render(<>{getCell({ cell: createCell(value), column })}</>);
+      });
+
+      const text = container.textContent ?? "";
+
+      act(() => {
+        root.unmount();
+      });
+      container.remove();
+
+      return text;
+    }
+
+    const hello = [72, 101, 108, 108, 111];
+    const bufferJson = { type: "Buffer", data: hello };
+
+    it.each([
+      ["Postgres bytea", createColumn({ group: "string", typeName: "bytea" })],
+      ["MySQL blob", createColumn({ group: "string", typeName: "blob" })],
+      [
+        "MySQL varbinary",
+        createColumn({ group: "string", typeName: "varbinary" }),
+      ],
+    ])("renders %s as hex", (_label, column) => {
+      expect(renderText(bufferJson, column)).toBe("\\x48656c6c6f");
+      expect(renderText({ type: "Buffer", data: [] }, column)).toBe("\\x");
+      expect(renderText(null, column)).toBe("NULL");
+    });
+
+    it("renders a SQLite BLOB as hex", () => {
+      const column = createColumn({
+        affinity: "BLOB",
+        group: "raw",
+        typeName: "BLOB",
+      });
+
+      expect(renderText(Uint8Array.from(hello), column)).toBe("\\x48656c6c6f");
+      expect(
+        renderText(JSON.parse(JSON.stringify(Uint8Array.from(hello))), column),
+      ).toBe("\\x48656c6c6f");
+    });
+
+    it("cuts long values short and says how many bytes there are", () => {
+      const column = createColumn({ group: "string", typeName: "bytea" });
+      const data = Array.from({ length: 100 }, () => 0xab);
+
+      expect(renderText({ type: "Buffer", data }, column)).toBe(
+        `\\x${"ab".repeat(64)}… (100 bytes)`,
+      );
+    });
+
+    it("leaves JSON and text columns as they were", () => {
+      const jsonb = createColumn({ group: "json", typeName: "jsonb" });
+      const text = createColumn({ group: "string", typeName: "text" });
+
+      expect(renderText(bufferJson, jsonb)).toBe(
+        JSON.stringify(bufferJson, null, 2),
+      );
+      expect(renderText("hello", text)).toBe("hello");
+    });
   });
 });

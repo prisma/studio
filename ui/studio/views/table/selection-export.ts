@@ -1,5 +1,9 @@
 import type { RowSelectionState } from "@tanstack/react-table";
 
+import {
+  type ColumnDatatypesById,
+  formatBytesAsHex,
+} from "../../../lib/format-bytes";
 import type { GridSelectionRange } from "../../grid/cell-selection";
 
 export type SelectionExportFormat = "csv" | "markdown";
@@ -13,8 +17,9 @@ export function buildCellSelectionExportTable(args: {
   range: GridSelectionRange;
   rows: Record<string, unknown>[];
   columnIds: string[];
+  columns?: ColumnDatatypesById;
 }): SelectionExportTable {
-  const { columnIds, range, rows } = args;
+  const { columnIds, columns, range, rows } = args;
   const selectedColumnIds: string[] = [];
   const selectedRows: string[][] = [];
 
@@ -48,7 +53,7 @@ export function buildCellSelectionExportTable(args: {
 
     selectedRows.push(
       selectedColumnIds.map((columnId) =>
-        stringifySelectionExportValue(row[columnId]),
+        stringifySelectionExportValue(row[columnId], columns?.[columnId]),
       ),
     );
   }
@@ -63,8 +68,9 @@ export function buildRowSelectionExportTable(args: {
   rows: Record<string, unknown>[];
   rowSelectionState: RowSelectionState;
   columnIds: string[];
+  columns?: ColumnDatatypesById;
 }): SelectionExportTable {
-  const { columnIds, rowSelectionState, rows } = args;
+  const { columnIds, columns, rowSelectionState, rows } = args;
 
   if (columnIds.length === 0) {
     return {
@@ -80,7 +86,9 @@ export function buildRowSelectionExportTable(args: {
       return typeof rowId === "string" && rowSelectionState[rowId] === true;
     })
     .map((row) =>
-      columnIds.map((columnId) => stringifySelectionExportValue(row[columnId])),
+      columnIds.map((columnId) =>
+        stringifySelectionExportValue(row[columnId], columns?.[columnId]),
+      ),
     );
 
   return {
@@ -205,9 +213,18 @@ function escapeMarkdownValue(value: string): string {
     .replaceAll("\r", "<br />");
 }
 
-function stringifySelectionExportValue(value: unknown): string {
+function stringifySelectionExportValue(
+  value: unknown,
+  column?: ColumnDatatypesById[string],
+): string {
   if (value == null) {
     return "";
+  }
+
+  const bytesHex = column ? formatBytesAsHex(value, column.datatype) : null;
+
+  if (bytesHex != null) {
+    return bytesHex;
   }
 
   if (typeof value === "object") {

@@ -669,6 +669,7 @@ export function ActiveTableView(_props: ViewProps) {
     if (cellSelectionRange) {
       return buildCellSelectionExportTable({
         columnIds: selectionExportColumnIds,
+        columns: activeTable?.columns,
         range: cellSelectionRange,
         rows: exportRows,
       });
@@ -677,6 +678,7 @@ export function ActiveTableView(_props: ViewProps) {
     if (selectedRowCount > 0) {
       return buildRowSelectionExportTable({
         columnIds: selectionExportColumnIds,
+        columns: activeTable?.columns,
         rowSelectionState,
         rows: exportRows,
       });
@@ -684,6 +686,7 @@ export function ActiveTableView(_props: ViewProps) {
 
     return null;
   }, [
+    activeTable?.columns,
     cellSelectionRange,
     displayRows,
     rowSelectionState,

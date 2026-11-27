@@ -217,6 +217,11 @@ The label uses the same filtered count that drives pagination, so it reflects ac
 When Studio reads PostgreSQL data through the `postgres.js` executor, `date` and `timestamp without time zone` values are normalized back to their stored wall-clock values before they reach the grid.
 This keeps table cells, copies, and other row-backed UI surfaces from drifting with the host machine timezone, so a stored PostgreSQL timestamp is shown as the value that was actually written.
 
+## Binary Values Shown as Hex
+
+Binary columns (PostgreSQL `bytea`, the MySQL/MariaDB `blob` and `binary` family, and SQLite `BLOB`) show their bytes as `\x`-prefixed hex, like `\x48656c6c6f`. That is the same form psql and pgAdmin use, so values can be compared directly, and it is lossless.
+Long values are cut short in the cell with the total byte count, while cell, range, row and export copies carry the full hex. Studio decides by the column type, so a JSON column that merely contains a Buffer-shaped object is shown as JSON. Binary values are read-only display: editing other columns of the row leaves the bytes untouched.
+
 ## Command Palette
 
 `Cmd/Ctrl+K` opens a compact Studio command palette that immediately focuses search and filters available actions as you type.

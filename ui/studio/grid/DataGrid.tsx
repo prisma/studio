@@ -64,6 +64,10 @@ import {
   TableRow,
 } from "../../components/ui/table";
 import { useUiState } from "../../hooks/use-ui-state";
+import {
+  type BytesDataTypeLike,
+  hasColumnDatatype,
+} from "../../lib/format-bytes";
 import { isGridInteractionSuppressionActive } from "../../lib/grid-interaction-suppression";
 import { setGridInteractionSuppressionWindow } from "../../lib/grid-interaction-suppression";
 import { cn } from "../../lib/utils";
@@ -1335,6 +1339,20 @@ export function DataGrid(props: DataGridProps) {
       .map((column) => column.id)
       .filter((columnId) => columnId !== ROW_SELECTOR_COLUMN_ID);
   }, [visibleLeafColumns]);
+  // Column datatypes from `meta`, so copy can format values (e.g. bytes as hex) like the cells do.
+  const columnDatatypesById = useMemo(() => {
+    const datatypes: Record<string, { datatype: BytesDataTypeLike }> = {};
+
+    for (const column of visibleLeafColumns) {
+      const { meta } = column.columnDef;
+
+      if (hasColumnDatatype(meta)) {
+        datatypes[column.id] = meta;
+      }
+    }
+
+    return datatypes;
+  }, [visibleLeafColumns]);
 
   const columnIndexById = useMemo(
     () =>
@@ -1366,6 +1384,7 @@ export function DataGrid(props: DataGridProps) {
     (rowIndex: number, columnIndex: number): string => {
       return buildClipboardText({
         columnIds: selectableColumnIds,
+        columns: columnDatatypesById,
         range: {
           rowStart: rowIndex,
           rowEnd: rowIndex,
@@ -1375,7 +1394,7 @@ export function DataGrid(props: DataGridProps) {
         rows,
       });
     },
-    [rows, selectableColumnIds],
+    [columnDatatypesById, rows, selectableColumnIds],
   );
 
   const getSelectedClipboardText = useCallback(() => {
@@ -1385,10 +1404,11 @@ export function DataGrid(props: DataGridProps) {
 
     return buildClipboardText({
       columnIds: selectableColumnIds,
+      columns: columnDatatypesById,
       range: selectionRange,
       rows,
     });
-  }, [rows, selectableColumnIds, selectionRange]);
+  }, [columnDatatypesById, rows, selectableColumnIds, selectionRange]);
 
   const getRowClipboardText = useCallback(
     (rowIndex: number): string => {
@@ -1402,6 +1422,7 @@ export function DataGrid(props: DataGridProps) {
 
       return buildClipboardText({
         columnIds: selectableColumnIds,
+        columns: columnDatatypesById,
         range: {
           rowStart: rowIndex,
           rowEnd: rowIndex,
@@ -1411,7 +1432,7 @@ export function DataGrid(props: DataGridProps) {
         rows,
       });
     },
-    [lastSelectableColumnIndex, rows, selectableColumnIds],
+    [columnDatatypesById, lastSelectableColumnIndex, rows, selectableColumnIds],
   );
 
   const getSelectedRowClipboardText = useCallback(() => {

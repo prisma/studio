@@ -66,6 +66,40 @@ describe("selection-export", () => {
     });
   });
 
+  it("exports bytes columns as hex", () => {
+    const columns = {
+      payload: { datatype: { isArray: false, name: "bytea" } },
+    };
+    const rows = [
+      {
+        __ps_rowid: "row-1",
+        id: 1,
+        payload: { type: "Buffer", data: [72, 105] },
+      },
+      { __ps_rowid: "row-2", id: 2, payload: { type: "Buffer", data: [] } },
+    ];
+
+    expect(
+      buildCellSelectionExportTable({
+        columnIds: ["id", "payload"],
+        columns,
+        range: { rowStart: 0, rowEnd: 1, columnStart: 0, columnEnd: 1 },
+        rows,
+      }).rows,
+    ).toEqual([
+      ["1", "\\x4869"],
+      ["2", "\\x"],
+    ]);
+    expect(
+      buildRowSelectionExportTable({
+        columnIds: ["id", "payload"],
+        columns,
+        rowSelectionState: { "row-1": true },
+        rows,
+      }).rows,
+    ).toEqual([["1", "\\x4869"]]);
+  });
+
   it("serializes csv exports with optional headers and escaping", () => {
     const table = {
       columnIds: ["id", "notes"],
