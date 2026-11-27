@@ -1,40 +1,11 @@
 import type { ExecuteOptions, Executor } from "./executor";
+import {
+  choosePrismaTablesSchema,
+  LEGACY_PRISMA_TABLES_SCHEMA,
+  PRISMA_TABLES_SCHEMA,
+  type PrismaTablesSchema,
+} from "./prisma-tables-schema";
 import type { Either } from "./type-utils";
-
-export const LEDGER_QUERY = `
-  select
-    l."id", l."space", l."migration_name", l."migration_hash",
-    l."origin_core_hash", l."destination_core_hash",
-    l."operations", l."created_at",
-    cb."contract_json" as "contract_json_before",
-    ca."contract_json" as "contract_json_after"
-  from "prisma_contract"."ledger" l
-  left join "prisma_contract"."contract" cb on cb."core_hash" = l."origin_core_hash"
-  left join "prisma_contract"."contract" ca on ca."core_hash" = l."destination_core_hash"
-  order by l."id" asc
-`;
-
-/**
- * Fallback for databases bootstrapped before the content-addressed
- * `prisma_contract.contract` store existed — the ledger alone still
- * renders the list; diffs are empty without snapshots.
- */
-export const LEDGER_QUERY_WITHOUT_CONTRACT = `
-  select
-    "id", "space", "migration_name", "migration_hash",
-    "origin_core_hash", "destination_core_hash",
-    "operations", "created_at"
-  from "prisma_contract"."ledger"
-  order by "id" asc
-`;
-
-/**
- * Cheap navigation-visibility probe: one EXISTS instead of fetching the
- * full ledger (whose contract snapshots can be megabytes of jsonb).
- */
-export const LEDGER_PROBE_QUERY = `
-  select exists (select 1 from "prisma_contract"."ledger") as "has_rows"
-`;
 
 export interface StudioMigrationOperationStep {
   sql: string;
@@ -206,15 +177,33 @@ export interface RecordedSchema {
 }
 
 const CONTRACT_TABLES_QUERY = `select
-  to_regclass('prisma_contract.ledger') is not null as has_ledger,
-  to_regclass('prisma_contract.contract') is not null as has_contract`;
+  to_regclass('${PRISMA_TABLES_SCHEMA}.ledger') is not null as current_schema_has_ledger,
+  to_regclass('${PRISMA_TABLES_SCHEMA}.contract') is not null as current_schema_has_contract,
+  to_regclass('${LEGACY_PRISMA_TABLES_SCHEMA}.ledger') is not null as legacy_schema_has_ledger,
+  to_regclass('${LEGACY_PRISMA_TABLES_SCHEMA}.contract') is not null as legacy_schema_has_contract`;
 
-const CURRENT_APP_CONTRACT_QUERY = `select l."id", l."space", l."destination_core_hash",
+const PROBED_TABLE_COLUMNS: Record<
+  PrismaTablesSchema,
+  { ledger: string; contract: string }
+> = {
+  [PRISMA_TABLES_SCHEMA]: {
+    ledger: "current_schema_has_ledger",
+    contract: "current_schema_has_contract",
+  },
+  [LEGACY_PRISMA_TABLES_SCHEMA]: {
+    ledger: "legacy_schema_has_ledger",
+    contract: "legacy_schema_has_contract",
+  },
+};
+
+function currentAppContractQuery(schema: PrismaTablesSchema): string {
+  return `select l."id", l."space", l."destination_core_hash",
   l."created_at", c."contract_json" as "contract_json_after"
-  from "prisma_contract"."ledger" l
-  left join "prisma_contract"."contract" c on c."core_hash" = l."destination_core_hash"
+  from "${schema}"."ledger" l
+  left join "${schema}"."contract" c on c."core_hash" = l."destination_core_hash"
   where l."space" = 'app'
   order by l."id" desc limit 1`;
+}
 
 /** Reads the latest applied PostgreSQL app snapshot; never uses an older contract. */
 export async function readRecordedSchema(
@@ -232,11 +221,15 @@ export async function readRecordedSchema(
     coreHash: null,
     appliedAt: null,
   };
-  if (tables[0]?.has_ledger !== true) return [null, empty];
-  if (tables[0]?.has_contract !== true)
+  const probed = tables[0] ?? {};
+  const schema = choosePrismaTablesSchema(
+    (candidate) => probed[PROBED_TABLE_COLUMNS[candidate].ledger] === true,
+  );
+  if (schema === null) return [null, empty];
+  if (probed[PROBED_TABLE_COLUMNS[schema].contract] !== true)
     return [null, { ...empty, status: "no-contract-store" }];
   const [ledgerError, rows] = await executor.execute<Record<string, unknown>>(
-    { sql: CURRENT_APP_CONTRACT_QUERY, parameters: [] },
+    { sql: currentAppContractQuery(schema), parameters: [] },
     options,
   );
   if (ledgerError) return [ledgerError];

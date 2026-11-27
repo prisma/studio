@@ -1,7 +1,25 @@
 import { describe, expect, it } from "vitest";
 
+import type { Schema } from "../../data/adapter";
 import { parseLedgerRows } from "../../data/migrations";
-import { parseLedgerProbeRows } from "./use-migrations";
+import {
+  LEGACY_PRISMA_TABLES_SCHEMA,
+  PRISMA_TABLES_SCHEMA,
+  PRISMA_TABLES_SCHEMAS,
+} from "../../data/prisma-tables-schema";
+import { detectMigrationTables, parseLedgerProbeRows } from "./use-migrations";
+
+function introspectedSchema(name: string, tableNames: string[]): Schema {
+  return {
+    name,
+    tables: Object.fromEntries(
+      tableNames.map((table) => [
+        table,
+        { columns: {}, name: table, schema: name },
+      ]),
+    ),
+  };
+}
 
 function ledgerRow(
   overrides: Record<string, unknown>,
@@ -141,5 +159,54 @@ describe("parseLedgerProbeRows", () => {
     expect(parseLedgerProbeRows([{ has_rows: "f" }])).toBe(false);
     expect(parseLedgerProbeRows([{}])).toBe(false);
     expect(parseLedgerProbeRows([])).toBe(false);
+  });
+});
+
+describe.each(PRISMA_TABLES_SCHEMAS)(
+  "detectMigrationTables with Prisma's tables in the %s schema",
+  (schema) => {
+    it("finds the ledger and the contract store", () => {
+      expect(
+        detectMigrationTables({
+          public: introspectedSchema("public", ["User"]),
+          [schema]: introspectedSchema(schema, ["ledger", "contract"]),
+        }),
+      ).toEqual({ schema, hasContractTable: true });
+    });
+
+    it("finds a ledger without a contract store", () => {
+      expect(
+        detectMigrationTables({
+          [schema]: introspectedSchema(schema, ["ledger"]),
+        }),
+      ).toEqual({ schema, hasContractTable: false });
+    });
+  },
+);
+
+describe("detectMigrationTables", () => {
+  it("prefers _prisma when both _prisma and prisma_contract hold a ledger", () => {
+    expect(
+      detectMigrationTables({
+        [LEGACY_PRISMA_TABLES_SCHEMA]: introspectedSchema(
+          LEGACY_PRISMA_TABLES_SCHEMA,
+          ["ledger", "contract"],
+        ),
+        [PRISMA_TABLES_SCHEMA]: introspectedSchema(PRISMA_TABLES_SCHEMA, [
+          "ledger",
+        ]),
+      }),
+    ).toEqual({ schema: PRISMA_TABLES_SCHEMA, hasContractTable: false });
+  });
+
+  it("finds nothing without a ledger in either schema", () => {
+    expect(
+      detectMigrationTables({
+        public: introspectedSchema("public", ["ledger"]),
+        [PRISMA_TABLES_SCHEMA]: introspectedSchema(PRISMA_TABLES_SCHEMA, [
+          "marker",
+        ]),
+      }),
+    ).toEqual({ schema: null, hasContractTable: false });
   });
 });
