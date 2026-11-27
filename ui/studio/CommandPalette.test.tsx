@@ -20,6 +20,7 @@ interface NavigationMockValue {
   schemaParam: string;
   setSchemaParam: () => Promise<URLSearchParams>;
   setTableParam: () => Promise<URLSearchParams>;
+  temporalFollowParam?: string;
   viewParam: "table" | "schema" | "console" | "sql";
 }
 
@@ -34,9 +35,18 @@ const useNavigationMock = vi.fn<() => NavigationMockValue>();
 const useIntrospectionMock = vi.fn<() => IntrospectionMockValue>();
 const toggleNavigationMock = vi.fn();
 const setThemeModeMock = vi.fn();
+let hasDatabase = true;
 let isNavigationOpen = true;
 let isDarkMode = false;
 let themeMode: "dark" | "light" | "system" = "system";
+let temporalUrl: string | undefined;
+const temporalMocks = {
+  capabilities: vi.fn<() => { data?: Record<string, unknown> }>(() => ({})),
+  schedules: vi.fn<(args: unknown) => { data?: unknown }>(() => ({})),
+  workflows: vi.fn<
+    (args: unknown) => { data?: unknown; isPlaceholderData?: boolean }
+  >(() => ({})),
+};
 const uiStateStore = new Map<string, unknown>();
 const uiStateListeners = new Map<string, Set<() => void>>();
 /* eslint-disable @typescript-eslint/unbound-method */
@@ -106,6 +116,13 @@ vi.mock("../hooks/use-streams", () => ({
   }),
 }));
 
+vi.mock("../hooks/use-temporal", () => ({
+  useTemporalCapabilities: () => temporalMocks.capabilities(),
+  useTemporalNamespaces: () => ({}),
+  useTemporalSchedules: (args: unknown) => temporalMocks.schedules(args),
+  useTemporalWorkflows: (args: unknown) => temporalMocks.workflows(args),
+}));
+
 vi.mock("../hooks/use-ui-state", async () => {
   const React = await vi.importActual<typeof import("react")>("react");
 
@@ -154,9 +171,11 @@ vi.mock("../hooks/use-ui-state", async () => {
 
 vi.mock("./context", () => ({
   useStudio: () => ({
-    hasDatabase: true,
+    adapter: { capabilities: { sqlDialect: "postgresql" } },
+    hasDatabase,
     hasQueryInsights: false,
     isDarkMode,
+    temporalUrl,
     isNavigationOpen,
     setThemeMode: setThemeModeMock,
     themeMode,
@@ -294,9 +313,14 @@ describe("Studio command palette", () => {
       },
       isFetching: false,
     });
+    hasDatabase = true;
     isNavigationOpen = true;
     isDarkMode = false;
     themeMode = "system";
+    temporalUrl = undefined;
+    temporalMocks.capabilities.mockImplementation(() => ({}));
+    temporalMocks.schedules.mockImplementation(() => ({}));
+    temporalMocks.workflows.mockImplementation(() => ({}));
     setThemeModeMock.mockReset();
     toggleNavigationMock.mockReset();
     uiStateStore.clear();
@@ -368,6 +392,285 @@ describe("Studio command palette", () => {
       root.unmount();
     });
     container.remove();
+  });
+
+  it("hides database views and tables when Studio runs in Temporal-only mode", () => {
+    hasDatabase = false;
+    temporalUrl = "/api/temporal";
+    temporalMocks.capabilities.mockReturnValue({
+      data: {
+        supportsAdminApi: true,
+        supportsDescribeTaskQueue: false,
+        supportsSchedules: true,
+      },
+    });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <StudioCommandPaletteProvider>{null}</StudioCommandPaletteProvider>,
+      );
+    });
+    act(() => {
+      keyDown("k", { metaKey: true });
+    });
+
+    const text = document.body.textContent ?? "";
+    expect(text).not.toContain("Tables");
+    expect(text).not.toContain("accounts");
+    expect(text).not.toContain("Visualizer");
+    expect(text).not.toContain("Console");
+    expect(text).not.toContain("SQL");
+    expect(text).not.toContain("Workers");
+    expect(text).toContain("Workflow Types");
+    expect(text).toContain("Workflows");
+    expect(text).toContain("Needs Attention");
+    expect(text).not.toContain("Workflow IDs");
+    expect(text).toContain("Schedules");
+    expect(text).toContain("Task Queues");
+    expect(text).toContain("Cluster & Shards");
+    expect(text.indexOf("Workflow Types")).toBeLessThan(
+      text.indexOf("Workflows"),
+    );
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("finds workflows and schedules by ID and opens them", () => {
+    vi.useFakeTimers();
+    temporalUrl = "/api/temporal";
+    temporalMocks.workflows.mockImplementation((args) =>
+      (args as { enabled: boolean }).enabled
+        ? {
+            data: {
+              executions: [
+                {
+                  runId: "run-1",
+                  status: "Running",
+                  workflowId: "order-8488",
+                  workflowType: "orderFulfillment",
+                },
+              ],
+            },
+          }
+        : {},
+    );
+    temporalMocks.schedules.mockImplementation((args) =>
+      (args as { enabled: boolean }).enabled
+        ? {
+            data: {
+              schedules: [
+                {
+                  cadenceSummary: "Every 5m",
+                  scheduleId: "order-digest",
+                  workflowType: "salesDigest",
+                },
+                {
+                  cadenceSummary: "Every 1h",
+                  scheduleId: "restock-ams",
+                  workflowType: "inventoryRestock",
+                },
+              ],
+            },
+          }
+        : {},
+    );
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <StudioCommandPaletteProvider>{null}</StudioCommandPaletteProvider>,
+      );
+    });
+    act(() => {
+      keyDown("k", { metaKey: true });
+    });
+
+    const input = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Search commands"]',
+    )!;
+
+    act(() => {
+      inputText(input, "order");
+    });
+    // The palette asks the server only after typing has paused.
+    expect(document.body.textContent).not.toContain("order-8488");
+    expect(document.body.textContent).toContain("Searching…");
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+
+    expect(temporalMocks.workflows).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        query:
+          'WorkflowId STARTS_WITH "order" OR WorkflowType STARTS_WITH "order" OR RunId STARTS_WITH "order"',
+      }),
+    );
+    expect(document.body.textContent).toContain(
+      "order-8488 · orderFulfillment · Running",
+    );
+    expect(document.body.textContent).toContain("order-digest · Every 5m");
+    expect(document.body.textContent).not.toContain("restock-ams");
+
+    act(() => {
+      getCommandItemByText("order-digest")?.click();
+    });
+
+    expect(window.location.hash).toBe(
+      "#temporalNsParam=default&temporalScheduleParam=order-digest&temporalSectionParam=schedules&viewParam=temporal",
+    );
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+    vi.useRealTimers();
+  });
+
+  function openPaletteAndType(text: string) {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <StudioCommandPaletteProvider>{null}</StudioCommandPaletteProvider>,
+      );
+    });
+    act(() => {
+      keyDown("k", { metaKey: true });
+    });
+    act(() => {
+      inputText(
+        document.querySelector<HTMLInputElement>(
+          'input[aria-label="Search commands"]',
+        )!,
+        text,
+      );
+    });
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+
+    return () => {
+      act(() => root.unmount());
+      container.remove();
+    };
+  }
+
+  it("shows Searching, not the runs of the previous text, while a search is on its way", () => {
+    vi.useFakeTimers();
+    temporalUrl = "/api/temporal";
+    temporalMocks.workflows.mockImplementation(() => ({
+      data: {
+        executions: [
+          {
+            runId: "run-1",
+            startTime: "2026-11-24T10:00:00.000Z",
+            status: "Running",
+            workflowId: "payout-mch_010",
+            workflowType: "merchantPayout",
+          },
+        ],
+      },
+      isPlaceholderData: true,
+    }));
+
+    const unmount = openPaletteAndType("order-zzz");
+
+    expect(document.body.textContent).not.toContain("payout-mch_010");
+    expect(
+      document.querySelector('[data-testid="command-palette-searching"]')!
+        .textContent,
+    ).toBe("Searching…");
+    expect(document.body.textContent).not.toContain("No matching commands.");
+
+    unmount();
+    vi.useRealTimers();
+  });
+
+  it("names a run's status as the screens do and says when it started", () => {
+    vi.useFakeTimers();
+    temporalUrl = "/api/temporal";
+    temporalMocks.workflows.mockImplementation(() => ({
+      data: {
+        executions: [
+          {
+            runId: "run-1",
+            startTime: "2026-11-24T10:00:00.000Z",
+            status: "TimedOut",
+            workflowId: "nightly-report-eu",
+            workflowType: "nightlyReport",
+          },
+        ],
+      },
+    }));
+
+    const unmount = openPaletteAndType("nightly");
+    const item = getCommandItemByText("nightly-report-eu")!;
+
+    expect(item.textContent).toContain(
+      "nightly-report-eu · nightlyReport · Timed Out",
+    );
+    expect(item.querySelector("time")!.getAttribute("datetime")).toBe(
+      "2026-11-24T10:00:00.000Z",
+    );
+
+    unmount();
+    vi.useRealTimers();
+  });
+
+  it("puts a view whose name matches above one that matches by keyword only", () => {
+    vi.useFakeTimers();
+    temporalUrl = "/api/temporal";
+    temporalMocks.capabilities.mockReturnValue({
+      data: { supportsDescribeTaskQueue: true },
+    });
+    temporalMocks.workflows.mockImplementation(() => ({
+      data: { executions: [] },
+    }));
+
+    const unmount = openPaletteAndType("workers");
+    const labels = getCommandItems().map((item) => item.textContent?.trim());
+
+    expect(labels.indexOf("Temporal Workers")).toBeGreaterThanOrEqual(0);
+    expect(labels.indexOf("Temporal Workers")).toBeLessThan(
+      labels.indexOf("Temporal Task Queues"),
+    );
+
+    unmount();
+    vi.useRealTimers();
+  });
+
+  it("keeps a paused Temporal page paused when it opens another view", () => {
+    vi.useFakeTimers();
+    temporalUrl = "/api/temporal";
+    useNavigationMock.mockReturnValue({
+      ...useNavigationMock(),
+      temporalFollowParam: "paused",
+    });
+    temporalMocks.workflows.mockImplementation(() => ({
+      data: { executions: [] },
+    }));
+
+    const unmount = openPaletteAndType("task queues");
+
+    act(() => {
+      getCommandItemByText("Temporal Task Queues")?.click();
+    });
+
+    expect(window.location.hash).toContain("temporalFollowParam=paused");
+    expect(window.location.hash).toContain("temporalSectionParam=queues");
+
+    unmount();
+    vi.useRealTimers();
   });
 
   it("renders the popup inside the Studio scope and keeps it centered", () => {

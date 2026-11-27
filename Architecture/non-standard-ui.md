@@ -182,6 +182,133 @@ It deliberately excludes:
   - The same surface conditionally embeds AI recommendations when Studio's shared `llm` hook is available, while disappearing entirely when the embedder does not provide query-insights data.
   - No stock ShadCN component models that combined observability workflow, so Studio keeps a custom composite built from standard ShadCN primitives.
 
+### Temporal Workbench Composites
+
+- Canonical components:
+  - [`ui/studio/views/temporal/TemporalPrimitives.tsx`](../ui/studio/views/temporal/TemporalPrimitives.tsx)
+  - [`ui/studio/views/temporal/TemporalExecutionDebugger.tsx`](../ui/studio/views/temporal/TemporalExecutionDebugger.tsx)
+- Closest standard ShadCN alternatives:
+  - `Badge`, `ToggleGroup`, `Table`, `Sheet`, `AlertDialog`, `Tabs`
+- Why it stays non-standard:
+  - The Execution Debugger needs a Gantt timeline whose rows share one time axis with proportional span bars, and expandable span and raw-event rows. No ShadCN component models a proportional timeline.
+  - The inspector's `Interact` / `Pending` / `Meta` tab strip is a hand-built `tablist`, because Studio does not ship the ShadCN `Tabs` component. It sets `role="tab"`, `aria-selected`, `aria-controls`, a `tabpanel`, and arrow-key movement itself. Replace it with `Tabs` if Studio adds that component.
+  - `TemporalStatusBadge` wraps `Badge` so every Temporal status uses one of five tones with an ink-coloured label and a coloured icon. `TemporalSegmentedControl` wraps `ToggleGroup` for the refresh mode, history view, and interaction type switches.
+- Required internals:
+  - `Badge`, `Button`, `ToggleGroup`, `Table`, `Input`, `Textarea`, `Select`, `Sheet`, `Dialog`, `AlertDialog`, `DropdownMenu`, `Skeleton`
+
+### Temporal Timeline
+
+- Files:
+  - [`ui/studio/views/temporal/TemporalTimeline.tsx`](ui/studio/views/temporal/TemporalTimeline.tsx)
+  - [`data/temporal/timeline-scale.ts`](data/temporal/timeline-scale.ts)
+- Current UI:
+  - Rows of positioned bars on a shared time axis inside one scroll container, with a sticky label column, a sticky duration column, a sticky axis row, hatched bands for shortened idle time, zoom on Ctrl or Cmd with the wheel, and a `role="separator"` strip that resizes the panel by dragging.
+  - A vertical line and a time label that follow the pointer, and a details card for the row under it. Both are moved through refs on `pointermove`, so no row renders again. The card is `aria-hidden`: the label buttons open the same details in the span list for keyboard users.
+- Why not a standard component:
+  - ShadCN has no Gantt or timeline component. The bars need positions computed from a piecewise time scale, and the wheel listener must be attached as non-passive to stop the browser's page zoom, which React's `onWheel` cannot do.
+- Plausible standard ShadCN alternative:
+  - `Table` for the rows (without the time axis)
+  - `Resizable` for the panel height, if the package is added
+- Confidence:
+  - Medium
+
+### Temporal Search Field Suggestions
+
+- Files:
+  - [`ui/studio/views/temporal/TemporalSearchField.tsx`](ui/studio/views/temporal/TemporalSearchField.tsx)
+- Current UI:
+  - A text field with `role="combobox"` and a `role="listbox"` of suggestions in a ShadCN `Popover` anchored to the field. The options are `div` elements that never take the focus; `aria-activedescendant` names the chosen one.
+- Why not a standard component:
+  - The ShadCN `Command` component filters a fixed list by its whole input. Here the suggestions depend on the cursor position inside a longer text, and accepting one replaces a part of that text and moves the cursor.
+- Plausible standard ShadCN alternative:
+  - `Command` inside a `Popover`, for a field that holds one value
+- Confidence:
+  - Medium
+
+### Temporal Run Path
+
+- Files:
+  - [`ui/studio/views/temporal/TemporalRunBreadcrumb.tsx`](ui/studio/views/temporal/TemporalRunBreadcrumb.tsx)
+- Current UI:
+  - A `nav` in the header of a run: links for the Workflow Type and the Workflow ID, a ShadCN `DropdownMenu` for the run, copy buttons, and chevrons between them.
+- Why not a standard component:
+  - The repository has no ShadCN `Breadcrumb` component, and the last part is a menu of sibling runs, which that component does not have.
+- Plausible standard ShadCN alternative:
+  - `Breadcrumb` with a `DropdownMenu` in its last item
+- Confidence:
+  - High
+
+### Temporal Combobox
+
+- Files:
+  - [`ui/studio/views/temporal/TemporalCombobox.tsx`](ui/studio/views/temporal/TemporalCombobox.tsx)
+- Current UI:
+  - A text field with `role="combobox"`, a button that opens the whole list, and a `role="listbox"` in a ShadCN `Popover` anchored to the field. Used for Workflow Type and Task Queue in the Start Workflow form. The field keeps the focus; the arrow keys choose an item and Enter or Tab takes it. A value that is not in the list stays in the field.
+- Why not a standard component:
+  - The ShadCN `Select` allows only listed values, and a `Command` in a `Popover` puts its search field inside the popover, so the form field itself would be a button. A Workflow Type can exist on a Worker before any run used it, so the field must take free text.
+- Plausible standard ShadCN alternative:
+  - `Command` inside a `Popover` with an item "Use the typed text"
+- Confidence:
+  - Medium
+
+### Temporal Input Editor
+
+- Files:
+  - [`ui/studio/views/temporal/TemporalJsonEditor.tsx`](ui/studio/views/temporal/TemporalJsonEditor.tsx)
+  - [`data/temporal/input-suggestions.ts`](data/temporal/input-suggestions.ts)
+- Current UI:
+  - A CodeMirror editor for the input of a new Workflow run, with JSON colouring and a list of suggested keys and values from recent runs. It uses the same libraries and colour rules as the SQL editor.
+- Why not a standard component:
+  - The ShadCN `Textarea` has no completion at the cursor and no syntax colouring.
+- Plausible standard ShadCN alternative:
+  - `Textarea` with the "Recent Inputs" menu only
+- Confidence:
+  - High
+
+### Temporal Run Preview
+
+- Files:
+  - [`ui/studio/views/temporal/TemporalRunPreview.tsx`](ui/studio/views/temporal/TemporalRunPreview.tsx)
+  - [`data/temporal/run-steps.ts`](data/temporal/run-steps.ts)
+- Current UI:
+  - A list of steps in the fold-out of a Workflows grid row. Each row has a status icon, the step name, a track with one positioned bar for each time the step ran (a diamond for a Signal or an Update), and the total duration, or for an open step what it is doing. A grey band marks time that is not drawn to scale. A step is named by its summary, as on the Workflow Type's diagram. The tracks are `aria-hidden`; the name, count and duration carry the same facts as text.
+- Why not a standard component:
+  - ShadCN has no timeline. The bars need the same piecewise time scale as the Temporal Timeline.
+- Plausible standard ShadCN alternative:
+  - `Table` with the step name, count and duration (without the tracks)
+- Confidence:
+  - Medium
+
+### Temporal Workflow Type Diagram
+
+- Files:
+  - [`ui/studio/views/temporal/TemporalTypeMapCanvas.tsx`](ui/studio/views/temporal/TemporalTypeMapCanvas.tsx)
+  - [`ui/studio/views/temporal/TemporalRunDiagram.tsx`](ui/studio/views/temporal/TemporalRunDiagram.tsx)
+  - [`ui/studio/views/temporal/temporal-type-map-layout.ts`](ui/studio/views/temporal/temporal-type-map-layout.ts)
+- Current UI:
+  - A React Flow canvas with one node per step of a Workflow Type, a pill for the start and one for each closing status, and arrows with the number of runs that took them. The run screen shows the same canvas with one run marked on it (`TemporalRunDiagram.tsx`), plus a stepper bar above the canvas with ShadCN `Button` controls and a native `<input type="range">` slider that moves through the run's steps. The arrows follow routes that ELK computes around the nodes. Nodes cannot be moved. A click selects a node, and a panel under the canvas then lists its facts and runs as text and buttons.
+- Why not a standard component:
+  - ShadCN has no graph. The schema visualizer already uses React Flow and ELK, so the diagram uses the same two libraries.
+  - The repository does not ship the ShadCN `Slider` component, so the history stepper uses a native range input styled with `accent-foreground` alongside ShadCN `Button` controls.
+- Plausible standard ShadCN alternative:
+  - `Table` with one row per step: runs, failures, median duration (without the order of the steps)
+  - `Slider`, if Studio adds that ShadCN component
+- Confidence:
+  - Medium
+
+### Temporal Grid Column Resize Handles
+
+- Files:
+  - [`ui/studio/views/temporal/TemporalWorkflowsGrid.tsx`](ui/studio/views/temporal/TemporalWorkflowsGrid.tsx)
+- Current UI:
+  - A `role="separator"` strip on the right edge of each column header. Dragging it changes that column's `<col>` width in a fixed-layout ShadCN `Table`.
+- Why not a standard component:
+  - The ShadCN `Table` has no column resizing. The database grid's resizing belongs to its own data-grid component, which the Temporal grid does not use because its rows expand inline.
+- Plausible standard ShadCN alternative:
+  - `Resizable` panels do not apply to table columns; a data-table built on TanStack Table would.
+- Confidence:
+  - Medium
+
 ## Standardization Candidates
 
 These are the current high-signal places where Studio is bypassing a plausible standard ShadCN component or composition pattern.
@@ -242,6 +369,20 @@ These are the current high-signal places where Studio is bypassing a plausible s
 - Plausible standard ShadCN alternative:
   - `Sidebar`
   - standard sidebar/menu composition
+- Confidence:
+  - Medium
+
+### Sidebar Service Switcher
+
+- Files:
+  - [`ui/studio/Navigation.tsx`](ui/studio/Navigation.tsx)
+- Current UI:
+  - A row of anchors styled as a segmented control, one per connected data service. A layout effect sets `data-mode` to the widest form that fits (`full`, `text`, `compact`), and the open service is marked with `aria-current="page"`.
+- Why not a standard component:
+  - Each entry must be a real link that carries the service's last location, so it can be opened in a new tab and works with the browser history. `ToggleGroup` and `Tabs` render buttons and keep their own selection state, which would duplicate the `view` URL param.
+- Plausible standard ShadCN alternative:
+  - `ToggleGroup`
+  - `Tabs`
 - Confidence:
   - Medium
 

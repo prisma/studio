@@ -46,6 +46,33 @@ type QueryKey =
       string,
     ]
   | ["streams", string]
+  // Every Temporal key starts with the BFF's URL, then the namespace where
+  // one applies, then whatever narrows the request.
+  | [
+      "temporal",
+      (
+        | "attention"
+        | "bulk-job"
+        | "capabilities"
+        | "cluster-overview"
+        | "cluster-traces"
+        | "facets"
+        | "namespaces"
+        | "schedule-detail"
+        | "schedules"
+        | "task-queues"
+        | "type-inputs"
+        | "type-map"
+        | "workers"
+        | "workflow-detail"
+        | "workflow-metadata"
+        | "workflow-runs"
+        | "workflow-stack"
+        | "workflows"
+      ),
+      string | undefined,
+      ...Array<number | string | undefined>,
+    ]
   | [
       "streams",
       string,

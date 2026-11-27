@@ -28,6 +28,11 @@ import {
   addDemoStartupFailureHint,
   ensurePortAvailable,
 } from "./startup-diagnostics";
+import { handleTemporalBffRequest } from "./temporal-bff-router";
+import {
+  type DemoTemporalRuntime,
+  startDemoTemporalRuntime,
+} from "./temporal-runtime";
 
 declare const Bun: {
   build(options: {
@@ -103,6 +108,7 @@ const AI_ENABLED = resolveDemoAiEnabled({
 });
 const BOOT_ID = crypto.randomUUID();
 const STREAMS_PROXY_BASE_PATH = "/api/streams";
+const TEMPORAL_PROXY_BASE_PATH = "/api/temporal";
 const CACHE_CONTROL_STATIC = isProduction
   ? "public, max-age=31536000, immutable"
   : "no-cache, no-store, must-revalidate";
@@ -149,6 +155,7 @@ let postgresClient: Sql | null = null;
 let postgresExecutor: PostgresExecutor | null = null;
 let seededAt: string | null = null;
 let streamsServerUrl: string | null = null;
+let temporalRuntime: DemoTemporalRuntime | null = null;
 let appScript = "";
 let appStyles = "";
 let builtAssets = new Map<string, BuiltAsset>();
@@ -286,6 +293,21 @@ async function main(): Promise<void> {
   seededAt = runtime.seededAt;
   streamsServerUrl = runtime.streamsServerUrl;
 
+  // A bundled server has no local Temporal binary, so this connects only when
+  // its runtime named an external Temporal server (STUDIO_TEMPORAL_ADDRESS).
+  try {
+    temporalRuntime = await startDemoTemporalRuntime();
+    if (temporalRuntime) {
+      const activeTemporal = temporalRuntime;
+      cleanupCallbacks.push(() => activeTemporal.cleanup());
+      console.info(
+        `[demo] Temporal gRPC connected at ${activeTemporal.address} (BFF: http://localhost:${APP_PORT}${TEMPORAL_PROXY_BASE_PATH})`,
+      );
+    }
+  } catch (error) {
+    console.warn(`[demo] Temporal runtime skipped: ${toErrorMessage(error)}`);
+  }
+
   if (prebuiltAssets) {
     appScript = prebuiltAssets.appScript;
     appStyles = prebuiltAssets.appStyles;
@@ -362,6 +384,8 @@ async function handleRequest(request: Request): Promise<Response> {
         queryInsightsEnabled: postgresExecutor != null,
         seededAt,
         streamsUrl: streamsServerUrl ? STREAMS_PROXY_BASE_PATH : undefined,
+        temporalAddress: temporalRuntime?.address,
+        temporalUrl: temporalRuntime ? TEMPORAL_PROXY_BASE_PATH : undefined,
       }),
     );
   }
@@ -372,6 +396,25 @@ async function handleRequest(request: Request): Promise<Response> {
 
   if (url.pathname === "/api/ai") {
     return await handleAiRequest(request);
+  }
+
+  if (
+    url.pathname === TEMPORAL_PROXY_BASE_PATH ||
+    url.pathname.startsWith(`${TEMPORAL_PROXY_BASE_PATH}/`)
+  ) {
+    if (!temporalRuntime) {
+      return Response.json(
+        { error: "Temporal server is not configured for this Studio session." },
+        { status: 503 },
+      );
+    }
+    const subPath = url.pathname.slice(TEMPORAL_PROXY_BASE_PATH.length) || "/";
+    return await handleTemporalBffRequest(
+      temporalRuntime.client,
+      request,
+      subPath,
+      url,
+    );
   }
 
   if (

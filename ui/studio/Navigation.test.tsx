@@ -3,7 +3,10 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Navigation } from "./Navigation";
-import { TABLE_GRID_FOCUS_REQUEST_UI_STATE_KEY } from "./navigation-ui-state";
+import {
+  SERVICE_LOCATIONS_UI_STATE_KEY,
+  TABLE_GRID_FOCUS_REQUEST_UI_STATE_KEY,
+} from "./navigation-ui-state";
 
 let isDarkMode = false;
 
@@ -16,8 +19,13 @@ interface NavigationMockValue {
   schemaParam: string;
   setSchemaParam: () => Promise<URLSearchParams>;
   setTableParam: () => Promise<URLSearchParams>;
+  searchParam?: string;
   streamParam: string | null;
-  viewParam: "table" | "schema" | "queries" | "console" | "sql" | "stream";
+  temporalSectionParam?: string | null;
+  temporalRunParam?: string | null;
+  temporalWfParam?: string | null;
+  viewParam:
+    "table" | "schema" | "queries" | "console" | "sql" | "stream" | "temporal";
 }
 
 interface IntrospectionMockValue {
@@ -54,13 +62,34 @@ interface StreamsMockValue {
 }
 
 interface StudioMockValue {
+  adapter: { capabilities: { sqlDialect: "mysql" | "postgresql" | "sqlite" } };
   hasDatabase: boolean;
   isDarkMode: boolean;
   hasQueryInsights: boolean;
   navigationWidth: number;
   setNavigationWidth: (width: number) => void;
+  temporalUrl?: string;
 }
 
+interface TemporalWorkflowsMockValue {
+  data?: {
+    countsByStatus: Record<string, number>;
+    executions: Array<{
+      runId: string;
+      startTime: string;
+      status: string;
+      workflowId: string;
+      workflowType: string;
+    }>;
+  };
+}
+
+const postgresAdapter = {
+  capabilities: { sqlDialect: "postgresql" as const },
+};
+const useTemporalWorkflowsMock = vi.fn<() => TemporalWorkflowsMockValue>(
+  () => ({}),
+);
 const useNavigationMock = vi.fn<() => NavigationMockValue>();
 const useIntrospectionMock = vi.fn<() => IntrospectionMockValue>();
 const useStreamsMock = vi.fn<() => StreamsMockValue>();
@@ -85,6 +114,15 @@ vi.mock("../hooks/use-migrations", () => ({
 
 vi.mock("../hooks/use-streams", () => ({
   useStreams: () => useStreamsMock(),
+}));
+
+vi.mock("../hooks/use-temporal", () => ({
+  useTemporalAttention: () => ({}),
+  useTemporalCapabilities: () => ({
+    data: { supportsAdminApi: true, supportsSchedules: true },
+  }),
+  useTemporalNamespaces: () => ({ data: [{ name: "default" }] }),
+  useTemporalWorkflows: () => useTemporalWorkflowsMock(),
 }));
 
 vi.mock("../hooks/use-navigation-table-list", () => ({
@@ -259,6 +297,66 @@ function pointerEvent(type: string, options: { clientX: number }) {
   });
 }
 
+function mockNavigation(overrides: Partial<NavigationMockValue> = {}) {
+  useNavigationMock.mockReturnValue({
+    createUrl(values: Record<string, string>) {
+      return `#${Object.entries(values)
+        .map(([key, value]) => `${key}=${value}`)
+        .join("&")}`;
+    },
+    metadata: {
+      activeTable: { name: "organizations", schema: "public" },
+      isFetching: false,
+    },
+    schemaParam: "public",
+    setSchemaParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+    setTableParam: vi.fn(() => Promise.resolve(new URLSearchParams())),
+    streamParam: null,
+    viewParam: "table",
+    ...overrides,
+  });
+}
+
+function mockStudio(overrides: Partial<StudioMockValue> = {}) {
+  useStudioMock.mockImplementation(() => ({
+    adapter: postgresAdapter,
+    hasDatabase: true,
+    hasQueryInsights: false,
+    isDarkMode,
+    navigationWidth: 192,
+    setNavigationWidth: setNavigationWidthMock,
+    ...overrides,
+  }));
+}
+
+function renderNavigation() {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  act(() => {
+    root.render(<Navigation />);
+  });
+
+  return {
+    container,
+    unmount() {
+      act(() => {
+        root.unmount();
+      });
+      container.remove();
+    },
+  };
+}
+
+function getServiceLinks(container: HTMLElement) {
+  return Array.from(
+    container.querySelectorAll<HTMLAnchorElement>(
+      'nav[aria-label="Data services"] a',
+    ),
+  );
+}
+
 function getSearchBlock(
   container: HTMLElement,
   blockKey: "streams" | "tables",
@@ -273,12 +371,14 @@ describe("Navigation", () => {
     isDarkMode = false;
     openCommandPaletteMock.mockReset();
     useHasMigrationHistoryMock.mockReturnValue(false);
+    useTemporalWorkflowsMock.mockReturnValue({});
     setNavigationWidthMock.mockReset();
     refetchIntrospectionMock.mockReset();
     refetchStreamsMock.mockReset();
     refetchIntrospectionMock.mockResolvedValue(undefined);
     refetchStreamsMock.mockResolvedValue(undefined);
     useStudioMock.mockImplementation(() => ({
+      adapter: postgresAdapter,
       hasDatabase: true,
       hasQueryInsights: false,
       isDarkMode,
@@ -408,36 +508,50 @@ describe("Navigation", () => {
     container.remove();
   });
 
-  it("keeps sticky sidebar headers from sliding over each other", () => {
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
+  it("scrolls only the object list, so the scope picker and views stay on screen", () => {
+    const { container, unmount } = renderNavigation();
 
-    act(() => {
-      root.render(<Navigation />);
-    });
+    const tableList = container.querySelector('nav[aria-label="Tables"]');
+    expect(tableList?.className).toContain("overflow-y-auto");
 
-    // The schema picker scrolls away with the lists; only section headings stick.
-    const schemaPicker = container
-      .querySelector('[role="combobox"]')
-      ?.closest("div.px-4");
+    const schemaPicker = container.querySelector('[role="combobox"]');
+    const views = container.querySelector('nav[aria-label="Postgres views"]');
     expect(schemaPicker).not.toBeNull();
-    expect(schemaPicker?.className).not.toContain("sticky");
+    expect(views).not.toBeNull();
+    expect(tableList?.contains(schemaPicker)).toBe(false);
+    expect(tableList?.contains(views)).toBe(false);
+    expect(views?.className).not.toContain("overflow-y-auto");
 
-    // Sticky headings are opaque, so the list scrolling under them never shows through.
-    const stickyHeadings = [
-      ...container.querySelectorAll<HTMLElement>(".sticky.top-0"),
-    ];
-    expect(stickyHeadings.length).toBeGreaterThan(0);
-    for (const heading of stickyHeadings) {
-      expect(heading.className).toContain("bg-canvas");
-      expect(heading.className).not.toContain("backdrop-blur");
-    }
+    // Headings sit outside the scrolling list, so none of them needs to stick.
+    expect(container.querySelectorAll(".sticky.top-0")).toHaveLength(0);
 
-    act(() => {
-      root.unmount();
-    });
-    container.remove();
+    unmount();
+  });
+
+  it("scrolls the list, not the sidebar, to show the open table", () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function (this: HTMLElement) {
+        const top =
+          this.getAttribute("data-item-key") === "public.organizations"
+            ? 300
+            : 100;
+        const height = this.getAttribute("aria-label") === "Tables" ? 100 : 30;
+
+        return new DOMRect(0, top, 160, height);
+      },
+    );
+
+    const { container, unmount } = renderNavigation();
+    const tableList = container.querySelector('nav[aria-label="Tables"]');
+    const sidebar = container.querySelector(
+      '[data-testid="studio-navigation"]',
+    );
+
+    expect(tableList?.scrollTop).toBe(130);
+    expect(sidebar?.scrollTop).toBe(0);
+
+    unmount();
+    vi.restoreAllMocks();
   });
 
   it("uses the white Prisma wordmark when Studio is dark", () => {
@@ -550,6 +664,7 @@ describe("Navigation", () => {
 
   it("hides schema and table navigation when the session has no database", () => {
     useStudioMock.mockImplementation(() => ({
+      adapter: postgresAdapter,
       hasDatabase: false,
       hasQueryInsights: false,
       isDarkMode,
@@ -617,6 +732,7 @@ describe("Navigation", () => {
     withoutQueriesContainer.remove();
 
     useStudioMock.mockImplementation(() => ({
+      adapter: postgresAdapter,
       hasDatabase: true,
       hasQueryInsights: true,
       isDarkMode,
@@ -650,7 +766,7 @@ describe("Navigation", () => {
 
     const studioLinks = Array.from(
       container.querySelectorAll<HTMLAnchorElement>(
-        'nav[aria-label="Studio"] a',
+        'nav[aria-label="Postgres views"] a',
       ),
     ).map((link) => link.textContent?.trim());
 
@@ -717,6 +833,7 @@ describe("Navigation", () => {
 
   it("preserves selected schema when navigating between Studio views", () => {
     useStudioMock.mockImplementation(() => ({
+      adapter: postgresAdapter,
       hasDatabase: true,
       hasQueryInsights: true,
       isDarkMode,
@@ -751,7 +868,7 @@ describe("Navigation", () => {
     const studioLinksByText = new Map(
       Array.from(
         container.querySelectorAll<HTMLAnchorElement>(
-          'nav[aria-label="Studio"] a',
+          'nav[aria-label="Postgres views"] a',
         ),
       ).map((link) => [link.textContent?.trim(), link.getAttribute("href")]),
     );
@@ -939,34 +1056,274 @@ describe("Navigation", () => {
     container.remove();
   });
 
-  it("renders a Streams section beneath the Tables list", () => {
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-
-    act(() => {
-      root.render(<Navigation />);
+  it("shows no service switcher when one service is connected", () => {
+    useStreamsMock.mockReturnValue({
+      hasStreamsServer: false,
+      isError: false,
+      isLoading: false,
+      streams: [],
     });
 
-    const headings = [...container.querySelectorAll("h2")].map((heading) =>
-      heading.textContent?.trim(),
-    );
+    const { container, unmount } = renderNavigation();
 
-    expect(headings.indexOf("Tables")).toBeGreaterThan(-1);
-    expect(headings.indexOf("Streams")).toBeGreaterThan(
-      headings.indexOf("Tables"),
-    );
+    expect(
+      container.querySelector('nav[aria-label="Data services"]'),
+    ).toBeNull();
+    expect(container.textContent).toContain("Tables");
 
-    const streamsNav = container.querySelector('nav[aria-label="Streams"]');
+    unmount();
+  });
 
-    expect(streamsNav).not.toBeNull();
-    expect(streamsNav?.textContent).toContain("audit-log");
-    expect(streamsNav?.textContent).toContain("prisma-wal");
+  it("lists every connected service in the switcher and marks the open one", () => {
+    mockStudio({ temporalUrl: "/api/temporal" });
 
-    act(() => {
-      root.unmount();
+    const { container, unmount } = renderNavigation();
+    const serviceLinks = getServiceLinks(container);
+
+    expect(serviceLinks.map((link) => link.textContent)).toEqual([
+      "Postgres",
+      "Streams",
+      "Temporal",
+    ]);
+    expect(
+      serviceLinks.map((link) => link.getAttribute("aria-current")),
+    ).toEqual(["page", null, null]);
+
+    unmount();
+  });
+
+  it("names the database service after the connected engine", () => {
+    mockStudio({ adapter: { capabilities: { sqlDialect: "mysql" } } });
+
+    const { container, unmount } = renderNavigation();
+
+    expect(getServiceLinks(container)[0]?.textContent).toBe("MySQL");
+
+    unmount();
+  });
+
+  it("shows only the open service's scope, views, and objects", () => {
+    mockStudio({ temporalUrl: "/api/temporal" });
+
+    const database = renderNavigation();
+
+    expect(
+      database.container.querySelector('nav[aria-label="Tables"]'),
+    ).not.toBeNull();
+    expect(database.container.textContent).toContain("Visualizer");
+    expect(database.container.textContent).not.toContain("audit-log");
+    expect(database.container.textContent).not.toContain("Schedules");
+    database.unmount();
+
+    mockNavigation({ streamParam: "prisma-wal", viewParam: "stream" });
+    const streams = renderNavigation();
+
+    expect(
+      streams.container.querySelector('nav[aria-label="Streams"]')?.textContent,
+    ).toContain("audit-log");
+    expect(
+      streams.container.querySelector('nav[aria-label="Tables"]'),
+    ).toBeNull();
+    expect(streams.container.textContent).not.toContain("Visualizer");
+    expect(
+      streams.container.querySelector('button[aria-label="Schema"]'),
+    ).toBeNull();
+    expect(
+      getServiceLinks(streams.container).map((link) =>
+        link.getAttribute("aria-current"),
+      ),
+    ).toEqual([null, "page", null]);
+    streams.unmount();
+
+    mockNavigation({ viewParam: "temporal" });
+    const temporal = renderNavigation();
+
+    expect(temporal.container.textContent).toContain("Schedules");
+    expect(temporal.container.textContent).toContain("Needs Attention");
+    expect(temporal.container.textContent).not.toContain("Recent Runs");
+    expect(temporal.container.textContent).not.toContain("Workflow IDs");
+    expect(
+      temporal.container.querySelector('nav[aria-label="Tables"]'),
+    ).toBeNull();
+    expect(temporal.container.textContent).not.toContain("audit-log");
+    temporal.unmount();
+  });
+
+  it("links each service to its last location, or to its start page", () => {
+    mockStudio({ temporalUrl: "/api/temporal" });
+    uiStateValues.set(SERVICE_LOCATIONS_UI_STATE_KEY, {
+      temporal: "#temporalWf=ord-8490&view=temporal",
     });
-    container.remove();
+
+    const { container, unmount } = renderNavigation();
+
+    expect(
+      getServiceLinks(container).map((link) => link.getAttribute("href")),
+    ).toEqual([
+      "#schemaParam=public&viewParam=table",
+      "#streamParam=audit-log&viewParam=stream",
+      "#temporalWf=ord-8490&view=temporal",
+    ]);
+
+    unmount();
+  });
+
+  it("marks failed workflows on the Temporal service while another service is open", () => {
+    mockStudio({ temporalUrl: "/api/temporal" });
+    useTemporalWorkflowsMock.mockReturnValue({
+      data: { countsByStatus: { Failed: 2 }, executions: [] },
+    });
+
+    const database = renderNavigation();
+    const temporalLink = getServiceLinks(database.container)[2];
+
+    expect(temporalLink?.textContent).toBe("Temporal2 failed workflows");
+    expect(temporalLink?.getAttribute("title")).toBe(
+      "Temporal: 2 failed workflows",
+    );
+    database.unmount();
+
+    mockNavigation({ viewParam: "temporal" });
+    const temporal = renderNavigation();
+
+    expect(getServiceLinks(temporal.container)[2]?.textContent).toBe(
+      "Temporal",
+    );
+    temporal.unmount();
+  });
+
+  it("links Temporal lists and the views of Workflows with full URLs", () => {
+    mockStudio({ temporalUrl: "/api/temporal" });
+    mockNavigation({ viewParam: "temporal" });
+    useTemporalWorkflowsMock.mockReturnValue({
+      data: {
+        countsByStatus: { Failed: 1 },
+        executions: [
+          {
+            runId: "run-1",
+            startTime: "2026-11-22T10:00:00.000Z",
+            status: "Failed",
+            workflowId: "ord-8488",
+            workflowType: "ChargeOrder",
+          },
+        ],
+      },
+    });
+
+    const { container, unmount } = renderNavigation();
+    const hrefByText = (text: string) =>
+      Array.from(container.querySelectorAll("a"))
+        .find((link) => link.textContent?.includes(text))
+        ?.getAttribute("href");
+
+    expect(hrefByText("Schedules")).toBe(
+      "#temporalNsParam=default&viewParam=temporal&temporalSectionParam=schedules",
+    );
+    expect(hrefByText("Failed")).toBe(
+      '#temporalNsParam=default&viewParam=temporal&searchParam=ExecutionStatus = "Failed"&temporalSectionParam=workflows',
+    );
+    // The menu holds lists only, not workflows.
+    expect(hrefByText("ord-8488")).toBeUndefined();
+    expect(
+      container
+        .querySelector('[data-testid="navigation-temporal-workflows"]')
+        ?.getAttribute("data-active"),
+    ).toBe("true");
+    const temporalNavLabels = Array.from(
+      container.querySelectorAll('[data-testid="navigation-temporal-block"] a'),
+    ).map((link) => link.textContent ?? "");
+    expect(temporalNavLabels.slice(0, 4)).toEqual([
+      "Workflow Types",
+      "Workflows1",
+      "Needs Attention",
+      "Running",
+    ]);
+    expect(hrefByText("Needs Attention")).toBe(
+      "#temporalNsParam=default&viewParam=temporal&temporalSectionParam=attention",
+    );
+
+    unmount();
+  });
+
+  it("marks the open view instead of Workflows, and Workflows on a workflow page", () => {
+    mockStudio({ temporalUrl: "/api/temporal" });
+    useTemporalWorkflowsMock.mockReturnValue({
+      data: {
+        countsByStatus: {},
+        executions: [
+          {
+            runId: "run-1",
+            startTime: "2026-11-22T10:00:00.000Z",
+            status: "Completed",
+            workflowId: "ord-8490",
+            workflowType: "ChargeOrder",
+          },
+        ],
+      },
+    });
+    const activeLabels = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll('[data-active="true"]')).map(
+        (link) => link.textContent,
+      );
+
+    mockNavigation({
+      searchParam: 'ExecutionStatus = "Running"',
+      viewParam: "temporal",
+    });
+    const savedView = renderNavigation();
+
+    expect(activeLabels(savedView.container)).toEqual(["Running"]);
+    savedView.unmount();
+
+    mockNavigation({ temporalWfParam: "ord-8490", viewParam: "temporal" });
+    const workflow = renderNavigation();
+
+    expect(activeLabels(workflow.container)).toEqual(["Workflows"]);
+    workflow.unmount();
+  });
+
+  it("marks Workflows on a workflow page, also with an older link that names the screen it came from", () => {
+    mockStudio({ temporalUrl: "/api/temporal" });
+    useTemporalWorkflowsMock.mockReturnValue({
+      data: { countsByStatus: {}, executions: [] },
+    });
+    const activeLabels = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll('[data-active="true"]')).map(
+        (link) => link.textContent,
+      );
+
+    for (const section of ["workflow", "workflows", "attention", "recent"]) {
+      mockNavigation({
+        temporalRunParam: "run-1",
+        temporalSectionParam: section,
+        temporalWfParam: "ord-8490",
+        viewParam: "temporal",
+      });
+      const { container, unmount } = renderNavigation();
+
+      expect(activeLabels(container)).toEqual(["Workflows"]);
+      unmount();
+    }
+  });
+
+  it("marks Needs Attention on its own list only", () => {
+    mockStudio({ temporalUrl: "/api/temporal" });
+    useTemporalWorkflowsMock.mockReturnValue({
+      data: { countsByStatus: {}, executions: [] },
+    });
+    const activeLabels = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll('[data-active="true"]')).map(
+        (link) => link.textContent,
+      );
+
+    mockNavigation({
+      temporalSectionParam: "attention",
+      viewParam: "temporal",
+    });
+    const list = renderNavigation();
+
+    expect(activeLabels(list.container)).toEqual(["Needs Attention"]);
+    list.unmount();
   });
 
   it("hides the Streams section when Studio has no streams server configured", () => {
@@ -1043,6 +1400,8 @@ describe("Navigation", () => {
   });
 
   it("supports the same inline search flow for streams as for tables", () => {
+    mockNavigation({ viewParam: "stream" });
+
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -1129,6 +1488,8 @@ describe("Navigation", () => {
   });
 
   it("refreshes streams from the header action without opening search", () => {
+    mockNavigation({ viewParam: "stream" });
+
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);

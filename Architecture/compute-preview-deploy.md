@@ -32,6 +32,12 @@ dependencies. Alchemy is direct because pnpm does not expose transitive bins.
 Composer packages are pinned to `0.28.0-dev.3`, the published version introducing
 the bundled-dependencies mode, until that mode is available in a stable release.
 
+## Running the Server as Another App's Service
+
+`build-compute.ts` takes `--runtime-module <file>`: a module that exports `appPort` and `startRuntime`. Another Composer app passes its own module to run this server as one of its services, with that service's port and data sources, instead of the hosted demo's `compute-service.ts` and `compute-runtime.ts`. Without the flag the build is the hosted demo's, unchanged.
+
+The bundled server calls `startDemoTemporalRuntime()` like the source demo does. A bundle holds no local Temporal binary, so it connects to Temporal only when its runtime set `STUDIO_TEMPORAL_ADDRESS` before returning; the hosted demo sets none and shows no Temporal views.
+
 ## Git Connection and Credentials
 
 The `prisma/studio` repository MUST be connected to the intended Prisma project

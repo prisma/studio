@@ -55,6 +55,7 @@ Before implementing a change, read the relevant architecture documents from `/ar
 - Prefer standard ShadCN components and standard ShadCN composition patterns as much as possible before introducing custom UI markup or styling.
 - If a non-standard UI component or composite is necessary, clearly state that to the user and explain why a standard ShadCN component was not sufficient.
 - Document every approved non-standard UI instance in `Architecture/non-standard-ui.md` in the same change.
+- Do not use Tailwind's `space-x-*`, `space-y-*`, or `divide-*` utilities. Studio's scoped stylesheet cancels them (see `Architecture/temporal.md`, UI Conventions). Use `flex flex-col gap-*` and explicit borders.
 
 ## Tests and feature documentation
 

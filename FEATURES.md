@@ -30,6 +30,159 @@ The same demo entrypoint can also run against external development infrastructur
 Studio can run without a database connection when a Streams server is configured, which makes it usable as a focused event-log and stream-search tool.
 In that mode the shell hides schema selection, table navigation, and database-only views, defaults into the stream view, and keeps all Streams browsing, search, aggregation, and live/tail behavior working through the normal `/api/streams` proxy.
 
+## Temporal Workbench
+
+Studio can optionally connect to a Temporal server (`slate-temporal-next` or standard Temporal servers like `temporal server start-dev`) via a same-origin gRPC BFF configured through `temporalUrl`, adding a `Temporal` service to the sidebar with a namespace picker, the views `Workflows`, `Attention`, `Schedules`, `Workflow Types`, `Task Queues`, and (when Admin HTTP is enabled) `Cluster & Shards`, saved workflow views, and the most recent workflow runs.
+The Workflows Grid and Execution Debugger provide Visibility search, live status count pills with icon-differentiated states, inline row expansion, confirmed bulk actions, cross-surface links to Streams and Tables, a failure/retry diagnostic strip, synchronized Gantt timeline, grouped spans or raw history events, Replay JSON export, a live Query/Signal/Update inspector, and a Start / Clone & Re-run sheet.
+Schedules add multi-select bulk pause (with shared maintenance note), bulk resume/trigger/delete, upcoming fire previews, and a visual backfill runner that previews exact matching times before firing; Task Queues expose live pollers or transparent synthesized queue health with sticky-queue reset; and Cluster & Shards surfaces live `slate-temporal-next` readiness, SlateDB storage/compaction, shard load, TTL-bounded admission overrides, shard handoff, and sampled traces.
+The Workflows search field takes a Temporal List Filter or plain text: pasting a workflow ID, a run ID or the start of a workflow type finds the matching workflows without any filter syntax, and an invalid filter shows the server's message at once.
+Workflow rows and status counts load as separate requests, so the list appears at once on servers where counting a large namespace takes seconds, and a failed workflow names its root cause (for example the declined card behind a failed Activity) instead of only the wrapping failure.
+Every Temporal screen shows the active namespace, and actions that stop, delete, or start work in bulk (terminate, cancel, delete, bulk trigger, backfill, closing an admission class) ask for confirmation and name what they affect. Raw history events show decoded payloads, and the Workflows keyboard shortcuts (`j`/`k`, Space, Enter, `/`) leave Space and Enter to whichever button or field has focus.
+
+## Temporal Workflow Sorting and Paging
+
+The Workflows grid sorts by any column and pages through every match, with 50, 100 or 250 rows per page and a "Rows 51–100 of 6,012" counter.
+In the Workflows grid, j and k move the cursor, the right arrow opens the cursor row's fold-out and the left arrow or Escape closes it. While a fold-out is open, j and k move it to the next run, so the runs' input, result and steps can be read one after another. The fold-out shows input and result as the same field list as the run screen.
+Temporal servers sort by at most one fixed order, so Studio's BFF reads every matching run (up to 10,000), sorts them, and keeps the result for a few seconds; above that limit the grid says so and lists the runs in the server's order.
+The default is newest first on every server, the sort is part of the URL, and Type and Workflow ID are separate columns.
+
+## Temporal Attention
+
+The Attention view lists the running workflows that will not finish without help: Workflow Tasks that keep failing, tasks that no Worker picks up, Activities that are retrying (with attempt count, last error and next attempt), and runs that take three times longer than 95% of closed runs of their type. It also lists the failures of the last hour.
+No Temporal filter can find these, so the BFF describes every running workflow and keeps the answer for 15 seconds. The sidebar shows the count.
+
+## Temporal One-Click Queries, Signals and Updates
+
+The workflow page asks the Worker which Queries, Signals and Updates the workflow handles, and shows each as a row with its description. A Query runs in one click and shows its result inline; a Signal or an Update asks for its arguments first.
+Inputs, results, outputs and memos show as lists of fields, with nested objects indented and folded past two levels; the copy button still copies the JSON. A button at the right end of the run header closes the side panel, so the timeline and history views take the full width; the browser remembers the choice. The status in the header shows the workflow's summary and current details text when hovered. The panel also has a Stack tab with the call stack, and falls back to a name field when no Worker answers.
+
+## Temporal Timeline
+
+The workflow page draws every Activity, Timer, Child Workflow, Signal and Update on one time axis. "Shorten idle time" gives a long stretch in which nothing happens a small fixed width, so one 30-minute Timer no longer turns every Activity into a dot.
+The timeline zooms (buttons, or Ctrl or Cmd with the wheel), filters by kind, resizes by its lower edge, lets you set the width of the name column by dragging its edge (or with the arrow keys on it; a double-click restores the automatic width), shows the time an Activity waited or spent on earlier attempts as a thin line, and shows a Child Workflow's own spans inline when its row is expanded.
+Every sleep of a run that sleeps between short Activities is shortened, and a bar that crosses a shortened stretch is striped there. Moving the pointer over the bars shows the exact time under it and a card with the span's start, duration, attempts and failure.
+
+## Temporal Search Field Autocomplete
+
+The Workflows search field completes a List Filter while the user types: "Ta" offers `TaskQueue = ""`, and Tab writes it with the cursor inside the quotes.
+There it offers the values it knows: the Task Queues and Workflow Types of the namespace with their counts, the statuses, and time presets. After a complete comparison it offers AND and OR.
+Enter still runs the search exactly as typed, so plain text and pasted IDs work as before.
+
+## Temporal Status Presets and Recent Filters
+
+The row of status presets above the Workflows grid stays the same under every filter: it always shows every status with the count of the whole namespace, and marks the preset that the current filter matches.
+Any other filter or search shows as one more selected item to the right of the presets, with its number of matches. That item opens the last ten filters the user ran, so an earlier filter is one click away.
+
+## Temporal Start Workflow Form
+
+Workflow Type and Task Queue are fields with a list of the known values: typing narrows the list, and a value that is not in it stays allowed, with a note that no run uses it yet. Choosing a type fills in the Task Queue its runs use, a Workflow ID, and the input of its newest completed run.
+The input editor completes keys and values from the inputs of the ten newest runs of the type, and a menu holds those inputs whole. Notes under the editor name a key that every recent run passes and this input lacks, and a key that no recent run passes.
+Cmd+Enter or Ctrl+Enter starts the run. A field the user changed is never filled in again.
+
+## Temporal Run Path
+
+The header of a run is a path from the general to the particular: the Workflow Type, the Workflow ID, and the run. The type opens its diagram, the Workflow ID opens the Runs tab when the ID has several runs, and the run opens a list of the runs of the ID to move to another one. A workflow has one link, the same wherever it was opened from, and the left menu marks Workflows while one is open. Before the path, two arrows (and the j and k keys) open the previous and next row of the list the workflow was opened from. It says "2 of 3" for a run of several. Beside the path, the status shows how long the run took and when it closed; hovering it shows how the run ended (the start of its result, or its failure), its Type, Queue, times and history size. The actions menu clones the run and starts it again, opens the parent run, and searches in Streams and Tables.
+The Related tab shows the parent, this run and its Child Workflows as a tree. Where there is nothing, it says so in a sentence.
+
+## Temporal Workflows and Runs
+
+A Workflow ID names one business object, such as an order or a subscription, and can have many runs: one per retry, cron tick or continue-as-new. The left menu lists Workflows, with Needs Attention and the saved views beneath it; a Workflow ID is found by pasting it in the search or the command palette.
+A workflow page shows its latest run, or the run its link pins. When the ID has several runs, a Runs tab lists them newest first, numbered from the oldest, with a filter by status. A chain of more than 100 runs is counted and filtered by the server and shown in pages.
+
+## Temporal Timers and the Run Diagram
+
+A Timer is named by its length ("Timer 5m 50s") in the timeline, the span list and the diagrams. An open Timer's row counts down the time it has left, and its details show the length, the time it fires, a progress bar, and what recent runs of the type do before and after it.
+The run screen has a Diagram tab: the diagram of the run's Workflow Type with this run marked on it. The steps and arrows the run took stand out, the others are faint, and the step the run is at says so, with the time a Timer has left. The steps that can come next have a dashed border and say how many recent runs went there.
+A stepper beside the Grouped Spans, Raw Events and Diagram tabs steps through the run's history, with buttons, a slider and the arrow keys, and every view follows it: the timeline marks the step's span, Grouped Spans opens its row, Raw Events marks its events with a coloured left border, and the Diagram shows the run as it was when that step started, scrolling the step into view. The line under the Diagram has small Input and Output buttons that show the step's data in a popover. Clicking a span on the timeline or a step on the diagram moves the stepper there. An info button beside the tabs explains the Diagram, links to the type's own diagram and redraws it from more runs.
+
+## Temporal Failure Panel
+
+A failure of a Workflow or of a step shows what failed (the failure type and its message), where the user's own code threw it (the function, file and line from the stack trace), and why the server did not retry. The stack trace is behind one button, as a list of frames in which library code is fainter than the user's code.
+Studio does not have the Worker's source, so it names the file and line and does not show the code.
+
+## Temporal Query Status
+
+While the Workflows grid waits for a filter, a search, a sort, a page or a refresh, its refresh button is a status: it says whether the server loads the rows or counts the matches, and for how long.
+When the query ends, the button shows for a moment how long it took. A failed query leaves a button that runs it again.
+
+## Temporal Run Preview in the Workflows Grid
+
+Unfolding a row of the Workflows grid shows what the run did without leaving the list: its steps on a small timeline, its input, and its result, failure, retrying Activity or what it waits on.
+An Activity that a loop ran 20 times is one step with its count and 20 marks. The row also has the run ID, the start and close times, the history size, links to the previous and next run, and the memo.
+
+## Temporal Run Chains and Related Workflows
+
+A workflow that continued as new, was retried or runs on a cron lists its previous and next run in the run menu of the header. The Related tab lists the parent and root workflow, the Child Workflows this run started with their status, and every run of the same Workflow ID.
+
+## Temporal Codec Server Support
+
+Applications that compress or encrypt their payloads need a Codec Server to make them readable. When the host configures one, Studio's BFF decodes a run's history, memo, pending Activities, Query results and Update results through it, and encodes arguments typed in Studio.
+Without one, or when the Codec Server fails, the workflow page says how many payloads are encoded or what went wrong, and shows each as an encoded payload with its encoding and size.
+
+## Temporal Saved Views
+
+A Workflows search can be saved under a name with one click. Saved views appear in the sidebar after the built-in Running, Failed and Timed Out views, keep their sort, and can be deleted there.
+They are stored in the browser (20 at most); a view is shared by copying the page's link, because the URL holds the whole search.
+
+## Temporal Time Formats
+
+Every time on the Temporal screens can be shown as relative ("5m ago"), local, or UTC. The choice is one control, applies everywhere, and is remembered; the tooltip always shows all three.
+
+## Temporal Search in the Command Palette
+
+Typing in the command palette finds workflows by workflow ID, run ID or type, and schedules by ID, in the open namespace. Selecting one opens it.
+
+## Temporal Task Queues
+
+Task Queues lists every queue of the namespace with exact counts of running, retrying and failed workflows, taken from all runs. It includes queues that only run Activities, which it finds in workflow histories, with their Activity Types and pending Activities.
+On servers that report them it also shows the Workers polling each queue, and it says so when the server does not.
+In a namespace with more runs than Studio copies, it counts the running runs only, which stays exact, and leaves the failed and total counts empty. Each count links to the same runs in Workflows.
+
+## Temporal Workflow Type Diagrams
+
+Workflow Types draws one diagram per Workflow Type: the Activities, Timers and Child Workflows that its runs take, top to bottom, with an arrow where one step followed another and the number of runs that went that way. Temporal stores no definition of a Workflow, so Studio draws the diagram from the histories of the 40 newest runs, with a few runs of every status. An info button beside the type's name in the header explains this, counts the sampled runs by status, says when the diagram was drawn, and redraws it from more runs: 100, then 200. The header's refresh button redraws it now, and "View All N Runs" opens the type's runs in Workflows.
+A step is named by the summary the Workflow code gave it (the SDK's `summary` option), so one Activity Type used for four business steps draws four steps. Signals and Updates are listed on the step a run was waiting at when they arrived, not drawn as steps. A result field such as `status` with a few values splits the Completed end, such as "resolved" and "abandoned". When the sampled runs ran on several versions of the code (Worker Build IDs), the diagram draws the newest, and the info button draws the others.
+Each step shows how many runs are at it now, in how many it failed or was retried, and its median duration. Selecting a step lists those runs; a run's Workflow Type name links to its diagram.
+
+## Temporal Browser History
+
+Opening a run or a schedule adds an entry to the browser history, and so does closing one. The browser's Back button returns from a run to the list it was opened from, with its filter.
+
+## Temporal Shard Health
+
+Cluster & Shards names the load state of the server and of each shard (`ok`, `busy`, `shedding`, `overworked`, `critical`, `fault`), says in a sentence what the state means for requests, and lists the measurements the server gives as its cause.
+`busy` is shown as information, not as a warning: a busy shard refuses no requests.
+
+## Temporal Bulk Actions on Every Match
+
+After selecting every row of a page, one click selects every running workflow that matches the search. Signal, cancel and terminate then run as a background job with a progress bar, a failure list and a Stop button.
+The job acts on up to 10,000 matches and reports each workflow it could not change.
+
+## Temporal Filter Builder and Grid Columns
+
+The Filter button builds a search from rows of attribute, operator and value, with suggestions for workflow types, task queues, statuses and time ranges, for people who do not know the List Filter syntax. Custom Search Attributes are offered where the server has them.
+The Columns menu chooses the grid's columns, including any memo field or Search Attribute found on the rows, and every column resizes by dragging its header edge. The browser remembers both.
+
+## Temporal Event History Tools
+
+Raw events can be filtered by event type, and the page's link always points at the open event, so one event can be shared. "Download Replay JSON" writes the history in the form SDK replayers and the Temporal CLI read.
+"Open a history file" shows a downloaded history, from Studio, the Temporal CLI or the Temporal UI, with the same timeline and spans and without any connection to the server it ran on.
+
+## Temporal Reset, Activity Pause and Workflow Pause
+
+On servers that support them, a workflow can be reset to any completed Workflow Task (from the event or the actions menu), a pending Activity can be paused, unpaused or reset to its first attempt, and a workflow can be paused and resumed.
+Studio hides each control on a server that does not have the feature.
+
+## Temporal Schedule Editing
+
+A schedule can be edited in the same form that creates one: cadence, time zone, catch-up window, overlap policy, workflow, arguments and notes. Studio sends the change with the schedule's conflict token, so a change made elsewhere in the meantime is not overwritten.
+Cron schedules show their cron expression on every server, and a link or the command palette can open one schedule.
+
+## Temporal Workers, Deployments and Nexus
+
+The Workers view lists the Worker processes polling the namespace with the task queues each one serves, the Worker Deployments with their current and ramping version, and the Nexus Endpoints with their target.
+Each list says so when the server does not offer it, and the view is hidden on servers that do not report Workers.
+
 ## Local Streams Development Override
 
 Studio's local development workflow can temporarily replace the published npm `@prisma/dev` package with the sibling source package from `../team-expansion/dev/server`, while also swapping its `@prisma/streams-local` dependency over to a built local Streams checkout.
@@ -72,6 +225,19 @@ This makes schema drift visible to the user instead of producing a silently wron
 View, schema, table, filter, sort, pagination, and row-search state are encoded in URL hash parameters.
 Users can share links into a precise Studio state, and stale params are resolved back to valid schema/table defaults.
 
+## One Data Service at a Time in the Sidebar
+
+Studio can be connected to a database, a Streams server, and a Temporal server at once, and the sidebar shows one of them at a time, so one service's long list never pushes another service's items off screen.
+Every service uses the same three zones: a scope picker (schema or namespace), its fixed views, and its object list (tables, streams, or saved views and recent workflow runs). Only the object list scrolls.
+A switcher row above the zones appears only when two or more services are connected, so a session with one service looks like a tool built for that service. The switcher shows icons and labels when they fit, then labels only, then icons with a label on the open service.
+The database service is named after the connected engine (Postgres, MySQL, or SQLite), and the Temporal service shows a dot while workflows have failed and another service is open.
+
+## Links Between Data Services
+
+Every location in every service is one URL, so a link can lead from any service to any other: a workflow links to its stream events and table rows, and a table links to its change history in Streams.
+Following such a link, or pasting it into a new tab, opens the target service in the sidebar and scrolls its list to the target without moving the rest of the sidebar.
+Studio remembers the last location of each service for the session. Switching to another service and back returns to the same table, stream, or workflow run, and the browser Back button returns across services too.
+
 ## Sidebar Schema and Table Navigation
 
 The sidebar provides schema switching and active-table navigation so users can move through large databases quickly.
@@ -92,7 +258,7 @@ Choosing a filtered table, whether by `Enter` or mouse click, closes the search 
 
 ## Sidebar Streams Navigation
 
-Studio can optionally connect to a Prisma Streams server alongside the database connection and show a `Streams` section directly under `Tables` in the sidebar.
+Studio can optionally connect to a Prisma Streams server alongside the database connection and show a `Streams` service in the sidebar, with the stream list as its object list.
 The list reuses the same compact navigation shell as table browsing, loads live stream names from the configured Streams base URL, and disappears entirely when Studio is embedded without Streams configured.
 Streams also reuse the same inline filter disclosure as tables, so the `Streams` header can open an in-place search field with the same keyboard flow, real-time local filtering, and `ArrowUp` / `ArrowDown` plus `Enter` selection behavior instead of introducing a second sidebar filtering pattern.
 That shared hover affordance also adds a stream-list refresh button beside search, so the current Streams server can be queried again on demand without opening the field first or adding permanent chrome to the sidebar header.

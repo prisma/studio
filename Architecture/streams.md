@@ -22,7 +22,7 @@ This architecture governs:
 - loading active-stream filtered events through the Prisma Streams search endpoint
 - loading active-stream routing-key pages through the Prisma Streams routing-key listing endpoint
 - deep-linking from a table view into Prisma WAL stream history when `prisma-wal` is available
-- rendering the sidebar `Streams` section underneath `Tables`
+- rendering the stream list as the object list of the sidebar's `Streams` service
 - routing the main view into a selected stream
 - loading stream events through the Prisma Streams read endpoint
 - deriving event-row summary metadata for the list UI
