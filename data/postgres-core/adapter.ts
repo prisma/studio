@@ -370,6 +370,8 @@ function shouldDisableLintTransport(error: unknown): boolean {
   );
 }
 
+const LINT_EXPLAIN_FALLBACK_PREFIX = "EXPLAIN ";
+
 async function lintWithExplainFallback(
   executor: AdapterRequirements["executor"],
   details: AdapterSqlLintDetails,
@@ -392,7 +394,7 @@ async function lintWithExplainFallback(
   for (const statement of validation.statements) {
     try {
       const explainQuery = asQuery<Record<string, unknown>>(
-        `EXPLAIN ${statement.statement}`,
+        `${LINT_EXPLAIN_FALLBACK_PREFIX}${statement.statement}`,
       );
       const [error] = await executor.execute(explainQuery, {
         ...options,
@@ -407,6 +409,7 @@ async function lintWithExplainFallback(
         ...createLintDiagnosticsFromPostgresError({
           error,
           positionOffset: statement.from,
+          queryPrefixLength: LINT_EXPLAIN_FALLBACK_PREFIX.length,
           sql: statement.statement,
         }),
       );
@@ -415,6 +418,7 @@ async function lintWithExplainFallback(
         ...createLintDiagnosticsFromPostgresError({
           error,
           positionOffset: statement.from,
+          queryPrefixLength: LINT_EXPLAIN_FALLBACK_PREFIX.length,
           sql: statement.statement,
         }),
       );

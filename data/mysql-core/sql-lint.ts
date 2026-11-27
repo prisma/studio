@@ -6,7 +6,10 @@ import type {
   AdapterSqlLintResult,
 } from "../adapter";
 import type { Executor } from "../executor";
-import { validateSqlForLint } from "../postgres-core/sql-lint";
+import {
+  findSqlTokenRange,
+  validateSqlForLint,
+} from "../postgres-core/sql-lint";
 import { asQuery } from "../query";
 import type { Either } from "../type-utils";
 
@@ -157,32 +160,13 @@ function inferRangeFromMessage(
     tokenCandidates.add(missingTableMatch[1]);
   }
 
-  const lowerSql = sql.toLowerCase();
-
   for (const token of tokenCandidates) {
-    const normalizedToken = token.toLowerCase();
-    const directIndex = lowerSql.indexOf(normalizedToken);
+    const range =
+      findSqlTokenRange(sql, token) ??
+      findSqlTokenRange(sql, token.split(".").at(-1) ?? "");
 
-    if (directIndex >= 0) {
-      return {
-        from: directIndex,
-        to: Math.min(sql.length, directIndex + token.length),
-      };
-    }
-
-    const splitToken = normalizedToken.split(".").at(-1);
-
-    if (!splitToken) {
-      continue;
-    }
-
-    const splitIndex = lowerSql.indexOf(splitToken);
-
-    if (splitIndex >= 0) {
-      return {
-        from: splitIndex,
-        to: Math.min(sql.length, splitIndex + splitToken.length),
-      };
+    if (range) {
+      return range;
     }
   }
 

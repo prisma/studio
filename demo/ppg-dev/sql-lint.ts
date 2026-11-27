@@ -4,6 +4,7 @@ import type { StudioBFFSqlLintResult } from "../../data/bff";
 import { createPostgresSearchPath } from "../../data/postgres-core/search-path";
 import {
   createLintDiagnosticsFromPostgresError,
+  SQL_LINT_EXPLAIN_PREFIX,
   validateSqlForLint,
 } from "../../data/postgres-core/sql-lint";
 
@@ -45,13 +46,14 @@ export async function lintPostgresSql(args: {
             searchPath,
           ] as never);
         }
-        await tx.unsafe(`EXPLAIN (FORMAT JSON) ${statement.statement}`);
+        await tx.unsafe(`${SQL_LINT_EXPLAIN_PREFIX}${statement.statement}`);
       });
     } catch (error: unknown) {
       diagnostics.push(
         ...createLintDiagnosticsFromPostgresError({
           error,
           positionOffset: statement.from,
+          queryPrefixLength: SQL_LINT_EXPLAIN_PREFIX.length,
           sql: statement.statement,
         }),
       );
