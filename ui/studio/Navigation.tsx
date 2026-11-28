@@ -1110,9 +1110,13 @@ const locationTermClasses =
  * Where this Studio is: the database it is connected to, then the schema.
  *
  * Follows Console's context: what cannot be switched here (the database) is
- * plain text under a heading, with details in a tooltip; what can (the
- * schema) is a compact switcher next to its label, like Console's
- * `BRANCH main` switcher.
+ * plain text, with details in a tooltip; what can (the schema) is a compact
+ * switcher, like Console's branch switcher.
+ *
+ * Both use the sidebar's own rhythm: a heading, then a 28px row whose text
+ * lines up with the heading and whose box reaches 8px further left, like the
+ * nav items below (8px heading to row, 16px between entries, 24px to the next
+ * section).
  */
 const SchemaSelector = () => {
   const database = useDatabaseIdentity();
@@ -1121,21 +1125,21 @@ const SchemaSelector = () => {
   return (
     <dl
       data-testid="studio-location"
-      className="flex flex-col gap-3 px-4 pt-4 pb-2"
+      className="flex flex-col gap-4 px-4 pt-4 pb-2"
     >
       {database ? (
-        <div className="flex min-w-0 flex-col gap-1">
+        <div className="flex min-w-0 flex-col gap-2">
           <dt className={locationTermClasses}>Database</dt>
-          <dd className="min-w-0">
+          <dd className="-mx-2 min-w-0">
             <DatabaseLabel database={database} />
           </dd>
         </div>
       ) : null}
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 flex-col gap-2">
         <dt id={schemaLabelId} className={locationTermClasses}>
           Schema
         </dt>
-        <dd className="min-w-0">
+        <dd className="-mx-2 flex min-w-0">
           <SchemaSwitcher labelId={schemaLabelId} />
         </dd>
       </div>
@@ -1157,6 +1161,9 @@ function SchemaSwitcher(props: { labelId: string }) {
   const { schemaParam, setSchemaParam, setTableParam } = useNavigation();
   const [isOpen, setIsOpen] = useState(false);
   const triggerId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  // Picking with the mouse returns focus without a keyboard focus ring.
+  const isPointerInteractionRef = useRef(false);
 
   const schemaNames = Object.keys(introspection.schemas || {});
   const isInitialIntrospectionLoad = isFetching && !hasResolvedIntrospection;
@@ -1179,6 +1186,7 @@ function SchemaSwitcher(props: { labelId: string }) {
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
         <Button
+          ref={triggerRef}
           id={triggerId}
           type="button"
           variant="ghost"
@@ -1187,7 +1195,7 @@ function SchemaSwitcher(props: { labelId: string }) {
           aria-expanded={isOpen}
           // Reads as "Schema public".
           aria-labelledby={`${props.labelId} ${triggerId}`}
-          className="h-7 max-w-full gap-1.5 bg-sidebar-active/60 px-2 font-normal hover:bg-sidebar-active data-[state=open]:bg-sidebar-active"
+          className="h-7 max-w-full gap-1.5 bg-sidebar-active/60 px-2 text-xs font-normal hover:bg-sidebar-active data-[state=open]:bg-sidebar-active"
         >
           <span className="truncate">{schemaParam ?? "Select schema"}</span>
           <ChevronsUpDown
@@ -1196,7 +1204,24 @@ function SchemaSwitcher(props: { labelId: string }) {
           />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-60 p-0">
+      <PopoverContent
+        align="start"
+        className="w-60 p-0"
+        onCloseAutoFocus={(event) => {
+          if (isPointerInteractionRef.current) {
+            event.preventDefault();
+            triggerRef.current?.focus({ focusVisible: false } as FocusOptions);
+          }
+
+          isPointerInteractionRef.current = false;
+        }}
+        onKeyDownCapture={() => {
+          isPointerInteractionRef.current = false;
+        }}
+        onPointerDownCapture={() => {
+          isPointerInteractionRef.current = true;
+        }}
+      >
         <Command>
           <div className="relative">
             <CommandInput
@@ -1267,7 +1292,7 @@ function DatabaseLabel(props: { database: DatabaseIdentity }) {
           <button
             type="button"
             data-testid="studio-database-label"
-            className="block w-full truncate rounded-sm text-left text-xs leading-5 text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            className="block h-7 w-full truncate rounded-md px-2 text-left text-xs leading-7 text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           >
             {label}
           </button>

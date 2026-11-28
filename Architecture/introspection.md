@@ -138,7 +138,8 @@ Studio MUST name the database a tab is connected to without an extra round trip 
 - Every label passes through `formatDatabaseLabel` (`data/database-label.ts`), which is idempotent: connection URLs become `host:port/database` (or the file name) without user names, passwords, query parameters or fragments. `StudioContextProvider` applies it once at the boundary, so context, DOM and tab title only ever hold the cleaned label. Embedders SHOULD also apply it on their server so the raw URL never reaches the browser.
 - `ui/hooks/use-database-identity.ts` resolves the label (embedder label, else introspected name, only after a successful introspection) and owns the optional tab title. Studio MUST NOT touch `document.title` unless the embedder passes `documentTitle`, and MUST restore the previous title on unmount.
 - The sidebar shows the label as plain text under a `Database` heading, with a standard ShadCN `Tooltip` for the engine and introspected name. It is plain text because Studio cannot switch databases.
-- Below it, the schema is a switcher, following Console's branch switcher: a `Schema` label next to a compact trigger that opens the standard ShadCN combobox (`Popover` + `Command`) with a "Find schema…" search and a check on the current schema. Picking the current schema keeps the current table.
+- Below it, the schema is a switcher, following Console's branch switcher: a compact trigger under a `Schema` heading that opens the standard ShadCN combobox (`Popover` + `Command`) with a "Find schema…" search and a check on the current schema. Picking the current schema keeps the current table, and picking with the pointer returns focus to the trigger without a keyboard focus ring.
+- Both entries follow the sidebar's rhythm: a heading, then a 28px row whose text aligns with the heading and whose box reaches 8px further left, like the nav items (8px heading to row, 16px between entries, 24px to the next section).
 
 ## Cell Editor Type Label
 

@@ -82,7 +82,7 @@ Embedders that own their page can pass `documentTitle` to put the label in the b
 ## Sidebar Schema and Table Navigation
 
 The sidebar provides schema switching and active-table navigation so users can move through large databases quickly.
-Schemas switch from a compact `Schema` switcher modelled on Console's branch switcher: it opens a searchable list ("Find schema…") with the current schema checked, so databases with many schemas stay quick to navigate, and it works from the keyboard (Enter to open and pick, Esc to close).
+Schemas switch from a compact switcher under a `Schema` heading, modelled on Console's branch switcher: it opens a searchable list ("Find schema…") with the current schema checked, so databases with many schemas stay quick to navigate, and it works from the keyboard (Enter to open and pick, Esc to close).
 Table-name metadata is normalized into local TanStack DB state and queried live for responsive list rendering.
 
 ## Resizable Sidebar
