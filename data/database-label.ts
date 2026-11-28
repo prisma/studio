@@ -22,7 +22,7 @@ export function formatDatabaseLabel(
   }
 
   const label = value
-    .replace(USERINFO_PATTERN, "$1")
+    .replace(USERINFO_PATTERN, stripMalformedUserinfo)
     .replace(URL_PATTERN, formatUrlToken)
     .replace(INLINE_CREDENTIALS_PATTERN, "")
     .replace(QUERY_STRING_PATTERN, "")
@@ -33,13 +33,29 @@ export function formatDatabaseLabel(
 }
 
 /**
- * The user info of every connection URL in the text: everything from
- * `scheme://` to the last `@` before a `?`, `#`, bracket or quote. Malformed
- * passwords can hold `/` or spaces, which would otherwise split the URL into
- * tokens. When unsure where a URL ends, this strips too much rather than
- * leave part of a password behind.
+ * `scheme://` followed by everything up to the first `@` (before a `?`, `#`,
+ * bracket or quote): the user info of every connection URL in the text, when
+ * it has one. Malformed passwords can hold `/` or spaces, which would split
+ * the URL into tokens before `new URL` sees it, so they are removed first.
  */
-const USERINFO_PATTERN = /\b([a-z][a-z0-9+.-]*:\/\/)[^?#()[\]{}<>"']*@/gi;
+const USERINFO_PATTERN = /\b([a-z][a-z0-9+.-]*:\/\/)([^?#()[\]{}<>"'@]*)@/gi;
+
+/** `host:port` or `host:port/path`, i.e. no user info before the `@`. */
+const HOST_AND_PORT_PATTERN = /^(\[[^\]]*\]|[^:/\s]+):\d*(\/|$)/;
+
+function stripMalformedUserinfo(
+  match: string,
+  scheme: string,
+  beforeAt: string,
+): string {
+  // `user:password@…` is user info. Text without a colon, or a `host:port`
+  // whose path holds the `@` (e.g. a Vitess `keyspace@primary` database),
+  // is not, so it is left for `new URL` to parse.
+  const isUserinfo =
+    beforeAt.includes(":") && !HOST_AND_PORT_PATTERN.test(beforeAt);
+
+  return isUserinfo ? scheme : match;
+}
 
 /** `scheme://…` and `file:…` tokens anywhere in the text. */
 const URL_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\/\S*|\bfile:\S+/gi;

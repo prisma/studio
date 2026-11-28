@@ -105,6 +105,29 @@ describe("formatDatabaseLabel", () => {
     },
   );
 
+  it.each([
+    ["postgres://host/team@corp", "host/team@corp"],
+    ["mysql://host:3306/keyspace@primary", "host:3306/keyspace@primary"],
+    [
+      "mysql://u:s3cr3t@host:3306/keyspace@primary",
+      "host:3306/keyspace@primary",
+    ],
+    [
+      "Vitess (mysql://u:pa ss@host:3306/keyspace@replica)",
+      "Vitess (host:3306/keyspace@replica)",
+    ],
+    ["postgres://u:p@ss@host/db", "host/db"],
+    ["postgres://admin:1234@db.example.com/app", "db.example.com/app"],
+  ])(
+    "keeps `@` in the database path but not in credentials: %s",
+    (input, expected) => {
+      const label = formatDatabaseLabel(input);
+
+      expect(label).toBe(expected);
+      expect(label).not.toMatch(/s3cr3t|pa ss|u:|admin|1234/);
+    },
+  );
+
   it("is idempotent", () => {
     const inputs = [
       "postgresql://admin:s3cr3t@db.example.com:5432/app?api_key=sk_live_123",
