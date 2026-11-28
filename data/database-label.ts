@@ -12,6 +12,12 @@
  * - Plain text is kept, except for anything that looks like inline
  *   credentials (`user:password@`) or a query string (`?key=value`).
  *
+ * Malformed URLs (unencoded `/`, spaces or `@` in a password) are handled on
+ * a best-effort basis. One case cannot be told apart from a valid URL: a
+ * password of digits then `/` (`u:1234/x@host`) reads like
+ * `host:port/path@…`. When the connection's fields are available, prefer
+ * building the label from them (e.g. `${host}:${port}/${database}`).
+ *
  * @returns the safe label, or `null` when nothing displayable is left.
  */
 export function formatDatabaseLabel(
