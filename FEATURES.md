@@ -74,7 +74,7 @@ Users can share links into a precise Studio state, and stale params are resolved
 
 ## Connected Database Label
 
-People run Studio against local, dev, staging and production databases, often in several tabs at once, so the sidebar names the database each tab is connected to under a `Database` heading above the schema picker, with the engine and the database's own name in a tooltip.
+People run Studio against local, dev, staging and production databases, often in several tabs at once, so the sidebar names the database each tab is connected to under a `Database` heading above the schema switcher, with the engine and the database's own name in a tooltip.
 The name comes from introspection at no extra cost (`current_database()` on PostgreSQL, `database()` on MySQL, the file name on SQLite), and embedders can pass a `databaseLabel` such as a host and port or a Console project and branch, which takes priority because many databases share a name like `postgres`.
 Labels never show credentials: `formatDatabaseLabel` reduces connection URLs to `host:port/database` and drops user names, passwords and query parameters such as `api_key`, both on the embedder's server and again inside Studio.
 Embedders that own their page can pass `documentTitle` to put the label in the browser tab title, so tabs can be told apart; the previous title comes back when Studio unmounts.
@@ -82,6 +82,7 @@ Embedders that own their page can pass `documentTitle` to put the label in the b
 ## Sidebar Schema and Table Navigation
 
 The sidebar provides schema switching and active-table navigation so users can move through large databases quickly.
+Schemas switch from a compact `Schema` switcher modelled on Console's branch switcher: it opens a searchable list ("Find schema…") with the current schema checked, so databases with many schemas stay quick to navigate, and it works from the keyboard (Enter to open and pick, Esc to close).
 Table-name metadata is normalized into local TanStack DB state and queried live for responsive list rendering.
 
 ## Resizable Sidebar

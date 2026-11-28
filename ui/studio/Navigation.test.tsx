@@ -551,12 +551,46 @@ describe("Navigation", () => {
     container.remove();
   });
 
-  describe("connected database", () => {
+  describe("connected database and schema", () => {
     function renderNavigation(args: {
       databaseLabel?: string | null;
       databaseName?: string;
       hasResolvedIntrospection?: boolean;
+      schemas?: Record<string, string[]>;
     }) {
+      const setSchemaParam = vi.fn(() =>
+        Promise.resolve(new URLSearchParams()),
+      );
+      const setTableParam = vi.fn(() => Promise.resolve(new URLSearchParams()));
+      const schemas = Object.fromEntries(
+        Object.entries(args.schemas ?? { public: [] }).map(
+          ([schema, tables]) => [
+            schema,
+            {
+              name: schema,
+              tables: Object.fromEntries(
+                tables.map((table) => [
+                  table,
+                  { columns: {}, name: table, schema },
+                ]),
+              ),
+            },
+          ],
+        ),
+      );
+
+      useNavigationMock.mockReturnValue({
+        createUrl: () => "#",
+        metadata: {
+          activeTable: { name: "organizations", schema: "public" },
+          isFetching: false,
+        },
+        schemaParam: "public",
+        setSchemaParam,
+        setTableParam,
+        streamParam: null,
+        viewParam: "table",
+      });
       useStudioMock.mockImplementation(() => ({
         databaseLabel: args.databaseLabel ?? null,
         hasDatabase: true,
@@ -568,7 +602,7 @@ describe("Navigation", () => {
       useIntrospectionMock.mockReturnValue({
         data: {
           databaseName: args.databaseName,
-          schemas: { public: { name: "public", tables: {} } },
+          schemas,
         },
         errorState: null,
         hasResolvedIntrospection: args.hasResolvedIntrospection ?? true,
@@ -587,6 +621,8 @@ describe("Navigation", () => {
 
       return {
         container,
+        setSchemaParam,
+        setTableParam,
         cleanup: () => {
           act(() => {
             root.unmount();
@@ -594,6 +630,24 @@ describe("Navigation", () => {
           container.remove();
         },
       };
+    }
+
+    function getSchemaSwitcher(container: HTMLElement) {
+      const trigger = container.querySelector<HTMLButtonElement>(
+        '[data-testid="studio-location"] [role="combobox"]',
+      );
+
+      if (!trigger) {
+        throw new Error("Expected the schema switcher");
+      }
+
+      return trigger;
+    }
+
+    function getSchemaOptions() {
+      return Array.from(
+        document.body.querySelectorAll<HTMLElement>('[role="option"]'),
+      );
     }
 
     function getLocationLabels(container: HTMLElement) {
@@ -607,17 +661,12 @@ describe("Navigation", () => {
         databaseName: "app_dev",
       });
 
-      expect(getLocationLabels(container)).toEqual(["Database"]);
+      expect(getLocationLabels(container)).toEqual(["Database", "Schema"]);
       expect(
         container.querySelector('[data-testid="studio-database-label"]')
           ?.textContent,
       ).toBe("app_dev");
-      // The schema picker stays as it was, directly below.
-      expect(
-        container.querySelector(
-          '[data-testid="studio-location"] [role="combobox"]',
-        )?.textContent,
-      ).toBe("Schema:public");
+      expect(getSchemaSwitcher(container).textContent).toBe("public");
 
       cleanup();
     });
@@ -639,10 +688,88 @@ describe("Navigation", () => {
     it("shows only the schema picker when the database has no name to report", () => {
       const { container, cleanup } = renderNavigation({});
 
-      expect(getLocationLabels(container)).toEqual([]);
+      expect(getLocationLabels(container)).toEqual(["Schema"]);
       expect(
         container.querySelector('[data-testid="studio-database-label"]'),
       ).toBeNull();
+
+      cleanup();
+    });
+
+    it("switches schema from a searchable list like Console's branch switcher", () => {
+      const { container, cleanup, setSchemaParam, setTableParam } =
+        renderNavigation({
+          schemas: {
+            analytics: ["events", "sessions"],
+            billing: ["invoices"],
+            public: ["organizations"],
+          },
+        });
+      const trigger = getSchemaSwitcher(container);
+
+      expect(trigger.getAttribute("aria-expanded")).toBe("false");
+      expect(trigger.getAttribute("aria-labelledby")).toBeTruthy();
+
+      act(() => {
+        click(trigger);
+      });
+
+      expect(trigger.getAttribute("aria-expanded")).toBe("true");
+      const input = document.body.querySelector<HTMLInputElement>(
+        'input[placeholder="Find schema…"]',
+      );
+      expect(input).not.toBeNull();
+      expect(getSchemaOptions().map((option) => option.textContent)).toEqual([
+        "analytics",
+        "billing",
+        "public",
+      ]);
+      // The current schema is marked, like Console's current branch.
+      expect(
+        getSchemaOptions()
+          .filter((option) => option.dataset.current === "true")
+          .map((option) => option.textContent),
+      ).toEqual(["public"]);
+
+      act(() => {
+        inputText(input!, "ana");
+      });
+
+      expect(getSchemaOptions().map((option) => option.textContent)).toEqual([
+        "analytics",
+      ]);
+
+      act(() => {
+        click(getSchemaOptions()[0]!);
+      });
+
+      expect(setSchemaParam).toHaveBeenCalledWith("analytics");
+      expect(setTableParam).toHaveBeenCalledWith("events");
+      expect(trigger.getAttribute("aria-expanded")).toBe("false");
+
+      cleanup();
+    });
+
+    it("keeps the current table when the current schema is picked again", () => {
+      const { container, cleanup, setSchemaParam, setTableParam } =
+        renderNavigation({
+          schemas: { analytics: ["events"], public: ["organizations"] },
+        });
+      const trigger = getSchemaSwitcher(container);
+
+      act(() => {
+        click(trigger);
+      });
+      const current = getSchemaOptions().find(
+        (option) => option.dataset.current === "true",
+      );
+      act(() => {
+        click(current!);
+      });
+
+      expect(setSchemaParam).not.toHaveBeenCalled();
+      expect(setTableParam).not.toHaveBeenCalled();
+      expect(trigger.getAttribute("aria-expanded")).toBe("false");
 
       cleanup();
     });

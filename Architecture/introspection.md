@@ -137,7 +137,8 @@ Studio MUST name the database a tab is connected to without an extra round trip 
 - Embedders MAY pass `StudioProps.databaseLabel`. It takes priority over `databaseName`, because only the embedder knows the host or the Console project and branch, and many databases share a name such as `postgres`.
 - Every label passes through `formatDatabaseLabel` (`data/database-label.ts`), which is idempotent: connection URLs become `host:port/database` (or the file name) without user names, passwords, query parameters or fragments. `StudioContextProvider` applies it once at the boundary, so context, DOM and tab title only ever hold the cleaned label. Embedders SHOULD also apply it on their server so the raw URL never reaches the browser.
 - `ui/hooks/use-database-identity.ts` resolves the label (embedder label, else introspected name, only after a successful introspection) and owns the optional tab title. Studio MUST NOT touch `document.title` unless the embedder passes `documentTitle`, and MUST restore the previous title on unmount.
-- The sidebar shows the label as plain text under a `Database` heading above the schema picker, with a standard ShadCN `Tooltip` for the engine and introspected name. It is plain text because Studio cannot switch databases.
+- The sidebar shows the label as plain text under a `Database` heading, with a standard ShadCN `Tooltip` for the engine and introspected name. It is plain text because Studio cannot switch databases.
+- Below it, the schema is a switcher, following Console's branch switcher: a `Schema` label next to a compact trigger that opens the standard ShadCN combobox (`Popover` + `Command`) with a "Find schema…" search and a check on the current schema. Picking the current schema keeps the current table.
 
 ## Cell Editor Type Label
 
