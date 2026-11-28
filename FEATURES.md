@@ -280,7 +280,7 @@ The active schema selector is also used as the default SQL namespace, so unquali
 PostgreSQL, MySQL, and SQLite linting runs asynchronously through guarded parse/plan `EXPLAIN` paths and shows inline diagnostics while preserving the normal run/cancel query flow.
 Diagnostics underline the offending name (for example the missing table), and comments are never flagged, so a query that starts with a `--` note lints the same as one without it.
 The same lint transport also validates saved table-level SQL filter pills in the background, so Studio reuses one dialect-aware SQL validation path for both the SQL editor and advanced inline table filters.
-Keyboard execution supports `Cmd/Ctrl+Enter`, and in multi-statement scripts it runs only the top-level statement at the current cursor.
+Keyboard execution supports `Cmd/Ctrl+Enter`, and in multi-statement scripts it runs only the top-level statement at the current cursor. Statement boundaries follow the active dialect's quoting and comment rules, so MySQL backslash escapes, backtick identifiers, and `#` comments do not split or merge statements.
 Large SQL result sets stay responsive while you keep editing the query because result-grid rendering is isolated from editor keystrokes unless the executed result itself changes.
 Long SQL lines wrap inside the editor instead of stretching the overall page wider, so writing large queries stays readable on narrow viewports.
 The SQL editor panel is height-capped and scrolls internally, so a long query cannot push the `Run SQL` button off screen or squeeze the result grid out of view.
