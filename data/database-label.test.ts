@@ -107,7 +107,6 @@ describe("formatDatabaseLabel", () => {
 
   it.each([
     ["postgres://host/team@corp", "host/team@corp"],
-    ["mysql://host:3306/keyspace@primary", "host:3306/keyspace@primary"],
     [
       "mysql://u:s3cr3t@host:3306/keyspace@primary",
       "host:3306/keyspace@primary",
@@ -123,6 +122,8 @@ describe("formatDatabaseLabel", () => {
       "postgres://u:1234/pa ss@host:5432/db?api_key=sk_live_123",
       "host:5432/db",
     ],
+    ["postgres://u:1234/pa@host/db", "host/db"],
+    ["Staging (postgres://u:1234/pa@host/db)", "Staging (host/db)"],
   ])(
     "keeps `@` in the database path but not in credentials: %s",
     (input, expected) => {
@@ -132,6 +133,15 @@ describe("formatDatabaseLabel", () => {
       expect(label).not.toMatch(/s3cr3t|pa ss|u:|admin|1234/);
     },
   );
+
+  it("treats a colon before the first `@` as credentials, even when it could be a port", () => {
+    // `host:3306/keyspace@primary` and `u:1234/pa@host` have the same shape.
+    // Leaking a password is worse than a shortened label, so both are cut at
+    // the `@`. With credentials present, the path keeps its `@` (see above).
+    expect(formatDatabaseLabel("mysql://host:3306/keyspace@primary")).toBe(
+      "primary",
+    );
+  });
 
   it("is idempotent", () => {
     const inputs = [
