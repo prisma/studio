@@ -1750,6 +1750,22 @@ export function DataGrid(props: DataGridProps) {
     rowSelectionDragBaseRef.current = {};
   }, []);
 
+  // When the grid's rows are replaced (a new SQL result, a refetch with other
+  // rows), cancel any row drag in progress: its saved base and anchor refer to
+  // the old rows, so continuing it could re-select rows that no longer exist.
+  // Extending a drag over the same rows is unaffected.
+  const gridRowIdsKey = visibleGridRows.map((row) => row.id).join("|");
+  const previousGridRowIdsKeyRef = useRef(gridRowIdsKey);
+
+  useEffect(() => {
+    if (previousGridRowIdsKeyRef.current === gridRowIdsKey) {
+      return;
+    }
+
+    previousGridRowIdsKeyRef.current = gridRowIdsKey;
+    resetRowSelectionInteractionState();
+  }, [gridRowIdsKey, resetRowSelectionInteractionState]);
+
   const resetSelectionInteractionState = useCallback(() => {
     setSelectionState((previous) =>
       transitionGridSelectionMachine(previous, {

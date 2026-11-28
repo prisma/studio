@@ -24,6 +24,25 @@ import {
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
+function EditableCell(props: {
+  cellProps: Omit<CellProps, "children" | "ref">;
+  editorKey: string;
+  value: string;
+}) {
+  const { cellProps, editorKey, value } = props;
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+
+  return (
+    <Cell {...cellProps} onClick={() => setIsEditorOpen(true)}>
+      {isEditorOpen ? (
+        <span data-editor-open={editorKey}>editor-open</span>
+      ) : (
+        value
+      )}
+    </Cell>
+  );
+}
+
 function createEditableColumns(): GridColumnDef[] {
   return [
     {
@@ -35,25 +54,16 @@ function createEditableColumns(): GridColumnDef[] {
         );
       },
       cell({ cell }) {
-        return function EditableCell(
-          props: Omit<CellProps, "children" | "ref">,
-        ) {
-          const [isEditorOpen, setIsEditorOpen] = useState(false);
-
-          return (
-            <Cell {...props} onClick={() => setIsEditorOpen(true)}>
-              {isEditorOpen ? (
-                <span
-                  data-editor-open={`editor-${cell.row.index}-${cell.column.id}`}
-                >
-                  editor-open
-                </span>
-              ) : (
-                String(cell.getValue() ?? "")
-              )}
-            </Cell>
-          );
-        };
+        // Column render functions must not call hooks (they are called as
+        // plain functions by GridCellRenderer), so editor state lives in a
+        // named component.
+        return (props: Omit<CellProps, "children" | "ref">) => (
+          <EditableCell
+            cellProps={props}
+            editorKey={`editor-${cell.row.index}-${cell.column.id}`}
+            value={String(cell.getValue() ?? "")}
+          />
+        );
       },
     },
   ];
@@ -218,14 +228,22 @@ function renderGridWithSelectionScope(args?: {
   document.body.appendChild(container);
   const root = createRoot(container);
   let setSelectionScopeKey: ((nextKey: string) => void) | undefined;
+  let replaceRowsAndClearSelection: ((nextRows: GridRow[]) => void) | undefined;
 
   function GridHarness() {
     const [rowSelectionState, setRowSelectionState] =
       useState<RowSelectionState>({});
     const [selectionScopeKey, setSelectionScopeKeyState] = useState("table_a");
+    const [replacedRows, setReplacedRows] = useState<GridRow[] | null>(null);
     const scopeConfig = args?.scopeConfigs?.[selectionScopeKey];
 
     setSelectionScopeKey = setSelectionScopeKeyState;
+    // Like SqlView when a new result arrives: new rows, same scope key, and
+    // the row selection is cleared by the host.
+    replaceRowsAndClearSelection = (nextRows) => {
+      setReplacedRows(nextRows);
+      setRowSelectionState({});
+    };
 
     return (
       <div
@@ -253,7 +271,7 @@ function renderGridWithSelectionScope(args?: {
           }}
           pageCount={1}
           paginationState={{ pageIndex: 0, pageSize: 20 }}
-          rows={scopeConfig?.rows ?? args?.rows ?? rows}
+          rows={replacedRows ?? scopeConfig?.rows ?? args?.rows ?? rows}
           rowSelectionState={rowSelectionState}
           selectionScopeKey={selectionScopeKey}
         />
@@ -303,11 +321,22 @@ function renderGridWithSelectionScope(args?: {
     container.remove();
   }
 
+  function replaceRows(nextRows: GridRow[]) {
+    act(() => {
+      if (!replaceRowsAndClearSelection) {
+        throw new Error("Could not replace rows");
+      }
+
+      replaceRowsAndClearSelection(nextRows);
+    });
+  }
+
   return {
     cleanup,
     container,
     getCell,
     getSelectedRowCount,
+    replaceRows,
     switchSelectionScope,
   };
 }
@@ -1723,6 +1752,30 @@ describe("DataGrid interactions", () => {
     expect(getCell(1, "id").className).toContain(
       "group-even:!bg-table-row-selected-even",
     );
+
+    cleanup();
+  });
+
+  it("cancels an in-progress row drag when the grid rows are replaced", () => {
+    createSelection({ isCollapsed: true });
+
+    const { cleanup, getCell, getSelectedRowCount, replaceRows } =
+      renderGridWithSelectionScope({
+        columnDefs: createReadOnlyColumns({ includeRowSelector: true }),
+      });
+
+    dispatchMouse(getCell(2, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(window, "mouseup");
+    dispatchMouse(getCell(0, "__ps_select"), "mousedown", { button: 0 });
+    expect(getSelectedRowCount()).toBe(2);
+
+    // A new result with fewer rows arrives mid-drag and the host clears the
+    // selection; continuing the drag must not restore the removed row.
+    replaceRows(rows.slice(0, 2));
+    dispatchMouse(getCell(1, "__ps_select"), "mouseover", { button: 0 });
+    dispatchMouse(window, "mouseup");
+
+    expect(getSelectedRowCount()).toBe(0);
 
     cleanup();
   });
