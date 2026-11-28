@@ -272,4 +272,64 @@ describe("postgres-core/sql-lint comments and positions", () => {
       }),
     ]);
   });
+
+  it("does not treat comment markers inside a quoted identifier as a comment", () => {
+    const sql = 'select 1 as "a--b" from missing';
+    const error = new Error('relation "missing" does not exist');
+
+    expect(createLintDiagnosticsFromPostgresError({ error, sql })).toEqual([
+      expect.objectContaining({
+        from: sql.indexOf("missing"),
+        to: sql.indexOf("missing") + "missing".length,
+      }),
+    ]);
+  });
+
+  it("does not treat comment markers inside a dollar-quoted string as a comment", () => {
+    const sql = "select $tag$-- note$tag$, $$/* x$$ from missing";
+    const error = new Error('relation "missing" does not exist');
+
+    expect(createLintDiagnosticsFromPostgresError({ error, sql })).toEqual([
+      expect.objectContaining({
+        from: sql.indexOf("missing"),
+        to: sql.indexOf("missing") + "missing".length,
+      }),
+    ]);
+  });
+
+  it("does not match part of a quoted identifier", () => {
+    const sql = "select 1 as \"'missing'\" from missing";
+    const error = new Error('relation "missing" does not exist');
+
+    expect(createLintDiagnosticsFromPostgresError({ error, sql })).toEqual([
+      expect.objectContaining({
+        from: sql.lastIndexOf("missing"),
+        to: sql.lastIndexOf("missing") + "missing".length,
+      }),
+    ]);
+  });
+
+  it("still matches a quoted identifier with exactly the missing name", () => {
+    const sql = 'select * from "missing"';
+    const error = new Error('relation "missing" does not exist');
+
+    expect(createLintDiagnosticsFromPostgresError({ error, sql })).toEqual([
+      expect.objectContaining({
+        from: sql.indexOf("missing"),
+        to: sql.indexOf("missing") + "missing".length,
+      }),
+    ]);
+  });
+
+  it("does not read a dollar sign inside a non-ASCII identifier as a dollar quote", () => {
+    const sql = "select café$tag$ from missing";
+    const error = new Error('relation "missing" does not exist');
+
+    expect(createLintDiagnosticsFromPostgresError({ error, sql })).toEqual([
+      expect.objectContaining({
+        from: sql.indexOf("missing"),
+        to: sql.indexOf("missing") + "missing".length,
+      }),
+    ]);
+  });
 });

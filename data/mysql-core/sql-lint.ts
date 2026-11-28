@@ -162,8 +162,11 @@ function inferRangeFromMessage(
 
   for (const token of tokenCandidates) {
     const range =
-      findSqlTokenRange(sql, token) ??
-      findSqlTokenRange(sql, token.split(".").at(-1) ?? "");
+      findSqlTokenRange(sql, token, { dialect: "mysql" }) ??
+      findSqlTokenRange(sql, token.split(".").at(-1) ?? "", {
+        dialect: "mysql",
+        qualified: true,
+      });
 
     if (range) {
       return range;

@@ -81,4 +81,18 @@ describe("sqlite-core/sql-lint token ranges", () => {
 
     expect(diagnostic).toMatchObject({ from, to: from + "orders".length });
   });
+
+  it("marks the table name when its qualifier is quoted", () => {
+    const sql = 'select * from "main".missing_table';
+    const [diagnostic] = createLintDiagnosticsFromSQLiteError({
+      error: new Error("no such table: main.missing_table"),
+      sql,
+    });
+    const from = sql.indexOf("missing_table");
+
+    expect(diagnostic).toMatchObject({
+      from,
+      to: from + "missing_table".length,
+    });
+  });
 });

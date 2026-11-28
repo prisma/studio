@@ -161,7 +161,10 @@ function findTokenRange(
   }
 
   return (
-    findSqlTokenRange(sql, token) ??
-    findSqlTokenRange(sql, token.split(".").at(-1) ?? "")
+    findSqlTokenRange(sql, token, { dialect: "sqlite" }) ??
+    findSqlTokenRange(sql, token.split(".").at(-1) ?? "", {
+      dialect: "sqlite",
+      qualified: true,
+    })
   );
 }
