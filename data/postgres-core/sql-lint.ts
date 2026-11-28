@@ -395,12 +395,17 @@ export function findSqlTokenRange(
   for (const match of masked.matchAll(pattern)) {
     const from = match.index;
     const to = from + token.length;
-    const quoted = quotedIdentifiers.find(
-      (span) => from < span.to && to > span.from,
+    // A match may contain whole quoted identifiers or be exactly one quoted
+    // name, but must not start or end inside one.
+    const cutsQuotedIdentifier = quotedIdentifiers.some(
+      (span) =>
+        from < span.to &&
+        to > span.from &&
+        !(from <= span.from && to >= span.to) &&
+        !(from === span.from + 1 && to === span.to - 1),
     );
 
-    // Inside a quoted identifier, only the whole name counts as a match.
-    if (quoted && (from !== quoted.from + 1 || to !== quoted.to - 1)) {
+    if (cutsQuotedIdentifier) {
       continue;
     }
 

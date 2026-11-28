@@ -137,4 +137,18 @@ describe("mysql-core/sql-lint token ranges", () => {
       to: from + "missing_table".length,
     });
   });
+
+  it("marks a syntax-error fragment that contains a whole quoted identifier", () => {
+    const sql = "SELECT id, * FROM `users`";
+    const fragment = "* FROM `users`";
+    const [diagnostic] = createLintDiagnosticsFromMySQLError({
+      error: new Error(
+        `You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '${fragment}' at line 1`,
+      ),
+      sql,
+    });
+    const from = sql.indexOf(fragment);
+
+    expect(diagnostic).toMatchObject({ from, to: from + fragment.length });
+  });
 });
