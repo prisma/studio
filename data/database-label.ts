@@ -50,9 +50,12 @@ function stripMalformedUserinfo(
 ): string {
   // `user:password@…` is user info. Text without a colon, or a `host:port`
   // whose path holds the `@` (e.g. a Vitess `keyspace@primary` database),
-  // is not, so it is left for `new URL` to parse.
+  // is not, so it is left for `new URL` to parse. A real `host:port/path`
+  // cannot contain whitespace, so whitespace means a malformed password
+  // such as `u:1234/pa ss`; strip it even if it starts like a port.
   const isUserinfo =
-    beforeAt.includes(":") && !HOST_AND_PORT_PATTERN.test(beforeAt);
+    beforeAt.includes(":") &&
+    (!HOST_AND_PORT_PATTERN.test(beforeAt) || /\s/.test(beforeAt));
 
   return isUserinfo ? scheme : match;
 }

@@ -118,6 +118,11 @@ describe("formatDatabaseLabel", () => {
     ],
     ["postgres://u:p@ss@host/db", "host/db"],
     ["postgres://admin:1234@db.example.com/app", "db.example.com/app"],
+    ["Staging (postgres://u:1234/pa ss@host/db)", "Staging (host/db)"],
+    [
+      "postgres://u:1234/pa ss@host:5432/db?api_key=sk_live_123",
+      "host:5432/db",
+    ],
   ])(
     "keeps `@` in the database path but not in credentials: %s",
     (input, expected) => {
