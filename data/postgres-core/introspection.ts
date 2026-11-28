@@ -402,17 +402,19 @@ export function mockTablesQuery() {
 }
 
 /**
- * Returns a query that returns the current timezone setting of the PostgreSQL database.
+ * Returns a query that reads the session's timezone setting and the name of
+ * the connected database. Both ride on one round trip next to the tables query.
  */
 export function getTimezoneQuery() {
   const builder = getPostgreSQLBuilder();
 
   return compile(
-    builder.selectNoFrom(
+    builder.selectNoFrom([
       builder
         .fn<string>("current_setting", [sql.lit("timezone")])
         .as("timezone"),
-    ),
+      builder.fn<string>("current_database").as("databaseName"),
+    ]),
   );
 }
 
@@ -420,9 +422,9 @@ export function getTimezoneQuery() {
  * For testing purposes.
  */
 export function mockTimezoneQuery() {
-  return [{ timezone: "UTC" }] as const satisfies QueryResult<
-    typeof getTimezoneQuery
-  >;
+  return [
+    { databaseName: "postgres", timezone: "UTC" },
+  ] as const satisfies QueryResult<typeof getTimezoneQuery>;
 }
 
 /**

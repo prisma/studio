@@ -7,7 +7,7 @@
  * https://sqlite.org/schematab.html
  */
 
-import { expressionBuilder, type NotNull } from "kysely";
+import { expressionBuilder, type NotNull, sql } from "kysely";
 import { jsonArrayFrom } from "kysely/helpers/sqlite";
 
 import { type BuilderRequirements, compile, type QueryResult } from "../query";
@@ -267,4 +267,54 @@ export function mockTablesQuery() {
       ],
     },
   ] as const satisfies QueryResult<typeof getTablesQuery>;
+}
+
+/**
+ * The shape of each row returned by `pragma_database_list`.
+ */
+interface PragmaDatabaseList {
+  /** absolute path of the database file; empty for in-memory databases */
+  file: string;
+  /** schema name: `main`, `temp` or an attached database */
+  name: string;
+  seq: number;
+}
+
+/**
+ * Returns a query that reads the file name of the main database, e.g.
+ * `dev.db`. Only the last path segment is computed in SQL, so the full path
+ * (which often contains a user name) never leaves the database host.
+ * In-memory databases return an empty string.
+ */
+export function getDatabaseNameQuery(
+  requirements?: Omit<BuilderRequirements, "Adapter" | "QueryCompiler">,
+) {
+  // Windows paths use backslashes; normalise them to `/` first.
+  const path = sql<string>`replace("dl"."file", char(92), '/')`;
+
+  return compile(
+    getSQLiteBuilder(requirements)
+      .selectFrom(
+        expressionBuilder()
+          .fn<PragmaDatabaseList>("pragma_database_list", [])
+          .as("dl"),
+      )
+      .where("dl.name", "=", "main")
+      // rtrim(path, <every character except "/">) strips back to the last "/",
+      // so replacing that prefix with "" leaves the file name.
+      .select(
+        sql<string>`replace(${path}, rtrim(${path}, replace(${path}, '/', '')), '')`.as(
+          "databaseName",
+        ),
+      ),
+  );
+}
+
+/**
+ * For testing purposes.
+ */
+export function mockDatabaseNameQuery() {
+  return [{ databaseName: "dev.db" }] as const satisfies QueryResult<
+    typeof getDatabaseNameQuery
+  >;
 }

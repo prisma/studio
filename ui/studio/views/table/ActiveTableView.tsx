@@ -1186,7 +1186,19 @@ export function ActiveTableView(_props: ViewProps) {
         return;
       }
 
+      // Another control already handled this key, e.g. Enter picking an item
+      // in a list that then closed and dropped focus to the page.
+      if (event.defaultPrevented) {
+        return;
+      }
+
       if (isKeyboardEditableElement(document.activeElement)) {
+        return;
+      }
+
+      // Enter on a focused button or link (e.g. the sidebar's schema switcher)
+      // must activate it, not open the grid's focused cell.
+      if (isInteractiveControl(document.activeElement)) {
         return;
       }
 
@@ -2341,6 +2353,41 @@ function isKeyboardEditableElement(target: EventTarget | null): boolean {
   }
 
   return target.isContentEditable;
+}
+
+const INTERACTIVE_ROLES = new Set([
+  "button",
+  "checkbox",
+  "combobox",
+  "link",
+  "menuitem",
+  "option",
+  "radio",
+  "switch",
+  "tab",
+]);
+
+/**
+ * Buttons, links and other controls that handle Enter and arrow keys
+ * themselves. The grid's own focus target is a plain container, so this never
+ * matches while the grid has focus.
+ */
+function isInteractiveControl(target: Element | null): boolean {
+  if (!(target instanceof HTMLElement) || !target.isConnected) {
+    return false;
+  }
+
+  const tagName = target.tagName.toLowerCase();
+
+  if (
+    tagName === "button" ||
+    tagName === "summary" ||
+    (tagName === "a" && target.hasAttribute("href"))
+  ) {
+    return true;
+  }
+
+  return INTERACTIVE_ROLES.has(target.getAttribute("role") ?? "");
 }
 
 function toPersistedSelectionCoordinate(args: {

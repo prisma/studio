@@ -1,6 +1,8 @@
 import { Slot } from "@radix-ui/react-slot";
 import {
   Activity,
+  ChevronsUpDown,
+  CircleCheck,
   Code2,
   History,
   Network,
@@ -10,20 +12,42 @@ import {
   Table2,
   Waves,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import PrismaWordmark from "../../assets/prisma-wordmark.svg";
 import PrismaWordmarkWhite from "../../assets/prisma-wordmark-white.svg";
 import { Button } from "../components/ui/button";
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "../components/ui/command";
 import { Input } from "../components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../components/ui/select";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "../components/ui/popover";
 import { Skeleton } from "../components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../components/ui/tooltip";
+import {
+  type DatabaseIdentity,
+  useDatabaseIdentity,
+} from "../hooks/use-database-identity";
 import { useIntrospection } from "../hooks/use-introspection";
 import { useHasMigrationHistory } from "../hooks/use-migrations";
 import { useNavigation } from "../hooks/use-navigation";
@@ -1078,49 +1102,216 @@ const Item = ({
   );
 };
 
+/** Same type role as the sidebar's group headings ("Studio", "Tables"). */
+const locationTermClasses =
+  "shrink-0 font-mono text-2xs font-normal uppercase tracking-loose text-muted-foreground";
+
+/**
+ * Where this Studio is: the database it is connected to, then the schema.
+ *
+ * Follows Console's context: what cannot be switched here (the database) is
+ * plain text, with details in a tooltip; what can (the schema) is a compact
+ * switcher, like Console's branch switcher.
+ *
+ * Both use the sidebar's own rhythm: a heading, then a 28px row whose text
+ * lines up with the heading and whose box reaches 8px further left, like the
+ * nav items below (8px heading to row, 16px between entries, 24px to the next
+ * section).
+ */
 const SchemaSelector = () => {
+  const database = useDatabaseIdentity();
+  const schemaLabelId = useId();
+
+  return (
+    <dl
+      data-testid="studio-location"
+      className="flex flex-col gap-4 px-4 pt-4 pb-2"
+    >
+      {database ? (
+        <div className="flex min-w-0 flex-col gap-2">
+          <dt className={locationTermClasses}>Database</dt>
+          <dd className="-mx-2 min-w-0">
+            <DatabaseLabel database={database} />
+          </dd>
+        </div>
+      ) : null}
+      <div className="flex min-w-0 flex-col gap-2">
+        <dt id={schemaLabelId} className={locationTermClasses}>
+          Schema
+        </dt>
+        <dd className="-mx-2 flex min-w-0">
+          <SchemaSwitcher labelId={schemaLabelId} />
+        </dd>
+      </div>
+    </dl>
+  );
+};
+
+/**
+ * ShadCN combobox (Popover + Command): a compact trigger, a "Find schema…"
+ * search, and a check on the current schema. Scales to databases with many
+ * schemas, where a plain select has no search.
+ */
+function SchemaSwitcher(props: { labelId: string }) {
   const {
     data: introspection,
     hasResolvedIntrospection,
     isFetching,
   } = useIntrospection();
   const { schemaParam, setSchemaParam, setTableParam } = useNavigation();
+  const [isOpen, setIsOpen] = useState(false);
+  const triggerId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  // Picking with the mouse returns focus without a keyboard focus ring.
+  const isPointerInteractionRef = useRef(false);
+  // Only a schema pick hands focus back to the trigger; a click outside must
+  // leave focus where the user put it.
+  const isClosingFromSelectionRef = useRef(false);
 
-  // Extract schema names from introspection data
   const schemaNames = Object.keys(introspection.schemas || {});
   const isInitialIntrospectionLoad = isFetching && !hasResolvedIntrospection;
 
+  function selectSchema(schemaName: string) {
+    isClosingFromSelectionRef.current = true;
+    setIsOpen(false);
+
+    // Like a select, picking the current schema keeps the current table.
+    if (schemaName === schemaParam) {
+      return;
+    }
+
+    const schema = introspection.schemas[schemaName];
+    const tableParam = Object.keys(schema?.tables ?? {})[0] ?? null;
+    void setSchemaParam(schemaName);
+    void setTableParam(tableParam);
+  }
+
   return (
-    <div className="flex items-center gap-1 pt-4 pb-2 px-4">
-      <Select
-        value={schemaParam}
-        onValueChange={(schemaParam) => {
-          const schema = introspection.schemas[schemaParam ?? ""];
-          const tableParam = Object.keys(schema?.tables ?? {})[0] ?? null;
-          void setSchemaParam(schemaParam);
-          void setTableParam(tableParam);
+    <Popover open={isOpen} onOpenChange={setIsOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          ref={triggerRef}
+          id={triggerId}
+          type="button"
+          variant="ghost"
+          size="xs"
+          role="combobox"
+          aria-expanded={isOpen}
+          // Reads as "Schema public".
+          aria-labelledby={`${props.labelId} ${triggerId}`}
+          className="h-7 max-w-full gap-1.5 bg-sidebar-active/60 px-2 text-xs font-normal hover:bg-sidebar-active data-[state=open]:bg-sidebar-active"
+        >
+          <span className="truncate">{schemaParam ?? "Select schema"}</span>
+          <ChevronsUpDown
+            aria-hidden="true"
+            className="size-3 shrink-0 text-muted-foreground"
+          />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-60 p-0"
+        onCloseAutoFocus={(event) => {
+          const isSelectionClose = isClosingFromSelectionRef.current;
+          isClosingFromSelectionRef.current = false;
+
+          if (isSelectionClose && isPointerInteractionRef.current) {
+            event.preventDefault();
+            triggerRef.current?.focus({ focusVisible: false } as FocusOptions);
+          }
+
+          isPointerInteractionRef.current = false;
+        }}
+        onKeyDownCapture={() => {
+          isPointerInteractionRef.current = false;
+        }}
+        onPointerDownCapture={() => {
+          isPointerInteractionRef.current = true;
         }}
       >
-        <SelectTrigger className="text-xs" label="Schema">
-          <SelectValue placeholder="Select schema" />
-        </SelectTrigger>
-        <SelectContent>
-          {isInitialIntrospectionLoad ? (
-            <SelectItem value="loading">Loading schemas...</SelectItem>
-          ) : schemaNames.length > 0 ? (
-            schemaNames.map((schema) => (
-              <SelectItem key={schema} value={schema} className="text-xs">
-                {schema}
-              </SelectItem>
-            ))
-          ) : (
-            <SelectItem value="no-schemas">No schemas found</SelectItem>
-          )}
-        </SelectContent>
-      </Select>
-    </div>
+        <Command>
+          <div className="relative">
+            <CommandInput
+              aria-label="Find schema"
+              className="h-6 pr-10 text-[13px]"
+              placeholder="Find schema…"
+            />
+            {/* Same key hint as the sidebar's command-menu shortcut. */}
+            <kbd className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 rounded-sm border border-border bg-background px-1 py-px font-mono text-2xs text-muted-foreground">
+              Esc
+            </kbd>
+          </div>
+          <CommandList className="max-h-64 px-1 py-1">
+            <CommandEmpty className="px-3 py-4 text-xs">
+              No schema found.
+            </CommandEmpty>
+            {isInitialIntrospectionLoad ? (
+              <CommandItem disabled value="loading" className="text-xs">
+                Loading schemas…
+              </CommandItem>
+            ) : (
+              schemaNames.map((schemaName) => {
+                const isCurrent = schemaName === schemaParam;
+
+                return (
+                  <CommandItem
+                    key={schemaName}
+                    className="text-xs"
+                    data-current={isCurrent ? "true" : undefined}
+                    onSelect={() => selectSchema(schemaName)}
+                    value={schemaName}
+                  >
+                    <span className="min-w-0 flex-1 truncate">
+                      {schemaName}
+                    </span>
+                    {isCurrent ? (
+                      <CircleCheck
+                        aria-label="Current schema"
+                        className="size-3.5 text-muted-foreground"
+                        role="img"
+                      />
+                    ) : null}
+                  </CommandItem>
+                );
+              })
+            )}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
-};
+}
+
+function DatabaseLabel(props: { database: DatabaseIdentity }) {
+  const { databaseName, engine, label } = props.database;
+  const detail = [
+    engine ? `${engine} database` : databaseName ? "Database" : null,
+    databaseName && databaseName !== label ? databaseName : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          {/* A button only so keyboard users can reach the tooltip; it has no action. */}
+          <button
+            type="button"
+            data-testid="studio-database-label"
+            className="block h-7 w-full truncate rounded-md px-2 text-left text-xs leading-7 text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            {label}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="right" align="start" className="max-w-80">
+          <p className="break-all font-medium">{label}</p>
+          {detail ? <p className="text-muted-foreground">{detail}</p> : null}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 Navigation.Block = Block;
 Navigation.Item = Item;

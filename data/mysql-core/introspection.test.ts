@@ -315,7 +315,7 @@ describeMysql("mysql-core/introspection", () => {
           "parameters": [
             "SYSTEM",
           ],
-          "sql": "select case when @@session.time_zone = ? then @@system_time_zone else @@session.time_zone end as \`timezone\`",
+          "sql": "select case when @@session.time_zone = ? then @@system_time_zone else @@session.time_zone end as \`timezone\`, database() as \`databaseName\`",
           "transformations": undefined,
         }
       `);
@@ -325,7 +325,9 @@ describeMysql("mysql-core/introspection", () => {
     it("should return a query object that holds type information about the query result", () => {
       const query = getTimezoneQuery();
 
-      expectTypeOf(query).toEqualTypeOf<Query<{ timezone: string }>>();
+      expectTypeOf(query).toEqualTypeOf<
+        Query<{ databaseName: string | null; timezone: string }>
+      >();
     });
 
     // Note: Using offset-based timezones instead of named timezones (like 'UTC', 'America/New_York')
@@ -338,9 +340,14 @@ describeMysql("mysql-core/introspection", () => {
         const query = getTimezoneQuery();
 
         const [error, results] = await executor.execute(query);
+        const [, current] = await executor.execute(
+          asQuery<{ name: string }>("select database() as name"),
+        );
 
         expect(error).toBeNull();
-        expect(results).toStrictEqual([{ timezone }]);
+        expect(results).toStrictEqual([
+          { databaseName: current?.[0]?.name, timezone },
+        ]);
       },
     );
   });

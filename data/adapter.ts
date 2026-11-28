@@ -160,6 +160,15 @@ export interface AdapterDeleteOptions extends AdapterBaseOptions {}
 type SchemaName = string;
 
 export interface AdapterIntrospectResult {
+  /**
+   * Name of the database the adapter is connected to, as the database itself
+   * reports it: `current_database()` on PostgreSQL, `database()` on MySQL and
+   * the file name on SQLite. Studio shows it so people can tell which
+   * database a tab is connected to.
+   *
+   * Undefined when the database has no name to report, e.g. in-memory SQLite.
+   */
+  databaseName?: string;
   schemas: Record<SchemaName, Schema>;
   timezone: string;
   filterOperators: FilterOperator[];

@@ -54,6 +54,33 @@ describe("DemoApp", () => {
     studioMock.mockClear();
   });
 
+  it("passes the database label to Studio and lets it name the database in the tab title", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        createElement(DemoApp, {
+          adapter: {} as Adapter,
+          aiEnabled: false,
+          bootId: "boot-1234",
+          databaseLabel: "localhost:51214/template1",
+          hasDatabase: true,
+        }),
+      );
+    });
+
+    expect(studioMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      databaseLabel: "localhost:51214/template1",
+      documentTitle: true,
+    });
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
   it("shows the demo fullscreen button only while the page is not already fullscreen", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

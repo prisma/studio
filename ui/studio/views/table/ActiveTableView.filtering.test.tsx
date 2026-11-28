@@ -1694,6 +1694,83 @@ describe("ActiveTableView filtering", () => {
     }
   });
 
+  it("leaves Enter and arrow keys to a focused button or link outside the grid", async () => {
+    useActiveTableQueryMock.mockReturnValue({
+      data: {
+        filteredRowCount: 1,
+        rows: [
+          {
+            __ps_rowid: "row-1",
+            created_at: "2026-03-11T00:00:00.000Z",
+            email: "alice@example.com",
+            id: "user_1",
+          },
+        ],
+      },
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+
+    const view = renderView();
+    await flush();
+
+    dispatchKeyboard("ArrowRight");
+    await flush();
+    dispatchKeyboard("ArrowRight");
+    await flush();
+
+    // e.g. the sidebar's schema switcher or "Commands" button.
+    const sidebarButton = document.createElement("button");
+    sidebarButton.type = "button";
+    sidebarButton.setAttribute("role", "combobox");
+    document.body.appendChild(sidebarButton);
+    sidebarButton.focus();
+
+    dispatchKeyboard("Enter");
+    await flush();
+    dispatchKeyboard("ArrowDown");
+    await flush();
+
+    expect(
+      document.querySelector('[data-studio-cell-editor="true"]'),
+    ).toBeNull();
+    expect(document.activeElement).toBe(sidebarButton);
+
+    // A list that handles Enter itself and closes (like the schema switcher's
+    // search) must not leak that Enter into the grid once it is gone.
+    const listInput = document.createElement("input");
+    listInput.addEventListener("keydown", (event) => {
+      event.preventDefault();
+      // Focus falls back to the page until the popover restores it.
+      listInput.remove();
+    });
+    document.body.appendChild(listInput);
+    listInput.focus();
+    act(() => {
+      listInput.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          key: "Enter",
+        }),
+      );
+    });
+    await flush();
+
+    expect(
+      document.querySelector('[data-studio-cell-editor="true"]'),
+    ).toBeNull();
+
+    // Back on the grid, Enter still opens the focused cell.
+    sidebarButton.remove();
+    dispatchKeyboard("Enter");
+    await flush();
+
+    expect(getOpenEditorInput().value).toBe("alice@example.com");
+
+    view.cleanup();
+  });
+
   it("opens the focused cell with Enter", async () => {
     useActiveTableQueryMock.mockReturnValue({
       data: {

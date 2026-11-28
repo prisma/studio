@@ -6,6 +6,7 @@ import postcss, { type AcceptedPlugin } from "postcss";
 import type { Sql } from "postgres";
 
 import { serializeError, type StudioBFFRequest } from "../../data/bff";
+import { formatDatabaseLabel } from "../../data/database-label";
 import {
   STUDIO_LLM_TASKS,
   type StudioLlmErrorCode,
@@ -148,6 +149,8 @@ const BUILD_DEFINE = {
 let postgresClient: Sql | null = null;
 let postgresExecutor: PostgresExecutor | null = null;
 let seededAt: string | null = null;
+// Stripped of credentials here, so the raw URL never reaches the browser.
+let databaseLabel: string | null = null;
 let streamsServerUrl: string | null = null;
 let appScript = "";
 let appStyles = "";
@@ -284,6 +287,7 @@ async function main(): Promise<void> {
   postgresClient = runtime.postgresClient;
   postgresExecutor = runtime.postgresExecutor;
   seededAt = runtime.seededAt;
+  databaseLabel = formatDatabaseLabel(runtime.databaseConnectionString);
   streamsServerUrl = runtime.streamsServerUrl;
 
   if (prebuiltAssets) {
@@ -359,6 +363,7 @@ async function handleRequest(request: Request): Promise<Response> {
         aiEnabled: AI_ENABLED,
         bootId: BOOT_ID,
         databaseEnabled: postgresExecutor != null,
+        databaseLabel,
         queryInsightsEnabled: postgresExecutor != null,
         seededAt,
         streamsUrl: streamsServerUrl ? STREAMS_PROXY_BASE_PATH : undefined,

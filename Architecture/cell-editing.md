@@ -110,6 +110,7 @@ Table views MUST keep a shared focused-cell coordinate outside edit mode:
 - Keyboard focus movement MUST keep the focused cell scrolled into view in the grid container.
 - Arrow-key auto-repeat for focused-cell movement MUST be throttled enough to remain visually trackable (about 50ms minimum between moves).
 - `Enter` MUST reopen the currently focused editable cell.
+- These page-level grid keys MUST stand aside when a button, link or other control outside the grid has focus (Enter activates that control), and when another control already handled the key (`event.defaultPrevented`, e.g. Enter picking an item in a popover list that then closes).
 - `Shift` + arrow keys MUST start or extend grid cell selection from the focused cell when the target rows are persisted grid rows.
 - Insert-row drafts MUST focus their first content cell when created.
 - When filtering, sorting, or pagination changes the visible rows, focus MUST stay at the same screen coordinate and clamp to the nearest remaining row when needed.

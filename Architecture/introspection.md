@@ -21,6 +21,9 @@ This architecture governs:
 - [`ui/studio/Studio.tsx`](../ui/studio/Studio.tsx)
 - [`data/postgres-core/adapter.ts`](../data/postgres-core/adapter.ts)
 - [`data/mysql-core/adapter.ts`](../data/mysql-core/adapter.ts)
+- [`data/sqlite-core/adapter.ts`](../data/sqlite-core/adapter.ts)
+- [`data/database-label.ts`](../data/database-label.ts)
+- [`ui/hooks/use-database-identity.ts`](../ui/hooks/use-database-identity.ts)
 
 ## Fetch Policy Contract
 
@@ -121,6 +124,22 @@ Changes to this subsystem MUST include tests for:
 - introspection refetching when the window regains focus (proves `staleTime` is the 30s throttle and `refetchOnWindowFocus: "always"` refetches even while fresh data is still cached)
 - `refreshSchema` invalidating and triggering an introspection refetch
 - self-heal on a Postgres type-mismatch write error (SQLSTATE `42804` / `22P02`) without swallowing the user-facing error
+- `databaseName` per dialect, SQLite file-name-only output and pragma-failure tolerance
+- `formatDatabaseLabel` removing passwords and `api_key` query parameters from every label
+- the tab title only changing when `documentTitle` is set, and being restored on unmount
+
+## Connected Database Identity
+
+Studio MUST name the database a tab is connected to without an extra round trip and without exposing credentials.
+
+- `AdapterIntrospectResult.databaseName` is optional and comes from the database itself. PostgreSQL and MySQL read it in the existing timezone query (`current_database()`, `database()`), so it adds no query. SQLite reads `pragma_database_list` in parallel with the tables query and reduces the path to the file name in SQL, so the full path (which often contains a user name) never leaves the database host. A failed or empty name MUST NOT fail introspection.
+- The database's server address (`inet_server_addr()`, `@@hostname`) MUST NOT be used: behind poolers and proxies such as Prisma Postgres and PgBouncer it is `NULL` or the pooler's address.
+- Embedders MAY pass `StudioProps.databaseLabel`. It takes priority over `databaseName`, because only the embedder knows the host or the Console project and branch, and many databases share a name such as `postgres`.
+- Every label passes through `formatDatabaseLabel` (`data/database-label.ts`), which is idempotent: connection URLs become `host:port/database` (or the file name) without user names, passwords, query parameters or fragments. A URL is shown only when it reads unambiguously: `new URL` parses it and no `@` follows its credentials (in its path, query, fragment, or later in the label). Otherwise a malformed password could be read as a host or path, so the URL and everything after it are dropped rather than guessed at, and Studio falls back to the introspected name. This also drops credential-free URLs with `@` in the path (e.g. Vitess `keyspace@primary`), which is accepted. Plain-text words holding `user:password@…` are dropped. Embedders SHOULD build the label from parsed connection fields when they have them. `StudioContextProvider` applies it once at the boundary, so context, DOM and tab title only ever hold the cleaned label. Embedders SHOULD also apply it on their server so the raw URL never reaches the browser.
+- `ui/hooks/use-database-identity.ts` resolves the label (embedder label, else introspected name, only after a successful introspection) and owns the optional tab title. Studio MUST NOT touch `document.title` unless the embedder passes `documentTitle`. Studios that own the title are tracked on the page: the newest shows its title, and when one unmounts the next owner's title (or, after the last one, the host's original title) comes back.
+- The sidebar shows the label as plain text under a `Database` heading, with a standard ShadCN `Tooltip` for the engine and introspected name. It is plain text because Studio cannot switch databases.
+- Below it, the schema is a switcher, following Console's branch switcher: a compact trigger under a `Schema` heading that opens the standard ShadCN combobox (`Popover` + `Command`) with a "Find schema…" search and a check on the current schema. Picking the current schema keeps the current table, and picking with the pointer returns focus to the trigger without a keyboard focus ring. Dismissing the list by clicking elsewhere leaves focus where the user clicked.
+- Both entries follow the sidebar's rhythm: a heading, then a 28px row whose text aligns with the heading and whose box reaches 8px further left, like the nav items (8px heading to row, 16px between entries, 24px to the next section).
 
 ## Cell Editor Type Label
 

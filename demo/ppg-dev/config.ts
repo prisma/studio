@@ -5,6 +5,8 @@ export interface DemoConfig {
   bootId: string;
   database: {
     enabled: boolean;
+    /** Credential-free label from `formatDatabaseLabel`, e.g. `localhost:51214/template1`. */
+    label?: string;
   };
   queries: {
     enabled: boolean;
@@ -53,6 +55,7 @@ export function buildDemoConfig(args: {
   aiEnabled: boolean;
   bootId: string;
   databaseEnabled: boolean;
+  databaseLabel?: string | null;
   queryInsightsEnabled?: boolean;
   seededAt?: string | null;
   streamsUrl?: string;
@@ -61,6 +64,7 @@ export function buildDemoConfig(args: {
     aiEnabled,
     bootId,
     databaseEnabled,
+    databaseLabel,
     queryInsightsEnabled = databaseEnabled,
     seededAt,
     streamsUrl,
@@ -73,6 +77,7 @@ export function buildDemoConfig(args: {
     bootId,
     database: {
       enabled: databaseEnabled,
+      ...(databaseEnabled && databaseLabel ? { label: databaseLabel } : {}),
     },
     queries: {
       enabled: queryInsightsEnabled,

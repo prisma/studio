@@ -55,6 +55,7 @@ async function bootstrap(): Promise<void> {
     <DemoApp
       adapter={adapter}
       bootId={config.bootId}
+      databaseLabel={config.database.label}
       hasDatabase={config.database.enabled}
       seededAt={config.seededAt}
       aiEnabled={config.ai?.enabled === true}

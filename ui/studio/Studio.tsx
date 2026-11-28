@@ -3,6 +3,7 @@ import { JSX } from "react";
 
 import type { Adapter, AdapterError, Query } from "../../data";
 import type { StudioLlm } from "../../data/llm";
+import { useDatabaseDocumentTitle } from "../hooks/use-database-identity";
 import type { IntrospectionErrorState } from "../hooks/use-introspection";
 import { useIntrospection } from "../hooks/use-introspection";
 import { useNavigation } from "../hooks/use-navigation";
@@ -50,14 +51,16 @@ export type StudioOperationSuccessEventBase = {
 };
 
 export type StudioOperationEventBase =
-  StudioOperationSuccessEventBase | StudioOperationErrorEventBase;
+  | StudioOperationSuccessEventBase
+  | StudioOperationErrorEventBase;
 export type StudioOperationEvent = StudioOperationEventBase & {
   eventId: string;
   timestamp: string;
 };
 
 export type StudioEventBase =
-  StudioLaunchedEventBase | StudioOperationEventBase;
+  | StudioLaunchedEventBase
+  | StudioOperationEventBase;
 export type StudioEvent = StudioEventBase & {
   eventId: string;
   timestamp: string;
@@ -65,6 +68,19 @@ export type StudioEvent = StudioEventBase & {
 
 export interface StudioProps {
   adapter: Adapter;
+  /**
+   * Names the database this Studio is connected to, e.g. `Acme / production`
+   * or a connection URL. Shown in the sidebar instead of the name the
+   * database reports. Credentials and query parameters are always stripped;
+   * still, prefer passing `formatDatabaseLabel(url)` from the server so the
+   * raw URL never reaches the browser.
+   */
+  databaseLabel?: string;
+  /**
+   * Put the database label in the browser tab title. Off by default because
+   * many embedders own `document.title`.
+   */
+  documentTitle?: boolean;
   hasDatabase?: boolean;
   llm?: StudioLlm;
   onEvent?: (error: StudioEvent) => void;
@@ -82,6 +98,8 @@ export interface StudioProps {
 export function Studio(props: StudioProps) {
   const {
     adapter,
+    databaseLabel,
+    documentTitle,
     hasDatabase = true,
     llm,
     onEvent,
@@ -97,6 +115,8 @@ export function Studio(props: StudioProps) {
   return (
     <StudioContextProvider
       adapter={adapter}
+      databaseLabel={databaseLabel}
+      documentTitle={documentTitle}
       hasDatabase={hasDatabase}
       llm={llm}
       onEvent={onEvent}
@@ -127,6 +147,7 @@ function StudioContent() {
   } = useNavigation();
   const { errorState, hasResolvedIntrospection, isRefetching, refetch } =
     useIntrospection();
+  useDatabaseDocumentTitle();
 
   const containerClasses = cn(
     "flex min-w-0 max-w-full flex-col w-full h-full min-h-0 overflow-hidden font-sans",
