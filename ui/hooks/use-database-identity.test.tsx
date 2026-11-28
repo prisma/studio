@@ -185,6 +185,39 @@ describe("useDatabaseDocumentTitle", () => {
     expect(document.title).toBe("Host page");
   });
 
+  it("restores the right title when two Studios on one page unmount in any order", () => {
+    const first = createRoot(document.createElement("div"));
+    const second = createRoot(document.createElement("div"));
+
+    useStudioMock.mockReturnValue({
+      databaseLabel: "first-db",
+      documentTitle: true,
+    });
+    act(() => {
+      first.render(<Probe />);
+    });
+    expect(document.title).toBe("first-db · Prisma Studio");
+
+    useStudioMock.mockReturnValue({
+      databaseLabel: "second-db",
+      documentTitle: true,
+    });
+    act(() => {
+      second.render(<Probe />);
+    });
+    expect(document.title).toBe("second-db · Prisma Studio");
+
+    act(() => {
+      first.unmount();
+    });
+    expect(document.title).toBe("second-db · Prisma Studio");
+
+    act(() => {
+      second.unmount();
+    });
+    expect(document.title).toBe("Host page");
+  });
+
   it("updates the tab title when the database changes", () => {
     useStudioMock.mockReturnValue({
       databaseLabel: null,

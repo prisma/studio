@@ -74,6 +74,20 @@ describe("formatDatabaseLabel", () => {
     expectNoSecrets(label);
   });
 
+  it.each([
+    ["postgres://u:pa/ss@host/db", "host/db"],
+    ["postgres://u:pa ss@host/db", "host/db"],
+    ["postgres://u:pa ss/x@host:5432/db?api_key=sk_live_123", "host:5432/db"],
+  ])(
+    "strips malformed credentials with slashes or spaces from %s",
+    (input, expected) => {
+      const label = formatDatabaseLabel(input);
+
+      expect(label).toBe(expected);
+      expect(label).not.toMatch(/pa|ss|u:|sk_live/);
+    },
+  );
+
   it("is idempotent", () => {
     const inputs = [
       "postgresql://admin:s3cr3t@db.example.com:5432/app?api_key=sk_live_123",

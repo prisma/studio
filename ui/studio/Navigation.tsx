@@ -1164,11 +1164,15 @@ function SchemaSwitcher(props: { labelId: string }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   // Picking with the mouse returns focus without a keyboard focus ring.
   const isPointerInteractionRef = useRef(false);
+  // Only a schema pick hands focus back to the trigger; a click outside must
+  // leave focus where the user put it.
+  const isClosingFromSelectionRef = useRef(false);
 
   const schemaNames = Object.keys(introspection.schemas || {});
   const isInitialIntrospectionLoad = isFetching && !hasResolvedIntrospection;
 
   function selectSchema(schemaName: string) {
+    isClosingFromSelectionRef.current = true;
     setIsOpen(false);
 
     // Like a select, picking the current schema keeps the current table.
@@ -1208,7 +1212,10 @@ function SchemaSwitcher(props: { labelId: string }) {
         align="start"
         className="w-60 p-0"
         onCloseAutoFocus={(event) => {
-          if (isPointerInteractionRef.current) {
+          const isSelectionClose = isClosingFromSelectionRef.current;
+          isClosingFromSelectionRef.current = false;
+
+          if (isSelectionClose && isPointerInteractionRef.current) {
             event.preventDefault();
             triggerRef.current?.focus({ focusVisible: false } as FocusOptions);
           }

@@ -750,6 +750,44 @@ describe("Navigation", () => {
       cleanup();
     });
 
+    it("leaves focus where the user clicked when the list is dismissed outside", async () => {
+      const { container, cleanup } = renderNavigation({
+        schemas: { analytics: ["events"], public: ["organizations"] },
+      });
+      const trigger = getSchemaSwitcher(container);
+      const outsideInput = document.createElement("input");
+      document.body.appendChild(outsideInput);
+
+      act(() => {
+        click(trigger);
+      });
+      const searchInput = document.body.querySelector<HTMLInputElement>(
+        'input[placeholder="Find schema…"]',
+      )!;
+      // A click inside the list, then a click on an input outside it.
+      act(() => {
+        searchInput.dispatchEvent(
+          new PointerEvent("pointerdown", { bubbles: true, button: 0 }),
+        );
+      });
+      act(() => {
+        outsideInput.dispatchEvent(
+          new PointerEvent("pointerdown", { bubbles: true, button: 0 }),
+        );
+        outsideInput.focus();
+      });
+      // Radix restores focus on close after the current task.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(trigger.getAttribute("aria-expanded")).toBe("false");
+      expect(document.activeElement).toBe(outsideInput);
+
+      outsideInput.remove();
+      cleanup();
+    });
+
     it("keeps the current table when the current schema is picked again", () => {
       const { container, cleanup, setSchemaParam, setTableParam } =
         renderNavigation({

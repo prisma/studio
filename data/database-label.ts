@@ -22,6 +22,7 @@ export function formatDatabaseLabel(
   }
 
   const label = value
+    .replace(LEADING_USERINFO_PATTERN, "$1")
     .replace(URL_PATTERN, formatUrlToken)
     .replace(INLINE_CREDENTIALS_PATTERN, "")
     .replace(QUERY_STRING_PATTERN, "")
@@ -30,6 +31,13 @@ export function formatDatabaseLabel(
 
   return label.length > 0 ? label : null;
 }
+
+/**
+ * The user info of a value that is a connection URL: everything from
+ * `scheme://` to the last `@` before any `?` or `#`. Malformed passwords can
+ * hold `/` or spaces, which would otherwise split the URL into tokens.
+ */
+const LEADING_USERINFO_PATTERN = /^(\s*[a-z][a-z0-9+.-]*:\/\/)[^?#]*@/i;
 
 /** `scheme://…` and `file:…` tokens anywhere in the text. */
 const URL_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\/\S*|\bfile:\S+/gi;
@@ -58,6 +66,7 @@ function formatUrl(token: string): string {
     return token
       .replace(/^[a-z][a-z0-9+.-]*:(\/\/)?/i, "")
       .replace(INLINE_CREDENTIALS_PATTERN, "")
+      .replace(/^[^?#]*@/, "")
       .replace(/[?#].*$/, "")
       .replace(/^\/+/, "");
   }

@@ -50,10 +50,32 @@ export function useDatabaseIdentity(): DatabaseIdentity | null {
 }
 
 /**
+ * Studios on this page that currently own the tab title, oldest first, and
+ * the host's title from before the first of them took over. The newest owner
+ * shows its title; when owners leave, the next one (or the host) gets it back.
+ */
+const titleOwners: Array<{ title: string }> = [];
+let hostTitle: string | null = null;
+
+function applyOwnedTitle() {
+  const owner = titleOwners.at(-1);
+
+  if (owner) {
+    document.title = owner.title;
+    return;
+  }
+
+  if (hostTitle !== null) {
+    document.title = hostTitle;
+    hostTitle = null;
+  }
+}
+
+/**
  * Puts the database label in the browser tab title, so tabs connected to
  * different databases can be told apart. Only active when the embedder opts
  * in with `documentTitle`, since hosts like Console own their tab title.
- * The previous title is restored when Studio unmounts.
+ * The host's title comes back when the last such Studio unmounts.
  */
 export function useDatabaseDocumentTitle() {
   const { documentTitle } = useStudio();
@@ -64,11 +86,22 @@ export function useDatabaseDocumentTitle() {
       return;
     }
 
-    const previousTitle = document.title;
-    document.title = `${label} · Prisma Studio`;
+    if (titleOwners.length === 0) {
+      hostTitle = document.title;
+    }
+
+    const owner = { title: `${label} · Prisma Studio` };
+    titleOwners.push(owner);
+    applyOwnedTitle();
 
     return () => {
-      document.title = previousTitle;
+      const index = titleOwners.indexOf(owner);
+
+      if (index !== -1) {
+        titleOwners.splice(index, 1);
+      }
+
+      applyOwnedTitle();
     };
   }, [documentTitle, label]);
 }
