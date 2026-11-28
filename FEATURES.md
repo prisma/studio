@@ -308,7 +308,9 @@ If another query starts running, the visualization resets immediately so stale c
 ## Cell and Row Selection Modes
 
 Selection uses a typed state machine with mutually exclusive modes for cell-range selection and row selection.
-Users can extend ranges with pointer gestures or Shift+arrow keys and clear active selections with Escape.
+Users can extend ranges with pointer gestures or Shift+arrow keys and clear active selections with Escape. Selected cells and selected rows are both shown with a tint only, without borders.
+Selected rows show a quiet tick in the first column, so selection doesn't rely on colour alone. The column works like checkboxes: clicking a row ticks or unticks it, dragging down the column ticks (or, when started on a ticked row, unticks) every row it passes, and the header box shows a dash when some rows are selected and clears them all in one click (or selects all when none are).
+Screen readers hear the same state: each row's first cell reads "Selected" or "Not selected", and a polite status announces changes such as "3 rows selected" or "No rows selected".
 
 ## Clipboard and Context Menu Workflows
 

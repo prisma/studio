@@ -1576,7 +1576,7 @@ export function ActiveTableView(_props: ViewProps) {
       header({ table }) {
         void table;
         return (props: Omit<CellProps, "children" | "ref">) => {
-          return <TableHead {...props} aria-label="Row selection spacer" />;
+          return <TableHead {...props} aria-label="Row selection" />;
         };
       },
       cell({ row }) {

@@ -34,7 +34,6 @@ import {
 } from "@tanstack/react-table";
 import { AnimatePresence, motion } from "motion/react";
 import {
-  ComponentType,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
@@ -48,6 +47,7 @@ import {
 
 import type { SortOrderItem } from "../../../data/adapter";
 import type { BigIntString, NumericString } from "../../../data/type-utils";
+import { Checkbox } from "../../components/ui/checkbox";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -724,6 +724,10 @@ export function DataGrid(props: DataGridProps) {
   } | null>(null);
   const rowSelectionAnchorRef = useRef<number | null>(null);
   const rowSelectionDragRef = useRef(false);
+  // Rows selected before the current drag began. A drag repeats what its first
+  // click did: it adds its range to these rows, or removes its range from them.
+  const rowSelectionDragBaseRef = useRef<RowSelectionState>({});
+  const rowSelectionDragModeRef = useRef<"add" | "remove">("add");
   const previousSelectionScopeKeyRef = useRef<string | undefined>(
     selectionScopeKey,
   );
@@ -1349,6 +1353,24 @@ export function DataGrid(props: DataGridProps) {
   const selectableColumnsKey = selectableColumnIds.join("|");
 
   const hasRowSelection = selectedRowIds.length > 0;
+  // Spoken summary of row selection for screen readers. Stays silent until the
+  // first selection, then reports every change including clearing it.
+  const hasAnnouncedRowSelectionRef = useRef(false);
+  if (hasRowSelection) {
+    hasAnnouncedRowSelectionRef.current = true;
+  }
+  const rowSelectionAnnouncement = hasRowSelection
+    ? `${selectedRowIds.length} ${selectedRowIds.length === 1 ? "row" : "rows"} selected`
+    : hasAnnouncedRowSelectionRef.current
+      ? "No rows selected"
+      : "";
+  const visibleGridRows = table.getRowModel().rows;
+  const headerSelectionState: boolean | "indeterminate" = !hasRowSelection
+    ? false
+    : visibleGridRows.length > 0 &&
+        visibleGridRows.every((row) => rowSelectionState[row.id] === true)
+      ? true
+      : "indeterminate";
   const lastSelectableColumnIndex = selectableColumnIds.length - 1;
 
   function getVirtualizedCenterSlice<T>(items: T[]): T[] {
@@ -1514,6 +1536,7 @@ export function DataGrid(props: DataGridProps) {
     const handleMouseUp = (event: MouseEvent) => {
       rowSelectionDragRef.current = false;
       rowSelectionAnchorRef.current = null;
+      rowSelectionDragBaseRef.current = {};
 
       const pointerSelection = pointerSelectionRef.current;
 
@@ -1724,7 +1747,24 @@ export function DataGrid(props: DataGridProps) {
   const resetRowSelectionInteractionState = useCallback(() => {
     rowSelectionAnchorRef.current = null;
     rowSelectionDragRef.current = false;
+    rowSelectionDragBaseRef.current = {};
   }, []);
+
+  // When the grid's rows are replaced (a new SQL result, a refetch with other
+  // rows), cancel any row drag in progress: its saved base and anchor refer to
+  // the old rows, so continuing it could re-select rows that no longer exist.
+  // Extending a drag over the same rows is unaffected.
+  const gridRowIdsKey = visibleGridRows.map((row) => row.id).join("|");
+  const previousGridRowIdsKeyRef = useRef(gridRowIdsKey);
+
+  useEffect(() => {
+    if (previousGridRowIdsKeyRef.current === gridRowIdsKey) {
+      return;
+    }
+
+    previousGridRowIdsKeyRef.current = gridRowIdsKey;
+    resetRowSelectionInteractionState();
+  }, [gridRowIdsKey, resetRowSelectionInteractionState]);
 
   const resetSelectionInteractionState = useCallback(() => {
     setSelectionState((previous) =>
@@ -1767,6 +1807,8 @@ export function DataGrid(props: DataGridProps) {
       clearCellSelectionState();
       rowSelectionDragRef.current = drag;
       rowSelectionAnchorRef.current = rowIndex;
+      rowSelectionDragBaseRef.current = {};
+      rowSelectionDragModeRef.current = "add";
       setRowSelection({ [rowId]: true });
     },
     [clearCellSelectionState, setRowSelection],
@@ -2093,8 +2135,11 @@ export function DataGrid(props: DataGridProps) {
     (fromRowIndex: number, toRowIndex: number) => {
       const start = Math.min(fromRowIndex, toRowIndex);
       const end = Math.max(fromRowIndex, toRowIndex);
-      const nextSelection: RowSelectionState = {};
+      const nextSelection: RowSelectionState = {
+        ...rowSelectionDragBaseRef.current,
+      };
       const rowModel = table.getRowModel().rows;
+      const isRemoving = rowSelectionDragModeRef.current === "remove";
 
       for (let index = start; index <= end; index++) {
         const row = rowModel[index];
@@ -2103,7 +2148,11 @@ export function DataGrid(props: DataGridProps) {
           continue;
         }
 
-        nextSelection[row.id] = true;
+        if (isRemoving) {
+          delete nextSelection[row.id];
+        } else {
+          nextSelection[row.id] = true;
+        }
       }
 
       setRowSelection(nextSelection);
@@ -2136,19 +2185,15 @@ export function DataGrid(props: DataGridProps) {
       event.preventDefault();
       event.stopPropagation();
 
-      const visibleRows = table.getRowModel().rows;
-      const allRowsSelected =
-        visibleRows.length > 0 &&
-        visibleRows.every((row) => rowSelectionState[row.id] === true);
-
-      if (allRowsSelected) {
+      // Some or all rows selected: one click clears them. None: select all.
+      if (selectedRowIds.length > 0) {
         clearRowSelectionMode();
         return;
       }
 
       selectAllRows();
     },
-    [clearRowSelectionMode, rowSelectionState, selectAllRows, table],
+    [clearRowSelectionMode, selectAllRows, selectedRowIds.length],
   );
 
   const handleRowSelectionMouseDown = useCallback(
@@ -2187,20 +2232,32 @@ export function DataGrid(props: DataGridProps) {
       }
       event.stopPropagation();
 
-      if (event.shiftKey) {
+      // Like a checkbox: once any row is selected, a click (or Shift-click)
+      // adds or removes just that row. From an empty selection a plain click
+      // selects the row and can drag to extend a range.
+      if (event.shiftKey || selectedRowIds.length > 0) {
         clearNativeTextSelection();
         clearCellSelectionState();
         const nextSelection = { ...rowSelectionState };
 
-        if (nextSelection[rowId] === true) {
-          delete nextSelection[rowId];
-        } else {
+        const isAdding = nextSelection[rowId] !== true;
+
+        if (isAdding) {
           nextSelection[rowId] = true;
+        } else {
+          delete nextSelection[rowId];
         }
 
         setRowSelection(nextSelection);
-        rowSelectionDragRef.current = false;
         rowSelectionAnchorRef.current = rowIndex;
+        // A plain click can drag to repeat itself over a range: a click that
+        // ticks a row adds the range, a click that unticks one removes it. A
+        // removing drag never adds rows, so a small mouse movement after
+        // unticking can't re-select anything. Shift-click never starts a drag.
+        const startsDrag = !event.shiftKey && isPrimaryButton;
+        rowSelectionDragRef.current = startsDrag;
+        rowSelectionDragModeRef.current = isAdding ? "add" : "remove";
+        rowSelectionDragBaseRef.current = startsDrag ? nextSelection : {};
         return;
       }
 
@@ -2209,6 +2266,7 @@ export function DataGrid(props: DataGridProps) {
     [
       clearCellSelectionState,
       rowSelectionState,
+      selectedRowIds,
       selectSingleRowMode,
       setRowSelection,
     ],
@@ -2416,14 +2474,15 @@ export function DataGrid(props: DataGridProps) {
           }
         : null),
     } as CSSProperties;
-    type Header = ComponentType<Omit<CellProps, "children" | "ref">>;
-    const Header = header.column.columnDef.header(
+    const isRowSelectorHeader = header.column.id === ROW_SELECTOR_COLUMN_ID;
+    const renderHeader = header.column.columnDef.header(
       header.getContext(),
-    ) as Header;
+    ) as GridCellRender;
 
     return (
-      <Header
+      <GridCellRenderer
         key={header.id}
+        render={renderHeader}
         {...headerPinningStyles}
         className={cn(
           headerPinningStyles.className,
@@ -2442,7 +2501,11 @@ export function DataGrid(props: DataGridProps) {
 
           handleSelectAllRowsMouseDown(event);
         }}
-      />
+      >
+        {isRowSelectorHeader ? (
+          <RowSelectionMarker checked={headerSelectionState} />
+        ) : undefined}
+      </GridCellRenderer>
     );
   }
 
@@ -2457,8 +2520,9 @@ export function DataGrid(props: DataGridProps) {
       return null;
     }
 
-    type Cell = ComponentType<Omit<CellProps, "children" | "ref">>;
-    const Cell = cell.column.columnDef.cell(cell.getContext()) as Cell;
+    const renderCell = cell.column.columnDef.cell(
+      cell.getContext(),
+    ) as GridCellRender;
     const pinningStyles = getColumnPinningStyles(cell.column, "cell");
     const cellAnimation =
       layoutAnimationState?.deltas[`cell:${rowIndex}:${cell.column.id}`];
@@ -2494,8 +2558,9 @@ export function DataGrid(props: DataGridProps) {
       focusedCell.columnId === cell.column.id;
 
     return (
-      <Cell
+      <GridCellRenderer
         key={cell.id}
+        render={renderCell}
         {...pinningStyles}
         className={cn(
           pinningStyles.className,
@@ -2503,7 +2568,8 @@ export function DataGrid(props: DataGridProps) {
             "group-odd:bg-table-cell-odd group-even:bg-table-cell-even",
           isRowSelected &&
             "group-odd:!bg-table-row-selected-odd group-even:!bg-table-row-selected-even",
-          isSelected && "!bg-primary/15 ring-1 ring-inset ring-primary/30",
+          // Like row selection: a tint only, no borders.
+          isSelected && "!bg-primary/15",
           isFocused &&
             "relative z-0 before:pointer-events-none before:absolute before:inset-0 before:border before:border-sky-300 before:content-['']",
         )}
@@ -2554,7 +2620,14 @@ export function DataGrid(props: DataGridProps) {
 
           clearCellSelectionState();
         }}
-      />
+      >
+        {isRowSelectorCell ? (
+          <RowSelectionMarker
+            checked={isRowSelected}
+            spokenLabel={isRowSelected ? "Selected" : "Not selected"}
+          />
+        ) : undefined}
+      </GridCellRenderer>
     );
   }
 
@@ -2697,6 +2770,14 @@ export function DataGrid(props: DataGridProps) {
           containerRef={gridContentRef}
           feedback={copyFeedback}
         />
+        <span
+          aria-live="polite"
+          className="sr-only"
+          data-row-selection-status
+          role="status"
+        >
+          {rowSelectionAnnouncement}
+        </span>
         <div>
           {displayLoader && (
             <DataGridLoadingBar className="absolute -top-px left-0 right-0" />
@@ -3035,4 +3116,53 @@ function getArrowSelectionDelta(key: string): {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+/**
+ * Non-colour marker for row selection (#1488). It is decorative: the selector
+ * cell owns the pointer interaction, so the checkbox never takes focus or clicks.
+ * Unselected rows show an empty box only while the selector cell is hovered.
+ */
+function RowSelectionMarker(props: {
+  checked: boolean | "indeterminate";
+  /** Text screen readers read for this cell, e.g. "Selected". */
+  spokenLabel?: string;
+}) {
+  const { checked, spokenLabel } = props;
+  const isMarked = checked !== false;
+
+  return (
+    <span className="pointer-events-none flex h-full w-full items-center justify-center">
+      {spokenLabel ? <span className="sr-only">{spokenLabel}</span> : null}
+      <Checkbox
+        aria-hidden="true"
+        checked={checked}
+        className={cn(
+          // Quiet marker: a faint outline as the hover hint, and a bare muted tick
+          // (no fill, no outline) once the row is selected.
+          "border-muted-foreground/40 shadow-none data-[state=checked]:border-transparent data-[state=checked]:bg-transparent data-[state=checked]:text-muted-foreground data-[state=indeterminate]:border-transparent data-[state=indeterminate]:bg-transparent data-[state=indeterminate]:text-muted-foreground",
+          !isMarked && "opacity-0 group-hover:opacity-60",
+        )}
+        tabIndex={-1}
+      />
+    </span>
+  );
+}
+
+type GridCellRender = (props: Omit<CellProps, "ref">) => ReactNode;
+
+/**
+ * Column defs return a fresh render function on every grid render. Mounting
+ * that function as a component would give React a new component type each
+ * time and remount every cell (and its context menu) on each selection or
+ * focus change. This stable wrapper calls it as a plain render function, so
+ * React reconciles the returned `Cell` / `TableHead` in place instead.
+ * Column render functions must therefore not call hooks.
+ */
+function GridCellRenderer(
+  props: Omit<CellProps, "ref"> & { render: GridCellRender },
+) {
+  const { render, ...cellProps } = props;
+
+  return render(cellProps);
 }

@@ -319,7 +319,7 @@ describe("DataGrid pinning", () => {
     });
 
     const spacerHeader = container.querySelector(
-      'th[aria-label="Row selection spacer"]',
+      'th[aria-label="Row selection"]',
     );
     const selectorCell = container.querySelector("td[data-row-select-cell]");
 

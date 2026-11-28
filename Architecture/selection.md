@@ -133,6 +133,16 @@ Because `useUiState` is backed by a TanStack DB local collection (`uiLocalStateC
 - As soon as interaction commits to row selection, machine mode MUST become `row`.
 - At any commit point, there MUST be only one active mode in UI and state.
 
+## Row Selector Column
+
+- The grid owns the row-selector (`__ps_select`) cell's content: `DataGrid` renders a decorative `Checkbox` marker into it, so every view gets the same marker without defining it in its column defs.
+- The marker is non-interactive (`aria-hidden`, `tabIndex={-1}`, `pointer-events-none`). The cell's pointer handlers stay the only input path, and they go through the row transitions above.
+- The header selector cell shows the same marker: checked when every visible row is selected, indeterminate when some are, empty when none are. Clicking it clears row mode when any row is selected, and selects all rows otherwise.
+- Row selector clicks behave like checkboxes. From an empty selection a click selects that row and can drag to select a range. Once any row is selected, a click toggles just that row (Shift-click does the same).
+- Selection is exposed to assistive tech without making the marker interactive: the checkbox stays `aria-hidden`, each selector cell carries visually hidden text ("Selected" / "Not selected"), the selector header is named "Row selection", and `DataGrid` renders one polite `role="status"` region (`data-row-selection-status`) that announces the selected-row count after each change. The grid is a plain `<table>`, so `aria-selected` on rows is not used.
+- A plain click may start a drag, and the drag repeats what the click did (`rowSelectionDragModeRef`): a click that ticks a row adds the dragged range to the selection, and a click that unticks a row removes the dragged range from it. The range is applied on top of the selection as it stood right after the click (`rowSelectionDragBaseRef`). A removing drag never adds rows, so a small pointer movement after unticking cannot re-select anything. Shift-click never starts a drag.
+- When the grid's set of row ids changes (for example a new SQL result), any row drag in progress is cancelled, because its saved base and anchor refer to the old rows.
+
 ## Testing Requirements
 
 Any change to selection behavior MUST update tests in both layers:

@@ -24,6 +24,25 @@ import {
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
+function EditableCell(props: {
+  cellProps: Omit<CellProps, "children" | "ref">;
+  editorKey: string;
+  value: string;
+}) {
+  const { cellProps, editorKey, value } = props;
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+
+  return (
+    <Cell {...cellProps} onClick={() => setIsEditorOpen(true)}>
+      {isEditorOpen ? (
+        <span data-editor-open={editorKey}>editor-open</span>
+      ) : (
+        value
+      )}
+    </Cell>
+  );
+}
+
 function createEditableColumns(): GridColumnDef[] {
   return [
     {
@@ -35,25 +54,16 @@ function createEditableColumns(): GridColumnDef[] {
         );
       },
       cell({ cell }) {
-        return function EditableCell(
-          props: Omit<CellProps, "children" | "ref">,
-        ) {
-          const [isEditorOpen, setIsEditorOpen] = useState(false);
-
-          return (
-            <Cell {...props} onClick={() => setIsEditorOpen(true)}>
-              {isEditorOpen ? (
-                <span
-                  data-editor-open={`editor-${cell.row.index}-${cell.column.id}`}
-                >
-                  editor-open
-                </span>
-              ) : (
-                String(cell.getValue() ?? "")
-              )}
-            </Cell>
-          );
-        };
+        // Column render functions must not call hooks (they are called as
+        // plain functions by GridCellRenderer), so editor state lives in a
+        // named component.
+        return (props: Omit<CellProps, "children" | "ref">) => (
+          <EditableCell
+            cellProps={props}
+            editorKey={`editor-${cell.row.index}-${cell.column.id}`}
+            value={String(cell.getValue() ?? "")}
+          />
+        );
       },
     },
   ];
@@ -218,14 +228,22 @@ function renderGridWithSelectionScope(args?: {
   document.body.appendChild(container);
   const root = createRoot(container);
   let setSelectionScopeKey: ((nextKey: string) => void) | undefined;
+  let replaceRowsAndClearSelection: ((nextRows: GridRow[]) => void) | undefined;
 
   function GridHarness() {
     const [rowSelectionState, setRowSelectionState] =
       useState<RowSelectionState>({});
     const [selectionScopeKey, setSelectionScopeKeyState] = useState("table_a");
+    const [replacedRows, setReplacedRows] = useState<GridRow[] | null>(null);
     const scopeConfig = args?.scopeConfigs?.[selectionScopeKey];
 
     setSelectionScopeKey = setSelectionScopeKeyState;
+    // Like SqlView when a new result arrives: new rows, same scope key, and
+    // the row selection is cleared by the host.
+    replaceRowsAndClearSelection = (nextRows) => {
+      setReplacedRows(nextRows);
+      setRowSelectionState({});
+    };
 
     return (
       <div
@@ -253,7 +271,7 @@ function renderGridWithSelectionScope(args?: {
           }}
           pageCount={1}
           paginationState={{ pageIndex: 0, pageSize: 20 }}
-          rows={scopeConfig?.rows ?? args?.rows ?? rows}
+          rows={replacedRows ?? scopeConfig?.rows ?? args?.rows ?? rows}
           rowSelectionState={rowSelectionState}
           selectionScopeKey={selectionScopeKey}
         />
@@ -303,11 +321,22 @@ function renderGridWithSelectionScope(args?: {
     container.remove();
   }
 
+  function replaceRows(nextRows: GridRow[]) {
+    act(() => {
+      if (!replaceRowsAndClearSelection) {
+        throw new Error("Could not replace rows");
+      }
+
+      replaceRowsAndClearSelection(nextRows);
+    });
+  }
+
   return {
     cleanup,
     container,
     getCell,
     getSelectedRowCount,
+    replaceRows,
     switchSelectionScope,
   };
 }
@@ -994,6 +1023,29 @@ describe("DataGrid interactions", () => {
     }
   });
 
+  it("shows a selected cell range as a tint with no borders, like row selection", () => {
+    createSelection({ isCollapsed: true });
+
+    const { cleanup, getCell, container } = renderGrid();
+
+    dispatchMouse(getCell(0, "id"), "mousedown", { button: 0 });
+    dispatchMouse(getCell(1, "name"), "mouseover", { button: 0 });
+    dispatchMouse(window, "mouseup");
+
+    const selectedCells = [
+      ...container.querySelectorAll<HTMLElement>('td[data-selected="true"]'),
+    ];
+
+    expect(selectedCells).toHaveLength(4);
+
+    for (const cell of selectedCells) {
+      expect(cell.className).not.toMatch(/\bring-/);
+      expect(cell.style.boxShadow).toBe("");
+    }
+
+    cleanup();
+  });
+
   it("clears selected cells with Escape when not editing", () => {
     createSelection({ isCollapsed: true });
 
@@ -1095,6 +1147,269 @@ describe("DataGrid interactions", () => {
     cleanup();
   });
 
+  it("marks selected rows with a checked checkbox in the row-selector cell", () => {
+    createSelection({ isCollapsed: true });
+
+    const { cleanup, getCell } = renderGrid({
+      columnDefs: createReadOnlyColumns({ includeRowSelector: true }),
+    });
+
+    dispatchMouse(getCell(1, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(window, "mouseup");
+
+    expect(
+      getCell(1, "__ps_select")
+        .querySelector('[role="checkbox"]')
+        ?.getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(
+      getCell(0, "__ps_select")
+        .querySelector('[role="checkbox"]')
+        ?.getAttribute("aria-checked"),
+    ).toBe("false");
+
+    cleanup();
+  });
+
+  it("unselects the row when clicking the selector of the only selected row again", () => {
+    createSelection({ isCollapsed: true });
+
+    const { cleanup, container, getCell, getSelectedRowCount } = renderGrid({
+      columnDefs: createReadOnlyColumns({ includeRowSelector: true }),
+    });
+
+    dispatchMouse(getCell(1, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(window, "mouseup");
+    expect(getSelectedRowCount()).toBe(1);
+
+    dispatchMouse(getCell(1, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(window, "mouseup");
+
+    expect(getSelectedRowCount()).toBe(0);
+    expect(
+      container.querySelectorAll('tr[data-row-selected="true"]'),
+    ).toHaveLength(0);
+
+    cleanup();
+  });
+
+  it("adds rows to the selection with plain clicks and removes only the clicked selected row", () => {
+    createSelection({ isCollapsed: true });
+
+    const { cleanup, getCell, getSelectedRowCount } = renderGrid({
+      columnDefs: createReadOnlyColumns({ includeRowSelector: true }),
+    });
+
+    for (const rowIndex of [0, 1, 2]) {
+      dispatchMouse(getCell(rowIndex, "__ps_select"), "mousedown", {
+        button: 0,
+      });
+      dispatchMouse(window, "mouseup");
+    }
+
+    expect(getSelectedRowCount()).toBe(3);
+
+    dispatchMouse(getCell(1, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(window, "mouseup");
+
+    expect(getSelectedRowCount()).toBe(2);
+    expect(getCell(0, "__ps_select").closest("tr")?.dataset.rowSelected).toBe(
+      "true",
+    );
+    expect(
+      getCell(1, "__ps_select").closest("tr")?.dataset.rowSelected,
+    ).toBeUndefined();
+    expect(getCell(2, "__ps_select").closest("tr")?.dataset.rowSelected).toBe(
+      "true",
+    );
+
+    cleanup();
+  });
+
+  it("tells screen readers which rows are selected", () => {
+    createSelection({ isCollapsed: true });
+
+    const { cleanup, getCell } = renderGrid({
+      columnDefs: createReadOnlyColumns({ includeRowSelector: true }),
+    });
+
+    const getSpokenState = (rowIndex: number) =>
+      getCell(rowIndex, "__ps_select")
+        .querySelector(".sr-only")
+        ?.textContent?.trim();
+
+    expect(getSpokenState(0)).toBe("Not selected");
+
+    dispatchMouse(getCell(0, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(window, "mouseup");
+
+    expect(getSpokenState(0)).toBe("Selected");
+    expect(getSpokenState(1)).toBe("Not selected");
+    expect(
+      getCell(0, "__ps_select")
+        .querySelector('[role="checkbox"]')
+        ?.closest('[aria-hidden="true"]'),
+    ).not.toBeNull();
+
+    cleanup();
+  });
+
+  it("announces row selection changes in a polite live region", () => {
+    createSelection({ isCollapsed: true });
+
+    const { cleanup, container, getCell } = renderGrid({
+      columnDefs: createReadOnlyColumns({ includeRowSelector: true }),
+    });
+
+    const getAnnouncement = () =>
+      container
+        .querySelector('[data-row-selection-status][aria-live="polite"]')
+        ?.textContent?.trim();
+
+    expect(getAnnouncement()).toBe("");
+
+    dispatchMouse(getCell(0, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(window, "mouseup");
+    expect(getAnnouncement()).toBe("1 row selected");
+
+    dispatchMouse(getCell(1, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(window, "mouseup");
+    expect(getAnnouncement()).toBe("2 rows selected");
+
+    dispatchKeyboard("Escape");
+    expect(getAnnouncement()).toBe("No rows selected");
+
+    cleanup();
+  });
+
+  it("updates cells in place instead of remounting them when row selection changes", () => {
+    createSelection({ isCollapsed: true });
+
+    const { cleanup, getCell } = renderGrid({
+      columnDefs: createReadOnlyColumns({ includeRowSelector: true }),
+    });
+
+    const dataCellBefore = getCell(2, "name");
+    const selectorCellBefore = getCell(2, "__ps_select");
+
+    dispatchMouse(getCell(0, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(window, "mouseup");
+
+    expect(getCell(2, "name")).toBe(dataCellBefore);
+    expect(getCell(2, "__ps_select")).toBe(selectorCellBefore);
+
+    cleanup();
+  });
+
+  it("keeps the existing row selection when drag-selecting another range", () => {
+    createSelection({ isCollapsed: true });
+
+    const { cleanup, getCell, getSelectedRowCount } = renderGrid({
+      columnDefs: createReadOnlyColumns({ includeRowSelector: true }),
+    });
+
+    dispatchMouse(getCell(0, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(window, "mouseup");
+    expect(getSelectedRowCount()).toBe(1);
+
+    dispatchMouse(getCell(1, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(getCell(2, "__ps_select"), "mouseover", { button: 0 });
+    dispatchMouse(window, "mouseup");
+
+    expect(getSelectedRowCount()).toBe(3);
+
+    cleanup();
+  });
+
+  it("unselects a range by dragging from a selected row", () => {
+    createSelection({ isCollapsed: true });
+
+    const { cleanup, getCell, getSelectedRowCount } = renderGrid({
+      columnDefs: createReadOnlyColumns({ includeRowSelector: true }),
+    });
+
+    dispatchMouse(getCell(0, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(getCell(2, "__ps_select"), "mouseover", { button: 0 });
+    dispatchMouse(window, "mouseup");
+    expect(getSelectedRowCount()).toBe(3);
+
+    dispatchMouse(getCell(1, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(getCell(2, "__ps_select"), "mouseover", { button: 0 });
+    dispatchMouse(window, "mouseup");
+
+    expect(getSelectedRowCount()).toBe(1);
+    expect(getCell(0, "__ps_select").closest("tr")?.dataset.rowSelected).toBe(
+      "true",
+    );
+
+    cleanup();
+  });
+
+  it("does not drag-select after a click that unselects a row", () => {
+    createSelection({ isCollapsed: true });
+
+    const { cleanup, getCell, getSelectedRowCount } = renderGrid({
+      columnDefs: createReadOnlyColumns({ includeRowSelector: true }),
+    });
+
+    dispatchMouse(getCell(0, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(window, "mouseup");
+    dispatchMouse(getCell(1, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(window, "mouseup");
+    expect(getSelectedRowCount()).toBe(2);
+
+    dispatchMouse(getCell(1, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(getCell(2, "__ps_select"), "mouseover", { button: 0 });
+    dispatchMouse(window, "mouseup");
+
+    expect(getSelectedRowCount()).toBe(1);
+
+    cleanup();
+  });
+
+  it("shows a partial header marker when some rows are selected and clears them all on click", () => {
+    createSelection({ isCollapsed: true });
+
+    const { cleanup, container, getCell, getSelectedRowCount } = renderGrid({
+      columnDefs: createReadOnlyColumns({ includeRowSelector: true }),
+    });
+
+    const getHeader = () => {
+      const header = container.querySelector('th[aria-label="Row selection"]');
+
+      if (!(header instanceof HTMLElement)) {
+        throw new Error("Could not find row selection spacer header");
+      }
+
+      return header;
+    };
+    const getHeaderState = () =>
+      getHeader()
+        .querySelector('[role="checkbox"]')
+        ?.getAttribute("data-state");
+
+    expect(getHeaderState()).toBe("unchecked");
+
+    dispatchMouse(getCell(0, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(window, "mouseup");
+    dispatchMouse(getCell(1, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(window, "mouseup");
+
+    expect(getHeaderState()).toBe("indeterminate");
+
+    dispatchMouse(getHeader(), "mousedown", { button: 0 });
+
+    expect(getSelectedRowCount()).toBe(0);
+    expect(getHeaderState()).toBe("unchecked");
+
+    dispatchMouse(getHeader(), "mousedown", { button: 0 });
+
+    expect(getSelectedRowCount()).toBe(rows.length);
+    expect(getHeaderState()).toBe("checked");
+
+    cleanup();
+  });
+
   it("selects all rows when clicking the top-left spacer header cell", () => {
     createSelection({ isCollapsed: true });
 
@@ -1103,7 +1418,7 @@ describe("DataGrid interactions", () => {
     });
 
     const spacerHeader = container.querySelector(
-      'th[aria-label="Row selection spacer"]',
+      'th[aria-label="Row selection"]',
     );
 
     if (!(spacerHeader instanceof HTMLElement)) {
@@ -1128,7 +1443,7 @@ describe("DataGrid interactions", () => {
     });
 
     const spacerHeader = container.querySelector(
-      'th[aria-label="Row selection spacer"]',
+      'th[aria-label="Row selection"]',
     );
 
     if (!(spacerHeader instanceof HTMLElement)) {
@@ -1139,7 +1454,7 @@ describe("DataGrid interactions", () => {
     expect(getSelectedRowCount()).toBe(rows.length);
 
     const rerenderedSpacerHeader = container.querySelector(
-      'th[aria-label="Row selection spacer"]',
+      'th[aria-label="Row selection"]',
     );
 
     if (!(rerenderedSpacerHeader instanceof HTMLElement)) {
@@ -1412,7 +1727,7 @@ describe("DataGrid interactions", () => {
     });
 
     const spacerHeader = container.querySelector(
-      'th[aria-label="Row selection spacer"]',
+      'th[aria-label="Row selection"]',
     );
 
     if (!(spacerHeader instanceof HTMLElement)) {
@@ -1437,6 +1752,30 @@ describe("DataGrid interactions", () => {
     expect(getCell(1, "id").className).toContain(
       "group-even:!bg-table-row-selected-even",
     );
+
+    cleanup();
+  });
+
+  it("cancels an in-progress row drag when the grid rows are replaced", () => {
+    createSelection({ isCollapsed: true });
+
+    const { cleanup, getCell, getSelectedRowCount, replaceRows } =
+      renderGridWithSelectionScope({
+        columnDefs: createReadOnlyColumns({ includeRowSelector: true }),
+      });
+
+    dispatchMouse(getCell(2, "__ps_select"), "mousedown", { button: 0 });
+    dispatchMouse(window, "mouseup");
+    dispatchMouse(getCell(0, "__ps_select"), "mousedown", { button: 0 });
+    expect(getSelectedRowCount()).toBe(2);
+
+    // A new result with fewer rows arrives mid-drag and the host clears the
+    // selection; continuing the drag must not restore the removed row.
+    replaceRows(rows.slice(0, 2));
+    dispatchMouse(getCell(1, "__ps_select"), "mouseover", { button: 0 });
+    dispatchMouse(window, "mouseup");
+
+    expect(getSelectedRowCount()).toBe(0);
 
     cleanup();
   });
