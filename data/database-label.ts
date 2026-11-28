@@ -6,18 +6,18 @@
  * Studio applies it again to the `databaseLabel` prop. Running it twice gives
  * the same result.
  *
- * - Connection URLs become `host:port/database` (or the file name for SQLite
+ * - A connection URL becomes `host:port/database` (or the file name for SQLite
  *   and other host-less URLs). User names, passwords, query parameters such
  *   as `api_key`, and fragments are dropped.
- * - Plain text is kept, except for anything that looks like inline
- *   credentials (`user:password@`) or a query string (`?key=value`).
+ * - A URL is only shown when it reads unambiguously: `new URL` parses it and
+ *   no `@` follows its credentials. Otherwise a malformed password could be
+ *   mistaken for a host or path, so the URL and everything after it are
+ *   dropped instead of guessed at. Studio then falls back to the name the
+ *   database reports.
+ * - Plain text is kept, except for words that hold credentials
+ *   (`user:password@…`) and query strings (`?key=value`).
  *
- * Malformed URLs (unencoded `/`, spaces or `@` in a password) are cleaned
- * too. When unsure, it removes more rather than risk showing a password:
- * when a colon comes before an `@`, everything up to the last `@` goes, so
- * a database name holding `@` (`host:3306/keyspace@primary`) shows only the
- * part after it. When
- * the connection's fields are available, prefer building the label from
+ * When the connection's fields are available, prefer building the label from
  * them (e.g. `${host}:${port}/${database}`).
  *
  * @returns the safe label, or `null` when nothing displayable is left.
@@ -29,79 +29,77 @@ export function formatDatabaseLabel(
     return null;
   }
 
-  const label = value
-    .replace(USERINFO_PATTERN, stripMalformedUserinfo)
-    .replace(URL_PATTERN, formatUrlToken)
-    .replace(INLINE_CREDENTIALS_PATTERN, "")
-    .replace(QUERY_STRING_PATTERN, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  const label = formatText(value).replace(/\s+/g, " ").trim();
 
   return label.length > 0 ? label : null;
 }
 
-/**
- * `scheme://` followed by everything up to the last `@` (before a `?`, `#`,
- * bracket or quote): the user info of every connection URL in the text, when
- * it has one. Malformed passwords can hold `@`, `/` or spaces, which would
- * split the URL before `new URL` sees it, so they are removed first.
- */
-const USERINFO_PATTERN = /\b([a-z][a-z0-9+.-]*:\/\/)([^?#()[\]{}<>"']*)@/gi;
+/** The start of a `scheme://…` or `file:…` URL. */
+const URL_START_PATTERN = /\b(?:[a-z][a-z0-9+.-]*:\/\/|file:)/i;
 
-function stripMalformedUserinfo(
-  match: string,
-  scheme: string,
-  beforeAt: string,
-): string {
-  // A colon before the `@` means `user:password`. A malformed password can
-  // hold `@`, `/` and `:` in any mix, so a valid `host:3306/keyspace@primary`
-  // can't be told apart from one. Showing a shorter label is preferred over
-  // showing a password, so both are cut at the last `@`. Without a colon
-  // there is no password, and `new URL` parses the rest (`host/team@corp`).
-  return beforeAt.includes(":") ? scheme : match;
+/** Closing punctuation that belongs to the surrounding text, not the URL. */
+const TRAILING_PUNCTUATION_PATTERN = /[)\]}>,.;:'"]+$/;
+
+/** Opening punctuation left dangling when the URL after it is dropped. */
+const DANGLING_OPENER_PATTERN = /[\s([{<:,;'"-]+$/;
+
+function formatText(text: string): string {
+  const start = URL_START_PATTERN.exec(text);
+
+  if (!start) {
+    return formatPlainText(text);
+  }
+
+  const before = formatPlainText(text.slice(0, start.index));
+  const rest = text.slice(start.index);
+  const [token = ""] = /^\S*/.exec(rest) ?? [];
+  const trailing = TRAILING_PUNCTUATION_PATTERN.exec(token)?.[0] ?? "";
+  const url = token.slice(0, token.length - trailing.length);
+  const after = rest.slice(token.length);
+  const formatted = formatUrl(url);
+
+  // A malformed password can hold spaces, so an `@` later in the text may
+  // still belong to this URL's credentials. Neither case can be read safely.
+  if (formatted === null || after.includes("@")) {
+    return before.replace(DANGLING_OPENER_PATTERN, "");
+  }
+
+  return `${before}${formatted}${trailing}${formatText(after)}`;
 }
 
-/** `scheme://…` and `file:…` tokens anywhere in the text. */
-const URL_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\/\S*|\bfile:\S+/gi;
-
-/** `user:password@` left over in text that is not a parseable URL. */
-const INLINE_CREDENTIALS_PATTERN = /[^\s/@]*:[^\s/@]*@/g;
-
-/** `?key=value…` left over in text that is not a parseable URL. */
-const QUERY_STRING_PATTERN = /\?\S*=\S*/g;
-
-function formatUrlToken(match: string): string {
-  // Closing punctuation belongs to the surrounding text, not the URL.
-  const [, token = match, trailing = ""] =
-    /^(.*?)([)\]}>,.;:'"]*)$/.exec(match) ?? [];
-
-  return `${formatUrl(token)}${trailing}`;
-}
-
-function formatUrl(token: string): string {
+function formatUrl(token: string): string | null {
   let url: URL;
 
   try {
     url = new URL(token);
   } catch {
-    // Not parseable: drop the scheme, credentials and query string by hand.
-    return token
-      .replace(/^[a-z][a-z0-9+.-]*:(\/\/)?/i, "")
-      .replace(INLINE_CREDENTIALS_PATTERN, "")
-      .replace(/^[^?#]*@/, "")
-      .replace(/[?#].*$/, "")
-      .replace(/^\/+/, "");
+    return null;
   }
 
   const path = safeDecode(url.pathname).replace(/\/+$/, "");
+
+  // The parser ends the credentials at the last `@` before the path. An `@`
+  // after that means part of a malformed password was read as host or path.
+  if (`${path}${url.search}${url.hash}`.includes("@")) {
+    return null;
+  }
 
   if (url.host) {
     return `${url.host}${path}`;
   }
 
-  // Host-less URLs (`file:./dev.db`, `postgresql:///app?host=/var/run`) name
-  // a file or a database: keep only the last path segment.
+  // Host-less URLs (`file:./dev.db`) name a file: keep the last segment.
   return path.split("/").pop() ?? "";
+}
+
+function formatPlainText(text: string): string {
+  return text
+    .split(/(\s+)/)
+    .map((word) =>
+      // `user:password@…`: the password may hold `@` too, so drop the word.
+      /:[^@]*@/.test(word) ? "" : word.replace(/\?\S*=\S*/, ""),
+    )
+    .join("");
 }
 
 function safeDecode(value: string): string {

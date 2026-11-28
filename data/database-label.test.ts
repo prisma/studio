@@ -29,7 +29,6 @@ describe("formatDatabaseLabel", () => {
       "accelerate.prisma-data.net",
     ],
     ["postgres://admin:s3cr3t@[::1]:5432/app", "[::1]:5432/app"],
-    ["postgresql://admin:s3cr3t@/app?host=/var/run/postgresql", "app"],
     ["file:./prisma/dev.db", "dev.db"],
     ["file:/Users/admin/projects/app/dev.db?connection_limit=1", "dev.db"],
     ["postgres://admin:s3cr3t@db.example.com/my%20db", "db.example.com/my db"],
@@ -47,16 +46,20 @@ describe("formatDatabaseLabel", () => {
     );
   });
 
-  it("strips credentials and query strings from text that is not a URL", () => {
-    const label = formatDatabaseLabel(
-      "admin:s3cr3t@db.example.com:5432/app?api_key=sk_live_123",
+  it("drops plain-text words that hold credentials, and query strings", () => {
+    expect(
+      formatDatabaseLabel(
+        "Staging admin:s3cr3t@db.example.com:5432/app?api_key=sk_live_123",
+      ),
+    ).toBe("Staging");
+    expect(formatDatabaseLabel("db.example.com/app?api_key=sk_live_123")).toBe(
+      "db.example.com/app",
     );
-
-    expect(label).toBe("db.example.com:5432/app");
-    expectNoSecrets(label);
+    // A user name alone is not a secret.
+    expect(formatDatabaseLabel("admin@prod")).toBe("admin@prod");
   });
 
-  it("strips URLs embedded in a longer label", () => {
+  it("formats clean URLs embedded in a longer label", () => {
     const label = formatDatabaseLabel(
       "Staging (postgresql://admin:s3cr3t@staging.example.com/app?api_key=sk_live_123)",
     );
@@ -65,89 +68,71 @@ describe("formatDatabaseLabel", () => {
     expectNoSecrets(label);
   });
 
-  it("strips credentials from URLs it cannot parse", () => {
-    const label = formatDatabaseLabel(
-      "postgres://admin:s3cr3t@bad host:5432/app?api_key=sk_live_123",
-    );
-
-    expect(label).toBe("bad host:5432/app");
-    expectNoSecrets(label);
-  });
-
   it.each([
-    ["postgres://u:pa/ss@host/db", "host/db"],
-    ["postgres://u:pa ss@host/db", "host/db"],
-    ["postgres://u:pa ss/x@host:5432/db?api_key=sk_live_123", "host:5432/db"],
-  ])(
-    "strips malformed credentials with slashes or spaces from %s",
-    (input, expected) => {
-      const label = formatDatabaseLabel(input);
-
-      expect(label).toBe(expected);
-      expect(label).not.toMatch(/pa|ss|u:|sk_live/);
-    },
-  );
-
-  it.each([
-    ["Staging (postgres://u:pa ss@host/db)", "Staging (host/db)"],
-    ["Staging (postgres://u:pa/ss@host/db)", "Staging (host/db)"],
+    // Malformed: the parser rejects it, or an `@` follows the credentials.
+    ["postgres://u:pa/ss@host/db", null],
+    ["postgres://u:pa ss@host/db", null],
+    ["postgres://u:1234/pa@host/db", null],
+    ["postgres://u:p@ss/pa[ss@host/db", null],
+    ["postgres://u:1?ss@host/db", null],
+    ["postgres://u:1#ss@host/db", null],
+    ["Staging (postgres://u:pa ss@host/db)", "Staging"],
+    ["Staging (postgres://u:p@ss/pa[ss@host/db)", "Staging"],
     [
       "Prod: postgres://admin:s3 cr3t@db.example.com:5432/app?api_key=sk_live_123 and more",
-      "Prod: db.example.com:5432/app and more",
+      "Prod",
     ],
+    // Ambiguous with the above, so dropped too; Studio then shows the name
+    // the database reports.
+    ["mysql://u:s3cr3t@host:3306/keyspace@primary", null],
+    ["postgres://host/team@corp", null],
   ])(
-    "strips malformed credentials from URLs embedded in a label: %s",
+    "drops a URL it can't read unambiguously, and anything after it: %s",
     (input, expected) => {
-      const label = formatDatabaseLabel(input);
-
-      expect(label).toBe(expected);
-      expect(label).not.toMatch(/pa ss|pa\/ss|s3 cr3t|admin|u:|sk_live/);
-    },
-  );
-
-  it.each([
-    ["postgres://u:p@ss@host/db", "host/db"],
-    ["postgres://u:p@ss/pa@host/db", "host/db"],
-    ["Staging (postgres://u:p@ss/pa@host/db)", "Staging (host/db)"],
-    ["postgres://admin:1234@db.example.com/app", "db.example.com/app"],
-    ["Staging (postgres://u:1234/pa ss@host/db)", "Staging (host/db)"],
-    [
-      "postgres://u:1234/pa ss@host:5432/db?api_key=sk_live_123",
-      "host:5432/db",
-    ],
-    ["postgres://u:1234/pa@host/db", "host/db"],
-    ["Staging (postgres://u:1234/pa@host/db)", "Staging (host/db)"],
-  ])(
-    "removes credentials that hold `@`, `/` or spaces: %s",
-    (input, expected) => {
-      const label = formatDatabaseLabel(input);
-
-      expect(label).toBe(expected);
-      expect(label).not.toMatch(
-        /s3cr3t|p@ss|pa ss|ss\/pa|u:|admin|1234|sk_live/,
-      );
-    },
-  );
-
-  it("keeps `@` in a path when there is no colon before it", () => {
-    expect(formatDatabaseLabel("postgres://host/team@corp")).toBe(
-      "host/team@corp",
-    );
-  });
-
-  it.each([
-    ["mysql://u:s3cr3t@host:3306/keyspace@primary", "primary"],
-    ["mysql://host:3306/keyspace@primary", "primary"],
-    ["Vitess (mysql://u:pa ss@host:3306/keyspace@replica)", "Vitess (replica)"],
-  ])(
-    "cuts at the last `@` when a colon comes before it, even in a valid path: %s",
-    (input, expected) => {
-      // A malformed password can hold `@`, `/` and `:` in any mix, so text
-      // like `host:3306/keyspace@primary` can't be told apart from one.
-      // Showing a shorter label is preferred over showing a password.
       expect(formatDatabaseLabel(input)).toBe(expected);
     },
   );
+
+  it("keeps a password with `@` that the URL parser separates cleanly", () => {
+    expect(formatDatabaseLabel("postgres://u:p@ss@host/db")).toBe("host/db");
+    expect(
+      formatDatabaseLabel("postgres://admin:1234@db.example.com/app"),
+    ).toBe("db.example.com/app");
+  });
+
+  describe("never shows any part of a password", () => {
+    const user = "Usr1";
+    // Each fragment is unique, so finding one in a label means a leak.
+    const fragments = ["Zq9", "Xw7", "Kp2", "Lm4", "Nb6", "Hj5", "Vc3", "Rt8"];
+    const separators = ["@", "/", "?", "#", "[", "]", ":", " ", "'", '"', ")"];
+    const passwords = [
+      ...separators.map((separator) => fragments.slice(0, 3).join(separator)),
+      `1234/${fragments[0]}@${fragments[1]}`,
+      `1234?${fragments[0]}@${fragments[1]}`,
+      `1234#${fragments[0]}`,
+      `1234 ${fragments[0]}`,
+      fragments.join("@/ ?#[]:"),
+    ];
+    const templates = [
+      (url: string) => url,
+      (url: string) => `Staging (${url})`,
+      (url: string) => `Prod: ${url} and more`,
+      (url: string) => `${url} owner admin@example.com`,
+    ];
+    const cases = passwords.flatMap((password) =>
+      templates.map((template) =>
+        template(`postgres://${user}:${password}@db.example.com:5432/app`),
+      ),
+    );
+
+    it.each(cases)("%s", (input) => {
+      const label = formatDatabaseLabel(input) ?? "";
+
+      for (const secret of [user, ...fragments, "1234"]) {
+        expect(label).not.toContain(secret);
+      }
+    });
+  });
 
   it("is idempotent", () => {
     const inputs = [
