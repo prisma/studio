@@ -88,6 +88,23 @@ describe("formatDatabaseLabel", () => {
     },
   );
 
+  it.each([
+    ["Staging (postgres://u:pa ss@host/db)", "Staging (host/db)"],
+    ["Staging (postgres://u:pa/ss@host/db)", "Staging (host/db)"],
+    [
+      "Prod: postgres://admin:s3 cr3t@db.example.com:5432/app?api_key=sk_live_123 and more",
+      "Prod: db.example.com:5432/app and more",
+    ],
+  ])(
+    "strips malformed credentials from URLs embedded in a label: %s",
+    (input, expected) => {
+      const label = formatDatabaseLabel(input);
+
+      expect(label).toBe(expected);
+      expect(label).not.toMatch(/pa ss|pa\/ss|s3 cr3t|admin|u:|sk_live/);
+    },
+  );
+
   it("is idempotent", () => {
     const inputs = [
       "postgresql://admin:s3cr3t@db.example.com:5432/app?api_key=sk_live_123",
