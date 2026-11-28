@@ -106,16 +106,9 @@ describe("formatDatabaseLabel", () => {
   );
 
   it.each([
-    ["postgres://host/team@corp", "host/team@corp"],
-    [
-      "mysql://u:s3cr3t@host:3306/keyspace@primary",
-      "host:3306/keyspace@primary",
-    ],
-    [
-      "Vitess (mysql://u:pa ss@host:3306/keyspace@replica)",
-      "Vitess (host:3306/keyspace@replica)",
-    ],
     ["postgres://u:p@ss@host/db", "host/db"],
+    ["postgres://u:p@ss/pa@host/db", "host/db"],
+    ["Staging (postgres://u:p@ss/pa@host/db)", "Staging (host/db)"],
     ["postgres://admin:1234@db.example.com/app", "db.example.com/app"],
     ["Staging (postgres://u:1234/pa ss@host/db)", "Staging (host/db)"],
     [
@@ -125,23 +118,36 @@ describe("formatDatabaseLabel", () => {
     ["postgres://u:1234/pa@host/db", "host/db"],
     ["Staging (postgres://u:1234/pa@host/db)", "Staging (host/db)"],
   ])(
-    "keeps `@` in the database path but not in credentials: %s",
+    "removes credentials that hold `@`, `/` or spaces: %s",
     (input, expected) => {
       const label = formatDatabaseLabel(input);
 
       expect(label).toBe(expected);
-      expect(label).not.toMatch(/s3cr3t|pa ss|u:|admin|1234/);
+      expect(label).not.toMatch(
+        /s3cr3t|p@ss|pa ss|ss\/pa|u:|admin|1234|sk_live/,
+      );
     },
   );
 
-  it("treats a colon before the first `@` as credentials, even when it could be a port", () => {
-    // `host:3306/keyspace@primary` and `u:1234/pa@host` have the same shape.
-    // Leaking a password is worse than a shortened label, so both are cut at
-    // the `@`. With credentials present, the path keeps its `@` (see above).
-    expect(formatDatabaseLabel("mysql://host:3306/keyspace@primary")).toBe(
-      "primary",
+  it("keeps `@` in a path when there is no colon before it", () => {
+    expect(formatDatabaseLabel("postgres://host/team@corp")).toBe(
+      "host/team@corp",
     );
   });
+
+  it.each([
+    ["mysql://u:s3cr3t@host:3306/keyspace@primary", "primary"],
+    ["mysql://host:3306/keyspace@primary", "primary"],
+    ["Vitess (mysql://u:pa ss@host:3306/keyspace@replica)", "Vitess (replica)"],
+  ])(
+    "cuts at the last `@` when a colon comes before it, even in a valid path: %s",
+    (input, expected) => {
+      // A malformed password can hold `@`, `/` and `:` in any mix, so text
+      // like `host:3306/keyspace@primary` can't be told apart from one.
+      // Showing a shorter label is preferred over showing a password.
+      expect(formatDatabaseLabel(input)).toBe(expected);
+    },
+  );
 
   it("is idempotent", () => {
     const inputs = [

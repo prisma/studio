@@ -13,9 +13,10 @@
  *   credentials (`user:password@`) or a query string (`?key=value`).
  *
  * Malformed URLs (unencoded `/`, spaces or `@` in a password) are cleaned
- * too. When unsure, it removes more rather than risk showing a password: a
- * URL without credentials whose port is followed by a path with an `@`
- * (`host:3306/keyspace@primary`) shows only the part after the `@`. When
+ * too. When unsure, it removes more rather than risk showing a password:
+ * when a colon comes before an `@`, everything up to the last `@` goes, so
+ * a database name holding `@` (`host:3306/keyspace@primary`) shows only the
+ * part after it. When
  * the connection's fields are available, prefer building the label from
  * them (e.g. `${host}:${port}/${database}`).
  *
@@ -40,25 +41,23 @@ export function formatDatabaseLabel(
 }
 
 /**
- * `scheme://` followed by everything up to the first `@` (before a `?`, `#`,
+ * `scheme://` followed by everything up to the last `@` (before a `?`, `#`,
  * bracket or quote): the user info of every connection URL in the text, when
- * it has one. Malformed passwords can hold `/` or spaces, which would split
- * the URL into tokens before `new URL` sees it, so they are removed first.
- * URLs with credentials keep any `@` in their path, because only the part
- * up to the first `@` is removed.
+ * it has one. Malformed passwords can hold `@`, `/` or spaces, which would
+ * split the URL before `new URL` sees it, so they are removed first.
  */
-const USERINFO_PATTERN = /\b([a-z][a-z0-9+.-]*:\/\/)([^?#()[\]{}<>"'@]*)@/gi;
+const USERINFO_PATTERN = /\b([a-z][a-z0-9+.-]*:\/\/)([^?#()[\]{}<>"']*)@/gi;
 
 function stripMalformedUserinfo(
   match: string,
   scheme: string,
   beforeAt: string,
 ): string {
-  // A colon before the first `@` means `user:password`. It could also be a
-  // `host:port` whose path holds an `@` (`host:3306/keyspace@primary`), which
-  // has exactly the same shape as a malformed `u:1234/pa@host`. Leaking a
-  // password is worse than a shorter label, so both are cut at the `@`.
-  // Without a colon there is no password, so `new URL` parses the rest.
+  // A colon before the `@` means `user:password`. A malformed password can
+  // hold `@`, `/` and `:` in any mix, so a valid `host:3306/keyspace@primary`
+  // can't be told apart from one. Showing a shorter label is preferred over
+  // showing a password, so both are cut at the last `@`. Without a colon
+  // there is no password, and `new URL` parses the rest (`host/team@corp`).
   return beforeAt.includes(":") ? scheme : match;
 }
 
