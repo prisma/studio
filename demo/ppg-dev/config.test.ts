@@ -81,6 +81,24 @@ describe("resolveDemoAiEnabled", () => {
     ).toBe(false);
   });
 
+  it("returns false when no provider key is configured", () => {
+    expect(
+      resolveDemoAiEnabled({
+        anthropicApiKey: "",
+        envValue: "true",
+        orcaRouterApiKey: "",
+      }),
+    ).toBe(false);
+  });
+
+  it("defaults to enabled when only the OrcaRouter key exists", () => {
+    expect(
+      resolveDemoAiEnabled({
+        orcaRouterApiKey: "sk-orca-test",
+      }),
+    ).toBe(true);
+  });
+
   it("defaults to enabled when the Anthropic key exists", () => {
     expect(
       resolveDemoAiEnabled({
