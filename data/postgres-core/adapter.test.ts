@@ -51,6 +51,7 @@ describe("postgres-core/adapter", () => {
         [
           null,
           {
+            "databaseName": "template1",
             "filterOperators": [
               "=",
               "!=",

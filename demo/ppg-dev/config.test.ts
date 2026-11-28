@@ -58,6 +58,31 @@ describe("buildDemoConfig", () => {
     expect("seededAt" in config).toBe(false);
   });
 
+  it("passes the database label so the Studio sidebar and tab title can name the database", () => {
+    const config = buildDemoConfig({
+      aiEnabled: false,
+      bootId: "boot-789",
+      databaseEnabled: true,
+      databaseLabel: "localhost:51214/template1",
+    });
+
+    expect(config.database).toEqual({
+      enabled: true,
+      label: "localhost:51214/template1",
+    });
+  });
+
+  it("omits the database label when the demo has no database", () => {
+    const config = buildDemoConfig({
+      aiEnabled: false,
+      bootId: "boot-790",
+      databaseEnabled: false,
+      databaseLabel: "localhost:51214/template1",
+    });
+
+    expect(config.database).toEqual({ enabled: false });
+  });
+
   it("allows query insights to be disabled independently from the database", () => {
     const config = buildDemoConfig({
       aiEnabled: false,

@@ -241,10 +241,18 @@ export function createMySQLAdapter(
       const timezone = timezoneError
         ? "UTC"
         : (timezones[0]?.timezone ?? "UTC");
+      const databaseName = timezoneError
+        ? undefined
+        : (timezones[0]?.databaseName ?? undefined);
 
       return [
         null,
-        createIntrospection({ query: tablesQuery, tables, timezone }),
+        createIntrospection({
+          databaseName,
+          query: tablesQuery,
+          tables,
+          timezone,
+        }),
       ];
     } catch (error: unknown) {
       return createMySQLAdapterError({ error: error as Error });
@@ -659,11 +667,12 @@ function shouldFallbackToExplainLint(error: unknown): boolean {
 }
 
 function createIntrospection(args: {
+  databaseName?: string;
   query: Query;
   tables: QueryResult<typeof getTablesQuery>;
   timezone: string;
 }): AdapterIntrospectResult {
-  const { query, tables, timezone } = args;
+  const { databaseName, query, tables, timezone } = args;
 
   return tables.reduce(
     (result, table) => {
@@ -746,6 +755,7 @@ function createIntrospection(args: {
       return result;
     },
     {
+      ...(databaseName ? { databaseName } : {}),
       filterOperators,
       query,
       schemas: {},
@@ -772,10 +782,11 @@ const filterOperators = [
  */
 export function mockIntrospect() {
   const tables = mockTablesQuery();
-  const [{ timezone }] = mockTimezoneQuery();
+  const [{ databaseName, timezone }] = mockTimezoneQuery();
   const query = { parameters: [], sql: "<mocked>" } as Query;
 
-  return createIntrospection({ tables, timezone, query }) as {
+  return createIntrospection({ databaseName, tables, timezone, query }) as {
+    databaseName: typeof databaseName;
     // best effort, no need go overboard.
     schemas: {
       [K in (typeof tables)[number]["schema"]]: {

@@ -22,6 +22,7 @@ interface NavigationMockValue {
 
 interface IntrospectionMockValue {
   data: {
+    databaseName?: string;
     schemas: Record<string, { name: string; tables: Record<string, unknown> }>;
   };
   errorState?: {
@@ -54,6 +55,7 @@ interface StreamsMockValue {
 }
 
 interface StudioMockValue {
+  databaseLabel?: string | null;
   hasDatabase: boolean;
   isDarkMode: boolean;
   hasQueryInsights: boolean;
@@ -417,10 +419,11 @@ describe("Navigation", () => {
       root.render(<Navigation />);
     });
 
-    // The schema picker scrolls away with the lists; only section headings stick.
+    // The database and schema rows scroll away with the lists; only section
+    // headings stick.
     const schemaPicker = container
       .querySelector('[role="combobox"]')
-      ?.closest("div.px-4");
+      ?.closest('[data-testid="studio-location"]');
     expect(schemaPicker).not.toBeNull();
     expect(schemaPicker?.className).not.toContain("sticky");
 
@@ -546,6 +549,116 @@ describe("Navigation", () => {
       root.unmount();
     });
     container.remove();
+  });
+
+  describe("connected database", () => {
+    function renderNavigation(args: {
+      databaseLabel?: string | null;
+      databaseName?: string;
+      hasResolvedIntrospection?: boolean;
+    }) {
+      useStudioMock.mockImplementation(() => ({
+        databaseLabel: args.databaseLabel ?? null,
+        hasDatabase: true,
+        hasQueryInsights: false,
+        isDarkMode,
+        navigationWidth: 192,
+        setNavigationWidth: setNavigationWidthMock,
+      }));
+      useIntrospectionMock.mockReturnValue({
+        data: {
+          databaseName: args.databaseName,
+          schemas: { public: { name: "public", tables: {} } },
+        },
+        errorState: null,
+        hasResolvedIntrospection: args.hasResolvedIntrospection ?? true,
+        isFetching: false,
+        isRefetching: false,
+        refetch: refetchIntrospectionMock,
+      });
+
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      act(() => {
+        root.render(<Navigation />);
+      });
+
+      return {
+        container,
+        cleanup: () => {
+          act(() => {
+            root.unmount();
+          });
+          container.remove();
+        },
+      };
+    }
+
+    function getLocationLabels(container: HTMLElement) {
+      return Array.from(
+        container.querySelectorAll('[data-testid="studio-location"] dt'),
+      ).map((term) => term.textContent);
+    }
+
+    it("names the connected database above the schema picker", () => {
+      const { container, cleanup } = renderNavigation({
+        databaseName: "app_dev",
+      });
+
+      expect(getLocationLabels(container)).toEqual(["Database"]);
+      expect(
+        container.querySelector('[data-testid="studio-database-label"]')
+          ?.textContent,
+      ).toBe("app_dev");
+      // The schema picker stays as it was, directly below.
+      expect(
+        container.querySelector(
+          '[data-testid="studio-location"] [role="combobox"]',
+        )?.textContent,
+      ).toBe("Schema:public");
+
+      cleanup();
+    });
+
+    it("shows the embedding host's label instead of the introspected name", () => {
+      const { container, cleanup } = renderNavigation({
+        databaseLabel: "Acme / production",
+        databaseName: "postgres",
+      });
+
+      expect(
+        container.querySelector('[data-testid="studio-database-label"]')
+          ?.textContent,
+      ).toBe("Acme / production");
+
+      cleanup();
+    });
+
+    it("shows only the schema picker when the database has no name to report", () => {
+      const { container, cleanup } = renderNavigation({});
+
+      expect(getLocationLabels(container)).toEqual([]);
+      expect(
+        container.querySelector('[data-testid="studio-database-label"]'),
+      ).toBeNull();
+
+      cleanup();
+    });
+
+    it("does not name a database from placeholder data after a failed first load", () => {
+      const { container, cleanup } = renderNavigation({
+        databaseName: "stale",
+        hasResolvedIntrospection: false,
+      });
+
+      expect(
+        container.querySelector('[data-testid="studio-database-label"]'),
+      ).toBeNull();
+
+      cleanup();
+    });
   });
 
   it("hides schema and table navigation when the session has no database", () => {

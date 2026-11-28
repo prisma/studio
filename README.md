@@ -114,6 +114,8 @@ export function EmbeddedStudio() {
 - When `llm` is omitted, Studio hides AI filtering, AI SQL generation, AI visualization, and Query Insights recommendation affordances entirely.
 - There are no per-feature AI integration props to wire separately.
 - `queryInsights` is optional. Pass it only when your BFF implements the `query-insights` procedure; otherwise omit it so Studio hides the `Queries` view.
+- `databaseLabel` is optional and names the connected database in the sidebar, e.g. `"Acme / production"` or `formatDatabaseLabel(databaseUrl)`. Without it, Studio shows the name the database reports (`current_database()`, `database()`, or the SQLite file name). Studio strips credentials and query parameters from the label, but compute it on your server with `formatDatabaseLabel` from `@prisma/studio-core/data` so the raw URL never reaches the browser.
+- `documentTitle` is optional and puts the database label in the browser tab title (`<label> · Prisma Studio`). Leave it off when your product owns `document.title`.
 - Studio does not render a built-in fullscreen header button. If your host needs fullscreen behavior, render that control at the host container level, as the local demo does.
 
 Studio handles prompt construction, type-aware validation, pre-display SQL validation for AI-generated SQL, correction retries, database-error correction, and conversion into the normal filter, SQL, and visualization surfaces. The host transport only needs to forward the prepared request to an LLM provider and return the typed result.
@@ -220,6 +222,7 @@ Studio is an embeddable React surface, not a standalone app shell. A production 
 - pass any tenant or auth context through `customHeaders` and/or `customPayload`
 - optionally provide `llm` for AI-assisted filtering, SQL generation, SQL result visualization, and Query Insights recommendations
 - optionally provide `queryInsights` on the adapter when your BFF can return live query snapshots
+- optionally pass `databaseLabel` (built on the server with `formatDatabaseLabel`) so people can tell which database they are connected to
 - own surrounding product chrome such as routing, auth, tenancy, and fullscreen controls
 
 The simplest supported shape is: host React app -> `<Studio />` -> adapter -> `createStudioBFFClient(...)` -> host BFF route -> database executor.

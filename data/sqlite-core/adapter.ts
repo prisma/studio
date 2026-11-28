@@ -30,7 +30,12 @@ import {
   getSelectQuery,
   getUpdateQuery,
 } from "./dml";
-import { getTablesQuery, mockTablesQuery } from "./introspection";
+import {
+  getDatabaseNameQuery,
+  getTablesQuery,
+  mockDatabaseNameQuery,
+  mockTablesQuery,
+} from "./introspection";
 import { lintSQLiteWithExplainFallback } from "./sql-lint";
 
 export type SQLIteAdapterRequirements = AdapterRequirements;
@@ -129,11 +134,13 @@ export function createSQLiteAdapter(
   ): Promise<Either<AdapterError, AdapterIntrospectResult>> {
     try {
       const tablesQuery = getTablesQuery(requirements);
+      const databaseNameQuery = getDatabaseNameQuery(requirements);
 
-      const [tablesError, tables] = await executor.execute(
-        tablesQuery,
-        options,
-      );
+      const [[tablesError, tables], [databaseNameError, databaseNames]] =
+        await Promise.all([
+          executor.execute(tablesQuery, options),
+          executor.execute(databaseNameQuery, options),
+        ]);
 
       if (tablesError) {
         return createSQLiteAdapterError({
@@ -142,7 +149,15 @@ export function createSQLiteAdapter(
         });
       }
 
-      return [null, createIntrospection({ query: tablesQuery, tables })];
+      // The name is a nicety: hosts that block pragmas still get introspection.
+      const databaseName = databaseNameError
+        ? undefined
+        : databaseNames[0]?.databaseName;
+
+      return [
+        null,
+        createIntrospection({ databaseName, query: tablesQuery, tables }),
+      ];
     } catch (error: unknown) {
       return createSQLiteAdapterError({ error: error as Error });
     }
@@ -365,12 +380,14 @@ function shouldFallbackToExplainLint(error: unknown): boolean {
 const WITHOUT_ROWID_REGEX = /WITHOUT\s+ROWID/i;
 
 function createIntrospection(args: {
+  databaseName?: string;
   tables: QueryResult<typeof getTablesQuery>;
   query: Query;
 }): AdapterIntrospectResult {
-  const { tables, query: tablesQuery } = args;
+  const { databaseName, tables, query: tablesQuery } = args;
 
   return {
+    ...(databaseName ? { databaseName } : {}),
     filterOperators,
     query: tablesQuery,
     schemas: tables.reduce(
@@ -470,8 +487,10 @@ function createIntrospection(args: {
 export function mockIntrospect() {
   const query = { parameters: [], sql: "<mocked>" } as Query;
   const tables = mockTablesQuery();
+  const [{ databaseName }] = mockDatabaseNameQuery();
 
-  return createIntrospection({ query, tables }) as {
+  return createIntrospection({ databaseName, query, tables }) as {
+    databaseName: typeof databaseName;
     // best effort, no need go overboard.
     schemas: {
       main: {

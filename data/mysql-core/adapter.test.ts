@@ -64,8 +64,23 @@ describeMysql("mysql-core/adapter", () => {
   });
 
   describe("introspect", () => {
+    it("reports the database it is connected to", async () => {
+      const [[{ name }]] = (await pool.query("select database() as name")) as [
+        [{ name: string }],
+        unknown,
+      ];
+      const [error, introspection] = await adapter.introspect({});
+
+      expect(error).toBeNull();
+      expect(introspection?.databaseName).toBe(name);
+    });
+
     it("should introspect the database correctly", async () => {
-      const result = await adapter.introspect({});
+      const [error, introspection] = await adapter.introspect({});
+      // Asserted on its own above: the name depends on the test server
+      // (`studio` on MySQL, the keyspace shard name on Vitess).
+      const { databaseName: _databaseName, ...rest } = introspection ?? {};
+      const result = [error, introspection ? rest : introspection];
 
       expect(result).toMatchInlineSnapshot(`
         [

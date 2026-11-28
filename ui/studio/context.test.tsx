@@ -82,6 +82,8 @@ function createAdapter(): Adapter {
 
 type RenderHarnessProps = {
   adapter?: Adapter;
+  databaseLabel?: string;
+  documentTitle?: boolean;
   hasDatabase?: boolean;
   streamsUrl?: string;
 };
@@ -106,6 +108,8 @@ function renderHarness(props?: RenderHarnessProps) {
     root.render(
       <StudioContextProvider
         adapter={currentProps.adapter}
+        databaseLabel={currentProps.databaseLabel}
+        documentTitle={currentProps.documentTitle}
         hasDatabase={currentProps.hasDatabase}
         streamsUrl={currentProps.streamsUrl}
       >
@@ -308,6 +312,33 @@ describe("StudioContextProvider streams configuration", () => {
     });
 
     expect(harness.getLatestStudio()?.streamsUrl).toBe("/api/streams");
+
+    harness.cleanup();
+  });
+
+  it("strips credentials from the database label before anything can render it", () => {
+    const harness = renderHarness({
+      databaseLabel:
+        "postgresql://admin:s3cr3t@db.example.com:5432/app?api_key=sk_live_123",
+      documentTitle: true,
+    });
+    const studio = harness.getLatestStudio();
+
+    expect(studio?.databaseLabel).toBe("db.example.com:5432/app");
+    expect(studio?.documentTitle).toBe(true);
+    expect(JSON.stringify(studio?.databaseLabel)).not.toMatch(
+      /s3cr3t|api_key|sk_live/,
+    );
+
+    harness.cleanup();
+  });
+
+  it("leaves the database label and tab title off unless the host opts in", () => {
+    const harness = renderHarness();
+    const studio = harness.getLatestStudio();
+
+    expect(studio?.databaseLabel).toBeNull();
+    expect(studio?.documentTitle).toBe(false);
 
     harness.cleanup();
   });

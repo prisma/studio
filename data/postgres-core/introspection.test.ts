@@ -316,7 +316,7 @@ describe("postgres-core/introspection", () => {
       expect(query).toMatchInlineSnapshot(`
         {
           "parameters": [],
-          "sql": "select current_setting('timezone') as "timezone"",
+          "sql": "select current_setting('timezone') as "timezone", current_database() as "databaseName"",
           "transformations": undefined,
         }
       `);
@@ -326,7 +326,9 @@ describe("postgres-core/introspection", () => {
     it("should return a query object that holds type information about the query result", () => {
       const query = getTimezoneQuery();
 
-      expectTypeOf(query).toEqualTypeOf<Query<{ timezone: string }>>();
+      expectTypeOf(query).toEqualTypeOf<
+        Query<{ databaseName: string; timezone: string }>
+      >();
     });
 
     it.each(["UTC", "America/New_York"])(
@@ -343,7 +345,9 @@ describe("postgres-core/introspection", () => {
         const [error, results] = await executor.execute(query);
 
         expect(error).toBeNull();
-        expect(results).toStrictEqual([{ timezone }]);
+        expect(results).toStrictEqual([
+          { databaseName: "template1", timezone },
+        ]);
       },
     );
   });

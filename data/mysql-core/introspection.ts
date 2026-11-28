@@ -492,6 +492,10 @@ export function mockTablesQuery() {
   ] as const satisfies QueryResult<typeof getTablesQuery>;
 }
 
+/**
+ * Returns a query that reads the session's timezone and the name of the
+ * connected database. Both ride on one round trip next to the tables query.
+ */
 export function getTimezoneQuery(
   requirements?: Omit<BuilderRequirements, "Adapter" | "QueryCompiler">,
 ) {
@@ -501,7 +505,7 @@ export function getTimezoneQuery(
 
   return compile(
     builder
-      .selectNoFrom(
+      .selectNoFrom([
         builder
           .case()
           .when(sessionTz, "=", "SYSTEM")
@@ -509,13 +513,15 @@ export function getTimezoneQuery(
           .else(sessionTz)
           .end()
           .as("timezone"),
-      )
-      .$narrowType<{ timezone: string }>(),
+        // The database Studio is introspecting; `null` without a default database.
+        sql<string | null>`database()`.as("databaseName"),
+      ])
+      .$narrowType<{ databaseName: string | null; timezone: string }>(),
   );
 }
 
 export function mockTimezoneQuery() {
-  return [{ timezone: "UTC" }] as const satisfies QueryResult<
-    typeof getTimezoneQuery
-  >;
+  return [
+    { databaseName: "studio", timezone: "UTC" },
+  ] as const satisfies QueryResult<typeof getTimezoneQuery>;
 }

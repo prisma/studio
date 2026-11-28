@@ -24,6 +24,16 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { Skeleton } from "../components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../components/ui/tooltip";
+import {
+  type DatabaseIdentity,
+  useDatabaseIdentity,
+} from "../hooks/use-database-identity";
 import { useIntrospection } from "../hooks/use-introspection";
 import { useHasMigrationHistory } from "../hooks/use-migrations";
 import { useNavigation } from "../hooks/use-navigation";
@@ -1078,6 +1088,13 @@ const Item = ({
   );
 };
 
+/**
+ * Where this Studio is: the database it is connected to, then the schema.
+ *
+ * Like Console's context, what can be switched (the schema) is a control and
+ * what cannot (the database) is plain text, with details in a tooltip. The
+ * database heading uses the same type role as the sidebar's group headings.
+ */
 const SchemaSelector = () => {
   const {
     data: introspection,
@@ -1085,13 +1102,27 @@ const SchemaSelector = () => {
     isFetching,
   } = useIntrospection();
   const { schemaParam, setSchemaParam, setTableParam } = useNavigation();
+  const database = useDatabaseIdentity();
 
   // Extract schema names from introspection data
   const schemaNames = Object.keys(introspection.schemas || {});
   const isInitialIntrospectionLoad = isFetching && !hasResolvedIntrospection;
 
   return (
-    <div className="flex items-center gap-1 pt-4 pb-2 px-4">
+    <div
+      data-testid="studio-location"
+      className="flex flex-col gap-2.5 px-4 pt-4 pb-2"
+    >
+      {database ? (
+        <dl className="flex min-w-0 flex-col gap-1">
+          <dt className="font-mono text-2xs font-normal uppercase tracking-loose text-muted-foreground">
+            Database
+          </dt>
+          <dd className="min-w-0">
+            <DatabaseLabel database={database} />
+          </dd>
+        </dl>
+      ) : null}
       <Select
         value={schemaParam}
         onValueChange={(schemaParam) => {
@@ -1121,6 +1152,37 @@ const SchemaSelector = () => {
     </div>
   );
 };
+
+function DatabaseLabel(props: { database: DatabaseIdentity }) {
+  const { databaseName, engine, label } = props.database;
+  const detail = [
+    engine ? `${engine} database` : databaseName ? "Database" : null,
+    databaseName && databaseName !== label ? databaseName : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          {/* A button only so keyboard users can reach the tooltip; it has no action. */}
+          <button
+            type="button"
+            data-testid="studio-database-label"
+            className="block w-full truncate rounded-sm text-left text-xs leading-5 text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            {label}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="right" align="start" className="max-w-80">
+          <p className="break-all font-medium">{label}</p>
+          {detail ? <p className="text-muted-foreground">{detail}</p> : null}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 Navigation.Block = Block;
 Navigation.Item = Item;

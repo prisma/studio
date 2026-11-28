@@ -1,4 +1,5 @@
 export type * from "./adapter";
+export { formatDatabaseLabel } from "./database-label";
 export * from "./defaults";
 export type * from "./executor";
 export * from "./full-table-search";

@@ -21,6 +21,9 @@ This architecture governs:
 - [`ui/studio/Studio.tsx`](../ui/studio/Studio.tsx)
 - [`data/postgres-core/adapter.ts`](../data/postgres-core/adapter.ts)
 - [`data/mysql-core/adapter.ts`](../data/mysql-core/adapter.ts)
+- [`data/sqlite-core/adapter.ts`](../data/sqlite-core/adapter.ts)
+- [`data/database-label.ts`](../data/database-label.ts)
+- [`ui/hooks/use-database-identity.ts`](../ui/hooks/use-database-identity.ts)
 
 ## Fetch Policy Contract
 
@@ -121,6 +124,20 @@ Changes to this subsystem MUST include tests for:
 - introspection refetching when the window regains focus (proves `staleTime` is the 30s throttle and `refetchOnWindowFocus: "always"` refetches even while fresh data is still cached)
 - `refreshSchema` invalidating and triggering an introspection refetch
 - self-heal on a Postgres type-mismatch write error (SQLSTATE `42804` / `22P02`) without swallowing the user-facing error
+- `databaseName` per dialect, SQLite file-name-only output and pragma-failure tolerance
+- `formatDatabaseLabel` removing passwords and `api_key` query parameters from every label
+- the tab title only changing when `documentTitle` is set, and being restored on unmount
+
+## Connected Database Identity
+
+Studio MUST name the database a tab is connected to without an extra round trip and without exposing credentials.
+
+- `AdapterIntrospectResult.databaseName` is optional and comes from the database itself. PostgreSQL and MySQL read it in the existing timezone query (`current_database()`, `database()`), so it adds no query. SQLite reads `pragma_database_list` in parallel with the tables query and reduces the path to the file name in SQL, so the full path (which often contains a user name) never leaves the database host. A failed or empty name MUST NOT fail introspection.
+- The database's server address (`inet_server_addr()`, `@@hostname`) MUST NOT be used: behind poolers and proxies such as Prisma Postgres and PgBouncer it is `NULL` or the pooler's address.
+- Embedders MAY pass `StudioProps.databaseLabel`. It takes priority over `databaseName`, because only the embedder knows the host or the Console project and branch, and many databases share a name such as `postgres`.
+- Every label passes through `formatDatabaseLabel` (`data/database-label.ts`), which is idempotent: connection URLs become `host:port/database` (or the file name) without user names, passwords, query parameters or fragments. `StudioContextProvider` applies it once at the boundary, so context, DOM and tab title only ever hold the cleaned label. Embedders SHOULD also apply it on their server so the raw URL never reaches the browser.
+- `ui/hooks/use-database-identity.ts` resolves the label (embedder label, else introspected name, only after a successful introspection) and owns the optional tab title. Studio MUST NOT touch `document.title` unless the embedder passes `documentTitle`, and MUST restore the previous title on unmount.
+- The sidebar shows the label as plain text under a `Database` heading above the schema picker, with a standard ShadCN `Tooltip` for the engine and introspected name. It is plain text because Studio cannot switch databases.
 
 ## Cell Editor Type Label
 

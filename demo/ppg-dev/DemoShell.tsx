@@ -74,12 +74,20 @@ export function DemoApp(props: {
   adapter: Adapter;
   aiEnabled: boolean;
   bootId: string;
+  databaseLabel?: string;
   hasDatabase: boolean;
   seededAt?: string;
   streamsUrl?: string;
 }) {
-  const { adapter, aiEnabled, bootId, hasDatabase, seededAt, streamsUrl } =
-    props;
+  const {
+    adapter,
+    aiEnabled,
+    bootId,
+    databaseLabel,
+    hasDatabase,
+    seededAt,
+    streamsUrl,
+  } = props;
   const llm: StudioLlm | undefined = aiEnabled
     ? async (request) => {
         const response = await fetch("/api/ai", {
@@ -169,6 +177,9 @@ export function DemoApp(props: {
       >
         <Studio
           adapter={adapter}
+          databaseLabel={databaseLabel}
+          // The demo owns its page, so Studio may name the database in the tab.
+          documentTitle
           hasDatabase={hasDatabase}
           llm={llm}
           streamsUrl={streamsUrl}

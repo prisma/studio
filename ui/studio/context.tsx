@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { hasWindow, isCI, process } from "std-env";
 
 import type { Adapter, BigIntString, NumericString } from "@/data";
+import { formatDatabaseLabel } from "@/data/database-label";
 import {
   isStudioLlmResponse,
   type StudioLlm,
@@ -101,7 +102,8 @@ function prefersReducedMotion(): boolean {
 }
 
 function getViewTransitionStarter():
-  DocumentWithViewTransition["startViewTransition"] | undefined {
+  | DocumentWithViewTransition["startViewTransition"]
+  | undefined {
   if (typeof document === "undefined" || prefersReducedMotion()) {
     return undefined;
   }
@@ -253,6 +255,9 @@ function normalizeStudioUiState(
  */
 interface StudioContextValue {
   adapter: Adapter;
+  /** The embedder's database label, already stripped of credentials. */
+  databaseLabel: string | null;
+  documentTitle: boolean;
   hasDatabase: boolean;
   llm?: StudioLlm;
   queryInsights?: Adapter["queryInsights"];
@@ -299,6 +304,8 @@ const StudioContext = createContext<StudioContextValue | undefined>(undefined);
 
 export type StudioContextProviderProps = PropsWithChildren<{
   adapter: Adapter;
+  databaseLabel?: string;
+  documentTitle?: boolean;
   hasDatabase?: boolean;
   llm?: StudioLlm;
   onEvent?: (event: StudioEvent) => void;
@@ -311,11 +318,19 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
     children,
     onEvent: emitEvent,
     adapter,
+    databaseLabel: rawDatabaseLabel,
+    documentTitle = false,
     hasDatabase = true,
     llm,
     streamsUrl,
     theme,
   } = props;
+  // Strip credentials once, at the boundary, so no raw connection string is
+  // ever held in Studio state or rendered.
+  const databaseLabel = useMemo(
+    () => formatDatabaseLabel(rawDatabaseLabel),
+    [rawDatabaseLabel],
+  );
 
   const queryClientRef = useRef(new QueryClient());
   const previousDatabaseConfigRef = useRef({ adapter, hasDatabase });
@@ -487,7 +502,8 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
   const getOrCreateRowsCollection = useCallback(
     <T,>(key: string, factory: () => T): T => {
       const existingCollection = rowsCollectionCacheRef.current.get(key) as
-        T | undefined;
+        | T
+        | undefined;
 
       if (existingCollection != null) {
         return existingCollection;
@@ -854,6 +870,8 @@ export function StudioContextProvider(props: StudioContextProviderProps) {
       <StudioContext.Provider
         value={{
           adapter,
+          databaseLabel,
+          documentTitle,
           hasDatabase,
           llm,
           queryInsights,

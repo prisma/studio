@@ -13,7 +13,7 @@ A standalone `sslmode` without SSL file parameters is left in the connection str
 
 ## Live Introspection and Schema Discovery
 
-Studio introspects connected databases to build schemas, tables, columns, relationships, filter operators, and timezone metadata.
+Studio introspects connected databases to build schemas, tables, columns, relationships, filter operators, timezone metadata, and the name of the connected database.
 This gives users an accurate live model of the database and keeps table navigation grounded in current structure.
 A fresh Studio mount performs this discovery once, while actual adapter or database-availability changes invalidate cached metadata and load it again.
 Introspection is refreshable, not frozen: cached schema is allowed to go stale and is re-introspected when the user returns to Studio (window focus), when the user clicks "Refresh schema", or when a row write fails with a PostgreSQL type-mismatch error.
@@ -71,6 +71,13 @@ This makes schema drift visible to the user instead of producing a silently wron
 
 View, schema, table, filter, sort, pagination, and row-search state are encoded in URL hash parameters.
 Users can share links into a precise Studio state, and stale params are resolved back to valid schema/table defaults.
+
+## Connected Database Label
+
+People run Studio against local, dev, staging and production databases, often in several tabs at once, so the sidebar names the database each tab is connected to under a `Database` heading above the schema picker, with the engine and the database's own name in a tooltip.
+The name comes from introspection at no extra cost (`current_database()` on PostgreSQL, `database()` on MySQL, the file name on SQLite), and embedders can pass a `databaseLabel` such as a host and port or a Console project and branch, which takes priority because many databases share a name like `postgres`.
+Labels never show credentials: `formatDatabaseLabel` reduces connection URLs to `host:port/database` and drops user names, passwords and query parameters such as `api_key`, both on the embedder's server and again inside Studio.
+Embedders that own their page can pass `documentTitle` to put the label in the browser tab title, so tabs can be told apart; the previous title comes back when Studio unmounts.
 
 ## Sidebar Schema and Table Navigation
 
