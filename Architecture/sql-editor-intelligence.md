@@ -91,7 +91,7 @@ For multi-statement SQL text, diagnostics MUST map statement-relative positions 
 Postgres reports positions within the query it received, so lint paths MUST subtract the length of the `EXPLAIN` prefix they add (`queryPrefixLength`) before mapping.
 Leading whitespace and comments are not part of a statement: the statement allowlist check and statement offsets start at the first token, and comment-only segments (such as a note after the last `;`) are not linted.
 Diagnostics with a position MUST span the identifier at that position. Diagnostics inferred from a name in the error message MUST match it as a whole word outside comments and string literals (`findSqlTokenRange`), for all dialects.
-That scan follows each dialect's quoting rules: Postgres dollar-quoted strings are literals, MySQL strings honour backslash escapes, and comment markers inside quoted identifiers (`"…"`, `` `…` ``) are not comments. Quoted identifiers stay matchable, and the fallback lookup of the last part of a qualified name also matches it after a `.`, so `"main".orders` still marks `orders`.
+That scan follows each dialect's quoting rules: Postgres dollar-quoted strings are literals, MySQL strings honour backslash escapes and MySQL double-quoted text is a string, and comment markers inside quoted identifiers (`"…"` outside MySQL, `` `…` ``) are not comments. A quoted identifier matches only as the whole name, never part of it, and the fallback lookup of the last part of a qualified name also matches it after a `.`, so `"main".orders` still marks `orders`.
 
 ## Capability Fallback Rules
 

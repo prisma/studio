@@ -123,4 +123,18 @@ describe("mysql-core/sql-lint token ranges", () => {
       to: from + "missing_table".length,
     });
   });
+
+  it("reads double-quoted text as a string literal", () => {
+    const sql = "SELECT \"'missing_table'\" FROM missing_table";
+    const [diagnostic] = createLintDiagnosticsFromMySQLError({
+      error: new Error("Table 'studio.missing_table' doesn't exist"),
+      sql,
+    });
+    const from = sql.lastIndexOf("missing_table");
+
+    expect(diagnostic).toMatchObject({
+      from,
+      to: from + "missing_table".length,
+    });
+  });
 });

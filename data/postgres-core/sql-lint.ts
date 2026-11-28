@@ -297,14 +297,26 @@ function skipQuoted(
   return sql.length;
 }
 
+interface MaskedSql {
+  masked: string;
+  /** Start and end offsets of each quoted identifier, quotes included. */
+  quotedIdentifiers: Array<{ from: number; to: number }>;
+}
+
 /**
  * Replaces comments, string literals and (Postgres) dollar-quoted strings with
  * spaces, keeping offsets intact, so identifier lookups only match real SQL
  * tokens. Quoted identifiers are skipped but left visible, so comment markers
- * inside them are not read as comments and the names stay matchable.
+ * inside them are not read as comments and the names stay matchable. MySQL
+ * reads double-quoted text as a string, so only backticks quote names there.
  */
-function maskCommentsAndStrings(sql: string, dialect: SqlTokenDialect): string {
+function maskCommentsAndStrings(
+  sql: string,
+  dialect: SqlTokenDialect,
+): MaskedSql {
   const backslashEscapes = dialect === "mysql";
+  const identifierQuotes = dialect === "mysql" ? ["`"] : ['"', "`"];
+  const quotedIdentifiers: MaskedSql["quotedIdentifiers"] = [];
   let masked = "";
   let index = 0;
 
@@ -318,15 +330,16 @@ function maskCommentsAndStrings(sql: string, dialect: SqlTokenDialect): string {
       end = lineEnd < 0 ? sql.length : lineEnd;
     } else if (sql.startsWith("/*", index)) {
       end = skipBlockComment(sql, index);
-    } else if (char === "'") {
-      end = skipQuoted(sql, index, "'", backslashEscapes);
-    } else if (char === '"' || char === "`") {
-      end = skipQuoted(sql, index, char, backslashEscapes && char === '"');
+    } else if (identifierQuotes.includes(char)) {
+      end = skipQuoted(sql, index, char, false);
       mask = false;
+      quotedIdentifiers.push({ from: index, to: end });
+    } else if (char === "'" || char === '"') {
+      end = skipQuoted(sql, index, char, backslashEscapes);
     } else if (
       char === "$" &&
       dialect === "postgres" &&
-      !/[A-Za-z0-9_$]/.test(sql[index - 1] ?? "")
+      !/[\p{L}\p{N}_$]/u.test(sql[index - 1] ?? "")
     ) {
       const delimiter = readDollarQuoteDelimiter(sql, index);
 
@@ -347,7 +360,7 @@ function maskCommentsAndStrings(sql: string, dialect: SqlTokenDialect): string {
     index += 1;
   }
 
-  return masked;
+  return { masked, quotedIdentifiers };
 }
 
 /**
@@ -373,18 +386,28 @@ export function findSqlTokenRange(
     : "(?<![A-Za-z0-9_$.])";
   const before = /^[A-Za-z0-9_$]/.test(token) ? wordBoundary : "";
   const after = /[A-Za-z0-9_$]$/.test(token) ? "(?![A-Za-z0-9_$])" : "";
-  const match = new RegExp(`${before}${escapedToken}${after}`, "i").exec(
-    maskCommentsAndStrings(sql, options.dialect ?? "postgres"),
+  const { masked, quotedIdentifiers } = maskCommentsAndStrings(
+    sql,
+    options.dialect ?? "postgres",
   );
+  const pattern = new RegExp(`${before}${escapedToken}${after}`, "gi");
 
-  if (!match) {
-    return null;
+  for (const match of masked.matchAll(pattern)) {
+    const from = match.index;
+    const to = from + token.length;
+    const quoted = quotedIdentifiers.find(
+      (span) => from < span.to && to > span.from,
+    );
+
+    // Inside a quoted identifier, only the whole name counts as a match.
+    if (quoted && (from !== quoted.from + 1 || to !== quoted.to - 1)) {
+      continue;
+    }
+
+    return { from, to: Math.min(sql.length, to) };
   }
 
-  return {
-    from: match.index,
-    to: Math.min(sql.length, match.index + token.length),
-  };
+  return null;
 }
 
 function getStatementFirstKeyword(statement: string): string | null {
